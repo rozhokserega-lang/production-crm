@@ -40,6 +40,23 @@ const SHIPMENT_SECTION_ORDER = [
   "TV Siena",
   "ТВ Siena",
 ];
+const STRAP_OPTIONS = [
+  "Бока (316_167)",
+  "Обвязка (1000_80)",
+  "Обвязка (558_80)",
+  "Обвязка (750_80)",
+  "Обвязка (618_80)",
+  "Обвязка (600_80)",
+  "Обвязка (586_80)",
+  "Обвязка (1158_50)",
+  "Обвязка (600_50)",
+  "Обвязка (502_80)",
+  "Обвязка (544_80)",
+  "Обвязка (288_80)",
+  "Обвязка (520_80)",
+];
+const STRAP_SHEET_WIDTH = 2800;
+const STRAP_SHEET_HEIGHT = 2070;
 
 function statusClass(order) {
   const pilka = String(order?.pilkaStatus || order?.pilka || "");
@@ -191,9 +208,29 @@ function toUserError(e) {
   return msg || "Неизвестная ошибка";
 }
 
+function parseStrapSize(name) {
+  const m = String(name || "").match(/\((\d+)_(\d+)\)/);
+  if (!m) return null;
+  const length = Number(m[1]);
+  const width = Number(m[2]);
+  if (!(length > 0 && width > 0)) return null;
+  return { length, width };
+}
+
+function formatDateTimeForPrint(date) {
+  return date.toLocaleString("ru-RU", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 export default function App() {
   const [view, setView] = useState("shipment");
   const [tab, setTab] = useState("all");
+  const [shipmentTab, setShipmentTab] = useState("orders");
   const [rows, setRows] = useState([]);
   const [shipmentBoard, setShipmentBoard] = useState({ sections: [] });
   const [selectedShipments, setSelectedShipments] = useState([]);
@@ -219,6 +256,11 @@ export default function App() {
   const [consumeSaving, setConsumeSaving] = useState(false);
   const [consumeError, setConsumeError] = useState("");
   const [consumeLoading, setConsumeLoading] = useState(false);
+  const [strapDialogOpen, setStrapDialogOpen] = useState(false);
+  const [strapDraft, setStrapDraft] = useState(() =>
+    STRAP_OPTIONS.reduce((acc, name) => ({ ...acc, [name]: "" }), {})
+  );
+  const [strapItems, setStrapItems] = useState([]);
   const loadSeqRef = useRef(0);
   const loadInFlightRef = useRef(false);
 
@@ -406,10 +448,11 @@ export default function App() {
     try {
       const data = await callBackend(action, { orderId, ...payload });
       if (action === "webSetPilkaDone") {
+        const isPlankOrder = !!meta.isPlankOrder;
         const defaultQty = Number(meta.defaultSheets || 0) > 0 ? String(Number(meta.defaultSheets || 0)) : "";
         // Открываем диалог сразу, а подсказки подтягиваем в фоне.
         setConsumeDialogData({ orderId, item: String(meta.item || ""), suggestedMaterial: "", materials: [] });
-        setConsumeMaterial("");
+        setConsumeMaterial(isPlankOrder ? "Черный" : "");
         setConsumeQty(defaultQty);
         setConsumeEditMode(true);
         setConsumeError("");
@@ -420,9 +463,9 @@ export default function App() {
         callBackend("webGetConsumeOptions", { orderId })
           .then((options) => {
             setConsumeDialogData(options || { orderId });
-            const suggested = String(options?.suggestedMaterial || "");
+            const suggested = isPlankOrder ? "Черный" : String(options?.suggestedMaterial || "");
             setConsumeMaterial(suggested);
-            if (suggested) setConsumeEditMode(false);
+            if (!isPlankOrder && suggested) setConsumeEditMode(false);
           })
           .catch(() => {
             // Оставляем ручной режим без подсказок.
@@ -602,6 +645,32 @@ export default function App() {
       }));
   }, [view, shipmentSort, filtered, showOnlyEmpty]);
 
+  const strapRenderSections = useMemo(() => {
+    if (view !== "shipment" || !strapItems.length) return [];
+    const rows = strapItems.map((x, idx) => {
+      const blackByColorSort = shipmentSort === "color";
+      return {
+        row: `strap:${idx}`,
+        item: x.name,
+        material: "Черный",
+        cells: [
+          {
+            col: 1,
+            week: "-",
+            qty: Number(x.qty || 0),
+            bg: blackByColorSort ? "#111111" : "#ffffff",
+            canSendToWork: true,
+            inWork: false,
+            sheetsNeeded: 0,
+            note: "Обвязка: готово к работе",
+          },
+        ],
+      };
+    });
+    const sectionName = shipmentSort === "color" ? "Черный" : "Обвязка";
+    return [{ name: sectionName, items: rows }];
+  }, [view, strapItems, shipmentSort]);
+
   const kpi = useMemo(() => {
     const total = filtered.length;
     const work = filtered.filter((x) => statusClass(x) === "work").length;
@@ -723,16 +792,60 @@ export default function App() {
     };
   }, [selectedShipments]);
 
+  const strapCalculation = useMemo(() => {
+    const lines = [];
+    let totalSheets = 0;
+    for (const x of strapItems) {
+      const size = parseStrapSize(x.name);
+      const qty = Number(x.qty || 0);
+      if (!size || !(qty > 0)) continue;
+      const stripsPerSheet = Math.floor(STRAP_SHEET_HEIGHT / size.width);
+      const perStrip = Math.floor(STRAP_SHEET_WIDTH / size.length);
+      const perSheet = stripsPerSheet * perStrip;
+      if (perSheet <= 0) {
+        lines.push({ name: x.name, qty, perSheet: 0, sheets: 0, invalid: true });
+        continue;
+      }
+      const sheets = Math.ceil(qty / perSheet);
+      totalSheets += sheets;
+      lines.push({ name: x.name, qty, perSheet, sheets, invalid: false });
+    }
+    return { lines, totalSheets };
+  }, [strapItems]);
+
   async function sendSelectedShipmentToWork() {
+    if (shipmentTab === "straps") {
+      if (!strapItems.length) return;
+      setActionLoading("shipment:bulk");
+      setError("");
+      try {
+        const res = await callBackend("webSendPlanksToWork", { items: strapItems });
+        const added = Number(res?.added || 0);
+        setStrapItems([]);
+        setPlanPreviews([]);
+        setSelectedShipments([]);
+        await load();
+        setView("workshop");
+        setTab("pilka");
+        if (added <= 0) setError("Позиции уже были в заказах и не добавлены повторно.");
+      } catch (e) {
+        setError(toUserError(e));
+      } finally {
+        setActionLoading("");
+      }
+      return;
+    }
     if (!selectedShipments.length) return;
     setActionLoading("shipment:bulk");
     setError("");
     try {
-      for (const s of selectedShipments) {
+      const realRows = selectedShipments.filter((s) => typeof s.row === "number");
+      if (!realRows.length) return;
+      for (const s of realRows) {
         await callBackend("webSendShipmentToWork", { row: s.row, col: s.col });
       }
       setPlanPreviews([]);
-      setSelectedShipments([]);
+      setSelectedShipments((prev) => prev.filter((s) => typeof s.row !== "number"));
       await load();
     } catch (e) {
       setError(toUserError(e));
@@ -741,7 +854,37 @@ export default function App() {
     }
   }
 
+  function openStrapDialog() {
+    const nextDraft = STRAP_OPTIONS.reduce((acc, name) => ({ ...acc, [name]: "" }), {});
+    strapItems.forEach((x) => {
+      if (nextDraft[x.name] !== undefined) nextDraft[x.name] = String(x.qty || "");
+    });
+    setStrapDraft(nextDraft);
+    setStrapDialogOpen(true);
+  }
+
+  function saveStrapDialog() {
+    const next = STRAP_OPTIONS
+      .map((name) => ({ name, qty: Number(String(strapDraft[name] || "").replace(",", ".")) }))
+      .filter((x) => Number.isFinite(x.qty) && x.qty > 0);
+    setStrapItems(next);
+    setStrapDialogOpen(false);
+  }
+
   async function previewSelectedShipmentPlan() {
+    if (shipmentTab === "straps") {
+      if (!strapItems.length) return;
+      const now = new Date();
+      setPlanPreviews([
+        {
+          _key: "strap-plan",
+          isStrapPlan: true,
+          generatedAt: formatDateTimeForPrint(now),
+          rows: strapItems.map((x) => ({ part: x.name, qty: Number(x.qty || 0) })),
+        },
+      ]);
+      return;
+    }
     if (!selectedShipments.length) return;
     setActionLoading("preview:batch");
     setError("");
@@ -780,7 +923,10 @@ export default function App() {
           <button
             key={v.id}
             className={view === v.id ? "tab active" : "tab"}
-            onClick={() => setView(v.id)}
+            onClick={() => {
+              setView(v.id);
+              if (v.id === "workshop") setTab("pilka");
+            }}
           >
             {v.label}
           </button>
@@ -882,6 +1028,9 @@ export default function App() {
               <button className="mini" onClick={resetShipmentFilters}>
                 Сброс фильтров
               </button>
+              <button className="mini" onClick={openStrapDialog}>
+                Добавить обвязку
+              </button>
             </div>
           )}
         </div>
@@ -893,7 +1042,7 @@ export default function App() {
         {view === "shipment" && (
           <div className="shipment-layout">
             <aside className="selection-summary-pane">
-              {selectedShipments.length > 0 ? (
+              {selectedShipments.length > 0 || strapItems.length > 0 ? (
                 <div className="selection-summary">
                   <div className="selection-summary-title">Расчет для выделенных ячеек:</div>
                   {selectedShipmentSummary.items.map((x, idx) => (
@@ -908,19 +1057,59 @@ export default function App() {
                   ))}
                   <div style={{ marginTop: 10 }}>Обработано ячеек: {selectedShipmentSummary.selectedCount}</div>
                   <div>Всего листов: {selectedShipmentSummary.totalSheets}</div>
+                  {strapItems.length > 0 && (
+                    <>
+                      <div className="selection-summary-title" style={{ marginTop: 10 }}>Добавленная обвязка:</div>
+                      {strapItems.map((x) => (
+                        <div key={x.name}>• {x.name}: {x.qty} шт.</div>
+                      ))}
+                      {strapCalculation.lines.length > 0 && (
+                        <>
+                          <div className="selection-summary-title" style={{ marginTop: 10 }}>Расчет обвязки (черный):</div>
+                          {strapCalculation.lines.map((x) => (
+                            <div key={`calc-${x.name}`}>
+                              • {x.name.replace(/[()]/g, "").replace("_", "×")}: {x.qty} шт → {x.invalid ? "не помещается" : `${x.sheets} листов (по ${x.perSheet} шт/лист)`}
+                            </div>
+                          ))}
+                          <div>• Итого по обвязке: <b>{strapCalculation.totalSheets}</b> листов</div>
+                        </>
+                      )}
+                    </>
+                  )}
                 </div>
               ) : (
                 <div className="selection-summary placeholder">
-                  Выделите ячейки в блоках отгрузки, чтобы увидеть расчет листов и сводку по материалам.
+                  Выделите ячейки в блоках отгрузки или добавьте обвязку, чтобы увидеть расчет листов.
                 </div>
               )}
             </aside>
             <div className="shipment-main">
-            {selectedShipments.length > 0 && (
+            <div className="tabs" style={{ marginBottom: 8 }}>
+              <button
+                className={shipmentTab === "orders" ? "tab active" : "tab"}
+                onClick={() => setShipmentTab("orders")}
+              >
+                Заказы
+              </button>
+              <button
+                className={shipmentTab === "straps" ? "tab active" : "tab"}
+                onClick={() => setShipmentTab("straps")}
+              >
+                Обвязка
+              </button>
+            </div>
+            {(shipmentTab === "straps" ? strapItems.length > 0 : selectedShipments.length > 0) && (
               <div className="shipment-toolbar">
                 <div>
-                  Выбрано ячеек: <b>{selectedShipments.length}</b>
-                  {selectedShipments.length === 1 && (
+                  {shipmentTab === "straps" ? (
+                    <>Позиции обвязки: <b>{strapItems.length}</b></>
+                  ) : (
+                    <>Выбрано ячеек: <b>{selectedShipments.length}</b></>
+                  )}
+                  {strapItems.length > 0 && (
+                    <> | Обвязка: <b>{strapItems.reduce((sum, x) => sum + Number(x.qty || 0), 0)} шт.</b></>
+                  )}
+                  {shipmentTab !== "straps" && selectedShipments.length === 1 && (
                     <>
                       {" "} | <b>{selectedShipments[0].item}</b> | Неделя <b>{selectedShipments[0].week || "-"}</b> | Кол-во <b>{selectedShipments[0].qty}</b>
                     </>
@@ -929,21 +1118,33 @@ export default function App() {
                 <div className="actions">
                   <button
                     className="mini"
-                    disabled={actionLoading === "preview:batch" || selectedShipments.length === 0}
+                    disabled={
+                      actionLoading === "preview:batch" ||
+                      (shipmentTab === "straps" ? strapItems.length === 0 : selectedShipments.length === 0)
+                    }
                     onClick={previewSelectedShipmentPlan}
                   >
-                    Предпросмотр плана{selectedShipments.length > 1 ? ` (${selectedShipments.length})` : ""}
+                    Предпросмотр плана
+                    {shipmentTab !== "straps" && selectedShipments.length > 1 ? ` (${selectedShipments.length})` : ""}
                   </button>
                   <button
                     className="mini"
-                    disabled={actionLoading === "shipment:bulk" || selectedShipments.length === 0}
+                    disabled={
+                      actionLoading === "shipment:bulk" ||
+                      (shipmentTab === "straps" ? strapItems.length === 0 : selectedShipments.length === 0)
+                    }
                     onClick={sendSelectedShipmentToWork}
                   >
-                    Отправить в работу ({selectedShipments.length})
+                    {shipmentTab === "straps"
+                      ? `Отправить в работу (${strapItems.length})`
+                      : `Отправить в работу (${selectedShipments.length})`}
                   </button>
                   <button
                     className="mini"
-                    onClick={() => setSelectedShipments([])}
+                    onClick={() => {
+                      setSelectedShipments([]);
+                      if (shipmentTab === "straps") setStrapItems([]);
+                    }}
                   >
                     Сбросить выбор
                   </button>
@@ -954,6 +1155,33 @@ export default function App() {
               <div className="print-area">
                 {planPreviews.map((planPreview, idx) => (
               <div key={planPreview._key || idx} className="plan-preview print-plan-page">
+                {planPreview.isStrapPlan ? (
+                  <>
+                    <div className="strap-print-title">ЗАДАНИЕ В РАБОТУ: ПЛАНКИ ОБВЯЗКИ</div>
+                    <div className="strap-print-meta">Дата: {planPreview.generatedAt}</div>
+                    <table className="plan-table strap-plan-table">
+                      <thead>
+                        <tr>
+                          <th className="w-qty">№</th>
+                          <th>Наименование</th>
+                          <th className="w-qty">Кол-во</th>
+                          <th className="w-model">Отметка</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(planPreview.rows || []).map((r, rowIdx) => (
+                          <tr key={`${r.part}-${rowIdx}`}>
+                            <td>{rowIdx + 1}</td>
+                            <td>{r.part}</td>
+                            <td>{r.qty}</td>
+                            <td></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </>
+                ) : (
+                  <>
                 <div className="plan-top-meta">
                   <span>{planPreview.generatedAt || ""}</span>
                   <span>Отгрузки CRM</span>
@@ -998,6 +1226,8 @@ export default function App() {
                     ))}
                   </tbody>
                 </table>
+                  </>
+                )}
                 <div className="actions">
                   <button className="mini" onClick={() => window.print()}>Печать</button>
                   <button className="mini" onClick={() => setPlanPreviews([])}>Закрыть</button>
@@ -1006,8 +1236,11 @@ export default function App() {
                 ))}
               </div>
             )}
-            {!filtered.length && !loading && <div className="empty">Нет позиций в отгрузке</div>}
-            {shipmentRenderSections.map((section) => (
+            {shipmentTab === "orders" && !filtered.length && !loading && <div className="empty">Нет позиций в отгрузке</div>}
+            {shipmentTab === "straps" && !strapItems.length && !loading && (
+              <div className="empty">Нет добавленной обвязки. Нажмите "Добавить обвязку".</div>
+            )}
+            {(shipmentTab === "straps" ? strapRenderSections : shipmentRenderSections).map((section) => (
               <div key={section.name} className="shipment-section">
                 <button
                   type="button"
@@ -1172,7 +1405,13 @@ export default function App() {
               <button
                 className="mini ok"
                 disabled={actionLoading === `webSetPilkaDone:${o.orderId}` || pilkaDone || !pilkaInWork}
-                onClick={() => runAction("webSetPilkaDone", o.orderId, {}, { defaultSheets: o.sheetsNeeded, item: o.item })}
+                onClick={() =>
+                  runAction("webSetPilkaDone", o.orderId, {}, {
+                    defaultSheets: o.sheetsNeeded,
+                    item: o.item,
+                    isPlankOrder: String(o.item || "").includes("Планки обвязки"),
+                  })
+                }
               >
                 {tab === "pilka" ? "Готово" : "Пила: Готово"}
               </button>
@@ -1357,6 +1596,52 @@ export default function App() {
               </>
             )}
             {consumeError && <div className="error" style={{ marginTop: 8 }}>{consumeError}</div>}
+          </div>
+        </div>
+      )}
+      {strapDialogOpen && (
+        <div className="dialog-backdrop">
+          <div className="dialog-card">
+            <h3 style={{ marginTop: 0 }}>Конструктор планок (обвязка)</h3>
+            <div className="line2" style={{ marginBottom: 10 }}>
+              Укажите количество для нужных позиций. Пусто или 0 — не добавлять.
+            </div>
+            <div className="strap-grid">
+              {STRAP_OPTIONS.map((name) => (
+                <div key={name} className="strap-row">
+                  <label>{name}</label>
+                  <input
+                    inputMode="numeric"
+                    value={strapDraft[name]}
+                    onChange={(e) =>
+                      setStrapDraft((prev) => ({
+                        ...prev,
+                        [name]: e.target.value.replace(/[^0-9.,]/g, ""),
+                      }))
+                    }
+                    placeholder="0"
+                  />
+                </div>
+              ))}
+            </div>
+            <div className="actions" style={{ marginTop: 10 }}>
+              <button className="mini ok" onClick={saveStrapDialog}>
+                Готово
+              </button>
+              <button className="mini" onClick={() => setStrapDialogOpen(false)}>
+                Отмена
+              </button>
+              <button
+                className="mini warn"
+                onClick={() => {
+                  setStrapItems([]);
+                  setStrapDraft(STRAP_OPTIONS.reduce((acc, name) => ({ ...acc, [name]: "" }), {}));
+                  setStrapDialogOpen(false);
+                }}
+              >
+                Очистить
+              </button>
+            </div>
           </div>
         </div>
       )}

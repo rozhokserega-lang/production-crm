@@ -2663,6 +2663,52 @@ function appendPlanksToTrack_(track, selected, batchId, week, now) {
   return toInsert.length;
 }
 
+function webSendPlanksToWork(items) {
+  return withWebLock_(function() {
+    const track = getSheet(SHEETS.TRACK);
+    if (!track) throw new Error("Лист '" + SHEETS.TRACK + "' не найден");
+
+    const arr = Array.isArray(items) ? items : [];
+    const selected = arr
+      .map((x) => ({
+        name: String(x && x.name || "").trim(),
+        qty: Number(x && x.qty || 0),
+      }))
+      .filter((x) => x.name && x.qty > 0);
+
+    if (!selected.length) throw new Error("Не переданы позиции обвязки");
+
+    const now = getMoscowTime();
+    const batchId = "OBV-" + Utilities.formatDate(now, Session.getScriptTimeZone(), "yyMMdd-HHmmss");
+    const week = getIsoWeek_(now);
+    const totalQty = selected.reduce((sum, x) => sum + Number(x.qty || 0), 0);
+    const itemName = "Планки обвязки [" + batchId + "]";
+    const details = selected.map((x, idx) => (idx + 1) + ". " + x.name + " — " + x.qty + " шт.").join("\n");
+
+    const orderId = "PL-" + Utilities.getUuid().slice(0, 8).toUpperCase();
+    const newOrder = [
+      now, itemName, false, week, totalQty,
+      "", "", "⏳ Ожидает",
+      "", "", "", "⏳ Ожидает",
+      "", "", "", "⏳ Ожидает",
+      "⏳ Ожидает", "", "", "🟡 Новый заказ",
+      orderId, "", "", false,
+      "", "", "", "", "", ""
+    ];
+
+    const orderRow = track.getLastRow() + 1;
+    track.getRange(orderRow, 1, 1, newOrder.length).setValues([newOrder]);
+    setupStatusDropdowns(track, orderRow);
+    track.getRange(orderRow, COL.CONSUME_SHEETS).insertCheckboxes();
+    track.getRange(orderRow, COL.CONSUME_SHEETS).setValue(false);
+    track.getRange(orderRow, COL.SHIPPED).insertCheckboxes();
+    track.getRange(orderRow, COL.SHIPPED).setValue(false);
+    track.getRange(orderRow, COL.ITEM).setNote(details);
+
+    return { ok: true, added: 1, batchId, week, totalQty };
+  });
+}
+
 function getIsoWeek_(date) {
   const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
   const dayNum = d.getUTCDay() || 7;
@@ -2708,6 +2754,7 @@ function webApiDispatch_(action, payloadRaw) {
       case "webGetOrdersPras": data = webGetOrdersPras(); break;
       case "webGetBackendRevision": data = webGetBackendRevision(); break;
       case "webSendShipmentToWork": data = webSendShipmentToWork(payload.row, payload.col); break;
+      case "webSendPlanksToWork": data = webSendPlanksToWork(payload.items); break;
       case "webPreviewPlanFromShipment": data = webPreviewPlanFromShipment(payload.row, payload.col); break;
       case "webPreviewPlansBatch": data = webPreviewPlansBatch(payload.items); break;
       case "webGetCurrentPlanPreview": data = webGetCurrentPlanPreview(); break;
@@ -2725,7 +2772,7 @@ function webApiDispatch_(action, payloadRaw) {
       default:
         throw new Error("Неизвестный action: " + action);
     }
-    if (/^webSet/.test(action) || action === "webConsumeSheetsByOrderId") {
+    if (/^webSet/.test(action) || action === "webConsumeSheetsByOrderId" || action === "webSendPlanksToWork") {
       bumpBackendRevision_(action);
     }
     return ContentService
@@ -3036,7 +3083,10 @@ function webGetConsumeOptions(orderId) {
 
   const item = String(track.getRange(row, COL.ITEM).getValue() || "");
   const week = String(track.getRange(row, COL.WEEK).getValue() || "");
-  const suggested = String(getMappedMaterialByItemName_(item) || getEffectiveMaterialFromRow_(track, row) || "");
+  const isPlanks = String(item || "").toLowerCase().includes("планки обвязки");
+  const suggested = isPlanks
+    ? "Черный"
+    : String(getMappedMaterialByItemName_(item) || getEffectiveMaterialFromRow_(track, row) || "");
   const materials = getSuggestedMaterialsFromCurrentExpenseSheet_().slice(0, 500);
   return { orderId, row, item, week, suggestedMaterial: suggested, materials };
 }
