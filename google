@@ -1,0 +1,3405 @@
+/***********************
+ * PRODUCTION CODE.GS v3.1
+ * Google Sheets + Telegram workflow
+ * + checkbox "Отправлен" (X), покраска в "Отгрузки"
+ * + пауза этапов (⏸ Пауза): колонки паузы Y–AD, минуты вычитаются из статистики
+ ***********************/
+
+// ==================== SETTINGS ====================
+const PROP = {
+  TELEGRAM_TOKEN: "TELEGRAM_TOKEN",
+  TELEGRAM_CHAT_ID: "TELEGRAM_CHAT_ID",
+  TELEGRAM_ALLOWED_USER_IDS: "TELEGRAM_ALLOWED_USER_IDS", // optional: "123,456"
+  TELEGRAM_LAST_UPDATE_ID: "telegramLastUpdateId",
+  MATERIALS_BOOK_SPREADSHEET_ID: "materialsBookSpreadsheetId", // optional: ID отдельной книги со складом/расходом
+  PILKA_CONSUME_PENDING_ROW: "pilkaConsumePendingRow",
+  BACKEND_REVISION: "backendRevision",
+  LAST_CONSUME_SIGNATURE: "lastConsumeSignature",
+  LAST_CONSUME_AT_MS: "lastConsumeAtMs",
+};
+
+const SHEETS = {
+  SHIPMENT: "Отгрузки",
+  TRACK: "Отследить заказ",
+  STATS: "Статистика заказов",
+  LABOR: "Трудоемкость",
+  SCHEME: "Цветовая схема",
+  HISTORY: "История действий",
+  DASH: "Dashboard",
+  STOCK: "Склад листов",
+  STOCK_LOG: "Движение листов",
+  MATERIAL_MAP: "соответствия",
+};
+
+const COL = {
+  CREATED_AT: 1,        // A
+  ITEM: 2,              // B
+  MATERIAL: 3,          // C (используется как чекбокс "Списать листы")
+  WEEK: 4,              // D
+  QTY: 5,               // E
+
+  PILKA_START: 6,       // F
+  PILKA_END: 7,         // G
+  PILKA_STATUS: 8,      // H
+  CONSUME_SHEETS: 3,    // C checkbox "Списать листы" (поверх колонки "Материал")
+
+  KROMKA_START: 9,      // I
+  KROMKA_END: 10,       // J
+  KROMKA_EXEC: 11,      // K
+  KROMKA_STATUS: 12,    // L
+
+  PRAS_START: 13,       // M
+  PRAS_END: 14,         // N
+  PRAS_EXEC: 15,        // O
+  PRAS_STATUS: 16,      // P
+
+  ASSEMBLY_STATUS: 17,  // Q
+  ASSEMBLY_TIME: 18,    // R
+  NOTIF_SENT: 19,       // S
+  OVERALL_STATUS: 20,   // T
+  ORDER_ID: 21,         // U
+  TG_MESSAGE_ID: 22,    // V
+  UNDO_UNTIL: 23,       // W
+  SHIPPED: 24,          // X checkbox "Отправлен"
+  PILKA_PAUSE_ACC: 25,  // накопл. минуты пауз (бизнес-время), вычитаются из этапа
+  PILKA_PAUSE_AT: 26,   // начало текущей паузы (дата/время)
+  KROMKA_PAUSE_ACC: 27,
+  KROMKA_PAUSE_AT: 28,
+  PRAS_PAUSE_ACC: 29,
+  PRAS_PAUSE_AT: 30,
+  LAST: 30,             // последняя колонка трека (для чтения строки целиком)
+};
+
+const UNDO_MINUTES = 15;
+/** Статус «на паузе» в выпадающих списках этапов */
+const STATUS_PAUSE = "⏸ Пауза";
+
+function getShipmentMaterialFromSheetRow_(sheet, row) {
+  // В текущей таблице материал хранится в колонке A.
+  // Оставляем fallback на G для совместимости со старыми данными.
+  const fromA = String(sheet.getRange(row, 1).getValue() || "").trim();
+  if (fromA) return fromA;
+  return String(sheet.getRange(row, 7).getValue() || "").trim();
+}
+
+function sendShipmentCellToWork_(shipmentsSheet, row, col) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const track = ss.getSheetByName(SHEETS.TRACK); // или 'Отследить заказ'
+  if (!track) return;
+
+  const item = shipmentsSheet.getRange(row, 6).getValue();      // F
+  const material = getShipmentMaterialFromSheetRow_(shipmentsSheet, row);
+  const qty = shipmentsSheet.getRange(row, col).getValue();
+  const week = shipmentsSheet.getRange(1, col).getValue();
+
+  if (!item || !qty || isNaN(Number(qty)) || Number(qty) <= 0) return;
+
+  const existsRow = findOrderRowByKey(track, item, material, week);
+  if (existsRow !== -1) return;
+
+  const now = getMoscowTime();
+  const orderId = generateOrderId();
+
+  const newOrder = [
+    now, item, false, week, Number(qty),
+    "", "", "⏳ Ожидает",
+    "", "", "", "⏳ Ожидает",
+    "", "", "", "⏳ Ожидает",
+    "⏳ Ожидает", "", "", "🟡 Новый заказ",
+    orderId, "", "", false,
+    "", "", "", "", "", ""
+  ];
+
+  const orderRow = track.getLastRow() + 1;
+  track.getRange(orderRow, 1, 1, newOrder.length).setValues([newOrder]);
+  setupStatusDropdowns(track, orderRow);
+  track.getRange(orderRow, COL.CONSUME_SHEETS).insertCheckboxes();
+  track.getRange(orderRow, COL.CONSUME_SHEETS).setValue(false);
+  track.getRange(orderRow, COL.SHIPPED).insertCheckboxes();
+  track.getRange(orderRow, COL.SHIPPED).setValue(false);
+}
+// ==================== BASIC HELPERS ====================
+function getScriptProp(name, required = true) {
+  const v = PropertiesService.getScriptProperties().getProperty(name);
+  if (required && (!v || !String(v).trim())) throw new Error("Не задан Script Property: " + name);
+  return v;
+}
+function setScriptProp(name, value) {
+  PropertiesService.getScriptProperties().setProperty(name, String(value));
+}
+function getTelegramToken() { return String(getScriptProp(PROP.TELEGRAM_TOKEN, false) || "").trim(); }
+function getTelegramChatId() { return String(getScriptProp(PROP.TELEGRAM_CHAT_ID, false) || "").trim(); }
+function isTelegramEnabled_() { return !!(getTelegramToken() && getTelegramChatId()); }
+function getAllowedUserIdsSet() {
+  const raw = getScriptProp(PROP.TELEGRAM_ALLOWED_USER_IDS, false);
+  if (!raw) return null;
+  return new Set(raw.split(",").map(s => s.trim()).filter(Boolean));
+}
+function getTelegramLastUpdateId() {
+  const savedId = getScriptProp(PROP.TELEGRAM_LAST_UPDATE_ID, false);
+  return savedId ? parseInt(savedId, 10) : 0;
+}
+function setTelegramLastUpdateId(id) { setScriptProp(PROP.TELEGRAM_LAST_UPDATE_ID, id); }
+function getSheet(name) { return SpreadsheetApp.getActiveSpreadsheet().getSheetByName(name); }
+function getMaterialsBookSpreadsheet_() {
+  const id = getScriptProp(PROP.MATERIALS_BOOK_SPREADSHEET_ID, false);
+  return id ? SpreadsheetApp.openById(String(id).trim()) : SpreadsheetApp.getActiveSpreadsheet();
+}
+function escapeHtml(text) {
+  return String(text == null ? "" : text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+function getMoscowTime() {
+  const now = new Date();
+  const str = Utilities.formatDate(now, "Europe/Moscow", "yyyy-MM-dd HH:mm:ss");
+  return Utilities.parseDate(str, "Europe/Moscow", "yyyy-MM-dd HH:mm:ss");
+}
+function formatMoscowDate(dt) { return Utilities.formatDate(new Date(dt), "GMT+3", "dd.MM.yyyy HH:mm:ss"); }
+function addMinutes(date, mins) { return new Date(new Date(date).getTime() + mins * 60000); }
+function runWithScriptLock(name, fn) {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(5000)) { console.log(name + ": lock не получен, пропуск."); return; }
+  try { fn(); } finally { lock.releaseLock(); }
+}
+function generateOrderId() { return Utilities.getUuid().slice(0, 8).toUpperCase(); }
+
+// ==================== TELEGRAM API ====================
+function tgPost(method, payload) {
+  if (!isTelegramEnabled_()) return { ok: false, skipped: true, reason: "telegram_disabled" };
+  const url = "https://api.telegram.org/bot" + getTelegramToken() + "/" + method;
+  const response = UrlFetchApp.fetch(url, {
+    method: "post",
+    contentType: "application/json",
+    payload: JSON.stringify(payload || {}),
+    muteHttpExceptions: true,
+  });
+  const code = response.getResponseCode();
+  const body = response.getContentText();
+
+  let data = null;
+  try { data = JSON.parse(body); } catch (_) {}
+
+  if (code < 200 || code >= 300) console.error("Telegram HTTP " + code + " [" + method + "]: " + body);
+  else if (data && data.ok === false) console.error("Telegram API error [" + method + "]: " + body);
+
+  return data || { ok: false };
+}
+
+function sendTelegramMessage(message) {
+  return tgPost("sendMessage", {
+    chat_id: getTelegramChatId(),
+    text: String(message),
+    parse_mode: "HTML",
+    disable_web_page_preview: true,
+  });
+}
+function answerCallback(callbackQueryId, text) {
+  tgPost("answerCallbackQuery", {
+    callback_query_id: callbackQueryId,
+    text: String(text || "ОК"),
+    show_alert: false,
+  });
+}
+function editTelegramMessage(chatId, messageId, text, replyMarkup) {
+  const payload = { chat_id: chatId, message_id: messageId, text: String(text), parse_mode: "HTML" };
+  if (replyMarkup) payload.reply_markup = replyMarkup;
+  tgPost("editMessageText", payload);
+}
+function clearTelegramButtons(chatId, messageId) {
+  tgPost("editMessageReplyMarkup", {
+    chat_id: chatId,
+    message_id: messageId,
+    reply_markup: { inline_keyboard: [] },
+  });
+}
+function sendTelegramAssemblyCard(itemName, material, weekHeader, quantity, executor, orderId) {
+  if (!isTelegramEnabled_()) return "";
+  const text =
+    "✅ <b>ЗАКАЗ ГОТОВ К СБОРКЕ!</b>\n\n" +
+    "📦 Изделие: " + escapeHtml(itemName) + "\n" +
+    "🎨 Материал: " + escapeHtml(material || "—") + "\n" +
+    "📅 Неделя: " + escapeHtml(weekHeader) + "\n" +
+    "🔢 Количество: " + Number(quantity || 0) + " шт\n" +
+    "🔧 Присадка выполнена: " + escapeHtml(executor || "—") + "\n" +
+    "⏰ Время: " + formatMoscowDate(getMoscowTime());
+
+  const res = tgPost("sendMessage", {
+    chat_id: getTelegramChatId(),
+    text,
+    parse_mode: "HTML",
+    reply_markup: {
+      inline_keyboard: [[{ text: "✅ СОБРАНО", callback_data: "SBOR|" + String(orderId) }]]
+    }
+  });
+
+  if (res && res.ok && res.result) return Number(res.result.message_id || "");
+  return "";
+}
+
+// ==================== HISTORY ====================
+function ensureHistorySheet() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sh = ss.getSheetByName(SHEETS.HISTORY);
+  if (!sh) {
+    sh = ss.insertSheet(SHEETS.HISTORY);
+    sh.getRange(1, 1, 1, 10).setValues([[
+      "Время", "Источник", "Действие", "Order ID", "Строка",
+      "Изделие", "Было", "Стало", "Пользователь", "Комментарий"
+    ]]);
+    sh.getRange(1, 1, 1, 10).setFontWeight("bold").setBackground("#e0e0e0");
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+function logAction(obj) {
+  const sh = ensureHistorySheet();
+  sh.appendRow([
+    formatMoscowDate(getMoscowTime()),
+    obj.source || "",
+    obj.action || "",
+    obj.orderId || "",
+    obj.row || "",
+    obj.itemName || "",
+    obj.before || "",
+    obj.after || "",
+    obj.user || "",
+    obj.comment || ""
+  ]);
+}
+
+// ==================== ORDER HELPERS ====================
+function ensureOrderIdForRow(trackSheet, row) {
+  let id = trackSheet.getRange(row, COL.ORDER_ID).getValue();
+  if (!id) {
+    id = generateOrderId();
+    trackSheet.getRange(row, COL.ORDER_ID).setValue(id);
+  }
+  return String(id);
+}
+function ensureOrderIdsForAllRows() {
+  const sh = getSheet(SHEETS.TRACK);
+  if (!sh) return;
+  const lastRow = sh.getLastRow();
+  if (lastRow < 2) return;
+  const ids = sh.getRange(2, COL.ORDER_ID, lastRow - 1, 1).getValues();
+  let changed = false;
+  for (let i = 0; i < ids.length; i++) {
+    if (!ids[i][0]) { ids[i][0] = generateOrderId(); changed = true; }
+  }
+  if (changed) sh.getRange(2, COL.ORDER_ID, lastRow - 1, 1).setValues(ids);
+  SpreadsheetApp.getUi().alert("✅ Order ID проверены и заполнены.");
+}
+function findOrderRowById(sheet, orderId) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return -1;
+  const ids = sheet.getRange(2, COL.ORDER_ID, lastRow - 1, 1).getValues().flat();
+  const idx = ids.findIndex(v => String(v).toUpperCase() === String(orderId).toUpperCase());
+  return idx === -1 ? -1 : idx + 2;
+}
+function findOrderRowByKey(sheet, itemName, material, weekHeader) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 1) return -1;
+  const data = sheet.getRange(1, 1, lastRow, COL.LAST).getValues();
+  for (let i = 0; i < data.length; i++) {
+    const rowMaterial = getEffectiveMaterial_(data[i][COL.ITEM - 1], data[i][COL.MATERIAL - 1]);
+    const materialMatches = material ? rowMaterial === material : true;
+    if (data[i][COL.ITEM - 1] === itemName &&
+        materialMatches &&
+        data[i][COL.WEEK - 1] == weekHeader) return i + 1;
+  }
+  return -1;
+}
+
+// ==================== PIPELINE HANDLERS ====================
+function handlePilkaStatus(sheet, row, status, time) {
+  const s = sheet.getRange(row, COL.PILKA_START);
+  const e = sheet.getRange(row, COL.PILKA_END);
+  const pauseAt = sheet.getRange(row, COL.PILKA_PAUSE_AT);
+
+  if (status === "🔨 В работе" && s.getValue() && !e.getValue()) {
+    accumulatePauseAndClear_(sheet, row, COL.PILKA_PAUSE_AT, COL.PILKA_PAUSE_ACC, time);
+  }
+  if (status === "🔨 В работе" && !s.getValue()) s.setValue(time);
+
+  if (status === STATUS_PAUSE && s.getValue() && !e.getValue() && !pauseAt.getValue()) {
+    pauseAt.setValue(time);
+  }
+
+  if (status === "✅ Готово" && s.getValue() && !e.getValue()) {
+    accumulatePauseAndClear_(sheet, row, COL.PILKA_PAUSE_AT, COL.PILKA_PAUSE_ACC, time);
+    e.setValue(time);
+    addToStatistics(sheet, row);
+    // Автозапуск списания отключен: чекбокс C пользователь отмечает вручную.
+  }
+}
+function handleKromkaStatus(sheet, row, status, time) {
+  const s = sheet.getRange(row, COL.KROMKA_START);
+  const e = sheet.getRange(row, COL.KROMKA_END);
+  const ex = sheet.getRange(row, COL.KROMKA_EXEC);
+  const pauseAt = sheet.getRange(row, COL.KROMKA_PAUSE_AT);
+
+  if ((status === "🔪 В работе (Слава)" || status === "🔪 В работе (Сережа)") && s.getValue() && !e.getValue()) {
+    accumulatePauseAndClear_(sheet, row, COL.KROMKA_PAUSE_AT, COL.KROMKA_PAUSE_ACC, time);
+  }
+  if (status === "🔪 В работе (Слава)" && !s.getValue()) { s.setValue(time); ex.setValue("Слава"); }
+  if (status === "🔪 В работе (Сережа)" && !s.getValue()) { s.setValue(time); ex.setValue("Сережа"); }
+
+  if (status === STATUS_PAUSE && s.getValue() && !e.getValue() && !pauseAt.getValue()) {
+    pauseAt.setValue(time);
+  }
+
+  if (status === "✅ Готово" && s.getValue() && !e.getValue()) {
+    accumulatePauseAndClear_(sheet, row, COL.KROMKA_PAUSE_AT, COL.KROMKA_PAUSE_ACC, time);
+    e.setValue(time);
+    addToStatistics(sheet, row);
+  }
+}
+function handlePrasadkaStatus(sheet, row, status, time) {
+  const s = sheet.getRange(row, COL.PRAS_START);
+  const e = sheet.getRange(row, COL.PRAS_END);
+  const ex = sheet.getRange(row, COL.PRAS_EXEC);
+  const pauseAt = sheet.getRange(row, COL.PRAS_PAUSE_AT);
+
+  if ((status === "🔧 В работе (Лёха)" || status === "🔧 В работе (Виталик)") && s.getValue() && !e.getValue()) {
+    accumulatePauseAndClear_(sheet, row, COL.PRAS_PAUSE_AT, COL.PRAS_PAUSE_ACC, time);
+  }
+  if (status === "🔧 В работе (Лёха)" && !s.getValue()) { s.setValue(time); ex.setValue("Лёха"); }
+  if (status === "🔧 В работе (Виталик)" && !s.getValue()) { s.setValue(time); ex.setValue("Виталик"); }
+
+  if (status === STATUS_PAUSE && s.getValue() && !e.getValue() && !pauseAt.getValue()) {
+    pauseAt.setValue(time);
+  }
+
+  if (status === "✅ Готово" && s.getValue() && !e.getValue()) {
+    accumulatePauseAndClear_(sheet, row, COL.PRAS_PAUSE_AT, COL.PRAS_PAUSE_ACC, time);
+    e.setValue(time);
+    addToStatistics(sheet, row);
+  }
+}
+function handleAssemblyStatus(sheet, row, status, time) {
+  const t = sheet.getRange(row, COL.ASSEMBLY_TIME);
+  if (status === "✅ СОБРАНО" && !t.getValue()) t.setValue(time);
+}
+
+// NEW: чекбокс "Отправлен"
+function handleShippedCheckbox(trackSheet, row, shipped) {
+  const shipmentSheet = getSheet(SHEETS.SHIPMENT);
+  if (!shipmentSheet) return;
+
+  const itemName = trackSheet.getRange(row, COL.ITEM).getValue();
+  const material = getEffectiveMaterialFromRow_(trackSheet, row);
+  const weekHeader = trackSheet.getRange(row, COL.WEEK).getValue();
+
+  for (let r = 3; r <= shipmentSheet.getLastRow(); r++) {
+    if (shipmentSheet.getRange(r, 6).getValue() === itemName &&
+        getShipmentMaterialFromSheetRow_(shipmentSheet, r) === material) {
+      for (let c = 18; c <= shipmentSheet.getLastColumn(); c++) {
+        if (shipmentSheet.getRange(1, c).getValue() == weekHeader) {
+          const cell = shipmentSheet.getRange(r, c);
+          if (shipped === true) {
+            cell.setBackground("#ff0000");
+            cell.setNote("🚚 Отправлено: " + formatMoscowDate(getMoscowTime()));
+            logAction({
+              source: "sheet",
+              action: "MARK_SHIPPED",
+              orderId: String(trackSheet.getRange(row, COL.ORDER_ID).getValue() || ""),
+              row,
+              itemName,
+              before: "not shipped",
+              after: "shipped",
+              user: "manual"
+            });
+          } else {
+            updateShipmentColor(trackSheet, row);
+            updateShipmentNote(trackSheet, row, trackSheet.getRange(row, COL.OVERALL_STATUS).getValue());
+            logAction({
+              source: "sheet",
+              action: "UNMARK_SHIPPED",
+              orderId: String(trackSheet.getRange(row, COL.ORDER_ID).getValue() || ""),
+              row,
+              itemName,
+              before: "shipped",
+              after: "not shipped",
+              user: "manual"
+            });
+          }
+          return;
+        }
+      }
+    }
+  }
+}
+
+function updateOverallStatus(sheet, row) {
+  const pilka = sheet.getRange(row, COL.PILKA_STATUS).getValue();
+  const kromka = sheet.getRange(row, COL.KROMKA_STATUS).getValue();
+  const pras = sheet.getRange(row, COL.PRAS_STATUS).getValue();
+  const assembly = sheet.getRange(row, COL.ASSEMBLY_STATUS).getValue();
+
+  const notifSentCell = sheet.getRange(row, COL.NOTIF_SENT);
+  const overallCell = sheet.getRange(row, COL.OVERALL_STATUS);
+
+  let status = "";
+  if (assembly === "✅ СОБРАНО") status = "✅ СОБРАНО!";
+  else if (pilka === "✅ Готово" && kromka === "✅ Готово" && pras === "✅ Готово") {
+    status = "📦 Ожидает сборки";
+
+    const notifSent = notifSentCell.getValue();
+    const tgMsgId = sheet.getRange(row, COL.TG_MESSAGE_ID).getValue();
+    if (notifSent !== "SENT" && !tgMsgId) {
+      const item = sheet.getRange(row, COL.ITEM).getValue();
+      const mat = getEffectiveMaterialFromRow_(sheet, row);
+      const week = sheet.getRange(row, COL.WEEK).getValue();
+      const qty = sheet.getRange(row, COL.QTY).getValue();
+      const exec = sheet.getRange(row, COL.PRAS_EXEC).getValue();
+      const orderId = ensureOrderIdForRow(sheet, row);
+
+      const messageId = sendTelegramAssemblyCard(item, mat, week, qty, exec, orderId);
+      if (messageId) {
+        sheet.getRange(row, COL.TG_MESSAGE_ID).setValue(messageId);
+        notifSentCell.setValue("SENT");
+        logAction({
+          source: "system",
+          action: "SEND_NOTIFICATION",
+          orderId,
+          row,
+          itemName: item,
+          after: "SENT",
+          user: "bot",
+          comment: "message_id=" + messageId
+        });
+      }
+    }
+  } else if (pilka === STATUS_PAUSE) status = "⏸ Пилка на паузе";
+  else if (kromka === STATUS_PAUSE) status = "⏸ Кромка на паузе";
+  else if (pras === STATUS_PAUSE) status = "⏸ Присадка на паузе";
+  else if (pras === "🔧 В работе (Лёха)" || pras === "🔧 В работе (Виталик)") status = "🔧 Присадка в процессе";
+  else if (kromka === "🔪 В работе (Слава)" || kromka === "🔪 В работе (Сережа)") status = "🔪 Кромка в процессе";
+  else if (pilka === "🔨 В работе") status = "🔨 Пилка в процессе";
+  else if (pilka === "✅ Готово" && kromka === "✅ Готово") status = "⚙️ Ожидает присадку";
+  else if (pilka === "✅ Готово") status = "🔪 Ожидает кромку";
+  else status = "🟡 Ожидает начала";
+
+  overallCell.setValue(status);
+  updateShipmentNote(sheet, row, status);
+  updateShipmentColor(sheet, row);
+}
+
+// ==================== EDIT TRIGGERS ====================
+function onEdit(e) {
+  if (!e || !e.source || !e.range) return;
+  const sheet = e.source.getActiveSheet();
+  if (!sheet) return;
+
+  if (sheet.getName() === SHEETS.SHIPMENT) {
+    handleShipmentMaterialEdit_(e);
+    bumpBackendRevision_("shipment_edit");
+    return;
+  }
+  if (sheet.getName() !== SHEETS.TRACK) return;
+
+  const row = e.range.getRow();
+  const col = e.range.getColumn();
+  if (row < 2) return;
+
+  const now = getMoscowTime();
+  const val = e.range.getValue();
+
+  if (col === COL.PILKA_STATUS) handlePilkaStatus(sheet, row, val, now);
+  if (col === COL.KROMKA_STATUS) handleKromkaStatus(sheet, row, val, now);
+  if (col === COL.PRAS_STATUS) handlePrasadkaStatus(sheet, row, val, now);
+  if (col === COL.ASSEMBLY_STATUS) handleAssemblyStatus(sheet, row, val, now);
+  if (col === COL.SHIPPED) handleShippedCheckbox(sheet, row, val);
+  if (col === COL.CONSUME_SHEETS && val === true) {
+    try {
+      setScriptProp(PROP.PILKA_CONSUME_PENDING_ROW, row);
+      promptMaterialAndConsumeForRow_(sheet, row);
+    } catch (err) {
+      console.log("Consume dialog from checkbox failed: " + err);
+      SpreadsheetApp.getActive().toast("Откройте '🏭 Производство → 🧾 Списать листы (последняя пилка ✅)'", "Списание листов", 8);
+    }
+  }
+
+  updateOverallStatus(sheet, row);
+  bumpBackendRevision_("track_edit");
+}
+
+function onChange(e) {
+  try {
+    if (!e || !e.source) return;
+    const changeType = String(e.changeType || "");
+    // Срабатывает при добавлении строк/структурных изменениях, чтобы веб-клиенты увидели новый заказ.
+    if (["INSERT_ROW", "REMOVE_ROW", "INSERT_GRID", "REMOVE_GRID", "EDIT"].includes(changeType)) {
+      bumpBackendRevision_("change_" + changeType.toLowerCase());
+    }
+  } catch (_) {}
+}
+
+function ensureOnChangeTrigger_() {
+  const ss = SpreadsheetApp.getActive();
+  const exists = ScriptApp.getProjectTriggers().some((t) =>
+    t.getHandlerFunction && t.getHandlerFunction() === "onChange"
+  );
+  if (!exists) {
+    ScriptApp.newTrigger("onChange").forSpreadsheet(ss).onChange().create();
+  }
+}
+
+function bumpBackendRevision_(reason) {
+  const now = Date.now();
+  const prev = Number(getScriptProp(PROP.BACKEND_REVISION, false) || 0) || 0;
+  const next = now <= prev ? prev + 1 : now;
+  setScriptProp(PROP.BACKEND_REVISION, String(next));
+  return { revision: next, reason: String(reason || "") };
+}
+
+function handleShipmentMaterialEdit_(e) {
+  const range = e.range;
+  const row = range.getRow();
+  const col = range.getColumn();
+  if (row < 3 || row > 300) return;
+  const isOutputCol = col === 2; // B
+  const isOrderCol = col >= 9 && col <= 52; // I:AZ
+  if (!isOutputCol && !isOrderCol) return;
+  calculateMaterialNeeds();
+}
+
+// NOTE: сохранено как было
+function onColorChange(e) {
+  if (!e || !e.source || e.changeType !== "FORMAT") return;
+  const sheet = e.source.getActiveSheet();
+  if (!sheet || sheet.getName() !== SHEETS.SHIPMENT) return;
+
+  const range = sheet.getActiveRange();
+  if (!range) return;
+
+  const row = range.getRow();
+  const col = range.getColumn();
+  if (row < 3 || col < 18) return;
+
+  // ✅ NEW: только если ячейка стала ЖЁЛТОЙ
+  const bg = String(range.getBackground() || "").toLowerCase();
+  const YELLOW_SET = new Set([
+    "#ffff00", // чистый желтый
+    "#fff2cc", // частый "светло-желтый" в Google Sheets
+    "#ffe599", // еще один частый желтый
+  ]);
+  if (!YELLOW_SET.has(bg)) return;
+
+  const item = sheet.getRange(row, 6).getValue();
+  const material = getShipmentMaterialFromSheetRow_(sheet, row);
+  const qty = range.getValue();
+  const week = sheet.getRange(1, col).getValue();
+  if (!item || !qty) return;
+
+  const track = e.source.getSheetByName(SHEETS.TRACK);
+  if (!track) return;
+
+  const orderRowExisting = findOrderRowByKey(track, item, material, week);
+  if (orderRowExisting !== -1) return;
+
+  const now = getMoscowTime();
+  const orderId = generateOrderId();
+
+  const newOrder = [
+    now, item, material, week, qty,
+    "", "", "⏳ Ожидает", false,
+    "", "", "", "⏳ Ожидает",
+    "", "", "", "⏳ Ожидает",
+    "⏳ Ожидает", "", "", "🟡 Новый заказ",
+    orderId, "", "", false,
+    "", "", "", "", "", ""
+  ];
+
+  const orderRow = track.getLastRow() + 1;
+  track.getRange(orderRow, 1, 1, newOrder.length).setValues([newOrder]);
+  setupStatusDropdowns(track, orderRow);
+  track.getRange(orderRow, COL.SHIPPED).insertCheckboxes();
+  track.getRange(orderRow, COL.SHIPPED).setValue(false);
+  track.getRange(orderRow, COL.CONSUME_SHEETS).insertCheckboxes();
+  track.getRange(orderRow, COL.CONSUME_SHEETS).setValue(false);
+}
+
+// ==================== TELEGRAM COMMANDS ====================
+function markOrderAsAssembledByRow(track, row, opts) {
+  const silent = !!(opts && opts.silentChatMessage);
+  const user = (opts && opts.userId) ? String(opts.userId) : "unknown";
+
+  const lastRow = track.getLastRow();
+  if (!(row >= 2 && row <= lastRow)) {
+    if (!silent) sendTelegramMessage("❌ Строка " + row + " не найдена. Доступны строки 2-" + lastRow);
+    return { ok: false, message: "Строка не найдена" };
+  }
+
+  const item = track.getRange(row, COL.ITEM).getValue();
+  const material = getEffectiveMaterialFromRow_(track, row);
+  const week = track.getRange(row, COL.WEEK).getValue();
+  const qty = track.getRange(row, COL.QTY).getValue();
+  const exec = track.getRange(row, COL.PRAS_EXEC).getValue();
+  const beforeOverall = track.getRange(row, COL.OVERALL_STATUS).getValue();
+  const orderId = ensureOrderIdForRow(track, row);
+
+  if (beforeOverall !== "📦 Ожидает сборки") {
+    if (!silent) sendTelegramMessage("⚠️ Заказ \"" + escapeHtml(item) + "\" имеет статус: " + escapeHtml(beforeOverall));
+    return { ok: false, message: "Неверный статус" };
+  }
+
+  const now = getMoscowTime();
+  track.getRange(row, COL.ASSEMBLY_STATUS).setValue("✅ СОБРАНО");
+  track.getRange(row, COL.ASSEMBLY_TIME).setValue(now);
+  track.getRange(row, COL.UNDO_UNTIL).setValue(addMinutes(now, UNDO_MINUTES));
+
+  updateOverallStatus(track, row);
+
+  logAction({
+    source: "telegram",
+    action: "ASSEMBLED",
+    orderId, row, itemName: item,
+    before: beforeOverall, after: "✅ СОБРАНО!",
+    user
+  });
+
+  if (!silent) sendTelegramMessage("✅ Заказ \"" + escapeHtml(item) + "\" отмечен как СОБРАННЫЙ!\n🕐 " + formatMoscowDate(now));
+
+  return { ok: true, row, orderId, itemName: item, material, weekHeader: week, quantity: qty, executor: exec, time: now };
+}
+function markOrderAsAssembledById(track, orderId, opts) {
+  const row = findOrderRowById(track, orderId);
+  if (row === -1) {
+    if (!opts || !opts.silentChatMessage) sendTelegramMessage("❌ Заказ с ID " + escapeHtml(orderId) + " не найден.");
+    return { ok: false, message: "Заказ не найден" };
+  }
+  return markOrderAsAssembledByRow(track, row, opts);
+}
+function undoOrderAssemblyById(track, orderId, userId) {
+  const row = findOrderRowById(track, orderId);
+  if (row === -1) return { ok: false, message: "Заказ не найден" };
+
+  const item = track.getRange(row, COL.ITEM).getValue();
+  const beforeStatus = track.getRange(row, COL.ASSEMBLY_STATUS).getValue();
+  const undoUntil = track.getRange(row, COL.UNDO_UNTIL).getValue();
+
+  if (beforeStatus !== "✅ СОБРАНО") return { ok: false, message: "Заказ уже не в СОБРАНО" };
+  if (!undoUntil || getMoscowTime() > new Date(undoUntil)) return { ok: false, message: "Время отмены истекло" };
+
+  track.getRange(row, COL.ASSEMBLY_STATUS).setValue("⏳ Ожидает");
+  track.getRange(row, COL.ASSEMBLY_TIME).setValue("");
+  track.getRange(row, COL.UNDO_UNTIL).setValue("");
+  track.getRange(row, COL.NOTIF_SENT).setValue("");
+  track.getRange(row, COL.TG_MESSAGE_ID).setValue("");
+
+  updateOverallStatus(track, row);
+
+  logAction({
+    source: "telegram",
+    action: "UNDO_ASSEMBLY",
+    orderId, row, itemName: item,
+    before: "✅ СОБРАНО!", after: track.getRange(row, COL.OVERALL_STATUS).getValue(),
+    user: String(userId || "")
+  });
+
+  return { ok: true, row, itemName: item };
+}
+function sendStatusByOrderId(track, orderId) {
+  const row = findOrderRowById(track, orderId);
+  if (row === -1) { sendTelegramMessage("❌ Заказ " + escapeHtml(orderId) + " не найден"); return; }
+
+  const item = track.getRange(row, COL.ITEM).getValue();
+  const mat = getEffectiveMaterialFromRow_(track, row);
+  const week = track.getRange(row, COL.WEEK).getValue();
+  const qty = track.getRange(row, COL.QTY).getValue();
+  const st = track.getRange(row, COL.OVERALL_STATUS).getValue();
+
+  sendTelegramMessage(
+    "📌 <b>Статус заказа</b>\n\n" +
+    "🆔 " + escapeHtml(orderId) + "\n" +
+    "📦 " + escapeHtml(item) + "\n" +
+    "🎨 " + escapeHtml(mat || "—") + "\n" +
+    "📅 Неделя: " + escapeHtml(week) + "\n" +
+    "🔢 Кол-во: " + Number(qty || 0) + "\n" +
+    "📍 Статус: " + escapeHtml(st)
+  );
+}
+function handleTelegramCallback(callback, track, allowedChatId, allowedUserIds) {
+  const cbId = callback.id;
+  const data = String(callback.data || "");
+  const msg = callback.message || {};
+  const chatId = String(msg.chat && msg.chat.id || "");
+  const userId = String(callback.from && callback.from.id || "");
+
+  const chatAllowed = chatId === allowedChatId;
+  const userAllowed = !allowedUserIds || allowedUserIds.has(userId);
+  if (!chatAllowed || !userAllowed) { answerCallback(cbId, "Нет доступа"); return; }
+
+  if (data.startsWith("SBOR|")) {
+    const orderId = data.split("|")[1];
+    const res = markOrderAsAssembledById(track, orderId, { silentChatMessage: true, userId });
+    if (!res.ok) { answerCallback(cbId, res.message || "Ошибка"); return; }
+
+    const undoUntil = addMinutes(res.time, UNDO_MINUTES);
+    track.getRange(res.row, COL.UNDO_UNTIL).setValue(undoUntil);
+
+    const text =
+      "✅ <b>СОБРАНО</b>\n\n" +
+      "📦 Изделие: " + escapeHtml(res.itemName) + "\n" +
+      "🎨 Материал: " + escapeHtml(res.material || "—") + "\n" +
+      "📅 Неделя: " + escapeHtml(res.weekHeader) + "\n" +
+      "🔢 Количество: " + Number(res.quantity || 0) + " шт\n" +
+      "🔧 Присадка выполнена: " + escapeHtml(res.executor || "—") + "\n" +
+      "🕐 Время: " + formatMoscowDate(res.time) + "\n\n" +
+      "Можно отменить до: " + formatMoscowDate(undoUntil);
+
+    editTelegramMessage(msg.chat.id, msg.message_id, text, {
+      inline_keyboard: [[{ text: "↩️ ОТМЕНИТЬ СБОРКУ", callback_data: "UNSBOR|" + String(res.orderId) }]]
+    });
+    answerCallback(cbId, "Готово");
+    return;
+  }
+
+  if (data.startsWith("UNSBOR|")) {
+    const orderId = data.split("|")[1];
+    const res = undoOrderAssemblyById(track, orderId, userId);
+    if (!res.ok) { answerCallback(cbId, res.message || "Ошибка"); return; }
+
+    editTelegramMessage(
+      msg.chat.id, msg.message_id,
+      "↩️ <b>СБОРКА ОТМЕНЕНА</b>\n\n📦 " + escapeHtml(res.itemName) + "\n🕐 " + formatMoscowDate(getMoscowTime())
+    );
+    clearTelegramButtons(msg.chat.id, msg.message_id);
+    answerCallback(cbId, "Отменено");
+    return;
+  }
+
+  answerCallback(cbId, "Неизвестная кнопка");
+}
+
+// ==================== TELEGRAM POLLING ====================
+function processTelegramUpdates() {
+  runWithScriptLock("processTelegramUpdates", function () {
+    if (!isTelegramEnabled_()) return;
+    const token = getTelegramToken();
+    const allowedChatId = getTelegramChatId();
+    const allowedUserIds = getAllowedUserIdsSet();
+
+    const track = getSheet(SHEETS.TRACK);
+    if (!track) return;
+
+    let lastId = getTelegramLastUpdateId();
+    let url = "https://api.telegram.org/bot" + token + "/getUpdates?timeout=5";
+    if (lastId > 0) url += "&offset=" + (lastId + 1);
+
+    const response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+    const code = response.getResponseCode();
+    const body = response.getContentText();
+    if (code < 200 || code >= 300) { console.error("getUpdates HTTP " + code + ": " + body); return; }
+
+    let result;
+    try { result = JSON.parse(body); } catch (e) { console.error("JSON parse error: " + e); return; }
+    if (!result.ok) { console.error("Telegram API error: " + result.description); return; }
+
+    const updates = result.result || [];
+    if (!updates.length) return;
+
+    for (const upd of updates) {
+      const updateId = upd.update_id;
+
+      if (upd.callback_query) {
+        handleTelegramCallback(upd.callback_query, track, allowedChatId, allowedUserIds);
+        setTelegramLastUpdateId(updateId);
+        continue;
+      }
+
+      const msg = upd.message;
+      if (!msg || !msg.text) { setTelegramLastUpdateId(updateId); continue; }
+
+      const text = String(msg.text).trim();
+      const chatId = String(msg.chat && msg.chat.id || "");
+      const userId = String(msg.from && msg.from.id || "");
+      const userName = (msg.chat && msg.chat.first_name) || (msg.from && msg.from.first_name) || "Пользователь";
+
+      const chatAllowed = chatId === allowedChatId;
+      const userAllowed = !allowedUserIds || allowedUserIds.has(userId);
+      if (!chatAllowed || !userAllowed) { setTelegramLastUpdateId(updateId); continue; }
+
+      if (text === "/start") {
+        sendTelegramMessage(
+          "🤖 Привет, " + escapeHtml(userName) + "!\n\n" +
+          "Команды:\n/help\n/sbor [номер]\n/sborid [ID]\n/status [ID]\n\n" +
+          "Лучше использовать кнопку ✅ СОБРАНО в уведомлении."
+        );
+      } else if (text === "/help") {
+        sendTelegramMessage(
+          "📋 Команды:\n" +
+          "/sbor [номер] - legacy\n" +
+          "/sborid [ID] - собрать по ID\n" +
+          "/status [ID] - статус заказа\n" +
+          "Кнопки: ✅ СОБРАНО / ↩️ ОТМЕНИТЬ"
+        );
+      } else if (/^\/status\s+[A-Z0-9-]+$/i.test(text)) {
+        sendStatusByOrderId(track, text.split(/\s+/)[1].toUpperCase());
+      } else if (/^\/sborid\s+[A-Z0-9-]+$/i.test(text)) {
+        markOrderAsAssembledById(track, text.split(/\s+/)[1].toUpperCase(), { silentChatMessage: false, userId });
+      } else if (/^\/sbor\s+\d+$/i.test(text)) {
+        markOrderAsAssembledByRow(track, parseInt(text.split(/\s+/)[1], 10), { silentChatMessage: false, userId });
+      }
+
+      setTelegramLastUpdateId(updateId);
+    }
+  });
+}
+
+// ==================== SHIPMENT SYNC ====================
+function updateShipmentNote(track, row, status) {
+  // NEW: если заказ уже отправлен, примечание не трогаем
+  const shipped = track.getRange(row, COL.SHIPPED).getValue();
+  if (shipped === true) return;
+
+  const shipment = getSheet(SHEETS.SHIPMENT);
+  if (!shipment) return;
+
+  const item = track.getRange(row, COL.ITEM).getValue();
+  const material = getEffectiveMaterialFromRow_(track, row);
+  const week = track.getRange(row, COL.WEEK).getValue();
+
+  for (let r = 3; r <= shipment.getLastRow(); r++) {
+    if (shipment.getRange(r, 6).getValue() === item &&
+        getShipmentMaterialFromSheetRow_(shipment, r) === material) {
+      for (let c = 18; c <= shipment.getLastColumn(); c++) {
+        if (shipment.getRange(1, c).getValue() == week) {
+          shipment.getRange(r, c).setNote("📦 " + status + "\n📅 " + formatMoscowDate(getMoscowTime()));
+          return;
+        }
+      }
+    }
+  }
+}
+function updateShipmentColor(track, row) {
+  const shipment = getSheet(SHEETS.SHIPMENT);
+  if (!shipment) return;
+
+  const item = track.getRange(row, COL.ITEM).getValue();
+  const material = getEffectiveMaterialFromRow_(track, row);
+  const week = track.getRange(row, COL.WEEK).getValue();
+  const shipped = track.getRange(row, COL.SHIPPED).getValue();
+
+  const assembly = track.getRange(row, COL.ASSEMBLY_STATUS).getValue();
+  const pras = track.getRange(row, COL.PRAS_STATUS).getValue();
+  const kromka = track.getRange(row, COL.KROMKA_STATUS).getValue();
+  const pilka = track.getRange(row, COL.PILKA_STATUS).getValue();
+
+  let color = null;
+  if (shipped === true) color = "#ff0000"; // NEW priority
+  else if (assembly === "✅ СОБРАНО") color = "#00ff00";
+  else if (pras === "✅ Готово") color = "#ff9900";
+  else if (kromka === "✅ Готово" || pilka === "✅ Готово") color = "#4a86e8";
+  else if (pilka === STATUS_PAUSE || kromka === STATUS_PAUSE || pras === STATUS_PAUSE) color = "#ffe599";
+  else return;
+
+  for (let r = 3; r <= shipment.getLastRow(); r++) {
+    if (shipment.getRange(r, 6).getValue() === item &&
+        getShipmentMaterialFromSheetRow_(shipment, r) === material) {
+      for (let c = 18; c <= shipment.getLastColumn(); c++) {
+        if (shipment.getRange(1, c).getValue() == week) {
+          shipment.getRange(r, c).setBackground(color);
+          return;
+        }
+      }
+    }
+  }
+}
+
+// ==================== STATS ====================
+function calculateWorkMinutes(startDate, endDate) {
+  if (!startDate || !endDate) return 0;
+  const start = new Date(startDate), end = new Date(endDate);
+  if (start >= end) return 0;
+
+  function overlapMinutes_(aStart, aEnd, bStart, bEnd) {
+    const s = Math.max(aStart.getTime(), bStart.getTime());
+    const e = Math.min(aEnd.getTime(), bEnd.getTime());
+    if (e <= s) return 0;
+    return (e - s) / 60000;
+  }
+
+  let total = 0, current = new Date(start);
+  while (current < end) {
+    if (current.getDay() !== 0) {
+      const ws = new Date(current); ws.setHours(8, 0, 0, 0);
+      const we = new Date(current); we.setHours(18, 0, 0, 0);
+      const ds = current < ws ? ws : current;
+      const de = end < we ? end : we;
+      if (ds < de) {
+        let worked = (de - ds) / 60000;
+        const ls = new Date(current); ls.setHours(12, 0, 0, 0);
+        const le = new Date(current); le.setHours(13, 0, 0, 0);
+        worked -= overlapMinutes_(ds, de, ls, le);
+        if (worked > 0) total += worked;
+      }
+    }
+    current.setDate(current.getDate() + 1);
+    current.setHours(0, 0, 0, 0);
+  }
+  const rounded = Math.round(total);
+  return (rounded === 0 && (end - start) > 0) ? 1 : rounded;
+}
+
+/**
+ * Закрывает открытую паузу: добавляет бизнес-минуты (как в calculateWorkMinutes)
+ * к накоплению и очищает ячейку «пауза с».
+ */
+function accumulatePauseAndClear_(sheet, row, pauseAtCol, pauseAccCol, time) {
+  const pCell = sheet.getRange(row, pauseAtCol);
+  const pa = pCell.getValue();
+  if (!pa) return;
+  const delta = calculateWorkMinutes(new Date(pa), time);
+  const accCell = sheet.getRange(row, pauseAccCol);
+  accCell.setValue((Number(accCell.getValue()) || 0) + delta);
+  pCell.setValue("");
+}
+
+// ==================== MATERIALS BOOK (РАСХОД / ПРИХОД) ====================
+function ruMonthName_(date) {
+  const m = Number(Utilities.formatDate(new Date(date), "GMT+3", "M"));
+  const map = {
+    1: "январь", 2: "февраль", 3: "март", 4: "апрель", 5: "май", 6: "июнь",
+    7: "июль", 8: "август", 9: "сентябрь", 10: "октябрь", 11: "ноябрь", 12: "декабрь"
+  };
+  return map[m] || "";
+}
+
+function findMonthlySheetByPrefix_(ss, prefix, date) {
+  const month = ruMonthName_(date);
+  const needle = (prefix + " " + month).toLowerCase();
+  return ss.getSheets().find(sh => String(sh.getName() || "").toLowerCase().includes(needle)) || null;
+}
+
+function findTodayColumnInMonthlySheet_(sheet, date) {
+  const lastCol = sheet.getLastColumn();
+  if (lastCol < 3) return -1;
+
+  const day = String(Number(Utilities.formatDate(new Date(date), "GMT+3", "d"))); // "6"
+  const ddmm = Utilities.formatDate(new Date(date), "GMT+3", "dd.MM");
+  const ddmmyyyy = Utilities.formatDate(new Date(date), "GMT+3", "dd.MM.yyyy");
+
+  const row1 = sheet.getRange(1, 1, 1, lastCol).getDisplayValues()[0].map(v => String(v || "").trim());
+  const row2 = sheet.getRange(2, 1, 1, lastCol).getDisplayValues()[0].map(v => String(v || "").trim());
+
+  function match(v) {
+    if (!v) return false;
+    if (v === day) return true; // формат "1..31" как на вашем скрине
+    if (v === ddmm || v.startsWith(ddmm) || v === ddmmyyyy || v.startsWith(ddmmyyyy)) return true;
+    return false;
+  }
+
+  for (let c = 0; c < lastCol; c++) if (match(row1[c])) return c + 1;
+  for (let c = 0; c < lastCol; c++) if (match(row2[c])) return c + 1;
+  return -1;
+}
+
+function findOrCreateMaterialRowInSheet_(sheet, material) {
+  const lastRow = Math.max(sheet.getLastRow(), 3);
+  const mats = lastRow >= 4 ? sheet.getRange(4, 2, lastRow - 3, 1).getValues().flat() : [];
+  const norm = String(material || "").trim().toLowerCase();
+  for (let i = 0; i < mats.length; i++) {
+    if (String(mats[i] || "").trim().toLowerCase() === norm) return i + 4;
+  }
+  const nr = sheet.getLastRow() + 1;
+  sheet.getRange(nr, 2).setValue(material);
+  return nr;
+}
+
+function postToMaterialsMonthlySheet_(prefix, material, qty, meta) {
+  runWithScriptLock("materialsMonthlyPost", function () {
+    const today = getMoscowTime();
+    const book = getMaterialsBookSpreadsheet_();
+    const monthly = findMonthlySheetByPrefix_(book, prefix, today);
+    if (!monthly) throw new Error("Не найден лист '" + prefix + " " + ruMonthName_(today) + "'.");
+
+    const dayCol = findTodayColumnInMonthlySheet_(monthly, today);
+    if (dayCol === -1) throw new Error("Не найдена колонка сегодняшней даты (день месяца) в 1/2 строке.");
+
+    const matRow = findOrCreateMaterialRowInSheet_(monthly, material);
+    const cell = monthly.getRange(matRow, dayCol);
+    const before = Number(cell.getValue()) || 0;
+    cell.setValue(before + Number(qty || 0));
+
+    // Комментарий по операции: ДОБАВЛЯЕМ новую запись, не перезаписываем старую заметку.
+    const parts = [];
+    if (meta && meta.orderId) parts.push("OrderID: " + meta.orderId);
+    if (meta && meta.itemName) parts.push("Изделие: " + meta.itemName);
+    if (meta && meta.week) parts.push("Неделя: " + meta.week);
+    if (parts.length) {
+      const stamp = Utilities.formatDate(today, "GMT+3", "dd.MM.yyyy HH:mm:ss");
+      const entry = "[" + stamp + "] " + prefix + " " + Number(qty || 0) + "\n" + parts.join("\n");
+      const prev = String(cell.getNote() || "").trim();
+      const merged = prev ? (prev + "\n\n" + entry) : entry;
+      // У заметок есть лимит, режем хвост если слишком длинно (чтобы не падать на записи).
+      const MAX_NOTE = 45000;
+      cell.setNote(merged.length > MAX_NOTE ? merged.slice(merged.length - MAX_NOTE) : merged);
+    }
+
+    try {
+      logAction({
+        source: (meta && meta.source) || "sheet",
+        action: prefix === "расход" ? "MATERIAL_EXPENSE" : "MATERIAL_INCOME",
+        orderId: (meta && meta.orderId) || "",
+        row: (meta && meta.trackRow) || "",
+        itemName: (meta && meta.itemName) || material,
+        before: String(before),
+        after: String(before + Number(qty || 0)),
+        user: (meta && meta.user) || "",
+        comment: prefix + " " + qty + " (" + material + ")"
+      });
+    } catch (_) {}
+  });
+}
+
+function getSuggestedMaterialsFromCurrentExpenseSheet_() {
+  try {
+    const book = getMaterialsBookSpreadsheet_();
+    const sh = findMonthlySheetByPrefix_(book, "расход", getMoscowTime());
+    if (!sh) return [];
+    const last = sh.getLastRow();
+    if (last < 4) return [];
+    return sh.getRange(4, 2, last - 3, 1).getValues().flat().map(v => String(v || "").trim()).filter(Boolean);
+  } catch (_) {
+    return [];
+  }
+}
+
+function normalizeMapKey_(text) {
+  return String(text || "")
+    .toLowerCase()
+    .replace(/\r?\n/g, " ")
+    .replace(/\s+/g, " ")
+    .replace(/[\"'`]/g, "")
+    .trim();
+}
+
+function getMaterialMapSheet_() {
+  // Основное имя вашего листа
+  let sh = getSheet(SHEETS.MATERIAL_MAP);
+  if (sh) return sh;
+
+  // Совместимость со старым именем из прошлой версии
+  sh = getSheet("Соответствие материалов");
+  return sh;
+}
+
+function getMappedMaterialByItemName_(itemName) {
+  const sh = getMaterialMapSheet_();
+  if (!sh) return "";
+  const last = sh.getLastRow();
+  if (last < 2) return "";
+
+  const rows = sh.getRange(2, 1, last - 1, 2).getValues();
+  const target = normalizeMapKey_(itemName);
+  if (!target) return "";
+
+  // 1) Сначала точное совпадение по нормализованному названию
+  for (let i = 0; i < rows.length; i++) {
+    const key = normalizeMapKey_(rows[i][0]);
+    const mat = String(rows[i][1] || "").trim();
+    if (key && mat && key === target) return mat;
+  }
+
+  // 2) Fallback: включение строк (если в справочнике шаблон короче полного названия)
+  for (let i = 0; i < rows.length; i++) {
+    const key = normalizeMapKey_(rows[i][0]);
+    const mat = String(rows[i][1] || "").trim();
+    if (key && mat && target.includes(key)) return mat;
+  }
+  return "";
+}
+
+function getEffectiveMaterial_(itemName, rawMaterialCellValue) {
+  const raw = String(rawMaterialCellValue == null ? "" : rawMaterialCellValue).trim();
+  // Если в колонке C не текст (чекбокс true/false/пусто), берем из соответствия по названию изделия.
+  if (!raw || raw === "true" || raw === "false") {
+    return String(getMappedMaterialByItemName_(itemName) || "").trim();
+  }
+  return raw;
+}
+
+function getEffectiveMaterialFromRow_(trackSheet, row) {
+  const item = trackSheet.getRange(row, COL.ITEM).getValue();
+  const raw = trackSheet.getRange(row, COL.MATERIAL).getValue();
+  return getEffectiveMaterial_(item, raw);
+}
+
+function setupMaterialMappingSheet() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sh = getMaterialMapSheet_();
+  if (!sh) {
+    sh = ss.insertSheet(SHEETS.MATERIAL_MAP);
+  } else {
+    const ui = SpreadsheetApp.getUi();
+    const r = ui.alert("Лист уже существует", "Очистить и пересоздать '" + sh.getName() + "'?", ui.ButtonSet.YES_NO);
+    if (r !== ui.Button.YES) return;
+    sh.clear();
+  }
+
+  sh.getRange(1, 1, 1, 2).setValues([["Название изделия", "Материал"]]);
+  sh.getRange(1, 1, 1, 2).setFontWeight("bold").setBackground("#e0e0e0");
+  sh.setFrozenRows(1);
+  sh.setColumnWidth(1, 460);
+  sh.setColumnWidth(2, 220);
+
+  SpreadsheetApp.getUi().alert(
+    "✅ Лист соответствия создан.\n" +
+    "Вставьте ваши пары в колонки A:B начиная со 2-й строки.\n" +
+    "После этого материал в диалоге списания будет подставляться автоматически."
+  );
+}
+
+function promptMaterialAndConsumeForRow_(trackSheet, row) {
+  // Основной сценарий: HTML-диалог (полноценный выбор материала + количество).
+  // Если по какой-то причине не откроется, можно использовать ручной пункт меню.
+  showConsumeSheetsDialogForRow_(trackSheet, row);
+}
+
+function showConsumeSheetsDialogForRow_(trackSheet, row) {
+  const materials = getSuggestedMaterialsFromCurrentExpenseSheet_();
+  const item = trackSheet.getRange(row, COL.ITEM).getValue();
+  const trackMaterial = getEffectiveMaterialFromRow_(trackSheet, row);
+  const mappedMaterial = getMappedMaterialByItemName_(item);
+  const suggestedMaterial = mappedMaterial || trackMaterial;
+  const week = trackSheet.getRange(row, COL.WEEK).getValue();
+  const orderId = ensureOrderIdForRow(trackSheet, row);
+
+  const title = "Списание листов";
+  const payload = {
+    row,
+    orderId,
+    item: String(item || ""),
+    week: String(week || ""),
+    suggestedMaterial: String(suggestedMaterial || ""),
+    materials: materials.slice(0, 800),
+  };
+
+  const html = HtmlService.createHtmlOutput(getConsumeSheetsDialogHtml_(payload))
+    .setWidth(520)
+    .setHeight(420);
+  SpreadsheetApp.getUi().showModalDialog(html, title);
+}
+
+function getConsumeSheetsDialogHtml_(payload) {
+  const safe = s => String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const options = (payload.materials || []).map(m => `<option value="${safe(m)}"></option>`).join("");
+  const suggested = safe(payload.suggestedMaterial || "");
+
+  return `
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    body { font-family: Arial, sans-serif; padding: 14px; }
+    .muted { color: #6b7280; font-size: 12px; white-space: pre-line; }
+    label { display:block; margin-top: 12px; font-weight: 600; }
+    input, button { width: 100%; font-size: 14px; padding: 10px; box-sizing: border-box; }
+    .row { display:flex; gap:10px; }
+    .row > div { flex:1; }
+    .actions { display:flex; gap:10px; margin-top: 14px; }
+    .actions button { width: 50%; }
+    .error { color: #b91c1c; margin-top: 10px; min-height: 18px; }
+  </style>
+</head>
+<body>
+  <div class="muted">${safe(payload.item ? "Заказ: " + payload.item : "")}${safe(payload.week ? "\\nНеделя: " + payload.week : "")}</div>
+
+  <label>Материал</label>
+  <input id="material" list="materials" placeholder="Начните вводить материал..." value="${suggested}">
+  <datalist id="materials">${options}</datalist>
+
+  <label>Листов</label>
+  <input id="qty" inputmode="decimal" placeholder="Например 1 или 2.5">
+
+  <div class="error" id="err"></div>
+
+  <div class="actions">
+    <button id="btnSubmit" type="button">✅ Списать</button>
+    <button id="btnCancel" type="button">Отмена</button>
+  </div>
+
+  <script>
+    const payload = ${JSON.stringify({
+      row: payload.row,
+      orderId: payload.orderId,
+      item: payload.item,
+      week: payload.week,
+    })};
+
+    function setErr(t) { document.getElementById('err').textContent = t || ''; }
+
+    function submitConsume() {
+      setErr('');
+      const material = (document.getElementById('material').value || '').trim();
+      const raw = (document.getElementById('qty').value || '').trim().replace(',', '.');
+      const qty = Number(raw);
+      if (!material) return setErr('Укажите материал.');
+      if (!raw || !isFinite(qty) || qty <= 0) return setErr('Некорректное количество листов: ' + raw);
+
+      const btn = document.getElementById('btnSubmit');
+      btn.disabled = true;
+      btn.textContent = '⏳ Сохраняю...';
+      const watchdog = setTimeout(function(){
+        btn.disabled = false;
+        btn.textContent = '✅ Списать';
+        setErr('Сервер отвечает слишком долго. Проверьте доступ к книге материалов и Script Property materialsBookSpreadsheetId.');
+      }, 20000);
+
+      google.script.run
+        .withSuccessHandler(function(msg){
+          clearTimeout(watchdog);
+          btn.disabled = false;
+          btn.textContent = '✅ Списать';
+          google.script.host.close();
+        })
+        .withFailureHandler(function(err){
+          clearTimeout(watchdog);
+          btn.disabled = false;
+          btn.textContent = '✅ Списать';
+          setErr(String(err && err.message ? err.message : err));
+        })
+        .consumeSheetsSubmit(payload.row, material, qty, payload.orderId, payload.item, payload.week);
+    }
+
+    document.getElementById('btnSubmit').addEventListener('click', submitConsume);
+    document.getElementById('btnCancel').addEventListener('click', function() {
+      google.script.host.close();
+    });
+
+    document.getElementById('qty').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') submitConsume();
+    });
+    document.getElementById('material').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') document.getElementById('qty').focus();
+    });
+  </script>
+</body>
+</html>`;
+}
+
+function consumeSheetsSubmit(row, material, qty, orderId, itemName, week) {
+  const track = getSheet(SHEETS.TRACK);
+  if (!track) throw new Error("Лист «" + SHEETS.TRACK + "» не найден.");
+  const r = Number(row || 0);
+  if (!(r >= 2 && r <= track.getLastRow())) throw new Error("Некорректная строка: " + row);
+
+  const order = String(orderId || ensureOrderIdForRow(track, r));
+  const mat = String(material || "").trim();
+  const qtyNum = Number(qty || 0);
+  if (!mat) throw new Error("Материал не указан.");
+  if (!isFinite(qtyNum) || qtyNum <= 0) throw new Error("Некорректное количество.");
+
+  // Защита от случайного дубля (двойной клик/повторный запрос) в коротком окне.
+  const nowMs = Date.now();
+  const sig = [order, mat.toLowerCase(), qtyNum].join("|");
+  const prevSig = String(getScriptProp(PROP.LAST_CONSUME_SIGNATURE, false) || "");
+  const prevAt = Number(getScriptProp(PROP.LAST_CONSUME_AT_MS, false) || 0);
+  const DUP_WINDOW_MS = 15000;
+  if (prevSig === sig && prevAt > 0 && (nowMs - prevAt) <= DUP_WINDOW_MS) {
+    return { ok: true, skipped: true, reason: "duplicate_guard" };
+  }
+
+  postToMaterialsMonthlySheet_("расход", material, qty, {
+    source: "sheet",
+    orderId: order,
+    trackRow: r,
+    itemName: String(itemName || track.getRange(r, COL.ITEM).getValue() || ""),
+    week: String(week || track.getRange(r, COL.WEEK).getValue() || ""),
+    user: "manual"
+  });
+  setScriptProp(PROP.LAST_CONSUME_SIGNATURE, sig);
+  setScriptProp(PROP.LAST_CONSUME_AT_MS, String(nowMs));
+
+  // Списание выполнено — очищаем очередь "последняя пилка готово" для этой строки.
+  try {
+    const pending = Number(getScriptProp(PROP.PILKA_CONSUME_PENDING_ROW, false) || 0);
+    if (pending === r) setScriptProp(PROP.PILKA_CONSUME_PENDING_ROW, "");
+  } catch (_) {}
+  try { track.getRange(r, COL.CONSUME_SHEETS).setValue(false); } catch (_) {}
+
+  return { ok: true };
+}
+
+// Совместимость со старой ссылкой из HTML (если где-то закэшировалась старая версия).
+function consumeSheetsSubmit_(row, material, qty, orderId, itemName, week) {
+  return consumeSheetsSubmit(row, material, qty, orderId, itemName, week);
+}
+
+function manualConsumeSheets() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const track = ss.getSheetByName(SHEETS.TRACK);
+  if (!track) {
+    SpreadsheetApp.getUi().alert("❌ Лист «" + SHEETS.TRACK + "» не найден.");
+    return;
+  }
+  const row = track.getActiveRange() ? track.getActiveRange().getRow() : 0;
+  if (row < 2) {
+    consumePendingPilkaSheets();
+    return;
+  }
+  promptMaterialAndConsumeForRow_(track, row);
+}
+
+function consumePendingPilkaSheets() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const track = ss.getSheetByName(SHEETS.TRACK);
+  if (!track) {
+    SpreadsheetApp.getUi().alert("❌ Лист «" + SHEETS.TRACK + "» не найден.");
+    return;
+  }
+
+  const raw = getScriptProp(PROP.PILKA_CONSUME_PENDING_ROW, false);
+  const row = raw ? Number(raw) : 0;
+  if (!(row >= 2 && row <= track.getLastRow())) {
+    SpreadsheetApp.getUi().alert("ℹ️ Нет ожидающего списания. Выделите строку заказа и запустите списание вручную.");
+    return;
+  }
+
+  promptMaterialAndConsumeForRow_(track, row);
+}
+
+function manualAddSheets() {
+  const ui = SpreadsheetApp.getUi();
+  const pMat = ui.prompt("Зачисление листов", "Введите материал:", ui.ButtonSet.OK_CANCEL);
+  if (pMat.getSelectedButton() !== ui.Button.OK) return;
+  const material = String(pMat.getResponseText() || "").trim();
+  if (!material) { ui.alert("❌ Материал пустой."); return; }
+
+  const pQty = ui.prompt("Зачисление листов", "Введите количество листов (например 10):", ui.ButtonSet.OK_CANCEL);
+  if (pQty.getSelectedButton() !== ui.Button.OK) return;
+  const raw = String(pQty.getResponseText() || "").replace(",", ".").trim();
+  const qty = Number(raw);
+  if (!raw || !isFinite(qty) || qty <= 0) { ui.alert("❌ Некорректное число: " + raw); return; }
+
+  postToMaterialsMonthlySheet_("приход", material, qty, { source: "sheet", user: "manual" });
+  ui.alert("✅ Записано в лист материалов:\nприход " + ruMonthName_(getMoscowTime()) + "\nМатериал: " + material + "\nЛистов: " + qty);
+}
+
+function formatWorkTime(minutes) {
+  const h = Math.floor(minutes / 60), m = minutes % 60;
+  if (h === 0) return m + " мин";
+  if (m === 0) return h + " ч";
+  return h + " ч " + m + " мин";
+}
+function addToStatistics(track, row, refreshLabor) {
+  const needRefreshLabor = (refreshLabor !== false);
+  const stats = getSheet(SHEETS.STATS);
+  if (!stats) return;
+
+  const item = track.getRange(row, COL.ITEM).getValue();
+  const material = getEffectiveMaterialFromRow_(track, row);
+  const week = track.getRange(row, COL.WEEK).getValue();
+  const qty = track.getRange(row, COL.QTY).getValue();
+
+  const pS = track.getRange(row, COL.PILKA_START).getValue();
+  const pE = track.getRange(row, COL.PILKA_END).getValue();
+  const pPause = Number(track.getRange(row, COL.PILKA_PAUSE_ACC).getValue()) || 0;
+  const pM = (pS && pE) ? Math.max(0, calculateWorkMinutes(pS, pE) - pPause) : 0;
+
+  const kS = track.getRange(row, COL.KROMKA_START).getValue();
+  const kE = track.getRange(row, COL.KROMKA_END).getValue();
+  const kX = track.getRange(row, COL.KROMKA_EXEC).getValue();
+  const kPause = Number(track.getRange(row, COL.KROMKA_PAUSE_ACC).getValue()) || 0;
+  const kM = (kS && kE) ? Math.max(0, calculateWorkMinutes(kS, kE) - kPause) : 0;
+
+  const rS = track.getRange(row, COL.PRAS_START).getValue();
+  const rE = track.getRange(row, COL.PRAS_END).getValue();
+  const rX = track.getRange(row, COL.PRAS_EXEC).getValue();
+  const rPause = Number(track.getRange(row, COL.PRAS_PAUSE_ACC).getValue()) || 0;
+  const rM = (rS && rE) ? Math.max(0, calculateWorkMinutes(rS, rE) - rPause) : 0;
+
+  const total = pM + kM + rM;
+  const completion = track.getRange(row, COL.ASSEMBLY_TIME).getValue() || rE || kE || pE;
+
+  const payload = [[
+    item, material, week, qty,
+    pM, kM, kX || "",
+    rM, rX || "",
+    total, formatWorkTime(total), completion
+  ]];
+
+  const last = stats.getLastRow();
+  if (last > 1) {
+    const existing = stats.getRange(2, 1, last - 1, 12).getValues();
+    const weekNorm = String(week || "").trim();
+    for (let i = 0; i < existing.length; i++) {
+      const existingWeek = String(existing[i][2] || "").trim();
+      if (existing[i][0] === item && existing[i][1] === material && existingWeek === weekNorm) {
+        const targetRow = i + 2;
+        stats.getRange(targetRow, 1, 1, 12).setValues(payload);
+        stats.getRange(targetRow, 5, 1, 5).setNumberFormat("0");
+        if (needRefreshLabor) refreshLaborSheet();
+        return;
+      }
+    }
+  }
+
+  const nr = stats.getLastRow() + 1;
+  stats.getRange(nr, 1, 1, 12).setValues(payload);
+  stats.getRange(nr, 5, 1, 5).setNumberFormat("0");
+  if (needRefreshLabor) refreshLaborSheet();
+}
+
+function recalculateAllStatisticsFromTrack() {
+  const track = getSheet(SHEETS.TRACK);
+  const stats = getSheet(SHEETS.STATS);
+  if (!track || !stats) {
+    SpreadsheetApp.getUi().alert("❌ Не найден лист отслеживания или статистики.");
+    return;
+  }
+
+  const lastTrackRow = track.getLastRow();
+  if (lastTrackRow < 2) {
+    if (stats.getLastRow() > 1) stats.getRange(2, 1, stats.getLastRow() - 1, 12).clearContent();
+    SpreadsheetApp.getUi().alert("ℹ️ В отслеживании нет данных для пересчета.");
+    return;
+  }
+
+  if (stats.getLastRow() > 1) stats.getRange(2, 1, stats.getLastRow() - 1, 12).clearContent();
+
+  for (let row = 2; row <= lastTrackRow; row++) {
+    const item = track.getRange(row, COL.ITEM).getValue();
+    const week = track.getRange(row, COL.WEEK).getValue();
+    if (!item && !week) continue;
+    addToStatistics(track, row, false);
+  }
+  refreshLaborSheet();
+
+  SpreadsheetApp.getUi().alert("✅ Статистика пересчитана с учетом обеда 12:00-13:00.");
+}
+
+// ==================== LABOR INTENSITY ====================
+function getLaborGroupName_(itemName) {
+  const s = String(itemName || "").trim().toLowerCase();
+  if (!s) return "";
+
+  // Явные группы по вашему правилу
+  if (s.startsWith("stabile")) return "Stabile";
+  if (s.startsWith("solito2")) return "Solito2";
+  if (s.startsWith("solito")) return "Solito";
+  if (s.startsWith("cremona")) return "Cremona";
+  if (s.startsWith("avella lite")) return "Avella lite";
+  if (s.startsWith("avella")) return "Avella";
+  if (s.startsWith("премьер")) return "Премьер";
+  if (s.startsWith("классико+")) return "Классико +";
+  if (s.startsWith("классико")) return "Классико";
+  if (s.startsWith("donini grande")) return "Donini Grande";
+  if (s.startsWith("donini r 750")) return "Donini R 750";
+  if (s.startsWith("donini r 806")) return "Donini R 806";
+  if (s.startsWith("donini r")) return "Donini R";
+  if (s.startsWith("donini")) return "Donini";
+  if (s.startsWith("тумба под тв лофт 150")) return "ТВ Лофт 1500";
+  if (s.startsWith("тумба под тв лофт")) return "ТВ Лофт";
+
+  // Fallback: до первой точки (если есть), иначе полное название
+  const dot = String(itemName).indexOf(".");
+  return dot > 0 ? String(itemName).substring(0, dot).trim() : String(itemName).trim();
+}
+
+function setupLaborSheet() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sh = ss.getSheetByName(SHEETS.LABOR);
+  if (!sh) sh = ss.insertSheet(SHEETS.LABOR);
+  sh.clear();
+
+  const headers = [[
+    "Группа изделия", "Заказов", "Кол-во (шт)",
+    "Пилка (мин)", "Кромка (мин)", "Присадка (мин)", "Итого (мин)",
+    "Трудоемкость (ч/заказ)", "Трудоемкость (мин/шт)", "Трудоемкость (ч/шт)",
+    "Доля пилки", "Доля кромки", "Доля присадки", "Последнее обновление"
+  ]];
+  sh.getRange(1, 1, 1, headers[0].length).setValues(headers);
+  sh.getRange(1, 1, 1, headers[0].length).setFontWeight("bold").setBackground("#e0e0e0");
+  sh.setFrozenRows(1);
+  sh.setColumnWidth(1, 320);
+  sh.getRange("B:G").setNumberFormat("0");
+  sh.getRange("H:J").setNumberFormat("0.00");
+  sh.getRange("K:M").setNumberFormat("0.0%");
+
+  refreshLaborSheet();
+}
+
+function refreshLaborSheet() {
+  const track = getSheet(SHEETS.TRACK);
+  if (!track) return;
+
+  let labor = getSheet(SHEETS.LABOR);
+  if (!labor) {
+    setupLaborSheet();
+    labor = getSheet(SHEETS.LABOR);
+    if (!labor) return;
+  }
+
+  const lastRow = track.getLastRow();
+  labor.getRange("A2:N10000").clearContent();
+  if (lastRow < 2) return;
+
+  const data = track.getRange(2, 1, lastRow - 1, COL.LAST).getValues();
+  const byGroup = {};
+
+  data.forEach(r => {
+    const item = String(r[COL.ITEM - 1] || "").trim();
+    const group = getLaborGroupName_(item);
+    if (!group) return;
+
+    const qty = Number(r[COL.QTY - 1] || 0);
+    const pS = r[COL.PILKA_START - 1], pE = r[COL.PILKA_END - 1];
+    const kS = r[COL.KROMKA_START - 1], kE = r[COL.KROMKA_END - 1];
+    const rS = r[COL.PRAS_START - 1], rE = r[COL.PRAS_END - 1];
+
+    // Берем те же правила расчета, что и в статистике (с вычетом пауз).
+    const pPause = Number(r[COL.PILKA_PAUSE_ACC - 1] || 0);
+    const kPause = Number(r[COL.KROMKA_PAUSE_ACC - 1] || 0);
+    const rPause = Number(r[COL.PRAS_PAUSE_ACC - 1] || 0);
+    const pM = (pS && pE) ? Math.max(0, calculateWorkMinutes(pS, pE) - pPause) : 0;
+    const kM = (kS && kE) ? Math.max(0, calculateWorkMinutes(kS, kE) - kPause) : 0;
+    const rM = (rS && rE) ? Math.max(0, calculateWorkMinutes(rS, rE) - rPause) : 0;
+    const total = pM + kM + rM;
+
+    // В трудоемкость включаем только заказы с фактически зафиксированной работой.
+    if (total <= 0) return;
+
+    if (!byGroup[group]) byGroup[group] = { orders: 0, qty: 0, p: 0, k: 0, r: 0, t: 0 };
+    byGroup[group].orders += 1;
+    byGroup[group].qty += qty;
+    byGroup[group].p += pM;
+    byGroup[group].k += kM;
+    byGroup[group].r += rM;
+    byGroup[group].t += total;
+  });
+
+  const rows = Object.keys(byGroup).sort().map(group => {
+    const x = byGroup[group];
+    const hPerOrder = x.orders ? (x.t / 60 / x.orders) : 0;
+    const minPerUnit = x.qty ? (x.t / x.qty) : 0;
+    const hPerUnit = x.qty ? (x.t / 60 / x.qty) : 0;
+    const pShare = x.t ? (x.p / x.t) : 0;
+    const kShare = x.t ? (x.k / x.t) : 0;
+    const rShare = x.t ? (x.r / x.t) : 0;
+    return [group, x.orders, x.qty, x.p, x.k, x.r, x.t, hPerOrder, minPerUnit, hPerUnit, pShare, kShare, rShare, formatMoscowDate(getMoscowTime())];
+  });
+
+  if (rows.length) {
+    labor.getRange(2, 1, rows.length, rows[0].length).setValues(rows);
+  }
+}
+
+// ==================== CHECK NOTIFICATIONS ====================
+function checkAndSendNotifications() {
+  runWithScriptLock("checkAndSendNotifications", function () {
+    const track = getSheet(SHEETS.TRACK);
+    if (!track) return;
+    const lastRow = track.getLastRow();
+    if (lastRow < 2) return;
+
+    const data = track.getRange(2, 1, lastRow - 1, COL.LAST).getValues();
+
+    for (let i = 0; i < data.length; i++) {
+      const row = i + 2;
+      const r = data[i];
+
+      const item = r[COL.ITEM - 1];
+      const material = getEffectiveMaterial_(item, r[COL.MATERIAL - 1]);
+      const week = r[COL.WEEK - 1];
+      const qty = r[COL.QTY - 1];
+      const exec = r[COL.PRAS_EXEC - 1];
+      const notifSent = r[COL.NOTIF_SENT - 1];
+      const overall = r[COL.OVERALL_STATUS - 1];
+      let orderId = r[COL.ORDER_ID - 1];
+      const tgMessageId = r[COL.TG_MESSAGE_ID - 1];
+
+      if (overall === "📦 Ожидает сборки" && notifSent !== "SENT" && !tgMessageId) {
+        if (!orderId) {
+          orderId = generateOrderId();
+          track.getRange(row, COL.ORDER_ID).setValue(orderId);
+        }
+        const messageId = sendTelegramAssemblyCard(item, material, week, qty, exec, orderId);
+        if (messageId) {
+          track.getRange(row, COL.NOTIF_SENT).setValue("SENT");
+          track.getRange(row, COL.TG_MESSAGE_ID).setValue(messageId);
+          logAction({
+            source: "system",
+            action: "SEND_NOTIFICATION",
+            orderId, row, itemName: item,
+            after: "SENT",
+            user: "bot",
+            comment: "message_id=" + messageId
+          });
+        }
+      }
+    }
+  });
+}
+
+// ==================== DASHBOARD ====================
+function setupDashboardSheet() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sh = ss.getSheetByName(SHEETS.DASH);
+  if (!sh) sh = ss.insertSheet(SHEETS.DASH);
+  sh.clear();
+
+  sh.getRange("A1").setValue("Производственный Dashboard").setFontSize(16).setFontWeight("bold");
+  sh.getRange("A3:B3").setValues([["Метрика", "Значение"]]).setFontWeight("bold").setBackground("#e5e7eb");
+  sh.getRange("A4:A7").setValues([["Ожидает сборки"], ["Собрано сегодня"], ["Среднее время цикла (ч)"], ["Просрочено (>3 дней)"]]);
+  sh.getRange("D3:F3").setValues([["Неделя", "План (шт)", "Факт (шт)"]]).setFontWeight("bold").setBackground("#e5e7eb");
+
+  sh.setFrozenRows(3);
+  sh.setColumnWidth(1, 280); sh.setColumnWidth(2, 180);
+  sh.setColumnWidth(4, 120); sh.setColumnWidth(5, 140); sh.setColumnWidth(6, 140);
+
+  refreshDashboard();
+}
+function refreshDashboard() {
+  const track = getSheet(SHEETS.TRACK);
+  const dash = getSheet(SHEETS.DASH);
+  if (!track || !dash) return;
+
+  const lastRow = track.getLastRow();
+  if (lastRow < 2) {
+    dash.getRange("B4:B7").setValues([[0], [0], [0], [0]]);
+    dash.getRange("D4:F1000").clearContent();
+    return;
+  }
+
+  const data = track.getRange(2, 1, lastRow - 1, COL.LAST).getValues();
+  const now = getMoscowTime();
+  const today = Utilities.formatDate(now, "GMT+3", "yyyy-MM-dd");
+
+  let waiting = 0, assembledToday = 0, overdue = 0, cycleSum = 0, cycleCount = 0;
+  const weekPlan = {}, weekFact = {};
+
+  data.forEach(r => {
+    const created = r[COL.CREATED_AT - 1];
+    const week = String(r[COL.WEEK - 1] || "");
+    const qty = Number(r[COL.QTY - 1] || 0);
+    const overall = r[COL.OVERALL_STATUS - 1];
+    const asm = r[COL.ASSEMBLY_STATUS - 1];
+    const asmTime = r[COL.ASSEMBLY_TIME - 1];
+
+    if (overall === "📦 Ожидает сборки") waiting++;
+    if (week) weekPlan[week] = (weekPlan[week] || 0) + qty;
+    if (asm === "✅ СОБРАНО" && week) weekFact[week] = (weekFact[week] || 0) + qty;
+
+    if (asm === "✅ СОБРАНО" && asmTime) {
+      const d = Utilities.formatDate(new Date(asmTime), "GMT+3", "yyyy-MM-dd");
+      if (d === today) assembledToday++;
+      if (created) {
+        const hours = (new Date(asmTime) - new Date(created)) / 3600000;
+        if (hours >= 0) { cycleSum += hours; cycleCount++; }
+      }
+    }
+
+    if (created && asm !== "✅ СОБРАНО") {
+      const age = (now - new Date(created)) / 3600000;
+      if (age > 72) overdue++;
+    }
+  });
+
+  const avg = cycleCount ? (cycleSum / cycleCount).toFixed(1) : "0.0";
+  dash.getRange("B4:B7").setValues([[waiting], [assembledToday], [avg], [overdue]]);
+
+  const weeks = Object.keys(weekPlan).filter(Boolean).sort((a, b) => Number(a) - Number(b));
+  const rows = weeks.map(w => [w, weekPlan[w] || 0, weekFact[w] || 0]);
+  dash.getRange("D4:F1000").clearContent();
+  if (rows.length) dash.getRange(4, 4, rows.length, 3).setValues(rows);
+}
+function sendDailyPlanFactReport() {
+  const track = getSheet(SHEETS.TRACK);
+  if (!track) return;
+  const lastRow = track.getLastRow();
+  if (lastRow < 2) return;
+
+  const data = track.getRange(2, 1, lastRow - 1, COL.LAST).getValues();
+  const today = Utilities.formatDate(getMoscowTime(), "GMT+3", "yyyy-MM-dd");
+
+  const factByWeek = {};
+  let assembledCount = 0, assembledQty = 0;
+
+  data.forEach(r => {
+    const week = String(r[COL.WEEK - 1] || "");
+    const qty = Number(r[COL.QTY - 1] || 0);
+    const st = r[COL.ASSEMBLY_STATUS - 1];
+    const at = r[COL.ASSEMBLY_TIME - 1];
+
+    if (st === "✅ СОБРАНО" && at) {
+      const d = Utilities.formatDate(new Date(at), "GMT+3", "yyyy-MM-dd");
+      if (d === today) {
+        assembledCount++; assembledQty += qty;
+        if (week) factByWeek[week] = (factByWeek[week] || 0) + qty;
+      }
+    }
+  });
+
+  let msg = "📊 <b>План/Факт за день</b>\n📅 " + today + "\n\n";
+  msg += "✅ Собрано заказов: " + assembledCount + "\n";
+  msg += "📦 Собрано шт: " + assembledQty + "\n\nПо неделям:\n";
+
+  const weeks = Object.keys(factByWeek).sort((a, b) => Number(a) - Number(b));
+  if (!weeks.length) msg += "— нет сборок сегодня";
+  else weeks.forEach(w => { msg += "• Неделя " + escapeHtml(w) + ": " + factByWeek[w] + " шт\n"; });
+
+  sendTelegramMessage(msg);
+}
+
+// ==================== DROPDOWNS ====================
+function setupStatusDropdowns(sheet, row) {
+  sheet.getRange(row, COL.PILKA_STATUS).setDataValidation(
+    SpreadsheetApp.newDataValidation().requireValueInList(["⏳ Ожидает", "🔨 В работе", STATUS_PAUSE, "✅ Готово"], true).build()
+  ).setValue("⏳ Ожидает");
+
+  sheet.getRange(row, COL.KROMKA_STATUS).setDataValidation(
+    SpreadsheetApp.newDataValidation().requireValueInList(["⏳ Ожидает", "🔪 В работе (Слава)", "🔪 В работе (Сережа)", STATUS_PAUSE, "✅ Готово"], true).build()
+  ).setValue("⏳ Ожидает");
+
+  sheet.getRange(row, COL.PRAS_STATUS).setDataValidation(
+    SpreadsheetApp.newDataValidation().requireValueInList(["⏳ Ожидает", "🔧 В работе (Лёха)", "🔧 В работе (Виталик)", STATUS_PAUSE, "✅ Готово"], true).build()
+  ).setValue("⏳ Ожидает");
+
+  sheet.getRange(row, COL.ASSEMBLY_STATUS).setDataValidation(
+    SpreadsheetApp.newDataValidation().requireValueInList(["⏳ Ожидает", "✅ СОБРАНО"], true).build()
+  ).setValue("⏳ Ожидает");
+}
+
+/** Для уже существующего листа трека: подписи колонок 25–30 (паузы). */
+function ensurePauseHeadersForTrack() {
+  const sh = getSheet(SHEETS.TRACK);
+  if (!sh) {
+    SpreadsheetApp.getUi().alert("❌ Лист «" + SHEETS.TRACK + "» не найден.");
+    return;
+  }
+  const h = [
+    "Пилка пауза (мин)", "Пилка пауза с", "Кромка пауза (мин)", "Кромка пауза с", "Присадка пауза (мин)", "Присадка пауза с"
+  ];
+  sh.getRange(1, COL.PILKA_PAUSE_ACC, 1, h.length).setValues([h]);
+  SpreadsheetApp.getUi().alert("✅ В строке 1 заполнены заголовки колонок Y–AD (паузы).");
+}
+
+function addConsumeCheckboxesForExistingRows() {
+  const sh = getSheet(SHEETS.TRACK);
+  if (!sh) return;
+  // По запросу: чекбокс именно в колонке C (заголовок остается "Материал").
+  const lastRow = sh.getLastRow();
+  if (lastRow >= 2) sh.getRange(2, COL.CONSUME_SHEETS, lastRow - 1, 1).insertCheckboxes();
+  SpreadsheetApp.getUi().alert("✅ Чекбоксы 'Списать листы' добавлены.");
+}
+
+// NEW: проставить чекбоксы "Отправлен" для существующих строк
+function addShippedCheckboxesForExistingRows() {
+  const sh = getSheet(SHEETS.TRACK);
+  if (!sh) return;
+  const lastRow = sh.getLastRow();
+  if (lastRow < 2) return;
+  sh.getRange(2, COL.SHIPPED, lastRow - 1, 1).insertCheckboxes();
+  SpreadsheetApp.getUi().alert("✅ Чекбоксы 'Отправлен' добавлены.");
+}
+
+// ==================== SETUP SHEETS ====================
+function setupTrackingSheet() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sh = ss.getSheetByName(SHEETS.TRACK);
+
+  if (sh) {
+    const ui = SpreadsheetApp.getUi();
+    const resp = ui.alert("Лист уже существует", "Пересоздать лист '" + SHEETS.TRACK + "'?", ui.ButtonSet.YES_NO);
+    if (resp !== ui.Button.YES) return;
+    ss.deleteSheet(sh);
+  }
+
+  sh = ss.insertSheet(SHEETS.TRACK);
+  const headers = [
+    "Дата создания", "Изделие", "Материал", "Неделя", "Кол-во",
+    "Пилка (начало)", "Пилка (конец)", "Пилка статус",
+    "Кромка (начало)", "Кромка (конец)", "Кромка (исполнитель)", "Кромка статус",
+    "Присадка (начало)", "Присадка (конец)", "Присадка (исполнитель)", "Присадка статус",
+    "Сборка статус", "Сборка время", "Уведомление", "Общий статус",
+    "Order ID", "Telegram Message ID", "Undo до", "Отправлен",
+    "Пилка пауза (мин)", "Пилка пауза с", "Кромка пауза (мин)", "Кромка пауза с", "Присадка пауза (мин)", "Присадка пауза с"
+  ];
+
+  sh.getRange(1, 1, 1, headers.length).setValues([headers]);
+  sh.getRange(1, 1, 1, headers.length).setFontWeight("bold").setBackground("#e0e0e0");
+  sh.setFrozenRows(1);
+  SpreadsheetApp.getUi().alert("✅ Лист '" + SHEETS.TRACK + "' создан.");
+}
+
+function setupStatisticsSheet() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sh = ss.getSheetByName(SHEETS.STATS);
+
+  if (sh) {
+    const ui = SpreadsheetApp.getUi();
+    const resp = ui.alert("Лист уже существует", "Пересоздать лист '" + SHEETS.STATS + "'?", ui.ButtonSet.YES_NO);
+    if (resp !== ui.Button.YES) return;
+    ss.deleteSheet(sh);
+  }
+
+  sh = ss.insertSheet(SHEETS.STATS);
+  sh.getRange(1, 1, 1, 12).setValues([[
+    "Изделие", "Материал", "Неделя", "Кол-во",
+    "Пилка (мин)", "Кромка (мин)", "Кромка (исполнитель)",
+    "Присадка (мин)", "Присадка (исполнитель)",
+    "Общее время (мин)", "Общее время", "Дата завершения"
+  ]]);
+  sh.getRange(1, 1, 1, 12).setFontWeight("bold").setBackground("#e0e0e0");
+  sh.getRange("E:J").setNumberFormat("0");
+  sh.setFrozenRows(1);
+  SpreadsheetApp.getUi().alert("✅ Лист '" + SHEETS.STATS + "' создан.");
+}
+
+function setupColorSchemeSheet() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sh = ss.getSheetByName(SHEETS.SCHEME);
+
+  if (sh) {
+    const ui = SpreadsheetApp.getUi();
+    const resp = ui.alert("Лист уже существует", "Пересоздать лист '" + SHEETS.SCHEME + "'?", ui.ButtonSet.YES_NO);
+    if (resp !== ui.Button.YES) return;
+    ss.deleteSheet(sh);
+  }
+
+  sh = ss.insertSheet(SHEETS.SCHEME);
+  sh.getRange(1, 1, 16, 3).setValues([
+    ["Этап", "Статус", "Действие"],
+    ["🪚 Пилка", "🔨 В работе", "Фиксируется время НАЧАЛА"],
+    ["🪚 Пилка", "⏸ Пауза", "Фиксируется начало паузы; при возврате в «В работе» минуты (8–18, обед) накапливаются в колонке паузы"],
+    ["🪚 Пилка", "✅ Готово", "Фиксируется время ОКОНЧАНИЯ"],
+    ["", "", ""],
+    ["🔪 Кромка", "🔪 В работе (Слава)", "Фиксируется начало (Слава)"],
+    ["🔪 Кромка", "🔪 В работе (Сережа)", "Фиксируется начало (Сережа)"],
+    ["🔪 Кромка", "⏸ Пауза", "Как у пилки: пауза внутри этапа до «Готово»"],
+    ["🔪 Кромка", "✅ Готово", "Фиксируется время окончания"],
+    ["", "", ""],
+    ["🔧 Присадка", "🔧 В работе (Лёха)", "Фиксируется начало (Лёха)"],
+    ["🔧 Присадка", "🔧 В работе (Виталик)", "Фиксируется начало (Виталик)"],
+    ["🔧 Присадка", "⏸ Пауза", "Как у пилки"],
+    ["🔧 Присадка", "✅ Готово", "Отправляется уведомление в Telegram"],
+    ["", "", ""],
+    ["📦 Отправка", "☑ Отправлен", "В листе Отгрузки ячейка становится красной"]
+  ]);
+  sh.getRange(1, 1, 1, 3).setFontWeight("bold").setBackground("#e0e0e0");
+  sh.setFrozenRows(1);
+  SpreadsheetApp.getUi().alert("✅ Лист '" + SHEETS.SCHEME + "' создан.");
+}
+
+// ==================== TELEGRAM SERVICE ====================
+function clearTelegramQueue() {
+  if (!isTelegramEnabled_()) { SpreadsheetApp.getUi().alert("Telegram выключен: задайте TELEGRAM_TOKEN и TELEGRAM_CHAT_ID"); return; }
+  const token = getTelegramToken();
+  const res = UrlFetchApp.fetch("https://api.telegram.org/bot" + token + "/getUpdates", { muteHttpExceptions: true });
+  const result = JSON.parse(res.getContentText());
+
+  if (result.ok && result.result && result.result.length > 0) {
+    const lastId = result.result[result.result.length - 1].update_id;
+    UrlFetchApp.fetch("https://api.telegram.org/bot" + token + "/getUpdates?offset=" + (lastId + 1) + "&timeout=5", { muteHttpExceptions: true });
+    setTelegramLastUpdateId(lastId);
+    SpreadsheetApp.getUi().alert("✅ Очищено " + result.result.length + " сообщений");
+  } else {
+    SpreadsheetApp.getUi().alert("Нет старых сообщений");
+  }
+}
+function forceClearAll() {
+  if (!isTelegramEnabled_()) { SpreadsheetApp.getUi().alert("Telegram выключен: задайте TELEGRAM_TOKEN и TELEGRAM_CHAT_ID"); return; }
+  const token = getTelegramToken();
+  UrlFetchApp.fetch("https://api.telegram.org/bot" + token + "/getUpdates?offset=-1", { muteHttpExceptions: true });
+  setTelegramLastUpdateId(0);
+  SpreadsheetApp.getUi().alert("✅ Полная очистка выполнена!");
+}
+function resetTelegramLastId() { setTelegramLastUpdateId(0); SpreadsheetApp.getUi().alert("✅ ID сброшен!"); }
+function deleteOldWebhook() {
+  const result = tgPost("deleteWebhook", {});
+  SpreadsheetApp.getUi().alert(result && result.ok ? "✅ Вебхук удалён" : "❌ Ошибка удаления вебхука");
+}
+function manualPoll() { processTelegramUpdates(); SpreadsheetApp.getUi().alert("✅ Опрос выполнен"); }
+function testTelegram() {
+  const res = sendTelegramMessage("🧪 Тестовое сообщение!\n\nБот работает правильно!");
+  SpreadsheetApp.getUi().alert(res && res.ok ? "✅ Сообщение отправлено!" : "Telegram выключен или не настроен");
+}
+function manualCheck() { checkAndSendNotifications(); SpreadsheetApp.getUi().alert("✅ Проверка выполнена!"); }
+
+// ==================== TRIGGERS ====================
+function setupPollingTriggers() {
+  const targetHandlers = new Set([
+    "onColorChange",
+    "checkAndSendNotifications",
+    "processTelegramUpdates",
+    "refreshDashboard",
+    "sendDailyPlanFactReport",
+  ]);
+
+  ScriptApp.getProjectTriggers().forEach(tr => {
+    if (targetHandlers.has(tr.getHandlerFunction())) ScriptApp.deleteTrigger(tr);
+  });
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  ScriptApp.newTrigger("onColorChange").forSpreadsheet(ss).onChange().create();
+  ScriptApp.newTrigger("checkAndSendNotifications").timeBased().everyMinutes(1).create();
+  ScriptApp.newTrigger("processTelegramUpdates").timeBased().everyMinutes(1).create();
+  ScriptApp.newTrigger("refreshDashboard").timeBased().everyHours(1).create();
+  ScriptApp.newTrigger("sendDailyPlanFactReport").timeBased().everyDays(1).atHour(19).create();
+
+  SpreadsheetApp.getUi().alert("✅ Триггеры настроены. onEdit работает как встроенный триггер.");
+}
+
+function onOpen() {
+  // ТВОЕ текущее меню (оставляй как есть)
+  buildMainMenu_();
+
+  // НОВОЕ отдельное меню для прод-инструментов
+  buildProductionMenu_();
+}
+
+function buildMainMenu_() {
+  const ui = SpreadsheetApp.getUi();
+  ui.createMenu("🧩 Мое меню")
+      .addItem('🎨 Пересчитать цвета', 'countColorsAndWrite')
+      .addItem('📦 Пересчитать материалы', 'calculateMaterialNeeds')
+      .addItem('👆 Расчет для выделенного', 'calculateSelectedSheets')
+      .addItem('📋 Расчет обрезков', 'calculateWasteSmartUpdate')
+      .addItem('🛒 Что заказать', 'whatToOrderAccurate') // Используем точную версию
+      .addItem('📐 Посчитать листы для выделенных полок', 'calculateSheetsFromSelection')
+      .addItem('🔧 Расчет обвязки', 'calculateExact')
+      .addItem('📊 Отправить в работу', 'createProductionPlan')
+      .addItem("🪵 Планки: отправить в работу", "sendSelectedPlanksToWork")
+      .addToUi();
+}
+
+function buildProductionMenu_() {
+  const ui = SpreadsheetApp.getUi();
+  ui.createMenu("🏭 Производство")
+    .addItem("📋 Создать лист отслеживания", "setupTrackingSheet")
+    .addItem("📈 Создать лист статистики", "setupStatisticsSheet")
+    .addItem("🎨 Создать цветовую схему", "setupColorSchemeSheet")
+    .addItem("🧩 Создать лист соответствия материалов", "setupMaterialMappingSheet")
+    .addItem("🧾 Создать/проверить Историю", "ensureHistorySheet")
+    .addItem("📊 Создать Dashboard", "setupDashboardSheet")
+    .addItem("🛠 Создать лист Трудоемкость", "setupLaborSheet")
+    .addSeparator()
+    .addItem("🆔 Сгенерировать Order ID для всех", "ensureOrderIdsForAllRows")
+    .addItem("☑ Добавить чекбоксы 'Отправлен'", "addShippedCheckboxesForExistingRows")
+    .addItem("☑ Добавить чекбоксы 'Списать листы'", "addConsumeCheckboxesForExistingRows")
+    .addItem("⏸ Заголовки колонок паузы (Y–AD)", "ensurePauseHeadersForTrack")
+    .addSeparator()
+    .addItem("➖ Списать листы (по выделенной строке)", "manualConsumeSheets")
+    .addItem("🧾 Списать листы (последняя пилка ✅)", "consumePendingPilkaSheets")
+    .addItem("➕ Зачислить листы на склад", "manualAddSheets")
+    .addItem("⚙️ Настроить триггеры", "setupPollingTriggers")
+    .addSeparator()
+    .addItem("📡 Ручной опрос Telegram", "manualPoll")
+    .addItem("🧪 Тест Telegram", "testTelegram")
+    .addItem("🔔 Проверка уведомлений", "manualCheck")
+    .addItem("🔄 Обновить Dashboard", "refreshDashboard")
+    .addItem("📈 Обновить Трудоемкость", "refreshLaborSheet")
+    .addItem("⏱ Пересчитать прошлые тайминги", "recalculateAllStatisticsFromTrack")
+    .addItem("📤 Отправить план/факт сейчас", "sendDailyPlanFactReport")
+    .addSeparator()
+    .addItem("🧹 Очистить очередь Telegram", "clearTelegramQueue")
+    .addItem("💥 Полная очистка Telegram", "forceClearAll")
+    .addItem("🔄 Сбросить lastUpdateId", "resetTelegramLastId")
+    .addItem("🗑️ Удалить webhook", "deleteOldWebhook")
+    .addToUi();
+}
+
+
+const MATERIALS_CFG = {
+  COUNTED_COLOR: "#ffffff",
+  START_ROW: 3,
+  END_ROW: 300,
+  ORDER_START_COL: 9,
+  ORDER_END_COL: 52, // I:AZ
+};
+
+function calculateMaterialNeeds() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(SHEETS.SHIPMENT);
+  if (!sheet) return;
+
+  const rowCount = MATERIALS_CFG.END_ROW - MATERIALS_CFG.START_ROW + 1;
+  const colCount = MATERIALS_CFG.ORDER_END_COL - MATERIALS_CFG.ORDER_START_COL + 1;
+  const ordersRange = sheet.getRange(MATERIALS_CFG.START_ROW, MATERIALS_CFG.ORDER_START_COL, rowCount, colCount);
+  const outputRange = sheet.getRange(MATERIALS_CFG.START_ROW, 2, rowCount, 1);
+  const resultRange = sheet.getRange(MATERIALS_CFG.START_ROW, 3, rowCount, 1);
+
+  const orders = ordersRange.getValues();
+  const backgrounds = ordersRange.getBackgrounds();
+  const outputs = outputRange.getValues();
+  const countedColor = MATERIALS_CFG.COUNTED_COLOR.toLowerCase();
+
+  const results = orders.map((rowValues, i) => {
+    let totalOrders = 0;
+    for (let j = 0; j < rowValues.length; j++) {
+      const color = String(backgrounds[i][j] || "").toLowerCase();
+      if (color === countedColor) totalOrders += Number(rowValues[j]) || 0;
+    }
+    const outputPerSheet = Number(outputs[i][0]) || 0;
+    const sheetsNeeded = outputPerSheet > 0 ? Math.ceil(totalOrders / outputPerSheet) : 0;
+    return [sheetsNeeded];
+  });
+
+  resultRange.setValues(results);
+}
+
+function calculateSelectedSheets() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const selection = ss.getSelection();
+  const activeRangeList = selection && selection.getActiveRangeList();
+  if (!activeRangeList) {
+    SpreadsheetApp.getUi().alert("❌ Выделите диапазон ячеек!");
+    return;
+  }
+
+  const ranges = activeRangeList.getRanges();
+  if (!ranges || !ranges.length) {
+    SpreadsheetApp.getUi().alert("❌ Выделите диапазон ячеек!");
+    return;
+  }
+
+  const sheet = ss.getSheetByName(SHEETS.SHIPMENT);
+  if (!sheet) return;
+
+  const products = sheet.getRange("F3:F300").getValues();
+  const outputs = sheet.getRange("B3:B300").getValues();
+  const materials = sheet.getRange("A3:A300").getValues();
+
+  let totalSheets = 0;
+  let processedCells = 0;
+  const materialTotals = {};
+  let resultMessage = "📊 Расчет для выделенных ячеек:\n\n";
+
+  for (const selectedRange of ranges) {
+    const values = selectedRange.getValues();
+    const selectedStartRow = selectedRange.getRow();
+    for (let i = 0; i < values.length; i++) {
+      for (let j = 0; j < values[i].length; j++) {
+        const value = Number(values[i][j]) || 0;
+        if (!value) continue;
+
+        const rowIndex = selectedStartRow - 3 + i;
+        if (rowIndex < 0 || rowIndex >= outputs.length) continue;
+
+        const outputPerSheet = Number(outputs[rowIndex][0]) || 0;
+        if (outputPerSheet <= 0) continue;
+
+        const sheetsNeeded = Math.ceil(value / outputPerSheet);
+        const materialName = String(materials[rowIndex][0] || "Неизвестный материал");
+        const productName = String(products[rowIndex][0] || "Неизвестное изделие");
+
+        materialTotals[materialName] = (materialTotals[materialName] || 0) + sheetsNeeded;
+        totalSheets += sheetsNeeded;
+        processedCells++;
+        resultMessage += `📦 ${productName}\n${value} шт. → ${sheetsNeeded} лист(ов) ${materialName}\n\n`;
+      }
+    }
+  }
+
+  if (!processedCells) {
+    SpreadsheetApp.getUi().alert("❌ Не найдено подходящих ячеек для расчета!\nПроверьте числовые значения.");
+    return;
+  }
+
+  resultMessage += "✅ ОБЩЕЕ КОЛИЧЕСТВО:\n";
+  Object.entries(materialTotals)
+    .sort((a, b) => b[1] - a[1])
+    .forEach(([material, count]) => {
+      resultMessage += `• ${material}: ${count} лист(ов)\n`;
+    });
+  resultMessage += `\n📋 Обработано ячеек: ${processedCells}\n📄 Всего листов: ${totalSheets}`;
+  SpreadsheetApp.getUi().alert(resultMessage);
+}
+
+function whatToOrderAccurate() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(SHEETS.SHIPMENT);
+  if (!sheet) return;
+
+  const materialsData = sheet.getRange("A3:A300").getValues();
+  const shortageData = sheet.getRange("D3:D300").getValues();
+  const materialShortages = {};
+
+  for (let i = 0; i < materialsData.length; i++) {
+    const materialName = String(materialsData[i][0] || "").trim();
+    if (!materialName) continue;
+
+    const shortageText = String(shortageData[i][0] || "");
+    const shortageMatch = shortageText.match(/❌ Не хватает:\s*([\d.]+)/);
+    if (!shortageMatch) continue;
+
+    const shortageAmount = parseFloat(shortageMatch[1]);
+    if (!(shortageAmount > 0)) continue;
+
+    materialShortages[materialName] = Math.max(materialShortages[materialName] || 0, shortageAmount);
+  }
+
+  if (!Object.keys(materialShortages).length) {
+    SpreadsheetApp.getUi().alert("✅ ВСЕГО ХВАТАЕТ!\n\nНехватки материалов не обнаружено.");
+    return;
+  }
+
+  let totalSheets = 0;
+  let resultMessage = "📋 ТОЧНЫЙ РАСЧЕТ ЗАКАЗА:\n\n";
+  Object.entries(materialShortages)
+    .sort((a, b) => b[1] - a[1])
+    .forEach(([material, amount]) => {
+      const sheetsToOrder = Math.ceil(amount);
+      totalSheets += sheetsToOrder;
+      resultMessage += `• ${material}: ${sheetsToOrder} лист(ов)\n`;
+    });
+
+  resultMessage += `\n📊 Всего материалов: ${Object.keys(materialShortages).length}`;
+  resultMessage += `\n📦 Общее количество листов: ${totalSheets}`;
+  SpreadsheetApp.getUi().alert(resultMessage);
+}
+
+function whatToOrder() {
+  // Совместимость со старым пунктом меню/вызовами: используем точный расчет.
+  return whatToOrderAccurate();
+}
+
+function setupTimeTrigger() {
+  // Совместимость с отдельным скриптом материалов: оставляем только один часовой триггер.
+  const triggers = ScriptApp.getProjectTriggers();
+  triggers.forEach(trigger => {
+    if (trigger.getHandlerFunction() === "calculateMaterialNeeds") {
+      ScriptApp.deleteTrigger(trigger);
+    }
+  });
+
+  ScriptApp.newTrigger("calculateMaterialNeeds")
+    .timeBased()
+    .everyHours(1)
+    .create();
+}
+
+function calculateSheetsFromSelection() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  const rangeList = sheet.getActiveRangeList();
+  const selections = rangeList ? rangeList.getRanges() : [];
+  const ui = SpreadsheetApp.getUi();
+  if (selections.length !== 2) {
+    ui.alert(
+      "Внимание",
+      "Пожалуйста, выделите ДВА диапазона:\n\n1. Диапазон с размерами полок\n2. Диапазон с количествами\n\nУдерживайте Ctrl (Cmd на Mac) для второго диапазона",
+      ui.ButtonSet.OK
+    );
+    return 0;
+  }
+
+  const sizesData = selections[0].getValues();
+  const quantitiesData = selections[1].getValues();
+  if (sizesData.length !== quantitiesData.length) {
+    ui.alert("Ошибка", `Количество строк не совпадает:\nРазмеры: ${sizesData.length}\nКоличества: ${quantitiesData.length}`, ui.ButtonSet.OK);
+    return 0;
+  }
+
+  const SHEET_WIDTH = 2800;
+  const SHEET_HEIGHT = 2070;
+  const EFFICIENCY = 0.85;
+  const sheetArea = SHEET_WIDTH * SHEET_HEIGHT;
+  const effectiveSheetArea = sheetArea * EFFICIENCY;
+  let usedArea = 0;
+  const shelves = [];
+
+  for (let r = 0; r < sizesData.length; r++) {
+    const name = String(sizesData[r][0] || "");
+    const match = name.match(/(\d+)_(\d+)/);
+    if (!match) continue;
+    const width = parseInt(match[1], 10);
+    const height = parseInt(match[2], 10);
+    if (!width || !height) continue;
+
+    let totalShelves = 0;
+    for (let c = 0; c < quantitiesData[r].length; c++) {
+      const value = quantitiesData[r][c];
+      if (typeof value === "number" && !isNaN(value)) {
+        totalShelves += value;
+      } else if (typeof value === "string" && value.trim()) {
+        const parsed = parseFloat(value.replace(",", "."));
+        if (!isNaN(parsed)) totalShelves += parsed;
+      }
+    }
+    if (totalShelves <= 0) continue;
+
+    usedArea += width * height * totalShelves;
+    shelves.push({ width, height, count: totalShelves });
+  }
+
+  if (!shelves.length) {
+    ui.alert("Ошибка", "Не найдено данных для расчёта. Проверьте выделение.", ui.ButtonSet.OK);
+    return 0;
+  }
+
+  const totalSheets = Math.ceil(usedArea / effectiveSheetArea);
+  let result = "РАСЧЁТ РАСКРОЯ ЛИСТОВ 2800×2070 мм\n\nПолки для изготовления:\n";
+  shelves.forEach(s => {
+    result += `• ${s.width}×${s.height} мм - ${s.count} шт.\n`;
+  });
+  result += `\nОбщая площадь полок: ${(usedArea / 1000000).toFixed(2)} м²`;
+  result += `\nПолезная площадь листа: ${(effectiveSheetArea / 1000000).toFixed(2)} м²`;
+  result += `\n\n✅ Нужно листов: ${totalSheets}`;
+  ui.alert("Результат расчёта", result, ui.ButtonSet.OK);
+  return totalSheets;
+}
+
+function calculateExact() {
+  const sheet = SpreadsheetApp.getActiveSheet();
+  const ui = SpreadsheetApp.getUi();
+  const SHEET_WIDTH = 2800;
+  const SHEET_HEIGHT = 2070;
+
+  const items = [
+    { name: "ТВ тумба", detailsRows: [5, 6, 7], resultRowAbove: 7 },
+    { name: "Донини", detailsRows: [10, 11, 12, 13], resultRowAbove: 13 },
+    { name: "Донини Гранде", detailsRows: [16, 17, 18, 19, 20, 21], resultRowAbove: 21 },
+    { name: "Авела Лайт", detailsRows: [24, 25, 26], resultRowAbove: 26 },
+    { name: "Донини R", detailsRows: [42, 43, 44, 45, 46, 47], resultRowAbove: 47 },
+  ];
+
+  let totalAllSheets = 0;
+  let resultMessage = "📊 РАСЧЕТ ПО ИЗДЕЛИЯМ\n─────────────────────\n";
+
+  items.forEach(item => {
+    let itemSheets = 0;
+    let itemText = `\n🔹 ${item.name}\n`;
+
+    item.detailsRows.forEach(rowNum => {
+      const color = String(sheet.getRange(rowNum, 5).getValue() || "").toLowerCase().trim();
+      const detailName = String(sheet.getRange(rowNum, 6).getValue() || "").toLowerCase();
+      if (!color.includes("черный") || !detailName.includes("обвязка")) return;
+
+      const sizeMatch = detailName.match(/\((\d+)_(\d+)\)/);
+      if (!sizeMatch) return;
+      const length = parseInt(sizeMatch[1], 10);
+      const width = parseInt(sizeMatch[2], 10);
+      const quantity = Number(sheet.getRange(rowNum, 7).getValue()) || 0;
+      if (!(length > 0 && width > 0 && quantity > 0)) return;
+
+      const stripsPerSheet = Math.floor(SHEET_HEIGHT / width);
+      const perStrip = Math.floor(SHEET_WIDTH / length);
+      const perSheet = stripsPerSheet * perStrip;
+      if (perSheet <= 0) {
+        itemText += `   • ${length}×${width}: ${quantity} шт → не помещается на лист\n`;
+        return;
+      }
+
+      const sheetsNeeded = Math.ceil(quantity / perSheet);
+      itemSheets += sheetsNeeded;
+      itemText += `   • ${length}×${width}: ${quantity} шт → ${sheetsNeeded} листов (по ${perSheet} шт/лист)\n`;
+    });
+
+    if (itemSheets > 0) {
+      sheet.getRange(item.resultRowAbove, 7).setValue(itemSheets);
+      totalAllSheets += itemSheets;
+      itemText += `   ✅ Итого: ${itemSheets} листов\n`;
+      resultMessage += itemText;
+    }
+  });
+
+  resultMessage += `\n─────────────────────\n✅ ВСЕГО ПО ВСЕМ ИЗДЕЛИЯМ: ${totalAllSheets} листов`;
+  ui.alert("Результат расчета", resultMessage, ui.ButtonSet.OK);
+}
+
+function createProductionPlan() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const shipmentsSheet = ss.getSheetByName(SHEETS.SHIPMENT);
+  const mebelSheet = ss.getSheetByName("Мебель");
+  const planSheet = ss.getSheetByName("План");
+  if (!shipmentsSheet || !mebelSheet || !planSheet) {
+    SpreadsheetApp.getUi().alert('Листы "Отгрузки", "План" или "Мебель" не найдены!');
+    return;
+  }
+
+  const range = shipmentsSheet.getRange(1, 1, shipmentsSheet.getLastRow(), shipmentsSheet.getLastColumn());
+  const backgrounds = range.getBackgrounds();
+  const values = range.getValues();
+  const pinkCells = [];
+
+  for (let i = 0; i < values.length; i++) {
+    for (let j = 0; j < values[i].length; j++) {
+      const bg = String(backgrounds[i][j] || "").toLowerCase();
+      if (bg !== "#ff00ff" && !bg.includes("ff00ff")) continue;
+      const value = parseFloat(values[i][j]);
+      if (!(value > 0)) continue;
+      pinkCells.push({
+        row: i + 1,
+        col: j + 1,
+        quantity: value,
+        fullName: String(values[i][5] || ""),
+        planColumn: j + 1,
+      });
+    }
+  }
+
+  if (!pinkCells.length) {
+    SpreadsheetApp.getUi().alert("❌ Нет выделенных ярко-розовых ячеек (#ff00ff)");
+    return;
+  }
+
+  pinkCells.sort((a, b) => a.row - b.row);
+  const selectedCell = pinkCells[0];
+  const planNumber = shipmentsSheet.getRange(1, selectedCell.planColumn).getValue();
+  const parsed = parseProductName_(selectedCell.fullName);
+
+  planSheet.getRange(11, 6, 20, 2).clearContent();
+  planSheet.getRange("B4").setValue(parsed.detailedName);
+  planSheet.getRange("B6").setValue(parsed.colorName);
+  planSheet.getRange("B11").setValue(parsed.firstName);
+  planSheet.getRange("D11").setValue(selectedCell.quantity);
+  planSheet.getRange("I7").setValue(planNumber);
+
+  copyDetailsFromMebel_(mebelSheet, planSheet, parsed.productType, parsed.series);
+  shipmentsSheet.getRange(selectedCell.row, selectedCell.col).setBackground("#ffff00");
+  sendShipmentCellToWork_(shipmentsSheet, selectedCell.row, selectedCell.col);
+
+  SpreadsheetApp.getUi().alert(`✅ План обновлен!\nНомер плана: ${planNumber}\nТип: ${parsed.productType}\nСерия: ${parsed.series || "-"}`);
+}
+
+function fillPlanFromShipmentCell_(shipmentsSheet, row, col, qtyOverride) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const mebelSheet = ss.getSheetByName("Мебель");
+  const planSheet = ss.getSheetByName("План");
+  if (!mebelSheet || !planSheet) throw new Error('Листы "План" или "Мебель" не найдены');
+
+  const fullName = String(shipmentsSheet.getRange(row, 6).getValue() || "");
+  const qty = Number(qtyOverride != null ? qtyOverride : shipmentsSheet.getRange(row, col).getValue() || 0);
+  const planNumber = shipmentsSheet.getRange(1, col).getValue();
+  const parsed = parseProductName_(fullName);
+
+  planSheet.getRange(11, 6, 20, 2).clearContent();
+  planSheet.getRange("B4").setValue(parsed.detailedName);
+  planSheet.getRange("B6").setValue(parsed.colorName);
+  planSheet.getRange("B11").setValue(parsed.firstName);
+  planSheet.getRange("D11").setValue(qty);
+  planSheet.getRange("I7").setValue(planNumber);
+  copyDetailsFromMebel_(mebelSheet, planSheet, parsed.productType, parsed.series);
+
+  return { planNumber, productType: parsed.productType, series: parsed.series || "" };
+}
+
+function readPlanPreview_() {
+  const planSheet = getSheet("План");
+  if (!planSheet) throw new Error("Лист 'План' не найден");
+
+  const detailedName = String(planSheet.getRange("B4").getValue() || "");
+  const colorName = String(planSheet.getRange("B6").getValue() || "");
+  const firstName = String(planSheet.getRange("B11").getValue() || "");
+  const qty = Number(planSheet.getRange("D11").getValue() || 0);
+  const planNumber = String(planSheet.getRange("I7").getValue() || "");
+  const rowsRaw = planSheet.getRange(11, 6, 20, 2).getDisplayValues();
+  const rows = rowsRaw
+    .map(r => ({ part: String(r[0] || "").trim(), qty: String(r[1] || "").trim() }))
+    .filter(x => x.part);
+
+  return {
+    detailedName,
+    colorName,
+    firstName,
+    qty,
+    planNumber,
+    rows,
+    generatedAt: formatMoscowDate(getMoscowTime()),
+  };
+}
+
+function webGetCurrentPlanPreview() {
+  return readPlanPreview_();
+}
+
+function webPreviewPlansBatch(items) {
+  return withWebLock_(function() {
+    const shipment = getSheet(SHEETS.SHIPMENT);
+    if (!shipment) throw new Error("Лист '" + SHEETS.SHIPMENT + "' не найден");
+
+    const arr = Array.isArray(items) ? items : [];
+    if (!arr.length) throw new Error("Не переданы позиции для предпросмотра");
+
+    const plans = [];
+    for (const x of arr) {
+      const r = Number(x && x.row || 0);
+      const c = Number(x && x.col || 0);
+      if (!(r >= 3 && r <= shipment.getLastRow())) continue;
+      if (!(c >= 18 && c <= shipment.getLastColumn())) continue;
+      const qty = Number(shipment.getRange(r, c).getValue() || 0);
+      if (!(qty > 0)) continue;
+
+      fillPlanFromShipmentCell_(shipment, r, c, qty);
+      const p = readPlanPreview_();
+      plans.push({
+        row: r,
+        col: c,
+        plan: p,
+      });
+    }
+    return { plans };
+  });
+}
+
+function webPreviewPlanFromShipment(row, col) {
+  return withWebLock_(function() {
+    const shipment = getSheet(SHEETS.SHIPMENT);
+    if (!shipment) throw new Error("Лист '" + SHEETS.SHIPMENT + "' не найден");
+    const r = Number(row || 0);
+    const c = Number(col || 0);
+    if (!(r >= 3 && r <= shipment.getLastRow())) throw new Error("Некорректная строка");
+    if (!(c >= 18 && c <= shipment.getLastColumn())) throw new Error("Некорректная колонка");
+
+    const qty = Number(shipment.getRange(r, c).getValue() || 0);
+    if (!(qty > 0)) throw new Error("В ячейке нет количества");
+
+    fillPlanFromShipmentCell_(shipment, r, c, qty);
+    return readPlanPreview_();
+  });
+}
+
+function parseProductName_(fullName) {
+  if (!fullName) {
+    return { firstName: "Изделие", detailedName: "Изделие", colorName: "Цвет", productType: "unknown", series: "" };
+  }
+  let str = String(fullName).trim().replace(/\.+$/, "");
+  const strLower = str.toLowerCase();
+  let productType = "unknown";
+  let series = "";
+
+  if (strLower.includes("тумба под тв лофт 150")) productType = "tv_stand_150";
+  else if (strLower.includes("тумба под тв")) productType = "tv_stand";
+  else if (strLower.includes("donini 806")) productType = "donini_806";
+  else if (strLower.includes("donini 750")) productType = "donini_750";
+  else if (strLower.includes("donini grande")) productType = "donini_grande";
+  else if (strLower.includes("avella lite")) productType = "avella_lite";
+  else if (strLower.includes("avella")) productType = "avella";
+  else if (strLower.includes("cremona")) productType = "cremona";
+  else if (strLower.includes("премьер")) productType = "premier";
+  else if (strLower.includes("stabile")) productType = "stabile";
+  else if (strLower.includes("donini r")) productType = "donini_r";
+  else if (strLower.includes("siena")) productType = "siena";
+  else if (strLower.includes("solito2")) productType = "solito2";
+  else if (strLower.includes("классико") || strLower.includes("classico")) productType = "classico";
+  else if (strLower.includes("solito")) {
+    productType = "solito";
+    if (strLower.includes("1350")) series = "1350";
+    else if (strLower.includes("1150")) series = "1150";
+  }
+
+  const firstSeparator = str.search(/[.,]/);
+  const firstName = firstSeparator > 0 ? str.substring(0, firstSeparator).trim() : (str.split(" ")[0] || "Изделие");
+  const lastDotIndex = str.lastIndexOf(".");
+  const detailedName = lastDotIndex > 0 ? str.substring(0, lastDotIndex).trim() : str;
+  let colorName = lastDotIndex > 0 ? str.substring(lastDotIndex + 1).trim() : "Цвет";
+  if (!colorName) {
+    const words = detailedName.split(" ");
+    colorName = words[words.length - 1] || "Цвет";
+  }
+
+  return { firstName, detailedName, colorName, productType, series };
+}
+
+function copyDetailsFromMebel_(mebelSheet, planSheet, productType, series) {
+  let detailsRange;
+  switch (productType) {
+    case "tv_stand_150": detailsRange = { startRow: 86, endRow: 88 }; break;
+    case "tv_stand": detailsRange = { startRow: 5, endRow: 7 }; break;
+    case "donini_806":
+    case "donini_750": detailsRange = { startRow: 9, endRow: 12 }; break;
+    case "donini_grande": detailsRange = { startRow: 15, endRow: 20 }; break;
+    case "avella_lite": detailsRange = { startRow: 23, endRow: 25 }; break;
+    case "cremona": detailsRange = { startRow: 29, endRow: 33 }; break;
+    case "premier": detailsRange = { startRow: 35, endRow: 36 }; break;
+    case "stabile": detailsRange = { startRow: 38, endRow: 40 }; break;
+    case "donini_r": detailsRange = { startRow: 42, endRow: 47 }; break;
+    case "siena": detailsRange = { startRow: 50, endRow: 56 }; break;
+    case "solito2": detailsRange = { startRow: 62, endRow: 62 }; break;
+    case "avella": detailsRange = { startRow: 66, endRow: 76 }; break;
+    case "classico": detailsRange = { startRow: 78, endRow: 78 }; break;
+    case "solito":
+      detailsRange = series === "1150" ? { startRow: 82, endRow: 82 } : { startRow: 58, endRow: 58 };
+      break;
+    default:
+      detailsRange = { startRow: 15, endRow: 20 };
+  }
+
+  let targetRow = 11;
+  for (let row = detailsRange.startRow; row <= detailsRange.endRow; row++) {
+    const detailName = mebelSheet.getRange(row, 6).getValue();
+    const detailFormula = mebelSheet.getRange(row, 7).getFormula();
+    if (!detailName) continue;
+
+    planSheet.getRange(targetRow, 6).setValue(detailName);
+    if (detailFormula) {
+      planSheet.getRange(targetRow, 7).setFormula(detailFormula.replace(/D\d+/g, "D11"));
+    } else {
+      const detailValue = mebelSheet.getRange(row, 7).getValue();
+      planSheet.getRange(targetRow, 7).setValue(typeof detailValue === "number" ? detailValue : "");
+    }
+    targetRow++;
+  }
+}
+
+const PLANK_CFG_ = {
+  SOURCE_SHEET: "Мебель",
+  TRACK_SHEET: SHEETS.TRACK,
+  PRINT_SHEET: "Печать_планки",
+  COL_NAME: 6, // F
+  COL_QTY: 7,  // G
+};
+
+function sendSelectedPlanksToWork() {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const src = ss.getSheetByName(PLANK_CFG_.SOURCE_SHEET);
+    const track = ss.getSheetByName(PLANK_CFG_.TRACK_SHEET);
+
+    if (!src) throw new Error("Лист '" + PLANK_CFG_.SOURCE_SHEET + "' не найден");
+    if (!track) throw new Error("Лист '" + PLANK_CFG_.TRACK_SHEET + "' не найден");
+
+    const activeRange = src.getActiveRange();
+    if (!activeRange) {
+      SpreadsheetApp.getUi().alert("Сначала выдели строки с планками на листе 'Мебель'.");
+      return;
+    }
+
+    const startRow = activeRange.getRow();
+    const numRows = activeRange.getNumRows();
+    const rows = src.getRange(startRow, PLANK_CFG_.COL_NAME, numRows, 2).getValues(); // F:G
+
+    const selected = rows
+      .map((r, i) => ({
+        row: startRow + i,
+        name: String(r[0] || "").trim(),
+        qty: Number(r[1] || 0),
+      }))
+      .filter(x => x.name && x.qty > 0);
+
+    if (!selected.length) {
+      SpreadsheetApp.getUi().alert(
+        "В выделении нет валидных строк.\nПроверь, что в F есть наименование, а в G количество > 0."
+      );
+      return;
+    }
+
+    const now = getMoscowTime();
+    const batchId = "OBV-" + Utilities.formatDate(now, Session.getScriptTimeZone(), "yyMMdd-HHmmss");
+    const week = getIsoWeek_(now);
+
+    buildPlanksPrintSheet_(ss, selected, batchId, now);
+    const added = appendPlanksToTrack_(track, selected, batchId, week, now);
+
+    SpreadsheetApp.getUi().alert(
+      "Готово.\n" +
+      "Пакет: " + batchId + "\n" +
+      "Позиции выделено: " + selected.length + "\n" +
+      "Добавлено в трек: " + added + "\n" +
+      "Печать: '" + PLANK_CFG_.PRINT_SHEET + "'."
+    );
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function buildPlanksPrintSheet_(ss, selected, batchId, now) {
+  let sh = ss.getSheetByName(PLANK_CFG_.PRINT_SHEET);
+  if (!sh) sh = ss.insertSheet(PLANK_CFG_.PRINT_SHEET);
+  sh.clear();
+
+  const tz = Session.getScriptTimeZone();
+  const dateStr = Utilities.formatDate(now, tz, "dd.MM.yyyy HH:mm");
+
+  sh.getRange("A1").setValue("ЗАДАНИЕ В РАБОТУ: ПЛАНКИ ОБВЯЗКИ").setFontWeight("bold").setFontSize(14);
+  sh.getRange("A2").setValue("Пакет: " + batchId);
+  sh.getRange("A3").setValue("Дата: " + dateStr);
+
+  sh.getRange(5, 1, 1, 4).setValues([["№", "Наименование", "Кол-во", "Отметка"]]);
+  sh.getRange(5, 1, 1, 4).setFontWeight("bold").setBackground("#e5e7eb");
+
+  const body = selected.map((x, idx) => [idx + 1, x.name, x.qty, ""]);
+  sh.getRange(6, 1, body.length, 4).setValues(body);
+  sh.getRange(6, 3, body.length, 1).setNumberFormat("0");
+
+  sh.setColumnWidth(1, 50);
+  sh.setColumnWidth(2, 420);
+  sh.setColumnWidth(3, 100);
+  sh.setColumnWidth(4, 220);
+  sh.getRange(5, 1, body.length + 1, 4).setBorder(true, true, true, true, true, true);
+
+  const signRow = 7 + body.length;
+  sh.getRange("A" + signRow).setValue("Выдал в работу: __________________");
+  sh.getRange("C" + signRow).setValue("Принял: __________________");
+  sh.setFrozenRows(5);
+}
+
+function appendPlanksToTrack_(track, selected, batchId, week, now) {
+  const toInsert = [];
+  for (const x of selected) {
+    const itemName = x.name + " [" + batchId + "]";
+    const existsRow = findOrderRowByKey(track, itemName, null, week);
+    if (existsRow !== -1) continue; // защита от дубля этого же пакета
+
+    const orderId = "PL-" + Utilities.getUuid().slice(0, 8).toUpperCase();
+    toInsert.push([
+      now, itemName, false, week, x.qty,
+      "", "", "⏳ Ожидает",
+      "", "", "", "⏳ Ожидает",
+      "", "", "", "⏳ Ожидает",
+      "⏳ Ожидает", "", "", "🟡 Новый заказ",
+      orderId, "", "", false,
+      "", "", "", "", "", ""
+    ]);
+  }
+
+  if (!toInsert.length) return 0;
+
+  const startRow = track.getLastRow() + 1;
+  track.getRange(startRow, 1, toInsert.length, toInsert[0].length).setValues(toInsert);
+  for (let i = 0; i < toInsert.length; i++) {
+    const r = startRow + i;
+    setupStatusDropdowns(track, r);
+    track.getRange(r, COL.CONSUME_SHEETS).insertCheckboxes();
+    track.getRange(r, COL.CONSUME_SHEETS).setValue(false);
+    track.getRange(r, COL.SHIPPED).insertCheckboxes();
+    track.getRange(r, COL.SHIPPED).setValue(false);
+  }
+  return toInsert.length;
+}
+
+function getIsoWeek_(date) {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+}
+
+function doGet(e) {
+  if (e && e.parameter && e.parameter.action) {
+    return webApiDispatch_(e.parameter.action, e.parameter.payload || "{}");
+  }
+  return HtmlService
+    .createHtmlOutput(getWorkshopWebAppHtml_())
+    .setTitle("Производство CRM")
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+
+function doPost(e) {
+  try {
+    const raw = (e && e.postData && e.postData.contents) ? e.postData.contents : "{}";
+    const req = JSON.parse(raw);
+    return webApiDispatch_(String(req.action || "").trim(), JSON.stringify(req.payload || {}));
+  } catch (err) {
+    return ContentService
+      .createTextOutput(JSON.stringify({ ok: false, error: String(err && err.message ? err.message : err) }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+function webApiDispatch_(action, payloadRaw) {
+  try {
+    if (!action) throw new Error("action не передан");
+    let payload = {};
+    try { payload = typeof payloadRaw === "string" ? JSON.parse(payloadRaw || "{}") : (payloadRaw || {}); } catch (_) { payload = {}; }
+
+    let data;
+    switch (action) {
+      case "webGetOrdersAll": data = webGetOrdersAll(); break;
+      case "webGetShipmentBoard": data = webGetShipmentBoard(); break;
+      case "webGetOrdersPilka": data = webGetOrdersPilka(); break;
+      case "webGetOrdersKromka": data = webGetOrdersKromka(); break;
+      case "webGetOrdersPras": data = webGetOrdersPras(); break;
+      case "webGetBackendRevision": data = webGetBackendRevision(); break;
+      case "webSendShipmentToWork": data = webSendShipmentToWork(payload.row, payload.col); break;
+      case "webPreviewPlanFromShipment": data = webPreviewPlanFromShipment(payload.row, payload.col); break;
+      case "webPreviewPlansBatch": data = webPreviewPlansBatch(payload.items); break;
+      case "webGetCurrentPlanPreview": data = webGetCurrentPlanPreview(); break;
+      case "webSetPilkaInWork": data = webSetPilkaInWork(payload.orderId); break;
+      case "webSetPilkaDone": data = webSetPilkaDone(payload.orderId); break;
+      case "webSetKromkaInWork": data = webSetKromkaInWork(payload.orderId, payload.executor); break;
+      case "webSetKromkaDone": data = webSetKromkaDone(payload.orderId); break;
+      case "webSetPrasInWork": data = webSetPrasInWork(payload.orderId, payload.executor); break;
+      case "webSetPrasDone": data = webSetPrasDone(payload.orderId); break;
+      case "webSetPilkaPause": data = webSetPilkaPause(payload.orderId); break;
+      case "webSetKromkaPause": data = webSetKromkaPause(payload.orderId); break;
+      case "webSetPrasPause": data = webSetPrasPause(payload.orderId); break;
+      case "webGetConsumeOptions": data = webGetConsumeOptions(payload.orderId); break;
+      case "webConsumeSheetsByOrderId": data = webConsumeSheetsByOrderId(payload.orderId, payload.material, payload.qty); break;
+      default:
+        throw new Error("Неизвестный action: " + action);
+    }
+    if (/^webSet/.test(action) || action === "webConsumeSheetsByOrderId") {
+      bumpBackendRevision_(action);
+    }
+    return ContentService
+      .createTextOutput(JSON.stringify({ ok: true, data }))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService
+      .createTextOutput(JSON.stringify({ ok: false, error: String(err && err.message ? err.message : err) }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+function webGetOrdersInWork() { return webGetOrdersByTab_("work"); }
+function webGetOrdersPaused() { return webGetOrdersByTab_("paused"); }
+function webGetOrdersReadyAssembly() { return webGetOrdersByTab_("ready"); }
+function webGetOrdersAll() { return webGetOrdersByTab_("all"); }
+function webGetOrdersPilka() { return webGetOrdersByTab_("pilka"); }
+function webGetOrdersKromka() { return webGetOrdersByTab_("kromka"); }
+function webGetOrdersPras() { return webGetOrdersByTab_("pras"); }
+function webGetBackendRevision() {
+  const revision = Number(getScriptProp(PROP.BACKEND_REVISION, false) || 0) || 0;
+  return { revision };
+}
+
+function webGetOrdersByTab_(tab) {
+  const track = getSheet(SHEETS.TRACK);
+  if (!track) return [];
+  const lastRow = track.getLastRow();
+  if (lastRow < 2) return [];
+
+  const sheetsNeededMap = buildShipmentSheetsNeededMap_();
+  const data = track.getRange(2, 1, lastRow - 1, COL.LAST).getValues();
+  return data
+    .map((r, i) => {
+      const item = String(r[COL.ITEM - 1] || "").trim();
+      const week = String(r[COL.WEEK - 1] || "").trim();
+      const material = String(getEffectiveMaterial_(item, r[COL.MATERIAL - 1]) || "").trim();
+      const key = [normalizeLookupKey_(item), normalizeLookupKey_(material), normalizeLookupKey_(week)].join("||");
+      const fallbackKey = [normalizeLookupKey_(item), normalizeLookupKey_(week)].join("||");
+      return {
+        row: i + 2,
+      createdAt: r[COL.CREATED_AT - 1] || "",
+        orderId: String(r[COL.ORDER_ID - 1] || ""),
+        item,
+        week,
+        qty: Number(r[COL.QTY - 1] || 0),
+        sheetsNeeded: Number(sheetsNeededMap[key] || sheetsNeededMap[fallbackKey] || 0),
+        pilkaStatus: String(r[COL.PILKA_STATUS - 1] || ""),
+        kromkaStatus: String(r[COL.KROMKA_STATUS - 1] || ""),
+        prasStatus: String(r[COL.PRAS_STATUS - 1] || ""),
+        assemblyStatus: String(r[COL.ASSEMBLY_STATUS - 1] || ""),
+        overall: String(r[COL.OVERALL_STATUS - 1] || ""),
+      };
+    })
+    .filter(x => {
+      const pilkaDone = statusIsDone_(x.pilkaStatus);
+      const kromkaDone = statusIsDone_(x.kromkaStatus);
+      const prasDone = statusIsDone_(x.prasStatus);
+      const pilkaWork = statusIsInWork_(x.pilkaStatus);
+      const kromkaWork = statusIsInWork_(x.kromkaStatus);
+      const prasWork = statusIsInWork_(x.prasStatus);
+      const hasPause = statusIsPause_(x.pilkaStatus) || statusIsPause_(x.kromkaStatus) || statusIsPause_(x.prasStatus);
+
+      if (tab === "paused") {
+        return hasPause;
+      }
+      if (tab === "ready") {
+        return pilkaDone && kromkaDone && prasDone && !statusIsAssembled_(x.assemblyStatus);
+      }
+      if (tab === "all") return true;
+      if (tab === "pilka") return !pilkaDone;
+      if (tab === "kromka") return pilkaDone && !kromkaDone;
+      if (tab === "pras") return pilkaDone && kromkaDone && !prasDone;
+      return pilkaWork || kromkaWork || prasWork;
+    });
+}
+
+function buildShipmentSheetsNeededMap_() {
+  const shipment = getSheet(SHEETS.SHIPMENT);
+  if (!shipment) return {};
+  const lastRow = shipment.getLastRow();
+  const lastCol = shipment.getLastColumn();
+  if (lastRow < 3 || lastCol < 18) return {};
+
+  const values = shipment.getRange(1, 1, lastRow, lastCol).getValues();
+  const map = {};
+  for (let r = 3; r <= lastRow; r++) {
+    const item = String(values[r - 1][5] || "").trim(); // F
+    if (!item) continue;
+    const material = String(getShipmentMaterialFromSheetRow_(shipment, r) || values[r - 1][0] || values[r - 1][6] || "").trim(); // unified with work-send lookup
+    const outputPerSheet = Number(values[r - 1][1] || 0); // B
+    if (!(outputPerSheet > 0)) continue;
+    for (let c = 18; c <= lastCol; c++) {
+      const qty = Number(values[r - 1][c - 1] || 0);
+      if (!(qty > 0)) continue;
+      const week = String(values[0][c - 1] || "").trim();
+      if (!week) continue;
+      const sheets = Math.ceil(qty / outputPerSheet);
+      const key = [normalizeLookupKey_(item), normalizeLookupKey_(material), normalizeLookupKey_(week)].join("||");
+      const fallbackKey = [normalizeLookupKey_(item), normalizeLookupKey_(week)].join("||");
+      map[key] = sheets;
+      if (!map[fallbackKey] || sheets > map[fallbackKey]) {
+        map[fallbackKey] = sheets;
+      }
+    }
+  }
+  return map;
+}
+
+function normalizeLookupKey_(v) {
+  return String(v || "")
+    .toLowerCase()
+    .replace(/[ё]/g, "е")
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isNeutralShipmentColor_(bg) {
+  const c = String(bg || "").toLowerCase();
+  return !c || c === "#ffffff" || c === "#fff";
+}
+
+function getFurnitureGroupName_(itemName) {
+  return getLaborGroupName_(itemName);
+}
+
+function webGetShipmentBoard() {
+  const shipment = getSheet(SHEETS.SHIPMENT);
+  if (!shipment) throw new Error("Лист '" + SHEETS.SHIPMENT + "' не найден");
+
+  const lastRow = shipment.getLastRow();
+  const lastCol = shipment.getLastColumn();
+  if (lastRow < 3 || lastCol < 18) return { weeks: [], sections: [] };
+
+  const values = shipment.getRange(1, 1, lastRow, lastCol).getValues();
+  const bgs = shipment.getRange(1, 1, lastRow, lastCol).getBackgrounds();
+  const notes = shipment.getRange(1, 1, lastRow, lastCol).getNotes();
+
+  const track = getSheet(SHEETS.TRACK);
+  const inWorkSet = new Set();
+  if (track && track.getLastRow() >= 2) {
+    const td = track.getRange(2, 1, track.getLastRow() - 1, COL.LAST).getValues();
+    td.forEach(r => {
+      const item = String(r[COL.ITEM - 1] || "").trim();
+      const material = String(getEffectiveMaterial_(item, r[COL.MATERIAL - 1]) || "").trim();
+      const week = String(r[COL.WEEK - 1] || "").trim();
+      if (item && week) inWorkSet.add([item, material, week].join("||"));
+    });
+  }
+
+  const weeks = [];
+  for (let c = 18; c <= lastCol; c++) {
+    weeks.push({ col: c, week: String(values[0][c - 1] || "").trim() });
+  }
+
+  const sectionsMap = {};
+  for (let r = 3; r <= lastRow; r++) {
+    const item = String(values[r - 1][5] || "").trim(); // F
+    if (!item) continue;
+    const material = String(values[r - 1][0] || values[r - 1][6] || "").trim(); // A, fallback G
+    const outputPerSheet = Number(values[r - 1][1] || 0); // B: сколько изделий с одного листа
+    const availableSheets = Number(values[r - 1][4] || 0); // E: сколько листов доступно по материалу
+    const materialBalanceText = String(values[r - 1][3] || "").trim(); // D: хватает/не хватает
+    const materialShortage =
+      /не\s*хватает/i.test(materialBalanceText) ||
+      String(materialBalanceText).includes("❌");
+    const section = getFurnitureGroupName_(item) || "Прочее";
+
+    const cells = [];
+    for (let c = 18; c <= lastCol; c++) {
+      const qty = Number(values[r - 1][c - 1] || 0);
+      const bg = String(bgs[r - 1][c - 1] || "").toLowerCase();
+      const note = String(notes[r - 1][c - 1] || "");
+      if (!(qty > 0) && isNeutralShipmentColor_(bg)) continue;
+      const week = String(values[0][c - 1] || "").trim();
+      const inWork = inWorkSet.has([item, material, week].join("||"));
+      const canSendToWork = qty > 0 && isNeutralShipmentColor_(bg) && !inWork;
+      const sheetsNeeded = outputPerSheet > 0 ? Math.ceil(qty / outputPerSheet) : 0;
+      const materialEnoughForOrder = sheetsNeeded > 0 ? sheetsNeeded <= availableSheets : true;
+      cells.push({
+        col: c,
+        week,
+        qty,
+        outputPerSheet,
+        sheetsNeeded,
+        availableSheets,
+        materialEnoughForOrder,
+        bg: bg || "#ffffff",
+        note,
+        inWork,
+        canSendToWork,
+      });
+    }
+    if (!cells.length) continue;
+
+    if (!sectionsMap[section]) sectionsMap[section] = [];
+    sectionsMap[section].push({
+      row: r,
+      item,
+      material,
+      materialBalanceText,
+      materialShortage,
+      cells,
+    });
+  }
+
+  const sections = Object.keys(sectionsMap).sort().map(name => ({
+    name,
+    items: sectionsMap[name].sort((a, b) => String(a.item).localeCompare(String(b.item))),
+  }));
+
+  return { weeks, sections };
+}
+
+function webSendShipmentToWork(row, col) {
+  return withWebLock_(function() {
+    const shipment = getSheet(SHEETS.SHIPMENT);
+    if (!shipment) throw new Error("Лист '" + SHEETS.SHIPMENT + "' не найден");
+    const r = Number(row || 0);
+    const c = Number(col || 0);
+    if (!(r >= 3 && r <= shipment.getLastRow())) throw new Error("Некорректная строка");
+    if (!(c >= 18 && c <= shipment.getLastColumn())) throw new Error("Некорректная колонка");
+
+    const item = String(shipment.getRange(r, 6).getValue() || "").trim();
+    const material = getShipmentMaterialFromSheetRow_(shipment, r);
+    const week = String(shipment.getRange(1, c).getValue() || "").trim();
+    const qty = Number(shipment.getRange(r, c).getValue() || 0);
+    const bg = String(shipment.getRange(r, c).getBackground() || "").toLowerCase();
+
+    if (!item) throw new Error("В строке нет изделия");
+    if (!(qty > 0)) throw new Error("В ячейке нет количества");
+    if (!isNeutralShipmentColor_(bg)) throw new Error("Отправка доступна только для ячеек без цвета");
+
+    const track = getSheet(SHEETS.TRACK);
+    if (!track) throw new Error("Лист '" + SHEETS.TRACK + "' не найден");
+    const existing = findOrderRowByKey(track, item, material, week);
+    if (existing !== -1) return { ok: true, skipped: true, reason: "already_exists" };
+
+    const planMeta = fillPlanFromShipmentCell_(shipment, r, c, qty);
+    sendShipmentCellToWork_(shipment, r, c);
+    shipment.getRange(r, c).setBackground("#ffff00");
+    shipment.getRange(r, c).setNote("📤 Отправлено в работу: " + formatMoscowDate(getMoscowTime()));
+    return { ok: true, row: r, col: c, plan: planMeta, preview: readPlanPreview_() };
+  });
+}
+
+function statusNorm_(v) { return String(v || "").trim().toLowerCase(); }
+function statusIsDone_(v) { return statusNorm_(v).includes("готов"); }
+function statusIsInWork_(v) { return statusNorm_(v).includes("в работе"); }
+function statusIsPause_(v) { return statusNorm_(v).includes("пауза"); }
+function statusIsAssembled_(v) { return statusNorm_(v).includes("собран"); }
+
+function webSetPilkaDone(orderId) {
+  return withWebLock_(function() {
+    if (!orderId) throw new Error("orderId не передан");
+    const track = getSheet(SHEETS.TRACK);
+    if (!track) throw new Error("Лист '" + SHEETS.TRACK + "' не найден");
+
+    const row = findOrderRowById(track, orderId);
+    if (row === -1) throw new Error("Заказ не найден: " + orderId);
+
+    track.getRange(row, COL.PILKA_STATUS).setValue("✅ Готово");
+    const now = getMoscowTime();
+    handlePilkaStatus(track, row, "✅ Готово", now);
+    updateOverallStatus(track, row);
+    return { ok: true, needConsume: true, orderId: orderId };
+  });
+}
+
+function webSetKromkaDone(orderId) {
+  return webSetStageDone_(orderId, "kromka");
+}
+
+function webSetPrasDone(orderId) {
+  return webSetStageDone_(orderId, "pras");
+}
+
+function webSetPilkaInWork(orderId) {
+  return webSetStageInWork_(orderId, "pilka");
+}
+
+function webSetKromkaInWork(orderId, executor) {
+  return webSetStageInWork_(orderId, "kromka", executor);
+}
+
+function webSetPrasInWork(orderId, executor) {
+  return webSetStageInWork_(orderId, "pras", executor);
+}
+
+function webSetPilkaPause(orderId) {
+  return webSetStagePause_(orderId, "pilka");
+}
+
+function webSetKromkaPause(orderId) {
+  return webSetStagePause_(orderId, "kromka");
+}
+
+function webSetPrasPause(orderId) {
+  return webSetStagePause_(orderId, "pras");
+}
+
+function webGetConsumeOptions(orderId) {
+  const track = getSheet(SHEETS.TRACK);
+  if (!track) throw new Error("Лист '" + SHEETS.TRACK + "' не найден");
+  const row = findOrderRowById(track, orderId);
+  if (row === -1) throw new Error("Заказ не найден: " + orderId);
+
+  const item = String(track.getRange(row, COL.ITEM).getValue() || "");
+  const week = String(track.getRange(row, COL.WEEK).getValue() || "");
+  const suggested = String(getMappedMaterialByItemName_(item) || getEffectiveMaterialFromRow_(track, row) || "");
+  const materials = getSuggestedMaterialsFromCurrentExpenseSheet_().slice(0, 500);
+  return { orderId, row, item, week, suggestedMaterial: suggested, materials };
+}
+
+function webConsumeSheetsByOrderId(orderId, material, qty) {
+  const track = getSheet(SHEETS.TRACK);
+  if (!track) throw new Error("Лист '" + SHEETS.TRACK + "' не найден");
+  const row = findOrderRowById(track, orderId);
+  if (row === -1) throw new Error("Заказ не найден: " + orderId);
+  return consumeSheetsSubmit(row, material, qty, orderId, track.getRange(row, COL.ITEM).getValue(), track.getRange(row, COL.WEEK).getValue());
+}
+
+function webSetAssemblyDone(orderId) {
+  return withWebLock_(function() {
+    if (!orderId) throw new Error("orderId не передан");
+    const track = getSheet(SHEETS.TRACK);
+    if (!track) throw new Error("Лист '" + SHEETS.TRACK + "' не найден");
+
+    const row = findOrderRowById(track, orderId);
+    if (row === -1) throw new Error("Заказ не найден: " + orderId);
+
+    track.getRange(row, COL.ASSEMBLY_STATUS).setValue("✅ СОБРАНО");
+    const now = getMoscowTime();
+    handleAssemblyStatus(track, row, "✅ СОБРАНО", now);
+    updateOverallStatus(track, row);
+    return { ok: true };
+  });
+}
+
+function webSetStageDone_(orderId, stage) {
+  return withWebLock_(function() {
+    if (!orderId) throw new Error("orderId не передан");
+    const track = getSheet(SHEETS.TRACK);
+    if (!track) throw new Error("Лист '" + SHEETS.TRACK + "' не найден");
+
+    const row = findOrderRowById(track, orderId);
+    if (row === -1) throw new Error("Заказ не найден: " + orderId);
+
+    const now = getMoscowTime();
+    if (stage === "kromka") {
+      if (!statusIsDone_(track.getRange(row, COL.PILKA_STATUS).getValue())) {
+        throw new Error("Сначала завершите пилку.");
+      }
+      track.getRange(row, COL.KROMKA_STATUS).setValue("✅ Готово");
+      handleKromkaStatus(track, row, "✅ Готово", now);
+    } else if (stage === "pras") {
+      if (!statusIsDone_(track.getRange(row, COL.KROMKA_STATUS).getValue())) {
+        throw new Error("Сначала завершите кромку.");
+      }
+      track.getRange(row, COL.PRAS_STATUS).setValue("✅ Готово");
+      handlePrasadkaStatus(track, row, "✅ Готово", now);
+    }
+    updateOverallStatus(track, row);
+    return { ok: true };
+  });
+}
+
+function webSetStageInWork_(orderId, stage, executor) {
+  return withWebLock_(function() {
+    if (!orderId) throw new Error("orderId не передан");
+    const track = getSheet(SHEETS.TRACK);
+    if (!track) throw new Error("Лист '" + SHEETS.TRACK + "' не найден");
+
+    const row = findOrderRowById(track, orderId);
+    if (row === -1) throw new Error("Заказ не найден: " + orderId);
+
+    const now = getMoscowTime();
+    if (stage === "pilka") {
+      track.getRange(row, COL.PILKA_STATUS).setValue("🔨 В работе");
+      handlePilkaStatus(track, row, "🔨 В работе", now);
+    } else if (stage === "kromka") {
+      if (!statusIsDone_(track.getRange(row, COL.PILKA_STATUS).getValue())) {
+        throw new Error("Кромка доступна только после 'Пила: Готово'.");
+      }
+      const ex = String(executor || "").toLowerCase();
+      const next = ex.includes("сереж") ? "🔪 В работе (Сережа)" : "🔪 В работе (Слава)";
+      track.getRange(row, COL.KROMKA_STATUS).setValue(next);
+      handleKromkaStatus(track, row, next, now);
+    } else if (stage === "pras") {
+      if (!statusIsDone_(track.getRange(row, COL.KROMKA_STATUS).getValue())) {
+        throw new Error("Присадка доступна только после 'Кромка: Готово'.");
+      }
+      const ex = String(executor || "").toLowerCase();
+      const next = ex.includes("витал") ? "🔧 В работе (Виталик)" : "🔧 В работе (Лёха)";
+      track.getRange(row, COL.PRAS_STATUS).setValue(next);
+      handlePrasadkaStatus(track, row, next, now);
+    }
+    updateOverallStatus(track, row);
+    return { ok: true };
+  });
+}
+
+function webSetStagePause_(orderId, stage) {
+  return withWebLock_(function() {
+    if (!orderId) throw new Error("orderId не передан");
+    const track = getSheet(SHEETS.TRACK);
+    if (!track) throw new Error("Лист '" + SHEETS.TRACK + "' не найден");
+
+    const row = findOrderRowById(track, orderId);
+    if (row === -1) throw new Error("Заказ не найден: " + orderId);
+
+    const now = getMoscowTime();
+    if (stage === "pilka") {
+      track.getRange(row, COL.PILKA_STATUS).setValue(STATUS_PAUSE);
+      handlePilkaStatus(track, row, STATUS_PAUSE, now);
+    } else if (stage === "kromka") {
+      if (!statusIsDone_(track.getRange(row, COL.PILKA_STATUS).getValue())) {
+        throw new Error("Кромка доступна только после 'Пила: Готово'.");
+      }
+      track.getRange(row, COL.KROMKA_STATUS).setValue(STATUS_PAUSE);
+      handleKromkaStatus(track, row, STATUS_PAUSE, now);
+    } else if (stage === "pras") {
+      if (!statusIsDone_(track.getRange(row, COL.KROMKA_STATUS).getValue())) {
+        throw new Error("Присадка доступна только после 'Кромка: Готово'.");
+      }
+      track.getRange(row, COL.PRAS_STATUS).setValue(STATUS_PAUSE);
+      handlePrasadkaStatus(track, row, STATUS_PAUSE, now);
+    }
+    updateOverallStatus(track, row);
+    return { ok: true };
+  });
+}
+
+function withWebLock_(fn) {
+  const lock = LockService.getScriptLock();
+  let ok = false;
+  // Несколько коротких попыток вместо одного длинного ожидания.
+  for (let i = 0; i < 4; i++) {
+    ok = lock.tryLock(1500);
+    if (ok) break;
+    Utilities.sleep(250);
+  }
+  if (!ok) throw new Error("Система занята другим действием. Повторите через 1-2 секунды.");
+  try {
+    return fn();
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function getWorkshopWebAppHtml_() {
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Производство CRM</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; background: #f3f4f6; color: #111827; }
+    .wrap { max-width: 980px; margin: 0 auto; padding: 12px; }
+    .head { display: flex; gap: 8px; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+    h1 { font-size: 18px; margin: 0; }
+    button { border: 0; background: #1f4e78; color: #fff; padding: 8px 10px; border-radius: 8px; cursor: pointer; }
+    button[disabled] { opacity: .5; cursor: not-allowed; }
+    .btn { transition: transform .08s ease, box-shadow .15s ease, opacity .2s ease; box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+    .btn:active { transform: translateY(1px); }
+    .btn-primary { background: #1f4e78; }
+    .btn-success { background: #0f9d58; }
+    .btn-active { box-shadow: 0 0 0 2px rgba(31,78,120,.25) inset; }
+    .btn-busy { opacity: .6; cursor: wait; }
+    .tabs { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+    .tab { background: #e5e7eb; color: #111827; }
+    .tab.active { background: #1f4e78; color: #fff; }
+    .card { background: #fff; border-radius: 10px; padding: 10px; margin-bottom: 8px; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+    .row { display: flex; justify-content: space-between; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .actions { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+    select, input { padding: 8px; border-radius: 8px; border: 1px solid #d1d5db; }
+    .muted { color: #6b7280; font-size: 12px; }
+    .metaStrong { color:#374151; font-size:14px; font-weight:700; letter-spacing:0; }
+    .empty { text-align: center; color: #6b7280; padding: 28px 8px; }
+    #consumeModal { position: fixed; inset: 0; background: rgba(0,0,0,.35); display:none; align-items:center; justify-content:center; }
+    #consumeBox { background:#fff; border-radius:10px; padding:12px; width:min(520px,92vw); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="head">
+      <h1 id="title">Пила</h1>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span id="lastSync" class="muted">Обновлено: —</span>
+        <button onclick="load()">Обновить</button>
+      </div>
+    </div>
+    <div class="tabs">
+      <button id="tab_all" class="tab" onclick="switchTab('all')">Все заказы</button>
+      <button id="tab_pilka" class="tab active" onclick="switchTab('pilka')">Пила</button>
+      <button id="tab_kromka" class="tab" onclick="switchTab('kromka')">Кромка</button>
+      <button id="tab_pras" class="tab" onclick="switchTab('pras')">Присадка</button>
+    </div>
+    <div style="margin-bottom:10px;">
+      <input id="q" oninput="render(window._rows || [])" placeholder="Поиск: ID или изделие..." style="width:100%;max-width:420px;" />
+    </div>
+    <div id="list"></div>
+  </div>
+
+  <div id="consumeModal">
+    <div id="consumeBox">
+      <div style="font-weight:700;margin-bottom:8px;">Списание листов после пилки</div>
+      <div id="consumeInfo" class="muted" style="margin-bottom:8px;"></div>
+      <div style="margin-bottom:8px;">
+        <label>Материал</label><br/>
+        <input id="consumeMaterial" list="consumeMaterials" style="width:100%;" />
+        <datalist id="consumeMaterials"></datalist>
+      </div>
+      <div style="margin-bottom:8px;">
+        <label>Листов</label><br/>
+        <input id="consumeQty" placeholder="например 1 или 2.5" style="width:100%;" />
+      </div>
+      <div id="consumeErr" style="color:#b91c1c;min-height:18px;"></div>
+      <div class="actions">
+        <button onclick="submitConsume()">✅ Списать</button>
+        <button onclick="closeConsume()">Отмена</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let activeTab = "pilka";
+    let pendingConsume = null;
+    const ACTION_REFRESH_DELAY_MS = 10000;
+    const BACKEND_POLL_MS = 4000;
+    let delayedRefreshTimer = null;
+    let backendRevision = 0;
+    let backendPollTimer = null;
+    const TAB_TITLE = { all: "Все заказы", pilka: "Пила", kromka: "Кромка", pras: "Присадка" };
+    function escapeHtml(v) {
+      return String(v ?? "").replace(/[&<>"]/g, s => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[s]));
+    }
+    function switchTab(tab) {
+      activeTab = tab;
+      document.getElementById("title").textContent = TAB_TITLE[tab] || "Пила";
+      ["all", "pilka", "kromka", "pras"].forEach(t => {
+        document.getElementById("tab_" + t).classList.toggle("active", t === tab);
+      });
+      load();
+    }
+    function load() {
+      const list = document.getElementById("list");
+      list.innerHTML = '<div class="empty">Загрузка...</div>';
+      const rpc = activeTab === "all" ? "webGetOrdersAll" : activeTab === "kromka" ? "webGetOrdersKromka" : activeTab === "pras" ? "webGetOrdersPras" : "webGetOrdersPilka";
+      google.script.run.withSuccessHandler(rows => {
+        window._rows = rows || [];
+        render(window._rows);
+        const stamp = document.getElementById("lastSync");
+        if (stamp) stamp.textContent = "Обновлено: " + new Date().toLocaleTimeString();
+      }).withFailureHandler(err => {
+        list.innerHTML = '<div class="empty">Ошибка: ' + escapeHtml(err && err.message || err) + '</div>';
+      })[rpc]();
+    }
+    function scheduleDelayedLoad() {
+      if (delayedRefreshTimer) clearTimeout(delayedRefreshTimer);
+      delayedRefreshTimer = setTimeout(() => load(), ACTION_REFRESH_DELAY_MS);
+    }
+    function pollBackendRevision() {
+      google.script.run.withSuccessHandler((payload) => {
+        const rev = Number(payload && payload.revision || 0);
+        if (!rev) return;
+        if (!backendRevision) {
+          backendRevision = rev;
+          return;
+        }
+        if (rev > backendRevision) {
+          backendRevision = rev;
+          load();
+        }
+      }).withFailureHandler(() => {})["webGetBackendRevision"]();
+    }
+    function setupBackendPolling() {
+      if (backendPollTimer) clearInterval(backendPollTimer);
+      backendPollTimer = setInterval(() => pollBackendRevision(), BACKEND_POLL_MS);
+      pollBackendRevision();
+    }
+    function btn(orderId, label, fn, disabled, tone, active) {
+      const cls = 'btn ' + (tone || 'btn-primary') + (active ? ' btn-active' : '');
+      const click = disabled ? '' : 'this.disabled=true;this.classList.add("btn-busy");' + fn + '(\\'' + encodeURIComponent(orderId) + '\\')';
+      return '<button class="' + cls + '" ' + (disabled ? 'disabled ' : '') + 'onclick="' + click + '">' + label + '</button>';
+    }
+    function render(rows) {
+      const list = document.getElementById("list");
+      const q = String((document.getElementById("q") && document.getElementById("q").value) || "").toLowerCase().trim();
+      const filtered = (rows || []).filter(r => !q || String(r.item || "").toLowerCase().includes(q) || String(r.orderId || "").toLowerCase().includes(q));
+      if (!filtered.length) { list.innerHTML = '<div class="empty">Нет записей</div>'; return; }
+      list.innerHTML = filtered.map(r => {
+        const orderId = r.orderId || "";
+        const pilkaDone = String(r.pilkaStatus || "").includes("Готово");
+        const kromkaDone = String(r.kromkaStatus || "").includes("Готово");
+        const prasDone = String(r.prasStatus || "").includes("Готово");
+        const pilkaInProgress = String(r.pilkaStatus || "").includes("В работе");
+        const kromkaInProgress = String(r.kromkaStatus || "").includes("В работе");
+        const prasInProgress = String(r.prasStatus || "").includes("В работе");
+        const exSel = activeTab === "kromka"
+          ? '<select id="ex_' + escapeHtml(orderId) + '"><option>Слава</option><option>Сережа</option></select>'
+          : activeTab === "pras"
+            ? '<select id="ex_' + escapeHtml(orderId) + '"><option>Лёха</option><option>Виталик</option></select>'
+            : '';
+        const stageButtons = activeTab === "pilka"
+          ? btn(orderId, "В работе", "pilkaInWork", pilkaDone, "btn-primary", pilkaInProgress) + btn(orderId, "Готово", "pilkaDone", pilkaDone, "btn-success", pilkaDone)
+          : activeTab === "kromka"
+            ? exSel + btn(orderId, "В работе", "kromkaInWork", kromkaDone, "btn-primary", kromkaInProgress) + btn(orderId, "Готово", "kromkaDone", kromkaDone, "btn-success", kromkaDone)
+            : activeTab === "pras"
+              ? exSel + btn(orderId, "В работе", "prasInWork", prasDone, "btn-primary", prasInProgress) + btn(orderId, "Готово", "prasDone", prasDone, "btn-success", prasDone)
+              : btn(orderId, "Пила: Готово", "pilkaDone", pilkaDone, "btn-success", pilkaDone) +
+                btn(orderId, "Кромка: Готово", "kromkaDone", kromkaDone, "btn-success", kromkaDone) +
+                btn(orderId, "Присадка: Готово", "prasDone", prasDone, "btn-success", prasDone);
+        const planLabel = r.week ? ' <span class="metaStrong">План: ' + escapeHtml(r.week) + '</span>' : '';
+        return '<div class="card">' +
+          '<div class="row"><strong>' + escapeHtml(r.item) + '</strong>' + planLabel + '<div class="actions">' + stageButtons + '</div></div>' +
+          '<div class="row"><div class="muted">ID: ' + escapeHtml(orderId) + '</div><div class="metaStrong">Кол-во: ' + escapeHtml(r.qty) + '</div></div>' +
+          '<div class="muted">Пилка: ' + escapeHtml(r.pilkaStatus) + ' | Кромка: ' + escapeHtml(r.kromkaStatus) + ' | Присадка: ' + escapeHtml(r.prasStatus) + '</div>' +
+          '</div>';
+      }).join("");
+    }
+    function call(method, orderIdRaw, arg) {
+      const orderId = decodeURIComponent(orderIdRaw);
+      const runner = google.script.run.withSuccessHandler((res) => {
+        if (method === "webSetPilkaDone" && res && res.needConsume) openConsume(orderId);
+        else scheduleDelayedLoad();
+      }).withFailureHandler(err => alert("Ошибка: " + (err && err.message || err)));
+      arg == null ? runner[method](orderId) : runner[method](orderId, arg);
+    }
+    function pilkaDone(orderId) { call("webSetPilkaDone", orderId); }
+    function pilkaInWork(orderId) { call("webSetPilkaInWork", orderId); }
+    function kromkaDone(orderId) { call("webSetKromkaDone", orderId); }
+    function prasDone(orderId) { call("webSetPrasDone", orderId); }
+    function kromkaInWork(orderIdRaw) {
+      const orderId = decodeURIComponent(orderIdRaw);
+      const ex = (document.getElementById("ex_" + orderId) || {}).value || "Слава";
+      call("webSetKromkaInWork", orderIdRaw, ex);
+    }
+    function prasInWork(orderIdRaw) {
+      const orderId = decodeURIComponent(orderIdRaw);
+      const ex = (document.getElementById("ex_" + orderId) || {}).value || "Лёха";
+      call("webSetPrasInWork", orderIdRaw, ex);
+    }
+    function openConsume(orderId) {
+      google.script.run.withSuccessHandler(payload => {
+        pendingConsume = payload;
+        document.getElementById("consumeInfo").textContent = (payload.item || "") + " | Неделя: " + (payload.week || "");
+        document.getElementById("consumeMaterial").value = payload.suggestedMaterial || "";
+        document.getElementById("consumeQty").value = "";
+        document.getElementById("consumeErr").textContent = "";
+        document.getElementById("consumeMaterials").innerHTML = (payload.materials || []).map(m => '<option value="' + escapeHtml(m) + '"></option>').join("");
+        document.getElementById("consumeModal").style.display = "flex";
+      }).withFailureHandler(err => {
+        alert("Пилка завершена, но не удалось открыть списание: " + (err && err.message || err));
+        load();
+      }).webGetConsumeOptions(orderId);
+    }
+    function closeConsume() { pendingConsume = null; document.getElementById("consumeModal").style.display = "none"; load(); }
+    function submitConsume() {
+      const mat = (document.getElementById("consumeMaterial").value || "").trim();
+      const raw = (document.getElementById("consumeQty").value || "").trim().replace(",", ".");
+      const qty = Number(raw);
+      if (!pendingConsume) return;
+      if (!mat) { document.getElementById("consumeErr").textContent = "Укажите материал"; return; }
+      if (!raw || !isFinite(qty) || qty <= 0) { document.getElementById("consumeErr").textContent = "Некорректное количество"; return; }
+      google.script.run.withSuccessHandler(() => closeConsume()).withFailureHandler(err => {
+        document.getElementById("consumeErr").textContent = String(err && err.message ? err.message : err);
+      }).webConsumeSheetsByOrderId(pendingConsume.orderId, mat, qty);
+    }
+    setupBackendPolling();
+    load();
+  </script>
+</body>
+</html>`;
+} 
