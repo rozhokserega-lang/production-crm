@@ -27,3 +27,4 @@
 - `Missing NETLIFY_AUTH_TOKEN / NETLIFY_SITE_ID` -> секреты не добавлены или с ошибкой.
 - Ошибка `npm ci` -> проверьте `frontend/package-lock.json`.
 - Ошибка API на проде -> проверьте доступ Web App в Google Apps Script (`Anyone` или `Anyone with the link`).
+Test deploy from dev branch
