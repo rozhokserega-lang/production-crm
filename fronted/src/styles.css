@@ -62,28 +62,29 @@ button:disabled {
 
 .kpi-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(4, minmax(110px, 170px));
+  justify-content: start;
+  gap: 8px;
   margin: 8px 0;
 }
 
 .kpi {
   background: linear-gradient(180deg, #ffffff 0%, #f9fbff 100%);
   border: 1px solid #e5ebf5;
-  border-radius: 14px;
-  padding: 6px 8px;
+  border-radius: 10px;
+  padding: 4px 8px;
   box-shadow: 0 8px 20px rgba(16, 24, 40, 0.05);
 }
 
 .kpi span {
   color: #6b7280;
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .kpi b {
   display: block;
-  margin-top: 2px;
-  font-size: 28px;
+  margin-top: 1px;
+  font-size: 32px;
   line-height: 1;
 }
 
@@ -566,6 +567,9 @@ button:disabled {
 }
 
 @media (max-width: 900px) {
+  .kpi-grid {
+    grid-template-columns: repeat(2, minmax(110px, 1fr));
+  }
   .page {
     padding: 12px;
   }
