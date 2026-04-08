@@ -71,21 +71,25 @@ button:disabled {
 .kpi {
   background: linear-gradient(180deg, #ffffff 0%, #f9fbff 100%);
   border: 1px solid #e5ebf5;
-  border-radius: 10px;
-  padding: 4px 8px;
+  border-radius: 8px;
+  padding: 2px 8px;
   box-shadow: 0 8px 20px rgba(16, 24, 40, 0.05);
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
 }
 
 .kpi span {
   color: #6b7280;
-  font-size: 11px;
+  font-size: 10px;
+  line-height: 1.05;
 }
 
 .kpi b {
-  display: block;
-  margin-top: 1px;
-  font-size: 32px;
-  line-height: 1;
+  display: inline;
+  margin-top: 0;
+  font-size: 22px;
+  line-height: 0.95;
 }
 
 .controls {
