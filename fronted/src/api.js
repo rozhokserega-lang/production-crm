@@ -2,7 +2,7 @@ import { BACKEND_PROVIDER, GAS_WEBAPP_URL, SUPABASE_ANON_KEY, SUPABASE_URL } fro
 
 export async function gasCall(action, payload = {}) {
   if (!GAS_WEBAPP_URL || GAS_WEBAPP_URL.includes("PASTE_YOUR_WEBAPP_URL_HERE")) {
-    throw new Error("Р—Р°РїРѕР»РЅРёС‚Рµ GAS_WEBAPP_URL РІ src/config.js");
+    throw new Error("Заполните GAS_WEBAPP_URL в src/config.js");
   }
 
   const gasUrl = new URL(GAS_WEBAPP_URL);
@@ -23,29 +23,29 @@ export async function gasCall(action, payload = {}) {
       try {
         json = JSON.parse(text);
       } catch (_) {
-        throw new Error(`API РІРµСЂРЅСѓР» РЅРµ JSON (${res.status}): ${text.slice(0, 120)}`);
+        throw new Error(`API вернул не JSON (${res.status}): ${text.slice(0, 120)}`);
       }
-      if (!json.ok) throw new Error(json.error || "РћС€РёР±РєР° API");
+      if (!json.ok) throw new Error(json.error || "Ошибка API");
       return json.data;
     } catch (e) {
       lastError = e;
       const msg = String(e?.message || e);
-      // РџСЂРё Р·Р°РЅСЏС‚РѕСЃС‚Рё lock РїСЂРѕР±СѓРµРј Р°РІС‚РѕРјР°С‚РёС‡РµСЃРєРё РµС‰Рµ СЂР°Р·.
-      if (msg.includes("РЎРёСЃС‚РµРјР° Р·Р°РЅСЏС‚Р°")) {
+      // При занятости lock пробуем автоматически еще раз.
+      if (msg.includes("Система занята")) {
         await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
         continue;
       }
       break;
     }
   }
-  throw lastError || new Error("РћС€РёР±РєР° API");
+  throw lastError || new Error("Ошибка API");
 }
 
 export async function callBackend(action, payload = {}) {
   const provider = String(BACKEND_PROVIDER || "gas").toLowerCase();
   if (provider === "supabase") {
     if (!RPC_MAP[action]) {
-      throw new Error(`Supabase RPC РЅРµ РЅР°СЃС‚СЂРѕРµРЅ РґР»СЏ action: ${action}`);
+      throw new Error(`Supabase RPC не настроен для action: ${action}`);
     }
     return supabaseCall(action, payload);
   }
@@ -73,6 +73,7 @@ const RPC_MAP = {
   webGetConsumeOptions: "web_get_consume_options",
   webPreviewPlanFromShipment: "web_preview_plan_from_shipment",
   webPreviewPlansBatch: "web_preview_plans_batch",
+  webCreateShipmentPlanCell: "web_create_shipment_plan_cell",
   webSetPilkaInWork: "web_set_stage_in_work",
   webSetKromkaInWork: "web_set_stage_in_work",
   webSetPrasInWork: "web_set_stage_in_work",
@@ -136,16 +137,25 @@ function buildRpcPayload(action, payload = {}) {
         : [],
     };
   }
+  if (action === "webCreateShipmentPlanCell") {
+    return {
+      p_section_name: String(payload.sectionName || "").trim() || null,
+      p_item: String(payload.item || "").trim(),
+      p_material: String(payload.material || "").trim() || null,
+      p_week: String(payload.week || "").trim(),
+      p_qty: Number(payload.qty || 0),
+    };
+  }
   return payload || {};
 }
 
 export async function supabaseCall(action, payload = {}) {
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-    throw new Error("Р—Р°РїРѕР»РЅРёС‚Рµ SUPABASE_URL Рё SUPABASE_ANON_KEY РІ src/config.js");
+    throw new Error("Заполните SUPABASE_URL и SUPABASE_ANON_KEY в src/config.js");
   }
   const rpcName = RPC_MAP[action];
   if (!rpcName) {
-    throw new Error(`Supabase RPC РЅРµ РЅР°СЃС‚СЂРѕРµРЅ РґР»СЏ action: ${action}`);
+    throw new Error(`Supabase RPC не настроен для action: ${action}`);
   }
   const url = `${SUPABASE_URL.replace(/\/$/, "")}/rest/v1/rpc/${rpcName}`;
   const body = buildRpcPayload(action, payload);
