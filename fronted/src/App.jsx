@@ -1651,95 +1651,92 @@ export default function App() {
                   <span>{section.name}</span>
                   <span className="section-count">{(section.items || []).length}</span>
                 </button>
-                {!isSectionCollapsed(section.name) && sortItemsForShipment(section.items || []).map((it) => (
-                  (() => {
-                    const itemCells = visibleCellsForItem(it);
-                    const sheetsE = itemCells.length ? (Number(itemCells[0].availableSheets || 0) || 0) : 0;
-                    const pendingCells = itemCells.filter((c) => c.canSendToWork);
-                    const hasPendingShortage = pendingCells.some((c) => c.materialEnoughForOrder === false);
-                    return (
-                  <article
-                    key={`${section.name}-${it.row}`}
-                    className={`card ${
-                      hasPendingShortage
-                        ? "shortage-row"
-                        : ""
-                    }`}
-                  >
-                    <div className="line1">
-                      <strong>{it.item}</strong>
-                      <span className="badge-stack">
-                        <span className="badge">{it.material || "Материал не указан"}</span>
-                        <span className="badge-sub">{sheetsE}</span>
-                      </span>
-                    </div>
-                    {hasPendingShortage && (
-                      <div className="line2">
-                        <span>⚠️ Для не начатых заказов материала не хватает</span>
-                      </div>
-                    )}
-                    <div className="shipment-grid">
-                      {itemCells
-                        .map((c) => {
-                        const sourceRow = it.sourceRowId != null ? String(it.sourceRowId) : String(it.row);
-                        const sourceCol = c.sourceColId != null ? String(c.sourceColId) : String(c.col);
-                        const isSelected = selectedShipments.some((s) => s.row === sourceRow && s.col === sourceCol);
-                        const cls = c.canSendToWork ? "ship-cell selectable" : c.inWork ? "ship-cell inwork" : "ship-cell blocked";
-                        return (
-                          <button
-                            key={`${sourceRow}-${sourceCol}`}
-                            className={`${cls} ${isSelected ? "selected" : ""}`}
-                            onMouseEnter={(e) =>
-                              setHoverTip({
-                                visible: true,
-                                text: getShipmentCellStatus(c),
-                                x: e.clientX + 12,
-                                y: e.clientY + 12,
-                              })
-                            }
-                            onMouseMove={(e) =>
-                              setHoverTip((prev) => ({
-                                ...prev,
-                                x: e.clientX + 12,
-                                y: e.clientY + 12,
-                              }))
-                            }
-                            onMouseLeave={() => setHoverTip({ visible: false, text: "", x: 0, y: 0 })}
-                            style={{
-                              background: c.bg || "#ffffff",
-                              backgroundImage: "none",
-                              color: getReadableTextColor(c.bg || "#ffffff"),
-                            }}
-                            onClick={() => {
-                              if (!c.canSendToWork) return;
-                              const payload = {
-                                row: sourceRow,
-                                col: sourceCol,
-                                item: it.item,
-                                week: c.week,
-                                qty: c.qty,
-                                material: it.material,
-                                sheetsNeeded: Number(c.sheetsNeeded || 0),
-                              };
-                              setSelectedShipments((prev) => {
-                                const exists = prev.some((s) => s.row === payload.row && s.col === payload.col);
-                                if (exists) return prev.filter((s) => !(s.row === payload.row && s.col === payload.col));
-                                return [...prev, payload];
-                              });
-                            }}
-                          >
-                            {isSelected && <span className="selected-mark">✓</span>}
-                            <span>Нед {c.week || "-"}</span>
-                            <b>{c.qty}</b>
-                            <span className="cell-sheets">Л: {Number(c.sheetsNeeded || 0)}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </article>
-                    );
-                  })()
-                ))}
+                {!isSectionCollapsed(section.name) && (
+                  <div className="shipment-items-grid">
+                    {sortItemsForShipment(section.items || []).map((it) => {
+                      const itemCells = visibleCellsForItem(it);
+                      const sheetsE = itemCells.length ? (Number(itemCells[0].availableSheets || 0) || 0) : 0;
+                      const pendingCells = itemCells.filter((c) => c.canSendToWork);
+                      const hasPendingShortage = pendingCells.some((c) => c.materialEnoughForOrder === false);
+                      return (
+                        <article
+                          key={`${section.name}-${it.row}`}
+                          className={`shipment-item-tile ${hasPendingShortage ? "shortage-row" : ""}`}
+                        >
+                          <div className="shipment-item-head">
+                            <strong>{it.item}</strong>
+                            <span className="badge-stack">
+                              <span className="badge">{it.material || "Материал не указан"}</span>
+                              <span className="badge-sub">{sheetsE}</span>
+                            </span>
+                          </div>
+                          {hasPendingShortage && (
+                            <div className="line2">
+                              <span>⚠️ Для не начатых заказов материала не хватает</span>
+                            </div>
+                          )}
+                          <div className="shipment-grid">
+                            {itemCells.map((c) => {
+                              const sourceRow = it.sourceRowId != null ? String(it.sourceRowId) : String(it.row);
+                              const sourceCol = c.sourceColId != null ? String(c.sourceColId) : String(c.col);
+                              const isSelected = selectedShipments.some((s) => s.row === sourceRow && s.col === sourceCol);
+                              const cls = c.canSendToWork ? "ship-cell selectable" : c.inWork ? "ship-cell inwork" : "ship-cell blocked";
+                              return (
+                                <button
+                                  key={`${sourceRow}-${sourceCol}`}
+                                  className={`${cls} ${isSelected ? "selected" : ""}`}
+                                  onMouseEnter={(e) =>
+                                    setHoverTip({
+                                      visible: true,
+                                      text: getShipmentCellStatus(c),
+                                      x: e.clientX + 12,
+                                      y: e.clientY + 12,
+                                    })
+                                  }
+                                  onMouseMove={(e) =>
+                                    setHoverTip((prev) => ({
+                                      ...prev,
+                                      x: e.clientX + 12,
+                                      y: e.clientY + 12,
+                                    }))
+                                  }
+                                  onMouseLeave={() => setHoverTip({ visible: false, text: "", x: 0, y: 0 })}
+                                  style={{
+                                    background: c.bg || "#ffffff",
+                                    backgroundImage: "none",
+                                    color: getReadableTextColor(c.bg || "#ffffff"),
+                                  }}
+                                  onClick={() => {
+                                    if (!c.canSendToWork) return;
+                                    const payload = {
+                                      row: sourceRow,
+                                      col: sourceCol,
+                                      item: it.item,
+                                      week: c.week,
+                                      qty: c.qty,
+                                      material: it.material,
+                                      sheetsNeeded: Number(c.sheetsNeeded || 0),
+                                    };
+                                    setSelectedShipments((prev) => {
+                                      const exists = prev.some((s) => s.row === payload.row && s.col === payload.col);
+                                      if (exists) return prev.filter((s) => !(s.row === payload.row && s.col === payload.col));
+                                      return [...prev, payload];
+                                    });
+                                  }}
+                                >
+                                  {isSelected && <span className="selected-mark">✓</span>}
+                                  <span>Нед {c.week || "-"}</span>
+                                  <b>{c.qty}</b>
+                                  <span className="cell-sheets">Л: {Number(c.sheetsNeeded || 0)}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             ))}
             </div>
