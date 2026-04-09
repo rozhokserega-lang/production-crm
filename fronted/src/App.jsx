@@ -856,13 +856,11 @@ export default function App() {
     setActionLoading("shipment:bulk");
     setError("");
     try {
-      const realRows = selectedShipments.filter((s) => typeof s.row === "number");
-      if (!realRows.length) return;
-      for (const s of realRows) {
+      for (const s of selectedShipments) {
         await callBackend("webSendShipmentToWork", { row: s.row, col: s.col });
       }
       setPlanPreviews([]);
-      setSelectedShipments((prev) => prev.filter((s) => typeof s.row !== "number"));
+      setSelectedShipments([]);
       await load();
     } catch (e) {
       setError(toUserError(e));
@@ -1376,11 +1374,13 @@ export default function App() {
                     <div className="shipment-grid">
                       {itemCells
                         .map((c) => {
-                        const isSelected = selectedShipments.some((s) => s.row === it.row && s.col === c.col);
+                        const sourceRow = it.sourceRowId != null ? String(it.sourceRowId) : String(it.row);
+                        const sourceCol = c.sourceColId != null ? String(c.sourceColId) : String(c.col);
+                        const isSelected = selectedShipments.some((s) => s.row === sourceRow && s.col === sourceCol);
                         const cls = c.canSendToWork ? "ship-cell selectable" : c.inWork ? "ship-cell inwork" : "ship-cell blocked";
                         return (
                           <button
-                            key={`${it.row}-${c.col}`}
+                            key={`${sourceRow}-${sourceCol}`}
                             className={`${cls} ${isSelected ? "selected" : ""}`}
                             onMouseEnter={(e) =>
                               setHoverTip({
@@ -1405,8 +1405,6 @@ export default function App() {
                             }}
                             onClick={() => {
                               if (!c.canSendToWork) return;
-                              const sourceRow = it.sourceRowId != null ? String(it.sourceRowId) : String(it.row);
-                              const sourceCol = c.sourceColId != null ? String(c.sourceColId) : String(c.col);
                               const payload = {
                                 row: sourceRow,
                                 col: sourceCol,
