@@ -9,6 +9,7 @@ const TABS = [
 const VIEWS = [
   { id: "shipment", label: "Отгрузка" },
   { id: "workshop", label: "Производство" },
+  { id: "labor", label: "Трудоемкость" },
   { id: "stats", label: "Статистика" },
 ];
 const DEFAULT_SHIPMENT_PREFS = {
@@ -222,9 +223,54 @@ function normalizeOrder(row) {
     prasStatus: row.prasStatus ?? row.pras_status ?? row.pras ?? "",
     assemblyStatus: row.assemblyStatus ?? row.assembly_status ?? "",
     overallStatus: row.overallStatus ?? row.overall_status ?? row.overall ?? "",
+    colorName: row.colorName ?? row.color_name ?? "",
     createdAt: row.createdAt ?? row.created_at ?? "",
     sheetsNeeded: row.sheetsNeeded ?? row.sheets_needed ?? 0,
   };
+}
+
+function normalizeShipmentBoard(data) {
+  if (data && Array.isArray(data.sections)) return data;
+  if (!Array.isArray(data)) return { sections: [] };
+  const sectionMap = new Map();
+  data.forEach((row, idx) => {
+    const sectionName = String(row?.section_name || row?.sectionName || "Прочее").trim() || "Прочее";
+    const itemName = String(row?.item || "").trim();
+    if (!itemName) return;
+    if (!sectionMap.has(sectionName)) sectionMap.set(sectionName, new Map());
+    const itemMap = sectionMap.get(sectionName);
+    const rowKey = String(row?.row_ref || row?.rowRef || row?.source_row_id || `${sectionName}:${itemName}`);
+    if (!itemMap.has(rowKey)) {
+      itemMap.set(rowKey, {
+        row: rowKey,
+        sourceRowId: String(row?.source_row_id || row?.sourceRowId || rowKey),
+        item: itemName,
+        material: row?.material || "",
+        cells: [],
+      });
+    }
+    itemMap.get(rowKey).cells.push({
+      col: row?.source_col_id || row?.sourceColId || row?.col_ref || row?.colRef || String(idx + 1),
+      sourceColId: row?.source_col_id || row?.sourceColId || row?.col_ref || row?.colRef || String(idx + 1),
+      week: row?.week || "",
+      qty: Number(row?.qty || 0),
+      bg: row?.bg || "#ffffff",
+      canSendToWork: !!row?.can_send_to_work || !!row?.canSendToWork,
+      inWork: !!row?.in_work || !!row?.inWork,
+      sheetsNeeded: Number(row?.sheets_needed ?? row?.sheetsNeeded ?? 0),
+      availableSheets: Number(row?.available_sheets ?? row?.availableSheets ?? 0),
+      materialEnoughForOrder:
+        row?.material_enough_for_order == null
+          ? row?.materialEnoughForOrder
+          : !!row?.material_enough_for_order,
+      note: row?.note || "",
+    });
+  });
+  const sections = [...sectionMap.entries()].map(([name, items]) => ({
+    name,
+    items: [...items.values()],
+  }));
+  return { sections };
 }
 
 function parseStrapSize(name) {
@@ -261,12 +307,15 @@ export default function App() {
   const [showBlueCells, setShowBlueCells] = useState(true);
   const [showYellowCells, setShowYellowCells] = useState(true);
   const [shipmentSort, setShipmentSort] = useState("name");
+  const [shipmentViewMode, setShipmentViewMode] = useState("table");
   const [statsSort, setStatsSort] = useState("stage");
+  const [laborSort, setLaborSort] = useState("total_desc");
   const [collapsedSections, setCollapsedSections] = useState({});
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState("");
   const [error, setError] = useState("");
   const [executorByOrder, setExecutorByOrder] = useState({});
+  const [colorDraftByOrder, setColorDraftByOrder] = useState({});
   const [consumeDialogOpen, setConsumeDialogOpen] = useState(false);
   const [consumeEditMode, setConsumeEditMode] = useState(false);
   const [consumeDialogData, setConsumeDialogData] = useState(null);
@@ -287,6 +336,7 @@ export default function App() {
     STRAP_OPTIONS.reduce((acc, name) => ({ ...acc, [name]: "" }), {})
   );
   const [strapItems, setStrapItems] = useState([]);
+  const [laborRows, setLaborRows] = useState([]);
   const loadSeqRef = useRef(0);
   const loadInFlightRef = useRef(false);
 
@@ -297,23 +347,41 @@ export default function App() {
     setLoading(true);
     setError("");
     try {
-      const action =
-        view === "shipment"
-          ? "webGetShipmentBoard"
-          : view === "stats"
-            ? "webGetOrdersAll"
-            : tab === "pilka"
-              ? "webGetOrdersPilka"
-              : tab === "kromka"
-                ? "webGetOrdersKromka"
-                : tab === "pras"
-                  ? "webGetOrdersPras"
-                  : "webGetOrdersAll";
-      const data = await callBackend(action);
+      let data;
+      if (view === "shipment") {
+        try {
+          data = await callBackend("webGetShipmentTable");
+        } catch (_) {
+          data = await callBackend("webGetShipmentBoard");
+        }
+      } else if (view === "labor") {
+        data = await callBackend("webGetLaborTable");
+      } else if (view === "stats") {
+        try {
+          data = await callBackend("webGetOrderStats");
+        } catch (_) {
+          data = await callBackend("webGetOrdersAll");
+        }
+      } else {
+        const action =
+          tab === "pilka"
+            ? "webGetOrdersPilka"
+            : tab === "kromka"
+              ? "webGetOrdersKromka"
+              : tab === "pras"
+                ? "webGetOrdersPras"
+                : "webGetOrdersAll";
+        data = await callBackend(action);
+      }
       // Игнорируем запоздавшие ответы, чтобы старая вкладка не перетирала новую.
       if (seq !== loadSeqRef.current) return;
-      if (view === "shipment") setShipmentBoard(data && data.sections ? data : { sections: [] });
-      else setRows(Array.isArray(data) ? data.map(normalizeOrder) : []);
+      if (view === "shipment") {
+        setShipmentBoard(normalizeShipmentBoard(data));
+      } else if (view === "labor") {
+        setLaborRows(Array.isArray(data) ? data : []);
+      } else {
+        setRows(Array.isArray(data) ? data.map(normalizeOrder) : []);
+      }
     } catch (e) {
       if (seq !== loadSeqRef.current) return;
       setError(toUserError(e));
@@ -327,6 +395,7 @@ export default function App() {
   useEffect(() => {
     if (view === "workshop") setRows([]);
     if (view === "shipment") setShipmentBoard({ sections: [] });
+    if (view === "labor") setLaborRows([]);
     load();
     const id = setInterval(load, 15000);
     return () => clearInterval(id);
@@ -509,6 +578,29 @@ export default function App() {
     }
   }
 
+  async function saveOrderColor(order) {
+    const orderId = String(order?.orderId || order?.order_id || "").trim();
+    const itemName = String(order?.item || "").trim();
+    const draftKey = orderId || itemName;
+    const colorName = String(colorDraftByOrder[draftKey] ?? order?.colorName ?? "").trim();
+    if (!itemName) return;
+    if (!colorName) {
+      setError("Укажите цвет перед сохранением.");
+      return;
+    }
+    const key = `color:${draftKey}`;
+    setActionLoading(key);
+    setError("");
+    try {
+      await callBackend("webUpsertItemColorMap", { itemName, colorName });
+      await load();
+    } catch (e) {
+      setError(toUserError(e));
+    } finally {
+      setActionLoading("");
+    }
+  }
+
   const weeks = useMemo(() => {
     if (view === "shipment") {
       const set = new Set();
@@ -519,8 +611,11 @@ export default function App() {
       );
       return [...set].sort((a, b) => Number(a) - Number(b));
     }
+    if (view === "labor") {
+      return [...new Set(laborRows.map((x) => String(x.week || "")).filter(Boolean))].sort((a, b) => Number(a) - Number(b));
+    }
     return [...new Set(rows.map((x) => String(x.week || "")).filter(Boolean))].sort((a, b) => Number(a) - Number(b));
-  }, [rows, shipmentBoard, view]);
+  }, [rows, shipmentBoard, laborRows, view]);
   const shipmentSectionNames = useMemo(() => {
     const names = (shipmentBoard.sections || [])
       .map((s) => String(s?.name || "").trim())
@@ -551,6 +646,16 @@ export default function App() {
         }))
         .filter((s) => s.items.length > 0);
     }
+    if (view === "labor") {
+      return laborRows.filter((x) => {
+        const byWeek = weekFilter === "all" || String(x.week || "") === weekFilter;
+        const byQuery =
+          !q ||
+          String(x.item || "").toLowerCase().includes(q) ||
+          String(x.order_id || x.orderId || "").toLowerCase().includes(q);
+        return byWeek && byQuery;
+      });
+    }
     return rows.filter((x) => {
       const byWeek = weekFilter === "all" || String(x.week || "") === weekFilter;
       const byQuery =
@@ -570,7 +675,7 @@ export default function App() {
       if (tab === "pras") return pilkaDone && kromkaDone && !prasDone;
       return true;
     });
-  }, [rows, shipmentBoard, view, query, weekFilter, shipmentSort, showOnlyEmpty, showBlueCells, showYellowCells]);
+  }, [rows, shipmentBoard, laborRows, view, query, weekFilter, shipmentSort, showOnlyEmpty, showBlueCells, showYellowCells]);
 
   function visibleCellsForItem(it) {
     return (it?.cells || []).filter((c) => {
@@ -802,6 +907,65 @@ export default function App() {
     });
     return { totalOrders, totalQty, readyAssembly, assembled };
   }, [filtered, view]);
+  const shipmentTableRows = useMemo(() => {
+    if (view !== "shipment") return [];
+    const rowsFlat = [];
+    shipmentRenderSections.forEach((section) => {
+      (section.items || []).forEach((it) => {
+        visibleCellsForItem(it).forEach((c) => {
+          const sourceRow = it.sourceRowId != null ? String(it.sourceRowId) : String(it.row);
+          const sourceCol = c.sourceColId != null ? String(c.sourceColId) : String(c.col);
+          rowsFlat.push({
+            key: `${sourceRow}-${sourceCol}`,
+            section: section.name,
+            item: it.item,
+            material: it.material || "",
+            week: c.week || "-",
+            qty: Number(c.qty || 0),
+            sheets: Number(c.sheetsNeeded || 0),
+            availableSheets: Number(c.availableSheets || 0),
+            bg: c.bg || "#ffffff",
+            status: getShipmentCellStatus(c),
+            canSendToWork: !!c.canSendToWork,
+            inWork: !!c.inWork,
+            sourceRow,
+            sourceCol,
+          });
+        });
+      });
+    });
+    return rowsFlat;
+  }, [view, shipmentRenderSections, showOnlyEmpty, showBlueCells, showYellowCells]);
+  const laborTableRows = useMemo(() => {
+    if (view !== "labor") return [];
+    const toNum = (v) => Number(v || 0);
+    const list = [...filtered].map((x) => ({
+      orderId: String(x.order_id || x.orderId || ""),
+      item: String(x.item || ""),
+      week: String(x.week || ""),
+      qty: toNum(x.qty),
+      pilkaMin: toNum(x.pilka_min ?? x.pilkaMin),
+      kromkaMin: toNum(x.kromka_min ?? x.kromkaMin),
+      prasMin: toNum(x.pras_min ?? x.prasMin),
+      assemblyMin: toNum(x.assembly_min ?? x.assemblyMin),
+      totalMin: toNum(x.total_min ?? x.totalMin),
+      dateFinished: String(x.date_finished || x.dateFinished || ""),
+    }));
+    list.sort((a, b) => {
+      if (laborSort === "total_asc") return a.totalMin - b.totalMin;
+      if (laborSort === "week") return Number(a.week || 0) - Number(b.week || 0);
+      if (laborSort === "item") return a.item.localeCompare(b.item, "ru");
+      return b.totalMin - a.totalMin;
+    });
+    return list;
+  }, [filtered, laborSort, view]);
+  const laborKpi = useMemo(() => {
+    const totalOrders = laborTableRows.length;
+    const totalMinutes = laborTableRows.reduce((sum, x) => sum + x.totalMin, 0);
+    const totalQty = laborTableRows.reduce((sum, x) => sum + x.qty, 0);
+    const avgPerOrder = totalOrders > 0 ? totalMinutes / totalOrders : 0;
+    return { totalOrders, totalMinutes, totalQty, avgPerOrder };
+  }, [laborTableRows]);
 
   const selectedShipmentSummary = useMemo(() => {
     const items = selectedShipments.map((s) => {
@@ -1049,6 +1213,13 @@ export default function App() {
             <div className="kpi"><span>Готово к сборке</span><b>{shipmentKpi.readyAssembly}</b></div>
             <div className="kpi"><span>Собрано</span><b>{shipmentKpi.assembled}</b></div>
           </>
+        ) : view === "labor" ? (
+          <>
+            <div className="kpi"><span>Заказов</span><b>{laborKpi.totalOrders}</b></div>
+            <div className="kpi"><span>Общее время (мин)</span><b>{Math.round(laborKpi.totalMinutes)}</b></div>
+            <div className="kpi"><span>Всего изделий</span><b>{Math.round(laborKpi.totalQty)}</b></div>
+            <div className="kpi"><span>Среднее / заказ (мин)</span><b>{Math.round(laborKpi.avgPerOrder)}</b></div>
+          </>
         ) : (
           <>
             <div className="kpi"><span>Всего</span><b>{kpi.total}</b></div>
@@ -1105,6 +1276,20 @@ export default function App() {
               <option value="name">Сортировка: по названию</option>
               <option value="week">Сортировка: по неделе плана</option>
               <option value="color">Сортировка: по цвету</option>
+            </select>
+          )}
+          {view === "shipment" && (
+            <select value={shipmentViewMode} onChange={(e) => setShipmentViewMode(e.target.value)}>
+              <option value="table">Вид: таблица</option>
+              <option value="cards">Вид: карточки</option>
+            </select>
+          )}
+          {view === "labor" && (
+            <select value={laborSort} onChange={(e) => setLaborSort(e.target.value)}>
+              <option value="total_desc">Трудоемкость: больше времени</option>
+              <option value="total_asc">Трудоемкость: меньше времени</option>
+              <option value="week">Трудоемкость: по неделе</option>
+              <option value="item">Трудоемкость: по изделию</option>
             </select>
           )}
           {view === "shipment" && (
@@ -1351,7 +1536,88 @@ export default function App() {
             {shipmentTab === "straps" && !strapItems.length && !loading && (
               <div className="empty">Нет добавленной обвязки. Нажмите "Добавить обвязку".</div>
             )}
-            {(shipmentTab === "straps" ? strapRenderSections : shipmentRenderSections).map((section) => (
+            {shipmentTab === "orders" && shipmentViewMode === "table" && (
+              <div className="sheet-table-wrap">
+                <table className="sheet-table">
+                  <thead>
+                    <tr>
+                      <th>Группа</th>
+                      <th>Изделие</th>
+                      <th>Цвет</th>
+                      <th>Материал</th>
+                      <th>План</th>
+                      <th>Кол-во</th>
+                      <th>Листов</th>
+                      <th>Доступно</th>
+                      <th>Статус</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {shipmentTableRows.map((row) => {
+                      const isSelected = selectedShipments.some((s) => s.row === row.sourceRow && s.col === row.sourceCol);
+                      return (
+                        <tr
+                          key={row.key}
+                          className={isSelected ? "selected-row" : ""}
+                          style={{ backgroundColor: row.bg || "#ffffff", color: getReadableTextColor(row.bg || "#ffffff") }}
+                          onClick={() => {
+                            if (!row.canSendToWork) return;
+                            const payload = {
+                              row: row.sourceRow,
+                              col: row.sourceCol,
+                              item: row.item,
+                              week: row.week,
+                              qty: row.qty,
+                              material: row.material,
+                              sheetsNeeded: row.sheets,
+                            };
+                            setSelectedShipments((prev) => {
+                              const exists = prev.some((s) => s.row === payload.row && s.col === payload.col);
+                              if (exists) return prev.filter((s) => !(s.row === payload.row && s.col === payload.col));
+                              return [...prev, payload];
+                            });
+                          }}
+                        >
+                          <td>{row.section}</td>
+                          <td>{row.item}</td>
+                          <td>
+                            <div className="color-edit-cell">
+                              <input
+                                value={colorDraftByOrder[String(row.item)] ?? ""}
+                                onChange={(e) =>
+                                  setColorDraftByOrder((prev) => ({
+                                    ...prev,
+                                    [String(row.item)]: e.target.value,
+                                  }))
+                                }
+                                placeholder="Цвет"
+                              />
+                              <button
+                                className="mini"
+                                disabled={actionLoading === `color:${String(row.item)}`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  saveOrderColor({ item: row.item });
+                                }}
+                              >
+                                Сохранить
+                              </button>
+                            </div>
+                          </td>
+                          <td>{row.material || "-"}</td>
+                          <td>{row.week}</td>
+                          <td>{row.qty}</td>
+                          <td>{row.sheets}</td>
+                          <td>{row.availableSheets}</td>
+                          <td>{row.status}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {!(shipmentTab === "orders" && shipmentViewMode === "table") && (shipmentTab === "straps" ? strapRenderSections : shipmentRenderSections).map((section) => (
               <div key={section.name} className="shipment-section">
                 <button
                   type="button"
@@ -1456,17 +1722,130 @@ export default function App() {
             </div>
           </div>
         )}
+        {view === "labor" && (
+          <>
+            {!laborTableRows.length && !loading && <div className="empty">Нет данных по трудоемкости</div>}
+            {laborTableRows.length > 0 && (
+              <div className="sheet-table-wrap">
+                <table className="sheet-table">
+                  <thead>
+                    <tr>
+                      <th>ID заказа</th>
+                      <th>Изделие</th>
+                      <th>Цвет</th>
+                      <th>План</th>
+                      <th>Кол-во</th>
+                      <th>Пилка (мин)</th>
+                      <th>Кромка (мин)</th>
+                      <th>Присадка (мин)</th>
+                      <th>Сборка (мин)</th>
+                      <th>Итого (мин)</th>
+                      <th>Дата завершения</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {laborTableRows.map((r) => (
+                      <tr key={`${r.orderId}-${r.item}`}>
+                        <td>{r.orderId || "-"}</td>
+                        <td>{r.item}</td>
+                        <td>
+                          <div className="color-edit-cell">
+                            <input
+                              value={colorDraftByOrder[String(r.orderId || r.item)] ?? ""}
+                              onChange={(e) =>
+                                setColorDraftByOrder((prev) => ({
+                                  ...prev,
+                                  [String(r.orderId || r.item)]: e.target.value,
+                                }))
+                              }
+                              placeholder="Цвет"
+                            />
+                            <button
+                              className="mini"
+                              disabled={actionLoading === `color:${String(r.orderId || r.item)}`}
+                              onClick={() => saveOrderColor({ orderId: r.orderId, item: r.item })}
+                            >
+                              Сохранить
+                            </button>
+                          </div>
+                        </td>
+                        <td>{r.week || "-"}</td>
+                        <td>{r.qty}</td>
+                        <td>{r.pilkaMin}</td>
+                        <td>{r.kromkaMin}</td>
+                        <td>{r.prasMin}</td>
+                        <td>{r.assemblyMin}</td>
+                        <td><b>{r.totalMin}</b></td>
+                        <td>{r.dateFinished || "-"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
+        )}
         {view === "stats" && (
           <>
-        {!statsList.length && !loading && <div className="empty">Нет данных для статистики</div>}
-        {statsList.map((o) => (
-          <article key={`stats-${o.orderId || o.row}`} className="card stats-row">
-            <div className={`stats-stage ${getStageClassByLabel(getStageLabel(o))}`}>{getStageLabel(o)}</div>
-            <div className="stats-item">{o.item}</div>
-            <div className="stats-meta">План: {o.week || "-"}</div>
-            <div className="stats-meta">Кол-во: {o.qty || 0}</div>
-          </article>
-        ))}
+            {!statsList.length && !loading && <div className="empty">Нет данных для статистики</div>}
+            {statsList.length > 0 && (
+              <div className="sheet-table-wrap">
+                <table className="sheet-table">
+                  <thead>
+                    <tr>
+                      <th>ID заказа</th>
+                      <th>Этап</th>
+                      <th>Изделие</th>
+                      <th>Цвет</th>
+                      <th>План</th>
+                      <th>Кол-во</th>
+                      <th>Пила</th>
+                      <th>Кромка</th>
+                      <th>Присадка</th>
+                      <th>Сборка</th>
+                      <th>Общий статус</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {statsList.map((o) => (
+                      <tr key={`stats-${o.orderId || o.row}`}>
+                        <td>{o.orderId || "-"}</td>
+                        <td>{getStageLabel(o)}</td>
+                        <td>{o.item}</td>
+                        <td>
+                          <div className="color-edit-cell">
+                            <input
+                              value={colorDraftByOrder[String(o.orderId || o.row)] ?? String(o.colorName || "")}
+                              onChange={(e) =>
+                                setColorDraftByOrder((prev) => ({
+                                  ...prev,
+                                  [String(o.orderId || o.row)]: e.target.value,
+                                }))
+                              }
+                              placeholder="Цвет"
+                            />
+                            <button
+                              className="mini"
+                              disabled={actionLoading === `color:${String(o.orderId || o.item)}`}
+                              onClick={() => saveOrderColor(o)}
+                            >
+                              Сохранить
+                            </button>
+                          </div>
+                        </td>
+                        <td>{o.week || "-"}</td>
+                        <td>{o.qty || 0}</td>
+                        <td>{o.pilkaStatus || "-"}</td>
+                        <td>{o.kromkaStatus || "-"}</td>
+                        <td>{o.prasStatus || "-"}</td>
+                        <td>{o.assemblyStatus || "-"}</td>
+                        <td>{o.overallStatus || "-"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </>
         )}
         {view === "workshop" && (

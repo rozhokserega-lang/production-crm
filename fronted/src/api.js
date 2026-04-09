@@ -66,10 +66,14 @@ export async function callBackend(action, payload = {}) {
 
 const RPC_MAP = {
   webGetShipmentBoard: "web_get_shipment_board",
+  webGetShipmentTable: "web_get_shipment_table",
   webGetOrdersAll: "web_get_orders_all",
   webGetOrdersPilka: "web_get_orders_pilka",
   webGetOrdersKromka: "web_get_orders_kromka",
   webGetOrdersPras: "web_get_orders_pras",
+  webGetLaborTable: "web_get_labor_table",
+  webGetOrderStats: "web_get_order_stats",
+  webUpsertItemColorMap: "web_upsert_item_color_map",
   webGetConsumeOptions: "web_get_consume_options",
   webPreviewPlanFromShipment: "web_preview_plan_from_shipment",
   webPreviewPlansBatch: "web_preview_plans_batch",
@@ -144,6 +148,12 @@ function buildRpcPayload(action, payload = {}) {
       p_material: String(payload.material || "").trim() || null,
       p_week: String(payload.week || "").trim(),
       p_qty: Number(payload.qty || 0),
+    };
+  }
+  if (action === "webUpsertItemColorMap") {
+    return {
+      p_item_name: String(payload.itemName || "").trim(),
+      p_color_name: String(payload.colorName || "").trim(),
     };
   }
   return payload || {};

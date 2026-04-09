@@ -281,6 +281,19 @@ button:disabled {
   font-size: 12px;
 }
 
+.color-edit-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.color-edit-cell input {
+  min-width: 130px;
+  padding: 6px 8px;
+  font-size: 12px;
+  border-radius: 8px;
+}
+
 .line1, .line2 {
   display: flex;
   justify-content: space-between;
@@ -398,6 +411,46 @@ button:disabled {
 
 .shipment-main {
   min-width: 0;
+}
+
+.sheet-table-wrap {
+  background: #ffffff;
+  border: 1px solid #dbe5f3;
+  border-radius: 12px;
+  overflow: auto;
+  box-shadow: 0 10px 18px rgba(15, 23, 42, 0.08);
+}
+
+.sheet-table {
+  width: 100%;
+  min-width: 980px;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.sheet-table th,
+.sheet-table td {
+  border: 1px solid #d6dfeb;
+  padding: 6px 8px;
+  white-space: nowrap;
+}
+
+.sheet-table th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #e7edf5;
+  color: #0f172a;
+  text-align: left;
+}
+
+.sheet-table tbody tr:hover {
+  filter: brightness(0.985);
+}
+
+.sheet-table tbody tr.selected-row {
+  outline: 2px solid #0ea5e9;
+  outline-offset: -2px;
 }
 
 .selection-summary {
