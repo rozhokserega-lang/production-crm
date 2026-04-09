@@ -212,6 +212,21 @@ function extractErrorMessage(e) {
   return String(e?.message || e || "").trim() || "Неизвестная ошибка";
 }
 
+function normalizeOrder(row) {
+  if (!row || typeof row !== "object") return row;
+  return {
+    ...row,
+    orderId: row.orderId ?? row.order_id ?? "",
+    pilkaStatus: row.pilkaStatus ?? row.pilka_status ?? row.pilka ?? "",
+    kromkaStatus: row.kromkaStatus ?? row.kromka_status ?? row.kromka ?? "",
+    prasStatus: row.prasStatus ?? row.pras_status ?? row.pras ?? "",
+    assemblyStatus: row.assemblyStatus ?? row.assembly_status ?? "",
+    overallStatus: row.overallStatus ?? row.overall_status ?? row.overall ?? "",
+    createdAt: row.createdAt ?? row.created_at ?? "",
+    sheetsNeeded: row.sheetsNeeded ?? row.sheets_needed ?? 0,
+  };
+}
+
 function parseStrapSize(name) {
   const m = String(name || "").match(/\((\d+)_(\d+)\)/);
   if (!m) return null;
@@ -298,7 +313,7 @@ export default function App() {
       // Игнорируем запоздавшие ответы, чтобы старая вкладка не перетирала новую.
       if (seq !== loadSeqRef.current) return;
       if (view === "shipment") setShipmentBoard(data && data.sections ? data : { sections: [] });
-      else setRows(Array.isArray(data) ? data : []);
+      else setRows(Array.isArray(data) ? data.map(normalizeOrder) : []);
     } catch (e) {
       if (seq !== loadSeqRef.current) return;
       setError(toUserError(e));
