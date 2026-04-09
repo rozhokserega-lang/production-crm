@@ -657,6 +657,35 @@ export default function App() {
       .filter(Boolean);
     return [...new Set(names)].sort((a, b) => a.localeCompare(b, "ru"));
   }, [shipmentBoard]);
+  const planCatalogBySection = useMemo(() => {
+    const map = {};
+    (shipmentBoard.sections || []).forEach((s) => {
+      const section = String(s?.name || "").trim();
+      if (!section) return;
+      (s.items || []).forEach((it) => {
+        const itemName = String(it?.item || "").trim();
+        if (!itemName) return;
+        const materialLabel = getMaterialLabel(itemName, it?.material);
+        if (!map[section]) map[section] = [];
+        const exists = map[section].some((x) => normText(x.material) === normText(materialLabel));
+        if (!exists) map[section].push({ material: materialLabel, itemName });
+      });
+      map[section].sort((a, b) => a.material.localeCompare(b.material, "ru"));
+    });
+    return map;
+  }, [shipmentBoard]);
+  const planMaterialOptions = useMemo(() => {
+    return planCatalogBySection[planSection] || [];
+  }, [planCatalogBySection, planSection]);
+  const resolvedPlanItem = useMemo(() => {
+    const chosenMaterial = String(planMaterial || "").trim();
+    if (!chosenMaterial) return "";
+    const matched = (planCatalogBySection[planSection] || []).find(
+      (x) => normText(x.material) === normText(chosenMaterial)
+    );
+    if (matched?.itemName) return matched.itemName;
+    return `${planSection}. ${chosenMaterial}`.replace(/\s+\./g, ".").trim();
+  }, [planCatalogBySection, planSection, planMaterial]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -1132,9 +1161,10 @@ export default function App() {
   function openCreatePlanDialog() {
     const firstSection = shipmentSectionNames[0] || "Прочее";
     const firstWeek = weeks[0] || "";
+    const firstMaterial = (planCatalogBySection[firstSection] || [])[0]?.material || "";
     setPlanSection(firstSection);
     setPlanItem("");
-    setPlanMaterial("");
+    setPlanMaterial(firstMaterial);
     setPlanWeek(firstWeek);
     setPlanQty("");
     setPlanDialogOpen(true);
@@ -1146,11 +1176,16 @@ export default function App() {
   }
 
   async function saveCreatePlanDialog() {
-    const item = String(planItem || "").trim();
+    const item = String(resolvedPlanItem || planItem || "").trim();
+    const material = String(planMaterial || "").trim();
     const week = String(planWeek || "").trim();
     const qty = Number(String(planQty || "").replace(",", "."));
     if (!item) {
-      setError("Укажите изделие для нового плана.");
+      setError("Выберите материал для изделия.");
+      return;
+    }
+    if (!material) {
+      setError("Выберите материал.");
       return;
     }
     if (!week) {
@@ -1167,7 +1202,7 @@ export default function App() {
       await callBackend("webCreateShipmentPlanCell", {
         sectionName: planSection,
         item,
-        material: planMaterial,
+        material,
         week,
         qty,
       });
@@ -2236,26 +2271,41 @@ export default function App() {
             <div className="strap-grid">
               <div className="strap-row" style={{ gridTemplateColumns: "170px 1fr" }}>
                 <label>Секция</label>
-                <select value={planSection} onChange={(e) => setPlanSection(e.target.value)}>
+                <select
+                  value={planSection}
+                  onChange={(e) => {
+                    const nextSection = e.target.value;
+                    setPlanSection(nextSection);
+                    const firstMaterial = (planCatalogBySection[nextSection] || [])[0]?.material || "";
+                    setPlanMaterial(firstMaterial);
+                  }}
+                >
                   {[...shipmentSectionNames, "Прочее"].filter((v, i, a) => a.indexOf(v) === i).map((name) => (
                     <option key={name} value={name}>{name}</option>
                   ))}
                 </select>
               </div>
               <div className="strap-row" style={{ gridTemplateColumns: "170px 1fr" }}>
-                <label>Изделие</label>
-                <input
-                  value={planItem}
-                  onChange={(e) => setPlanItem(e.target.value)}
-                  placeholder="Например: Donini 750 ..."
-                />
-              </div>
-              <div className="strap-row" style={{ gridTemplateColumns: "170px 1fr" }}>
                 <label>Материал</label>
-                <input
+                <select
                   value={planMaterial}
                   onChange={(e) => setPlanMaterial(e.target.value)}
-                  placeholder="Необязательно"
+                >
+                  {planMaterialOptions.length === 0 ? (
+                    <option value="">Нет материалов для секции</option>
+                  ) : (
+                    planMaterialOptions.map((x) => (
+                      <option key={`${planSection}:${x.material}`} value={x.material}>{x.material}</option>
+                    ))
+                  )}
+                </select>
+              </div>
+              <div className="strap-row" style={{ gridTemplateColumns: "170px 1fr" }}>
+                <label>Изделие (авто)</label>
+                <input
+                  value={resolvedPlanItem}
+                  readOnly
+                  placeholder="Изделие сформируется из секции и материала"
                 />
               </div>
               <div className="strap-row" style={{ gridTemplateColumns: "170px 1fr" }}>
