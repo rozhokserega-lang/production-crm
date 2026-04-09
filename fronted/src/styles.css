@@ -547,60 +547,56 @@ button:disabled {
 .shipment-grid {
   margin-top: 6px;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
-  gap: 6px;
+  grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+  gap: 5px;
 }
 
 .ship-cell {
-  border: 1px solid #d6dfeb;
-  border-radius: 9px;
-  padding: 7px 8px 6px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 4px 5px 4px;
   display: grid;
-  gap: 2px;
+  gap: 1px;
   text-align: left;
   color: #111827;
   cursor: default;
-  box-shadow: none;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.35) inset;
   position: relative;
-  min-height: 70px;
+  min-height: 54px;
 }
 
 .ship-cell span {
-  font-size: 12px;
+  font-size: 10px;
   color: inherit;
-  opacity: 0.9;
+  opacity: 0.92;
 }
 
-.ship-cell .cell-material,
 .ship-cell .cell-status {
-  font-size: 10px;
-  line-height: 1.2;
+  font-size: 9px;
+  line-height: 1.15;
   opacity: 1;
   display: inline-block;
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  padding: 1px 6px;
+  padding: 0 5px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.78);
   color: #0f172a;
-  border: 1px solid rgba(148, 163, 184, 0.35);
-}
-
-.ship-cell .cell-status {
+  border: 1px solid rgba(148, 163, 184, 0.4);
   justify-self: start;
   font-weight: 600;
 }
 
 .ship-cell b {
-  font-size: 18px;
+  font-size: 15px;
   line-height: 1;
 }
 
 .cell-sheets {
-  font-size: 11px;
-  opacity: 0.9;
+  font-size: 9px;
+  opacity: 0.88;
 }
 
 .ship-cell.selectable {
@@ -614,6 +610,10 @@ button:disabled {
 
 .ship-cell.inwork {
   cursor: default;
+  border-color: #c4b896;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.45) inset,
+    0 1px 2px rgba(15, 23, 42, 0.06);
 }
 
 .ship-cell.blocked {
@@ -629,19 +629,19 @@ button:disabled {
 
 .selected-mark {
   position: absolute;
-  top: 6px;
-  right: 7px;
-  width: 18px;
-  height: 18px;
+  top: 4px;
+  right: 4px;
+  width: 15px;
+  height: 15px;
   border-radius: 999px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
+  font-size: 10px;
   font-weight: 700;
   color: #ffffff;
   background: #0284c7;
-  box-shadow: 0 2px 8px rgba(2, 132, 199, 0.35);
+  box-shadow: 0 1px 4px rgba(2, 132, 199, 0.35);
 }
 
 .hover-tip {

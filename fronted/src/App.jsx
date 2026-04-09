@@ -1775,6 +1775,9 @@ export default function App() {
                               const sourceCol = c.sourceColId != null ? String(c.sourceColId) : String(c.col);
                               const isSelected = selectedShipments.some((s) => s.row === sourceRow && s.col === sourceCol);
                               const cls = c.canSendToWork ? "ship-cell selectable" : c.inWork ? "ship-cell inwork" : "ship-cell blocked";
+                              const rawBg = c.bg || "#ffffff";
+                              const displayBg =
+                                c.inWork && isYellowCell(rawBg) ? "#f4f1e4" : rawBg;
                               return (
                                 <button
                                   key={`${sourceRow}-${sourceCol}`}
@@ -1796,9 +1799,9 @@ export default function App() {
                                   }
                                   onMouseLeave={() => setHoverTip({ visible: false, text: "", x: 0, y: 0 })}
                                   style={{
-                                    background: c.bg || "#ffffff",
+                                    background: displayBg,
                                     backgroundImage: "none",
-                                    color: getReadableTextColor(c.bg || "#ffffff"),
+                                    color: getReadableTextColor(displayBg),
                                   }}
                                   onClick={() => {
                                     const payload = {
@@ -1822,7 +1825,6 @@ export default function App() {
                                   }}
                                 >
                                   {isSelected && <span className="selected-mark">✓</span>}
-                                  <span className="cell-material">{materialLabel}</span>
                                   <span>Нед {c.week || "-"}</span>
                                   <b>{c.qty}</b>
                                   <span className="cell-status">{getShipmentCellStatusShort(c)}</span>
