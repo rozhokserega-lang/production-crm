@@ -208,6 +208,10 @@ function toUserError(e) {
   return msg || "Неизвестная ошибка";
 }
 
+function extractErrorMessage(e) {
+  return String(e?.message || e || "").trim() || "Неизвестная ошибка";
+}
+
 function parseStrapSize(name) {
   const m = String(name || "").match(/\((\d+)_(\d+)\)/);
   if (!m) return null;
@@ -470,8 +474,8 @@ export default function App() {
         callBackend("webGetConsumeOptions", { orderId })
           .then((options) => {
             setConsumeDialogData(options || { orderId });
-            const suggested = isPlankOrder ? "Черный" : String(options?.suggestedMaterial || "");
-            setConsumeMaterial(suggested);
+            const suggested = isPlankOrder ? "Черный" : String(options?.suggestedMaterial || "").trim();
+            if (suggested) setConsumeMaterial(suggested);
             if (!isPlankOrder && suggested) setConsumeEditMode(false);
           })
           .catch(() => {
@@ -961,11 +965,35 @@ export default function App() {
         });
         setPlanPreviews(preview ? [{ ...preview, _key: `${s.row}-${s.col}` }] : []);
       } else {
-        const batch = await callBackend("webPreviewPlansBatch", {
-          items: selectedShipments.map((x) => ({ row: x.row, col: x.col })),
-        });
-        const plans = (batch && Array.isArray(batch.plans) ? batch.plans : [])
-          .map((p) => ({ ...(p.plan || {}), _key: `${p.row}-${p.col}` }));
+        let plans = [];
+        try {
+          const batch = await callBackend("webPreviewPlansBatch", {
+            items: selectedShipments.map((x) => ({ row: x.row, col: x.col })),
+          });
+          plans = (batch && Array.isArray(batch.plans) ? batch.plans : [])
+            .map((p) => ({ ...(p.plan || {}), _key: `${p.row}-${p.col}` }));
+        } catch (batchError) {
+          // Fallback: если пачка упала из-за одной позиции, собираем предпросмотры поштучно.
+          const settled = await Promise.allSettled(
+            selectedShipments.map((s) =>
+              callBackend("webPreviewPlanFromShipment", { row: s.row, col: s.col })
+                .then((plan) => ({ ...plan, _key: `${s.row}-${s.col}` }))
+            )
+          );
+          plans = settled
+            .filter((x) => x.status === "fulfilled" && x.value)
+            .map((x) => x.value);
+          const failedCount = settled.length - plans.length;
+          if (failedCount > 0) {
+            setError(
+              `Часть предпросмотров не построена (${failedCount} шт). ` +
+              `Причина: ${extractErrorMessage(batchError)}`
+            );
+          }
+        }
+        if (!plans.length) {
+          throw new Error("Не удалось построить предпросмотр ни для одной выбранной позиции.");
+        }
         setPlanPreviews(plans);
       }
     } catch (e) {
