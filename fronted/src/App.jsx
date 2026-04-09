@@ -218,7 +218,10 @@ function getMaterialLabel(item, material) {
   if (direct) return direct;
   const name = String(item || "").trim();
   if (!name) return "Материал не указан";
-  const parts = name.split(".");
+  const parts = name
+    .split(".")
+    .map((x) => String(x || "").trim())
+    .filter(Boolean);
   const tail = String(parts[parts.length - 1] || "").trim();
   return tail || "Материал не указан";
 }
@@ -1082,15 +1085,29 @@ export default function App() {
     setError("");
     try {
       for (const s of sendable) {
+        const attempts = [
+          { row: s.row, col: s.col },
+          { row: s.rawRow, col: s.rawCol },
+          { row: s.row, col: s.weekCol },
+          { row: s.rawRow, col: s.weekCol },
+        ].filter((x) => x.row != null && x.col != null && String(x.row).trim() && String(x.col).trim());
+        let sent = false;
+        let lastErr = null;
         try {
-          await callBackend("webSendShipmentToWork", { row: s.row, col: s.col });
-        } catch (e) {
-          const msg = String(e?.message || e || "");
-          const hasRawFallback = s.rawRow != null && s.rawCol != null;
-          if (!hasRawFallback || !/not found|не найден|not\s*exists/i.test(msg)) {
-            throw e;
+          for (const p of attempts) {
+            try {
+              await callBackend("webSendShipmentToWork", { row: p.row, col: p.col });
+              sent = true;
+              break;
+            } catch (e) {
+              lastErr = e;
+              const msg = String(e?.message || e || "");
+              if (!/not found|не найден|not\s*exists/i.test(msg)) throw e;
+            }
           }
-          await callBackend("webSendShipmentToWork", { row: s.rawRow, col: s.rawCol });
+          if (!sent) throw lastErr || new Error("Shipment cell not found");
+        } catch (e) {
+          throw e;
         }
       }
       setPlanPreviews([]);
@@ -1629,6 +1646,7 @@ export default function App() {
                               rawCol: row.sourceCol,
                               item: row.item,
                               week: row.week,
+                              weekCol: row.week,
                               qty: row.qty,
                               material: getMaterialLabel(row.item, row.material),
                               sheetsNeeded: row.sheets,
@@ -1755,6 +1773,7 @@ export default function App() {
                                       rawCol: String(c.col),
                                       item: it.item,
                                       week: c.week,
+                                      weekCol: c.week,
                                       qty: c.qty,
                                       material: materialLabel,
                                       sheetsNeeded: Number(c.sheetsNeeded || 0),
