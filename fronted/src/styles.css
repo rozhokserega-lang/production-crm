@@ -576,6 +576,28 @@ button:disabled {
   opacity: 0.9;
 }
 
+.ship-cell .cell-material,
+.ship-cell .cell-status {
+  font-size: 10px;
+  line-height: 1.2;
+  opacity: 1;
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  color: #0f172a;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+}
+
+.ship-cell .cell-status {
+  justify-self: start;
+  font-weight: 600;
+}
+
 .ship-cell b {
   font-size: 18px;
   line-height: 1;
@@ -600,7 +622,7 @@ button:disabled {
 }
 
 .ship-cell.blocked {
-  opacity: 0.95;
+  opacity: 0.98;
 }
 
 .ship-cell.selected {

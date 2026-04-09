@@ -203,6 +203,16 @@ function getShipmentCellStatus(c) {
   return "Статус по цвету";
 }
 
+function getShipmentCellStatusShort(c) {
+  if (!c) return "Статус";
+  if (c.canSendToWork) return "Не начато";
+  if (c.inWork) return "В работе";
+  if (isRedCell(c.bg)) return "Выполнено";
+  if (isYellowCell(c.bg)) return "Пауза";
+  if (isBlueCell(c.bg)) return "Этап";
+  return "Статус";
+}
+
 function toUserError(e) {
   const msg = String(e?.message || e || "");
   if (msg.includes("Система занята")) return "Система занята, повторите через 1-2 секунды.";
@@ -1725,8 +1735,10 @@ export default function App() {
                                   }}
                                 >
                                   {isSelected && <span className="selected-mark">✓</span>}
+                                  <span className="cell-material">{it.material || "Материал"}</span>
                                   <span>Нед {c.week || "-"}</span>
                                   <b>{c.qty}</b>
+                                  <span className="cell-status">{getShipmentCellStatusShort(c)}</span>
                                   <span className="cell-sheets">Л: {Number(c.sheetsNeeded || 0)}</span>
                                 </button>
                               );
