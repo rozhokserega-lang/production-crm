@@ -18,6 +18,7 @@ const DEFAULT_SHIPMENT_PREFS = {
   showOnlyEmpty: false,
   showBlueCells: true,
   showYellowCells: true,
+  showCompletedRedCells: true,
   collapsedSections: {},
 };
 const SHIPMENT_SECTION_ORDER = [
@@ -306,6 +307,7 @@ export default function App() {
   const [showOnlyEmpty, setShowOnlyEmpty] = useState(false);
   const [showBlueCells, setShowBlueCells] = useState(true);
   const [showYellowCells, setShowYellowCells] = useState(true);
+  const [showCompletedRedCells, setShowCompletedRedCells] = useState(true);
   const [shipmentSort, setShipmentSort] = useState("name");
   const [shipmentViewMode, setShipmentViewMode] = useState("table");
   const [statsSort, setStatsSort] = useState("stage");
@@ -412,6 +414,7 @@ export default function App() {
         if (typeof prefs.showOnlyEmpty === "boolean") setShowOnlyEmpty(prefs.showOnlyEmpty);
         if (typeof prefs.showBlueCells === "boolean") setShowBlueCells(prefs.showBlueCells);
         if (typeof prefs.showYellowCells === "boolean") setShowYellowCells(prefs.showYellowCells);
+        if (typeof prefs.showCompletedRedCells === "boolean") setShowCompletedRedCells(prefs.showCompletedRedCells);
         if (prefs.collapsedSections && typeof prefs.collapsedSections === "object") {
           setCollapsedSections(prefs.collapsedSections);
         }
@@ -425,6 +428,7 @@ export default function App() {
     setShowOnlyEmpty(DEFAULT_SHIPMENT_PREFS.showOnlyEmpty);
     setShowBlueCells(DEFAULT_SHIPMENT_PREFS.showBlueCells);
     setShowYellowCells(DEFAULT_SHIPMENT_PREFS.showYellowCells);
+    setShowCompletedRedCells(DEFAULT_SHIPMENT_PREFS.showCompletedRedCells);
     setCollapsedSections(DEFAULT_SHIPMENT_PREFS.collapsedSections);
   }
 
@@ -432,10 +436,18 @@ export default function App() {
     try {
       localStorage.setItem(
         "shipmentUiPrefs",
-        JSON.stringify({ weekFilter, shipmentSort, showOnlyEmpty, showBlueCells, showYellowCells, collapsedSections })
+        JSON.stringify({
+          weekFilter,
+          shipmentSort,
+          showOnlyEmpty,
+          showBlueCells,
+          showYellowCells,
+          showCompletedRedCells,
+          collapsedSections,
+        })
       );
     } catch (_) {}
-  }, [weekFilter, shipmentSort, showOnlyEmpty, showBlueCells, showYellowCells, collapsedSections]);
+  }, [weekFilter, shipmentSort, showOnlyEmpty, showBlueCells, showYellowCells, showCompletedRedCells, collapsedSections]);
 
   function sectionCollapseKey(name) {
     return `${shipmentSort}:${String(name || "")}`;
@@ -636,8 +648,9 @@ export default function App() {
               const qtyOk = (Number(c.qty) || 0) > 0;
               if (!qtyOk) return false;
               if (showOnlyEmpty) return !!c.canSendToWork; // только пустые (не начатые)
+              if (!showCompletedRedCells && isRedCell(c.bg)) return false;
               if (!passesBlueYellowFilter(c.bg, showBlueCells, showYellowCells)) return false;
-              return !isRedCell(c.bg);
+              return true;
             });
             const byWeek = weekFilter === "all" || visibleCells.some((c) => String(c.week || "") === weekFilter);
             const byQuery = !q || String(it.item || "").toLowerCase().includes(q);
@@ -675,15 +688,16 @@ export default function App() {
       if (tab === "pras") return pilkaDone && kromkaDone && !prasDone;
       return true;
     });
-  }, [rows, shipmentBoard, laborRows, view, query, weekFilter, shipmentSort, showOnlyEmpty, showBlueCells, showYellowCells]);
+  }, [rows, shipmentBoard, laborRows, view, query, weekFilter, shipmentSort, showOnlyEmpty, showBlueCells, showYellowCells, showCompletedRedCells]);
 
   function visibleCellsForItem(it) {
     return (it?.cells || []).filter((c) => {
       const qtyOk = (Number(c.qty) || 0) > 0;
       if (!qtyOk) return false;
       if (showOnlyEmpty) return !!c.canSendToWork;
+      if (!showCompletedRedCells && isRedCell(c.bg)) return false;
       if (!passesBlueYellowFilter(c.bg, showBlueCells, showYellowCells)) return false;
-      return !isRedCell(c.bg);
+      return true;
     });
   }
 
@@ -1236,6 +1250,7 @@ export default function App() {
           <span className="legend-item"><i className="legend-dot blue"></i> Синий: в процессе / этап завершен</span>
           <span className="legend-item"><i className="legend-dot yellow"></i> Желтый: отправлено в работу / пауза</span>
           <span className="legend-item"><i className="legend-dot green"></i> Зеленый: собрано / готово</span>
+          <span className="legend-item"><i className="legend-dot red"></i> Красный: выполнено / отправлено</span>
         </section>
       )}
 
@@ -1317,6 +1332,14 @@ export default function App() {
                   onChange={(e) => setShowYellowCells(e.target.checked)}
                 />
                 <span>Показывать желтые</span>
+              </label>
+              <label className="empty-only-toggle">
+                <input
+                  type="checkbox"
+                  checked={showCompletedRedCells}
+                  onChange={(e) => setShowCompletedRedCells(e.target.checked)}
+                />
+                <span>Показывать выполненные (красные)</span>
               </label>
               <button className="mini" onClick={resetShipmentFilters}>
                 Сброс фильтров
