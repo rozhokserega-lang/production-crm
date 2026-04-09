@@ -257,6 +257,13 @@ export default function App() {
   const [consumeError, setConsumeError] = useState("");
   const [consumeLoading, setConsumeLoading] = useState(false);
   const [strapDialogOpen, setStrapDialogOpen] = useState(false);
+  const [planDialogOpen, setPlanDialogOpen] = useState(false);
+  const [planSection, setPlanSection] = useState("Прочее");
+  const [planItem, setPlanItem] = useState("");
+  const [planMaterial, setPlanMaterial] = useState("");
+  const [planWeek, setPlanWeek] = useState("");
+  const [planQty, setPlanQty] = useState("");
+  const [planSaving, setPlanSaving] = useState(false);
   const [strapDraft, setStrapDraft] = useState(() =>
     STRAP_OPTIONS.reduce((acc, name) => ({ ...acc, [name]: "" }), {})
   );
@@ -495,6 +502,12 @@ export default function App() {
     }
     return [...new Set(rows.map((x) => String(x.week || "")).filter(Boolean))].sort((a, b) => Number(a) - Number(b));
   }, [rows, shipmentBoard, view]);
+  const shipmentSectionNames = useMemo(() => {
+    const names = (shipmentBoard.sections || [])
+      .map((s) => String(s?.name || "").trim())
+      .filter(Boolean);
+    return [...new Set(names)].sort((a, b) => a.localeCompare(b, "ru"));
+  }, [shipmentBoard]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -863,6 +876,57 @@ export default function App() {
     setStrapDialogOpen(true);
   }
 
+  function openCreatePlanDialog() {
+    const firstSection = shipmentSectionNames[0] || "Прочее";
+    const firstWeek = weeks[0] || "";
+    setPlanSection(firstSection);
+    setPlanItem("");
+    setPlanMaterial("");
+    setPlanWeek(firstWeek);
+    setPlanQty("");
+    setPlanDialogOpen(true);
+  }
+
+  function closeCreatePlanDialog() {
+    if (planSaving) return;
+    setPlanDialogOpen(false);
+  }
+
+  async function saveCreatePlanDialog() {
+    const item = String(planItem || "").trim();
+    const week = String(planWeek || "").trim();
+    const qty = Number(String(planQty || "").replace(",", "."));
+    if (!item) {
+      setError("Укажите изделие для нового плана.");
+      return;
+    }
+    if (!week) {
+      setError("Укажите неделю плана.");
+      return;
+    }
+    if (!Number.isFinite(qty) || qty <= 0) {
+      setError("Количество должно быть больше 0.");
+      return;
+    }
+    setPlanSaving(true);
+    setError("");
+    try {
+      await callBackend("webCreateShipmentPlanCell", {
+        sectionName: planSection,
+        item,
+        material: planMaterial,
+        week,
+        qty,
+      });
+      setPlanDialogOpen(false);
+      await load();
+    } catch (e) {
+      setError(toUserError(e));
+    } finally {
+      setPlanSaving(false);
+    }
+  }
+
   function saveStrapDialog() {
     const next = STRAP_OPTIONS
       .map((name) => ({ name, qty: Number(String(strapDraft[name] || "").replace(",", ".")) }))
@@ -1030,6 +1094,9 @@ export default function App() {
               </button>
               <button className="mini" onClick={openStrapDialog}>
                 Добавить обвязку
+              </button>
+              <button className="mini ok" onClick={openCreatePlanDialog}>
+                Добавить план
               </button>
             </div>
           )}
@@ -1645,6 +1712,68 @@ export default function App() {
           </div>
         </div>
       )}
+      {planDialogOpen && (
+        <div className="dialog-backdrop">
+          <div className="dialog-card">
+            <h3 style={{ marginTop: 0 }}>Добавить новый план</h3>
+            <div className="line2" style={{ marginBottom: 10 }}>
+              Создаёт или обновляет позицию плана в отгрузке по неделе и изделию.
+            </div>
+            <div className="strap-grid">
+              <div className="strap-row" style={{ gridTemplateColumns: "170px 1fr" }}>
+                <label>Секция</label>
+                <select value={planSection} onChange={(e) => setPlanSection(e.target.value)}>
+                  {[...shipmentSectionNames, "Прочее"].filter((v, i, a) => a.indexOf(v) === i).map((name) => (
+                    <option key={name} value={name}>{name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="strap-row" style={{ gridTemplateColumns: "170px 1fr" }}>
+                <label>Изделие</label>
+                <input
+                  value={planItem}
+                  onChange={(e) => setPlanItem(e.target.value)}
+                  placeholder="Например: Donini 750 ..."
+                />
+              </div>
+              <div className="strap-row" style={{ gridTemplateColumns: "170px 1fr" }}>
+                <label>Материал</label>
+                <input
+                  value={planMaterial}
+                  onChange={(e) => setPlanMaterial(e.target.value)}
+                  placeholder="Необязательно"
+                />
+              </div>
+              <div className="strap-row" style={{ gridTemplateColumns: "170px 1fr" }}>
+                <label>Неделя</label>
+                <input
+                  value={planWeek}
+                  onChange={(e) => setPlanWeek(e.target.value.replace(/[^\d-]/g, ""))}
+                  placeholder="Например: 70"
+                />
+              </div>
+              <div className="strap-row" style={{ gridTemplateColumns: "170px 1fr" }}>
+                <label>Количество</label>
+                <input
+                  inputMode="decimal"
+                  value={planQty}
+                  onChange={(e) => setPlanQty(e.target.value.replace(/[^0-9.,]/g, ""))}
+                  placeholder="Например: 36"
+                />
+              </div>
+            </div>
+            <div className="actions" style={{ marginTop: 10 }}>
+              <button className="mini ok" disabled={planSaving} onClick={saveCreatePlanDialog}>
+                {planSaving ? "Сохраняю..." : "Сохранить план"}
+              </button>
+              <button className="mini" disabled={planSaving} onClick={closeCreatePlanDialog}>
+                Отмена
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+
