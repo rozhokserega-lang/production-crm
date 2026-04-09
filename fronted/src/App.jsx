@@ -538,7 +538,10 @@ export default function App() {
     }
     return rows.filter((x) => {
       const byWeek = weekFilter === "all" || String(x.week || "") === weekFilter;
-      const byQuery = !q || String(x.item || "").toLowerCase().includes(q) || String(x.orderId || "").toLowerCase().includes(q);
+      const byQuery =
+        !q ||
+        String(x.item || "").toLowerCase().includes(q) ||
+        String(x.orderId || x.order_id || "").toLowerCase().includes(q);
       if (!byWeek || !byQuery) return false;
       if (view === "stats") return true;
       const pilkaStatus = String(x.pilkaStatus || x.pilka || "");
@@ -1455,7 +1458,10 @@ export default function App() {
           <>
         {!workshopRows.length && !loading && <div className="empty">Нет заказов</div>}
         {workshopRows.map((o) => (
-          <article key={o.orderId || `${o.item}-${o.row}`} className={`card ${statusClass(o)}`}>
+          (() => {
+            const orderId = String(o.orderId || o.order_id || "");
+            return (
+          <article key={orderId || `${o.item}-${o.row}`} className={`card ${statusClass(o)}`}>
             <div className="line1">
               <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                 <strong>{o.item}</strong>
@@ -1464,7 +1470,7 @@ export default function App() {
               </div>
             </div>
             <div className="line2">
-              <span>ID: {o.orderId || "-"}</span>
+              <span>ID: {orderId || "-"}</span>
               <span>Листов нужно: {Number(o.sheetsNeeded || 0)}</span>
             </div>
             {view === "workshop" && tab !== "all" && <div className="actions">
@@ -1481,8 +1487,8 @@ export default function App() {
                 const currentPrasExec =
                   String(o.prasStatus || "").includes("Виталик") ? "Виталик" :
                   String(o.prasStatus || "").includes("Лёха") || String(o.prasStatus || "").includes("Леха") ? "Лёха" : "";
-                const kromkaExecValue = executorByOrder[o.orderId] || currentKromkaExec || "Слава";
-                const prasExecValue = executorByOrder[`${o.orderId}:pras`] || currentPrasExec || "Лёха";
+                const kromkaExecValue = executorByOrder[orderId] || currentKromkaExec || "Слава";
+                const prasExecValue = executorByOrder[`${orderId}:pras`] || currentPrasExec || "Лёха";
                 const showPilka = tab === "all" || tab === "pilka";
                 const showKromka = tab === "all" || tab === "kromka";
                 const showPras = tab === "all" || tab === "pras";
@@ -1492,16 +1498,16 @@ export default function App() {
                 <>
               <button
                 className="mini"
-                disabled={actionLoading === `webSetPilkaInWork:${o.orderId}` || pilkaDone}
-                onClick={() => runAction("webSetPilkaInWork", o.orderId)}
+                disabled={actionLoading === `webSetPilkaInWork:${orderId}` || pilkaDone}
+                onClick={() => runAction("webSetPilkaInWork", orderId)}
               >
                 {tab === "pilka" ? "В работе" : "Пила: В работе"}
               </button>
               <button
                 className="mini ok"
-                disabled={actionLoading === `webSetPilkaDone:${o.orderId}` || pilkaDone || !pilkaInWork}
+                disabled={actionLoading === `webSetPilkaDone:${orderId}` || pilkaDone || !pilkaInWork}
                 onClick={() =>
-                  runAction("webSetPilkaDone", o.orderId, {}, {
+                  runAction("webSetPilkaDone", orderId, {}, {
                     defaultSheets: o.sheetsNeeded,
                     item: o.item,
                     isPlankOrder: String(o.item || "").includes("Планки обвязки"),
@@ -1512,8 +1518,8 @@ export default function App() {
               </button>
               <button
                 className="mini warn"
-                disabled={actionLoading === `webSetPilkaPause:${o.orderId}` || pilkaDone || !pilkaInWork}
-                onClick={() => runAction("webSetPilkaPause", o.orderId)}
+                disabled={actionLoading === `webSetPilkaPause:${orderId}` || pilkaDone || !pilkaInWork}
+                onClick={() => runAction("webSetPilkaPause", orderId)}
               >
                 {tab === "pilka" ? "Пауза" : "Пила: Пауза"}
               </button>
@@ -1525,7 +1531,7 @@ export default function App() {
               {!kromkaInWork && (
                 <select
                   value={kromkaExecValue}
-                  onChange={(e) => setExecutorByOrder((prev) => ({ ...prev, [o.orderId]: e.target.value }))}
+                  onChange={(e) => setExecutorByOrder((prev) => ({ ...prev, [orderId]: e.target.value }))}
                 >
                   <option>Слава</option>
                   <option>Сережа</option>
@@ -1533,9 +1539,9 @@ export default function App() {
               )}
               <button
                 className="mini"
-                disabled={actionLoading === `webSetKromkaInWork:${o.orderId}` || kromkaDone}
+                disabled={actionLoading === `webSetKromkaInWork:${orderId}` || kromkaDone}
                 onClick={() =>
-                  runAction("webSetKromkaInWork", o.orderId, {
+                  runAction("webSetKromkaInWork", orderId, {
                     executor: kromkaExecValue,
                   })
                 }
@@ -1544,15 +1550,15 @@ export default function App() {
               </button>
               <button
                 className="mini ok"
-                disabled={actionLoading === `webSetKromkaDone:${o.orderId}` || kromkaDone || !kromkaInWork}
-                onClick={() => runAction("webSetKromkaDone", o.orderId)}
+                disabled={actionLoading === `webSetKromkaDone:${orderId}` || kromkaDone || !kromkaInWork}
+                onClick={() => runAction("webSetKromkaDone", orderId)}
               >
                 {tab === "kromka" ? "Готово" : "Кромка: Готово"}
               </button>
               <button
                 className="mini warn"
-                disabled={actionLoading === `webSetKromkaPause:${o.orderId}` || kromkaDone || !kromkaInWork}
-                onClick={() => runAction("webSetKromkaPause", o.orderId)}
+                disabled={actionLoading === `webSetKromkaPause:${orderId}` || kromkaDone || !kromkaInWork}
+                onClick={() => runAction("webSetKromkaPause", orderId)}
               >
                 {tab === "kromka" ? "Пауза" : "Кромка: Пауза"}
               </button>
@@ -1564,7 +1570,7 @@ export default function App() {
               {!prasInWork && (
                 <select
                   value={prasExecValue}
-                  onChange={(e) => setExecutorByOrder((prev) => ({ ...prev, [`${o.orderId}:pras`]: e.target.value }))}
+                  onChange={(e) => setExecutorByOrder((prev) => ({ ...prev, [`${orderId}:pras`]: e.target.value }))}
                 >
                   <option>Лёха</option>
                   <option>Виталик</option>
@@ -1572,9 +1578,9 @@ export default function App() {
               )}
               <button
                 className="mini"
-                disabled={actionLoading === `webSetPrasInWork:${o.orderId}` || prasDone}
+                disabled={actionLoading === `webSetPrasInWork:${orderId}` || prasDone}
                 onClick={() =>
-                  runAction("webSetPrasInWork", o.orderId, {
+                  runAction("webSetPrasInWork", orderId, {
                     executor: prasExecValue,
                   })
                 }
@@ -1583,15 +1589,15 @@ export default function App() {
               </button>
               <button
                 className="mini ok"
-                disabled={actionLoading === `webSetPrasDone:${o.orderId}` || prasDone || !prasInWork}
-                onClick={() => runAction("webSetPrasDone", o.orderId)}
+                disabled={actionLoading === `webSetPrasDone:${orderId}` || prasDone || !prasInWork}
+                onClick={() => runAction("webSetPrasDone", orderId)}
               >
                 {tab === "pras" ? "Готово" : "Присадка: Готово"}
               </button>
               <button
                 className="mini warn"
-                disabled={actionLoading === `webSetPrasPause:${o.orderId}` || prasDone || !prasInWork}
-                onClick={() => runAction("webSetPrasPause", o.orderId)}
+                disabled={actionLoading === `webSetPrasPause:${orderId}` || prasDone || !prasInWork}
+                onClick={() => runAction("webSetPrasPause", orderId)}
               >
                 {tab === "pras" ? "Пауза" : "Присадка: Пауза"}
               </button>
@@ -1602,6 +1608,8 @@ export default function App() {
               })()}
             </div>}
           </article>
+            );
+          })()
         ))}
           </>
         )}
