@@ -548,17 +548,12 @@ button:disabled {
   margin-top: 6px;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
-  gap: 0;
-  border: 1px solid #d6dfeb;
-  border-right: 0;
-  border-bottom: 0;
+  gap: 6px;
 }
 
 .ship-cell {
-  border: 0;
-  border-right: 1px solid #d6dfeb;
-  border-bottom: 1px solid #d6dfeb;
-  border-radius: 0;
+  border: 1px solid #d6dfeb;
+  border-radius: 9px;
   padding: 7px 8px 6px;
   display: grid;
   gap: 2px;
@@ -627,7 +622,7 @@ button:disabled {
 
 .ship-cell.selected {
   outline: 2px solid #0ea5e9;
-  outline-offset: -2px;
+  outline-offset: 0;
   transform: none;
   box-shadow: inset 0 0 0 1px rgba(14, 165, 233, 0.2);
 }

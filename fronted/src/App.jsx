@@ -213,6 +213,16 @@ function getShipmentCellStatusShort(c) {
   return "Статус";
 }
 
+function getMaterialLabel(item, material) {
+  const direct = String(material || "").trim();
+  if (direct) return direct;
+  const name = String(item || "").trim();
+  if (!name) return "Материал не указан";
+  const parts = name.split(".");
+  const tail = String(parts[parts.length - 1] || "").trim();
+  return tail || "Материал не указан";
+}
+
 function toUserError(e) {
   const msg = String(e?.message || e || "");
   if (msg.includes("Система занята")) return "Система занята, повторите через 1-2 секунды.";
@@ -1014,6 +1024,10 @@ export default function App() {
       totalSheets,
     };
   }, [selectedShipments]);
+  const sendableSelectedCount = useMemo(
+    () => selectedShipments.filter((x) => !!x.canSendToWork).length,
+    [selectedShipments]
+  );
 
   const strapCalculation = useMemo(() => {
     const lines = [];
@@ -1059,10 +1073,15 @@ export default function App() {
       return;
     }
     if (!selectedShipments.length) return;
+    const sendable = selectedShipments.filter((s) => !!s.canSendToWork);
+    if (!sendable.length) {
+      setError("Среди выбранных ячеек нет доступных для отправки в работу.");
+      return;
+    }
     setActionLoading("shipment:bulk");
     setError("");
     try {
-      for (const s of selectedShipments) {
+      for (const s of sendable) {
         await callBackend("webSendShipmentToWork", { row: s.row, col: s.col });
       }
       setPlanPreviews([]);
@@ -1433,7 +1452,7 @@ export default function App() {
                   {shipmentTab === "straps" ? (
                     <>Позиции обвязки: <b>{strapItems.length}</b></>
                   ) : (
-                    <>Выбрано ячеек: <b>{selectedShipments.length}</b></>
+                    <>Выбрано ячеек: <b>{selectedShipments.length}</b> | Готово к отправке: <b>{sendableSelectedCount}</b></>
                   )}
                   {strapItems.length > 0 && (
                     <> | Обвязка: <b>{strapItems.reduce((sum, x) => sum + Number(x.qty || 0), 0)} шт.</b></>
@@ -1460,13 +1479,13 @@ export default function App() {
                     className="mini"
                     disabled={
                       actionLoading === "shipment:bulk" ||
-                      (shipmentTab === "straps" ? strapItems.length === 0 : selectedShipments.length === 0)
+                      (shipmentTab === "straps" ? strapItems.length === 0 : sendableSelectedCount === 0)
                     }
                     onClick={sendSelectedShipmentToWork}
                   >
                     {shipmentTab === "straps"
                       ? `Отправить в работу (${strapItems.length})`
-                      : `Отправить в работу (${selectedShipments.length})`}
+                      : `Отправить в работу (${sendableSelectedCount})`}
                   </button>
                   <button
                     className="mini"
@@ -1594,7 +1613,6 @@ export default function App() {
                           className={isSelected ? "selected-row" : ""}
                           style={{ backgroundColor: row.bg || "#ffffff", color: getReadableTextColor(row.bg || "#ffffff") }}
                           onClick={() => {
-                            if (!row.canSendToWork) return;
                             const payload = {
                               row: row.sourceRow,
                               col: row.sourceCol,
@@ -1603,6 +1621,7 @@ export default function App() {
                               qty: row.qty,
                               material: row.material,
                               sheetsNeeded: row.sheets,
+                              canSendToWork: !!row.canSendToWork,
                             };
                             setSelectedShipments((prev) => {
                               const exists = prev.some((s) => s.row === payload.row && s.col === payload.col);
@@ -1668,6 +1687,7 @@ export default function App() {
                       const sheetsE = itemCells.length ? (Number(itemCells[0].availableSheets || 0) || 0) : 0;
                       const pendingCells = itemCells.filter((c) => c.canSendToWork);
                       const hasPendingShortage = pendingCells.some((c) => c.materialEnoughForOrder === false);
+                      const materialLabel = getMaterialLabel(it.item, it.material);
                       return (
                         <article
                           key={`${section.name}-${it.row}`}
@@ -1676,7 +1696,7 @@ export default function App() {
                           <div className="shipment-item-head">
                             <strong>{it.item}</strong>
                             <span className="badge-stack">
-                              <span className="badge">{it.material || "Материал не указан"}</span>
+                              <span className="badge">{materialLabel}</span>
                               <span className="badge-sub">{sheetsE}</span>
                             </span>
                           </div>
@@ -1717,7 +1737,6 @@ export default function App() {
                                     color: getReadableTextColor(c.bg || "#ffffff"),
                                   }}
                                   onClick={() => {
-                                    if (!c.canSendToWork) return;
                                     const payload = {
                                       row: sourceRow,
                                       col: sourceCol,
@@ -1726,6 +1745,7 @@ export default function App() {
                                       qty: c.qty,
                                       material: it.material,
                                       sheetsNeeded: Number(c.sheetsNeeded || 0),
+                                      canSendToWork: !!c.canSendToWork,
                                     };
                                     setSelectedShipments((prev) => {
                                       const exists = prev.some((s) => s.row === payload.row && s.col === payload.col);
@@ -1735,7 +1755,7 @@ export default function App() {
                                   }}
                                 >
                                   {isSelected && <span className="selected-mark">✓</span>}
-                                  <span className="cell-material">{it.material || "Материал"}</span>
+                                  <span className="cell-material">{materialLabel}</span>
                                   <span>Нед {c.week || "-"}</span>
                                   <b>{c.qty}</b>
                                   <span className="cell-status">{getShipmentCellStatusShort(c)}</span>
