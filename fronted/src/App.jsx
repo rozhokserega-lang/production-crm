@@ -1082,7 +1082,16 @@ export default function App() {
     setError("");
     try {
       for (const s of sendable) {
-        await callBackend("webSendShipmentToWork", { row: s.row, col: s.col });
+        try {
+          await callBackend("webSendShipmentToWork", { row: s.row, col: s.col });
+        } catch (e) {
+          const msg = String(e?.message || e || "");
+          const hasRawFallback = s.rawRow != null && s.rawCol != null;
+          if (!hasRawFallback || !/not found|не найден|not\s*exists/i.test(msg)) {
+            throw e;
+          }
+          await callBackend("webSendShipmentToWork", { row: s.rawRow, col: s.rawCol });
+        }
       }
       setPlanPreviews([]);
       setSelectedShipments([]);
@@ -1616,10 +1625,12 @@ export default function App() {
                             const payload = {
                               row: row.sourceRow,
                               col: row.sourceCol,
+                              rawRow: row.sourceRow,
+                              rawCol: row.sourceCol,
                               item: row.item,
                               week: row.week,
                               qty: row.qty,
-                              material: row.material,
+                              material: getMaterialLabel(row.item, row.material),
                               sheetsNeeded: row.sheets,
                               canSendToWork: !!row.canSendToWork,
                             };
@@ -1740,10 +1751,12 @@ export default function App() {
                                     const payload = {
                                       row: sourceRow,
                                       col: sourceCol,
+                                      rawRow: String(it.row),
+                                      rawCol: String(c.col),
                                       item: it.item,
                                       week: c.week,
                                       qty: c.qty,
-                                      material: it.material,
+                                      material: materialLabel,
                                       sheetsNeeded: Number(c.sheetsNeeded || 0),
                                       canSendToWork: !!c.canSendToWork,
                                     };
