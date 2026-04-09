@@ -1405,9 +1405,11 @@ export default function App() {
                             }}
                             onClick={() => {
                               if (!c.canSendToWork) return;
+                              const sourceRow = it.sourceRowId != null ? String(it.sourceRowId) : String(it.row);
+                              const sourceCol = c.sourceColId != null ? String(c.sourceColId) : String(c.col);
                               const payload = {
-                                row: it.row,
-                                col: c.col,
+                                row: sourceRow,
+                                col: sourceCol,
                                 item: it.item,
                                 week: c.week,
                                 qty: c.qty,
