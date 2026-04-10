@@ -307,19 +307,13 @@ function getMaterialLabel(item, material) {
 }
 
 function getOverviewLaneId(order) {
-  const overall = String(order?.overallStatus || order?.overall || "").toLowerCase();
-  const assembly = String(order?.assemblyStatus || "").toLowerCase();
-  const pilka = String(order?.pilkaStatus || order?.pilka || "").toLowerCase();
-  const kromka = String(order?.kromkaStatus || order?.kromka || "").toLowerCase();
-  const pras = String(order?.prasStatus || order?.pras || "").toLowerCase();
-  const pilkaDone = pilka.includes("готов");
-  const kromkaDone = kromka.includes("готов");
-  const prasDone = pras.includes("готов");
-  if (overall.includes("готово к отправке") || overall.includes("упаков") || overall.includes("отправ") || overall.includes("отгруж")) return "done";
-  if (assembly.includes("собрано")) return "assembly";
-  if (pilkaDone && kromkaDone && prasDone) return "assembly";
-  if (pras.includes("в работе") || pras.includes("пауза") || (pilka.includes("готов") && kromka.includes("готов") && !pras.includes("готов"))) return "pras";
-  if (kromka.includes("в работе") || kromka.includes("пауза") || (pilka.includes("готов") && !kromka.includes("готов"))) return "kromka";
+  // Keep overview columns in sync with the global stage classifier.
+  const stage = String(getStageLabel(order) || "").toLowerCase();
+  if (stage.includes("пила")) return "pilka";
+  if (stage.includes("кром")) return "kromka";
+  if (stage.includes("присад")) return "pras";
+  if (stage.includes("собран") || stage.includes("готов")) return "assembly";
+  if (stage.includes("отправ")) return "done";
   return "pilka";
 }
 
@@ -420,6 +414,7 @@ export default function App() {
   const [shipmentTab, setShipmentTab] = useState("orders");
   const [rows, setRows] = useState([]);
   const [shipmentBoard, setShipmentBoard] = useState({ sections: [] });
+  const [planCatalogRows, setPlanCatalogRows] = useState([]);
   const [shipmentOrders, setShipmentOrders] = useState([]);
   const [selectedShipments, setSelectedShipments] = useState([]);
   const [planPreviews, setPlanPreviews] = useState([]);
@@ -479,6 +474,12 @@ export default function App() {
           data = await callBackend("webGetShipmentTable");
         } catch (_) {
           data = await callBackend("webGetShipmentBoard");
+        }
+        try {
+          const catalogData = await callBackend("webGetPlanCatalog");
+          setPlanCatalogRows(Array.isArray(catalogData) ? catalogData : []);
+        } catch (_) {
+          setPlanCatalogRows([]);
         }
         try {
           const shipmentOrdersData = await callBackend("webGetOrdersAll");
@@ -757,14 +758,9 @@ export default function App() {
     }
     return [...new Set(rows.map((x) => String(x.week || "")).filter(Boolean))].sort((a, b) => Number(a) - Number(b));
   }, [rows, shipmentBoard, laborRows, view]);
-  const shipmentSectionNames = useMemo(() => {
-    const names = (shipmentBoard.sections || [])
-      .map((s) => String(s?.name || "").trim())
-      .filter(Boolean);
-    return [...new Set(names)].sort((a, b) => a.localeCompare(b, "ru"));
-  }, [shipmentBoard]);
   const planCatalogBySection = useMemo(() => {
     const map = {};
+    // Base options from current shipment cells.
     (shipmentBoard.sections || []).forEach((s) => {
       const section = String(s?.name || "").trim();
       if (!section) return;
@@ -778,8 +774,25 @@ export default function App() {
       });
       map[section].sort((a, b) => a.material.localeCompare(b.material, "ru"));
     });
+    // Merge full catalog so materials are available even without active shipment rows.
+    (planCatalogRows || []).forEach((row) => {
+      const section = String(row?.section_name || row?.sectionName || "").trim();
+      const itemName = String(row?.item_name || row?.itemName || "").trim();
+      const material = String(row?.material || "").trim();
+      if (!section || !itemName || !material) return;
+      if (!map[section]) map[section] = [];
+      const exists = map[section].some((x) => normText(x.material) === normText(material));
+      if (!exists) map[section].push({ material, itemName });
+    });
+    Object.keys(map).forEach((section) => {
+      map[section].sort((a, b) => a.material.localeCompare(b.material, "ru"));
+    });
     return map;
-  }, [shipmentBoard]);
+  }, [shipmentBoard, planCatalogRows]);
+  const shipmentSectionNames = useMemo(() => {
+    const names = Object.keys(planCatalogBySection).filter(Boolean);
+    return [...new Set(names)].sort((a, b) => a.localeCompare(b, "ru"));
+  }, [planCatalogBySection]);
   const planMaterialOptions = useMemo(() => {
     return planCatalogBySection[planSection] || [];
   }, [planCatalogBySection, planSection]);
