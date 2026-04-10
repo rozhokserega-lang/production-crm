@@ -470,3 +470,9 @@ as $$
   where (l.pilka_min + l.kromka_min + l.pras_min) > 0
   order by total_min desc, l.order_id;
 $$;
+
+-- ---------------------------------------------------------------------------
+-- Stage 3 (отдельный скрипт): pipeline_stage + web_get_orders_all
+-- Выполните migration/supabase_order_pipeline_stage.sql — колонка orders.pipeline_stage,
+-- триггер при смене статусов, RPC web_get_orders_* и обновлённый web_get_order_stats.
+-- ---------------------------------------------------------------------------

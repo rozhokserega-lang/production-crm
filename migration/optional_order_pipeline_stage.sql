@@ -1,9 +1,2 @@
--- Опционально: хранить этап в БД и отдавать в RPC (единый источник для GAS/Supabase).
--- Сейчас фронт вычисляет этап в fronted/src/orderPipeline.js (inferPipelineStage).
---
--- Шаги при миграции:
--- 1) alter table public.orders add column if not exists pipeline_stage text;
--- 2) Обновлять pipeline_stage в тех же триггерах/функциях, что меняют *_status / overall_status.
--- 3) В web_get_orders_all (и аналогах) добавить в SELECT: o.pipeline_stage AS pipeline_stage
---
--- Логику обновления держите в одном месте и синхронизируйте с orderPipeline.js (или генерируйте из SQL).
+-- Устарело: используйте migration/supabase_order_pipeline_stage.sql
+-- (колонка orders.pipeline_stage, триггер, web_get_orders_all, web_get_order_stats).
