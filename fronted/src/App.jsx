@@ -1742,7 +1742,7 @@ export default function App() {
                 >
                   <span>{isSectionCollapsed(section.name) ? "▸" : "▾"}</span>
                   <span>{section.name}</span>
-                  <span className="section-count">{(section.items || []).length}</span>
+                  <span className="section-count">Q {(section.items || []).length}</span>
                 </button>
                 {!isSectionCollapsed(section.name) && (
                   <div className="shipment-items-grid">
@@ -1755,32 +1755,45 @@ export default function App() {
                       return (
                         <article
                           key={`${section.name}-${it.row}`}
-                          className={`shipment-item-tile ${hasPendingShortage ? "shortage-row" : ""}`}
+                          className={`shipment-item-card ${hasPendingShortage ? "shortage-row" : ""}`}
                         >
-                          <div className="shipment-item-head">
-                            <strong>{it.item}</strong>
-                            <span className="badge-stack">
-                              <span className="badge">{materialLabel}</span>
-                              <span className="badge-sub">{sheetsE}</span>
+                          <div className="shipment-item-card__head">
+                            <span className="shipment-item-card__title" title={it.item}>
+                              {materialLabel}
                             </span>
+                            {sheetsE > 0 && (
+                              <span className="shipment-item-card__meta-pill" title="Доступно листов (E)">
+                                {sheetsE} л
+                              </span>
+                            )}
                           </div>
                           {hasPendingShortage && (
-                            <div className="line2">
+                            <div className="shipment-item-card__warn">
                               <span>⚠️ Для не начатых заказов материала не хватает</span>
                             </div>
                           )}
-                          <div className="shipment-grid">
+                          <div className="shipment-item-card__cells">
                             {itemCells.map((c) => {
                               const sourceRow = it.sourceRowId != null ? String(it.sourceRowId) : String(it.row);
                               const sourceCol = c.sourceColId != null ? String(c.sourceColId) : String(c.col);
                               const isSelected = selectedShipments.some((s) => s.row === sourceRow && s.col === sourceCol);
-                              const cls = c.canSendToWork ? "ship-cell selectable" : c.inWork ? "ship-cell inwork" : "ship-cell blocked";
+                              const cls = c.canSendToWork
+                                ? "ship-cell-lg selectable"
+                                : c.inWork
+                                  ? "ship-cell-lg inwork"
+                                  : "ship-cell-lg blocked";
                               const rawBg = c.bg || "#ffffff";
                               const displayBg =
                                 c.inWork && isYellowCell(rawBg) ? "#f4f1e4" : rawBg;
+                              const sheetsN = Number(c.sheetsNeeded || 0);
+                              const bottomPill =
+                                sheetsN > 0
+                                  ? `${sheetsN} ${sheetsN === 1 ? "лист" : sheetsN < 5 ? "листа" : "листов"}`
+                                  : getShipmentCellStatusShort(c);
                               return (
                                 <button
                                   key={`${sourceRow}-${sourceCol}`}
+                                  type="button"
                                   className={`${cls} ${isSelected ? "selected" : ""}`}
                                   onMouseEnter={(e) =>
                                     setHoverTip({
@@ -1804,6 +1817,7 @@ export default function App() {
                                     color: getReadableTextColor(displayBg),
                                   }}
                                   onClick={() => {
+                                    if (!c.canSendToWork) return;
                                     const payload = {
                                       row: sourceRow,
                                       col: sourceCol,
@@ -1814,7 +1828,7 @@ export default function App() {
                                       weekCol: c.week,
                                       qty: c.qty,
                                       material: materialLabel,
-                                      sheetsNeeded: Number(c.sheetsNeeded || 0),
+                                      sheetsNeeded: sheetsN,
                                       canSendToWork: !!c.canSendToWork,
                                     };
                                     setSelectedShipments((prev) => {
@@ -1825,10 +1839,9 @@ export default function App() {
                                   }}
                                 >
                                   {isSelected && <span className="selected-mark">✓</span>}
-                                  <span>Нед {c.week || "-"}</span>
-                                  <b>{c.qty}</b>
-                                  <span className="cell-status">{getShipmentCellStatusShort(c)}</span>
-                                  <span className="cell-sheets">Л: {Number(c.sheetsNeeded || 0)}</span>
+                                  <span className="ship-cell-lg__week">Нед {c.week || "-"}</span>
+                                  <span className="ship-cell-lg__qty">{c.qty}</span>
+                                  <span className="ship-cell-lg__badge">{bottomPill}</span>
                                 </button>
                               );
                             })}
