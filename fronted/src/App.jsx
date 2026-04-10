@@ -242,8 +242,12 @@ function getOverviewLaneId(order) {
   const pilka = String(order?.pilkaStatus || order?.pilka || "").toLowerCase();
   const kromka = String(order?.kromkaStatus || order?.kromka || "").toLowerCase();
   const pras = String(order?.prasStatus || order?.pras || "").toLowerCase();
+  const pilkaDone = pilka.includes("готов");
+  const kromkaDone = kromka.includes("готов");
+  const prasDone = pras.includes("готов");
   if (overall.includes("отправ") || overall.includes("отгруж")) return "done";
   if (assembly.includes("собрано")) return "assembly";
+  if (pilkaDone && kromkaDone && prasDone) return "assembly";
   if (pras.includes("в работе") || pras.includes("пауза") || (pilka.includes("готов") && kromka.includes("готов") && !pras.includes("готов"))) return "pras";
   if (kromka.includes("в работе") || kromka.includes("пауза") || (pilka.includes("готов") && !kromka.includes("готов"))) return "kromka";
   return "pilka";
