@@ -104,7 +104,7 @@ function stageFromAction(action) {
 }
 
 function buildRpcPayload(action, payload = {}) {
-  if (/^webSet(Pilka|Kromka|Pras)(InWork|Done|Pause)$/.test(action)) {
+  if (/^webSet(Pilka|Kromka|Pras|Assembly|Shipping)(InWork|Done|Pause)?$/.test(action)) {
     const rpcPayload = {
       p_order_id: payload.orderId,
       p_stage: stageFromAction(action),
