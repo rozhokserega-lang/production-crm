@@ -346,8 +346,10 @@ function getOverviewLaneId(order) {
   if (stage.includes("пила")) return "pilka";
   if (stage.includes("кром")) return "kromka";
   if (stage.includes("присад")) return "pras";
+  // «Собран и отправлен» содержит подстроку «собран» — сначала финальная колонка.
+  if (stage.includes("отгруж") || stage.includes("упаков")) return "done";
+  if (stage.includes("отправ") && !stage.includes("на пилу")) return "done";
   if (stage.includes("собран") || stage.includes("готов")) return "assembly";
-  if (stage.includes("отправ")) return "done";
   return "pilka";
 }
 
