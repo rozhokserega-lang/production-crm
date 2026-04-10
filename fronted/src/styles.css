@@ -178,6 +178,7 @@ button:disabled {
 .legend-dot.white { background: #ffffff; }
 .legend-dot.blue { background: #4a86e8; border-color: #3b82f6; }
 .legend-dot.yellow { background: #ffe599; border-color: #f59e0b; }
+.legend-dot.orange { background: #f59e0b; border-color: #b45309; }
 .legend-dot.green { background: #00ff00; border-color: #10b981; }
 .legend-dot.red { background: #d31d1d; border-color: #991b1b; }
 

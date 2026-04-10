@@ -18,10 +18,12 @@ const VIEWS = [
 const DEFAULT_SHIPMENT_PREFS = {
   weekFilter: "all",
   shipmentSort: "name",
-  showOnlyEmpty: false,
-  showBlueCells: true,
-  showYellowCells: true,
-  showCompletedRedCells: true,
+  showAwaiting: true,
+  showOnPilka: true,
+  showOnKromka: true,
+  showOnPras: true,
+  showReadyAssembly: true,
+  showShipped: true,
   collapsedSections: {},
 };
 const UI_SCALE_STORAGE_KEY = "crmUiScale";
@@ -198,6 +200,38 @@ function isWhiteCell(bg) {
   return r >= 245 && g >= 245 && b >= 245;
 }
 
+function shipmentOrderKey(sourceRow, week) {
+  return `${String(sourceRow || "").trim()}|${String(week || "").trim()}`;
+}
+
+function stageLabel(stageKey) {
+  if (stageKey === "awaiting") return "Ожидаю заказ";
+  if (stageKey === "on_pilka_wait") return "На пиле (ожидает запуск)";
+  if (stageKey === "on_pilka_work") return "На пиле";
+  if (stageKey === "on_kromka_wait") return "Ожидает кромку";
+  if (stageKey === "on_kromka_work") return "На кромке";
+  if (stageKey === "on_pras_wait") return "Ожидает присадку";
+  if (stageKey === "on_pras_work") return "На присадке";
+  if (stageKey === "ready_assembly") return "Готово к сборке";
+  if (stageKey === "assembled_wait_ship") return "Собран, ждет отправку";
+  if (stageKey === "shipped") return "Отправлен";
+  return "Статус неизвестен";
+}
+
+function stageBg(stageKey, rawBg = "#ffffff") {
+  if (stageKey === "awaiting") return "#ffffff";
+  if (stageKey === "on_pilka_wait") return "#fff7cc";
+  if (stageKey === "on_pilka_work") return "#ffe066";
+  if (stageKey === "on_kromka_wait") return "#dbeafe";
+  if (stageKey === "on_kromka_work") return "#3b82f6";
+  if (stageKey === "on_pras_wait") return "#ffddb5";
+  if (stageKey === "on_pras_work") return "#8b5a2b";
+  if (stageKey === "ready_assembly") return "#f59e0b";
+  if (stageKey === "assembled_wait_ship") return "#22c55e";
+  if (stageKey === "shipped") return "#d31d1d";
+  return rawBg || "#ffffff";
+}
+
 function getShipmentCellStatus(c) {
   if (!c) return "Статус неизвестен";
   const materialInfoText =
@@ -233,6 +267,30 @@ function getShipmentCellStatusShort(c) {
   if (isYellowCell(c.bg)) return "Пауза";
   if (isBlueCell(c.bg)) return "Этап";
   return "Статус";
+}
+
+function getShipmentStageKey(c, sourceRow, orderByShipmentKey) {
+  if (!c) return "awaiting";
+  if (c.canSendToWork && !c.inWork) return "awaiting";
+  const order = orderByShipmentKey.get(shipmentOrderKey(sourceRow, c.week));
+  const pilka = String(order?.pilkaStatus || order?.pilka_status || order?.pilka || "").toLowerCase();
+  const kromka = String(order?.kromkaStatus || order?.kromka_status || order?.kromka || "").toLowerCase();
+  const pras = String(order?.prasStatus || order?.pras_status || order?.pras || "").toLowerCase();
+  const assembly = String(order?.assemblyStatus || order?.assembly_status || "").toLowerCase();
+  const overall = String(order?.overallStatus || order?.overall_status || order?.overall || "").toLowerCase();
+  if (overall.includes("отправ") || overall.includes("отгруж") || overall.includes("упаков")) return "shipped";
+  if (assembly.includes("собран") || overall.includes("готово к отправке")) return "assembled_wait_ship";
+  if (pras.includes("готов")) return "ready_assembly";
+  if (pras.includes("в работе")) return "on_pras_work";
+  if (kromka.includes("готов")) return "on_pras_wait";
+  if (kromka.includes("в работе")) return "on_kromka_work";
+  if (pilka.includes("готов")) return "on_kromka_wait";
+  if (pilka.includes("в работе")) return "on_pilka_work";
+  if (c.inWork) return "on_pilka_wait";
+  if (isRedCell(c.bg)) return "shipped";
+  if (isBlueCell(c.bg)) return "on_kromka_work";
+  if (isYellowCell(c.bg)) return "on_pilka_work";
+  return "awaiting";
 }
 
 function getMaterialLabel(item, material) {
@@ -362,15 +420,18 @@ export default function App() {
   const [shipmentTab, setShipmentTab] = useState("orders");
   const [rows, setRows] = useState([]);
   const [shipmentBoard, setShipmentBoard] = useState({ sections: [] });
+  const [shipmentOrders, setShipmentOrders] = useState([]);
   const [selectedShipments, setSelectedShipments] = useState([]);
   const [planPreviews, setPlanPreviews] = useState([]);
   const [hoverTip, setHoverTip] = useState({ visible: false, text: "", x: 0, y: 0 });
   const [query, setQuery] = useState("");
   const [weekFilter, setWeekFilter] = useState("all");
-  const [showOnlyEmpty, setShowOnlyEmpty] = useState(false);
-  const [showBlueCells, setShowBlueCells] = useState(true);
-  const [showYellowCells, setShowYellowCells] = useState(true);
-  const [showCompletedRedCells, setShowCompletedRedCells] = useState(true);
+  const [showAwaiting, setShowAwaiting] = useState(true);
+  const [showOnPilka, setShowOnPilka] = useState(true);
+  const [showOnKromka, setShowOnKromka] = useState(true);
+  const [showOnPras, setShowOnPras] = useState(true);
+  const [showReadyAssembly, setShowReadyAssembly] = useState(true);
+  const [showShipped, setShowShipped] = useState(true);
   const [shipmentSort, setShipmentSort] = useState("name");
   const [shipmentViewMode, setShipmentViewMode] = useState("table");
   const [statsSort, setStatsSort] = useState("stage");
@@ -381,7 +442,6 @@ export default function App() {
   const [actionLoading, setActionLoading] = useState("");
   const [error, setError] = useState("");
   const [executorByOrder, setExecutorByOrder] = useState({});
-  const [colorDraftByOrder, setColorDraftByOrder] = useState({});
   const [consumeDialogOpen, setConsumeDialogOpen] = useState(false);
   const [consumeEditMode, setConsumeEditMode] = useState(false);
   const [consumeDialogData, setConsumeDialogData] = useState(null);
@@ -419,6 +479,12 @@ export default function App() {
           data = await callBackend("webGetShipmentTable");
         } catch (_) {
           data = await callBackend("webGetShipmentBoard");
+        }
+        try {
+          const shipmentOrdersData = await callBackend("webGetOrdersAll");
+          setShipmentOrders(Array.isArray(shipmentOrdersData) ? shipmentOrdersData.map(normalizeOrder) : []);
+        } catch (_) {
+          setShipmentOrders([]);
         }
       } else if (view === "overview") {
         data = await callBackend("webGetOrdersAll");
@@ -471,10 +537,14 @@ export default function App() {
       if (prefs && typeof prefs === "object") {
         if (typeof prefs.weekFilter === "string") setWeekFilter(prefs.weekFilter);
         if (typeof prefs.shipmentSort === "string") setShipmentSort(prefs.shipmentSort);
-        if (typeof prefs.showOnlyEmpty === "boolean") setShowOnlyEmpty(prefs.showOnlyEmpty);
-        if (typeof prefs.showBlueCells === "boolean") setShowBlueCells(prefs.showBlueCells);
-        if (typeof prefs.showYellowCells === "boolean") setShowYellowCells(prefs.showYellowCells);
-        if (typeof prefs.showCompletedRedCells === "boolean") setShowCompletedRedCells(prefs.showCompletedRedCells);
+        if (typeof prefs.showAwaiting === "boolean") setShowAwaiting(prefs.showAwaiting);
+        if (typeof prefs.showOnPilka === "boolean") setShowOnPilka(prefs.showOnPilka);
+        if (typeof prefs.showOnKromka === "boolean") setShowOnKromka(prefs.showOnKromka);
+        if (typeof prefs.showOnPras === "boolean") setShowOnPras(prefs.showOnPras);
+        if (typeof prefs.showReadyAssembly === "boolean") setShowReadyAssembly(prefs.showReadyAssembly);
+        if (typeof prefs.showShipped === "boolean") setShowShipped(prefs.showShipped);
+        if (typeof prefs.showOnlyEmpty === "boolean") setShowAwaiting(prefs.showOnlyEmpty);
+        if (typeof prefs.showCompletedRedCells === "boolean") setShowShipped(prefs.showCompletedRedCells);
         if (prefs.collapsedSections && typeof prefs.collapsedSections === "object") {
           setCollapsedSections(prefs.collapsedSections);
         }
@@ -494,10 +564,12 @@ export default function App() {
   function resetShipmentFilters() {
     setWeekFilter(DEFAULT_SHIPMENT_PREFS.weekFilter);
     setShipmentSort(DEFAULT_SHIPMENT_PREFS.shipmentSort);
-    setShowOnlyEmpty(DEFAULT_SHIPMENT_PREFS.showOnlyEmpty);
-    setShowBlueCells(DEFAULT_SHIPMENT_PREFS.showBlueCells);
-    setShowYellowCells(DEFAULT_SHIPMENT_PREFS.showYellowCells);
-    setShowCompletedRedCells(DEFAULT_SHIPMENT_PREFS.showCompletedRedCells);
+    setShowAwaiting(DEFAULT_SHIPMENT_PREFS.showAwaiting);
+    setShowOnPilka(DEFAULT_SHIPMENT_PREFS.showOnPilka);
+    setShowOnKromka(DEFAULT_SHIPMENT_PREFS.showOnKromka);
+    setShowOnPras(DEFAULT_SHIPMENT_PREFS.showOnPras);
+    setShowReadyAssembly(DEFAULT_SHIPMENT_PREFS.showReadyAssembly);
+    setShowShipped(DEFAULT_SHIPMENT_PREFS.showShipped);
     setCollapsedSections(DEFAULT_SHIPMENT_PREFS.collapsedSections);
   }
 
@@ -508,15 +580,17 @@ export default function App() {
         JSON.stringify({
           weekFilter,
           shipmentSort,
-          showOnlyEmpty,
-          showBlueCells,
-          showYellowCells,
-          showCompletedRedCells,
+          showAwaiting,
+          showOnPilka,
+          showOnKromka,
+          showOnPras,
+          showReadyAssembly,
+          showShipped,
           collapsedSections,
         })
       );
     } catch (_) {}
-  }, [weekFilter, shipmentSort, showOnlyEmpty, showBlueCells, showYellowCells, showCompletedRedCells, collapsedSections]);
+  }, [weekFilter, shipmentSort, showAwaiting, showOnPilka, showOnKromka, showOnPras, showReadyAssembly, showShipped, collapsedSections]);
 
   useEffect(() => {
     try {
@@ -665,29 +739,6 @@ export default function App() {
     }
   }
 
-  async function saveOrderColor(order) {
-    const orderId = String(order?.orderId || order?.order_id || "").trim();
-    const itemName = String(order?.item || "").trim();
-    const draftKey = orderId || itemName;
-    const colorName = String(colorDraftByOrder[draftKey] ?? order?.colorName ?? "").trim();
-    if (!itemName) return;
-    if (!colorName) {
-      setError("Укажите цвет перед сохранением.");
-      return;
-    }
-    const key = `color:${draftKey}`;
-    setActionLoading(key);
-    setError("");
-    try {
-      await callBackend("webUpsertItemColorMap", { itemName, colorName });
-      await load();
-    } catch (e) {
-      setError(toUserError(e));
-    } finally {
-      setActionLoading("");
-    }
-  }
-
   const weeks = useMemo(() => {
     if (view === "shipment") {
       const set = new Set();
@@ -739,6 +790,31 @@ export default function App() {
     return `${planSection}. ${chosenMaterial}`.replace(/\s+\./g, ".").trim();
   }, [planCatalogBySection, planSection, planMaterial]);
 
+  const shipmentOrderByKey = useMemo(() => {
+    const map = new Map();
+    (shipmentOrders || []).forEach((o) => {
+      const sourceRow = String(o?.source_row_id || o?.sourceRowId || "").trim();
+      const week = String(o?.week || "").trim();
+      if (!sourceRow || !week) return;
+      const key = shipmentOrderKey(sourceRow, week);
+      const prev = map.get(key);
+      const prevTs = new Date(prev?.updatedAt || prev?.updated_at || prev?.createdAt || prev?.created_at || 0).getTime();
+      const curTs = new Date(o?.updatedAt || o?.updated_at || o?.createdAt || o?.created_at || 0).getTime();
+      if (!prev || curTs >= prevTs) map.set(key, o);
+    });
+    return map;
+  }, [shipmentOrders]);
+
+  function passesShipmentStageFilter(stageKey) {
+    if (stageKey === "awaiting") return showAwaiting;
+    if (stageKey === "on_pilka_wait" || stageKey === "on_pilka_work") return showOnPilka;
+    if (stageKey === "on_kromka_wait" || stageKey === "on_kromka_work") return showOnKromka;
+    if (stageKey === "on_pras_wait" || stageKey === "on_pras_work") return showOnPras;
+    if (stageKey === "ready_assembly" || stageKey === "assembled_wait_ship") return showReadyAssembly;
+    if (stageKey === "shipped") return showShipped;
+    return true;
+  }
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (view === "shipment") {
@@ -749,13 +825,12 @@ export default function App() {
           items: (s.items || []).filter((it) => {
             if (isStorageLikeName(it.item)) return false;
             if (isGarbageShipmentItemName(it.item)) return false;
+            const sourceRow = it.sourceRowId != null ? String(it.sourceRowId) : String(it.row);
             const visibleCells = (it.cells || []).filter((c) => {
               const qtyOk = (Number(c.qty) || 0) > 0;
               if (!qtyOk) return false;
-              if (showOnlyEmpty) return isWhiteCell(c.bg); // только белые
-              if (!showCompletedRedCells && isRedCell(c.bg)) return false;
-              if (!passesBlueYellowFilter(c.bg, showBlueCells, showYellowCells)) return false;
-              return true;
+              const stageKey = getShipmentStageKey(c, sourceRow, shipmentOrderByKey);
+              return passesShipmentStageFilter(stageKey);
             });
             const byWeek = weekFilter === "all" || visibleCells.some((c) => String(c.week || "") === weekFilter);
             const byQuery = !q || String(it.item || "").toLowerCase().includes(q);
@@ -795,16 +870,15 @@ export default function App() {
       if (tab === "pras") return pilkaDone && kromkaDone && !prasDone;
       return true;
     });
-  }, [rows, shipmentBoard, laborRows, view, query, weekFilter, shipmentSort, showOnlyEmpty, showBlueCells, showYellowCells, showCompletedRedCells]);
+  }, [rows, shipmentBoard, shipmentOrderByKey, laborRows, view, query, weekFilter, shipmentSort, showAwaiting, showOnPilka, showOnKromka, showOnPras, showReadyAssembly, showShipped]);
 
   function visibleCellsForItem(it) {
+    const sourceRow = it?.sourceRowId != null ? String(it.sourceRowId) : String(it?.row || "");
     return (it?.cells || []).filter((c) => {
       const qtyOk = (Number(c.qty) || 0) > 0;
       if (!qtyOk) return false;
-      if (showOnlyEmpty) return isWhiteCell(c.bg);
-      if (!showCompletedRedCells && isRedCell(c.bg)) return false;
-      if (!passesBlueYellowFilter(c.bg, showBlueCells, showYellowCells)) return false;
-      return true;
+      const stageKey = getShipmentStageKey(c, sourceRow, shipmentOrderByKey);
+      return passesShipmentStageFilter(stageKey);
     });
   }
 
@@ -904,7 +978,7 @@ export default function App() {
         name,
         items: sortItemsForShipment(Object.values(groups[name])),
       }));
-  }, [view, shipmentSort, filtered, showOnlyEmpty]);
+  }, [view, shipmentSort, filtered]);
 
   const strapRenderSections = useMemo(() => {
     if (view !== "shipment" || !strapItems.length) return [];
@@ -995,13 +1069,12 @@ export default function App() {
       const prasDone = isDone(prasStatus);
       const assemblyDone = isDone(assemblyStatus);
       const shipped = /отправ|отгруж/i.test(overallStatus);
-      const readyToShip = /готово к отправке/i.test(overallStatus);
       const onPackaging = /упаков/i.test(overallStatus);
       if (tab === "pilka") return !pilkaDone;
       if (tab === "kromka") return pilkaDone && !kromkaDone;
       if (tab === "pras") return pilkaDone && kromkaDone && !prasDone;
       if (tab === "assembly") return pilkaDone && kromkaDone && prasDone && !assemblyDone && !shipped;
-      if (tab === "done") return pilkaDone && kromkaDone && prasDone && assemblyDone && readyToShip && !onPackaging && !shipped;
+      if (tab === "done") return assemblyDone && !onPackaging && !shipped;
       return true;
     });
     const isRowInWork = (o) => {
@@ -1066,6 +1139,8 @@ export default function App() {
         visibleCellsForItem(it).forEach((c) => {
           const sourceRow = it.sourceRowId != null ? String(it.sourceRowId) : String(it.row);
           const sourceCol = c.sourceColId != null ? String(c.sourceColId) : String(c.col);
+          const stageKey = getShipmentStageKey(c, sourceRow, shipmentOrderByKey);
+          const displayBg = stageBg(stageKey, c.bg || "#ffffff");
           rowsFlat.push({
             key: `${sourceRow}-${sourceCol}`,
             section: section.name,
@@ -1076,8 +1151,9 @@ export default function App() {
             sheets: Number(c.sheetsNeeded || 0),
             outputPerSheet: Number(c.outputPerSheet || 0),
             availableSheets: Number(c.availableSheets || 0),
-            bg: c.bg || "#ffffff",
-            status: getShipmentCellStatus(c),
+            bg: displayBg,
+            status: stageLabel(stageKey),
+            stageKey,
             canSendToWork: !!c.canSendToWork,
             inWork: !!c.inWork,
             sourceRow,
@@ -1087,7 +1163,7 @@ export default function App() {
       });
     });
     return rowsFlat;
-  }, [view, shipmentRenderSections, showOnlyEmpty, showBlueCells, showYellowCells]);
+  }, [view, shipmentRenderSections, shipmentOrderByKey]);
   const laborTableRows = useMemo(() => {
     if (view !== "labor") return [];
     const toNum = (v) => Number(v || 0);
@@ -1449,11 +1525,12 @@ export default function App() {
 
       {view === "shipment" && (
         <section className="color-legend">
-          <span className="legend-item"><i className="legend-dot white"></i> Белый: не начато</span>
-          <span className="legend-item"><i className="legend-dot blue"></i> Синий: в процессе / этап завершен</span>
-          <span className="legend-item"><i className="legend-dot yellow"></i> Желтый: отправлено в работу / пауза</span>
-          <span className="legend-item"><i className="legend-dot green"></i> Зеленый: собрано / готово</span>
-          <span className="legend-item"><i className="legend-dot red"></i> Красный: выполнено / отправлено</span>
+          <span className="legend-item"><i className="legend-dot white"></i> Белый: ожидаю заказ</span>
+          <span className="legend-item"><i className="legend-dot yellow"></i> Пила: бледно-желтый/желтый</span>
+          <span className="legend-item"><i className="legend-dot blue"></i> Кромка: голубой/синий</span>
+          <span className="legend-item"><i className="legend-dot orange"></i> Присадка/готово к сборке: бледно-оранжевый/коричневый/оранжевый</span>
+          <span className="legend-item"><i className="legend-dot green"></i> Собран, ждет отправку</span>
+          <span className="legend-item"><i className="legend-dot red"></i> Отправлен</span>
         </section>
       )}
 
@@ -1515,34 +1592,50 @@ export default function App() {
               <label className="empty-only-toggle">
                 <input
                   type="checkbox"
-                  checked={showOnlyEmpty}
-                  onChange={(e) => setShowOnlyEmpty(e.target.checked)}
+                  checked={showAwaiting}
+                  onChange={(e) => setShowAwaiting(e.target.checked)}
                 />
-                <span>Только пустые (не начато)</span>
+                <span>Ожидаю заказ</span>
               </label>
               <label className="empty-only-toggle">
                 <input
                   type="checkbox"
-                  checked={showBlueCells}
-                  onChange={(e) => setShowBlueCells(e.target.checked)}
+                  checked={showOnPilka}
+                  onChange={(e) => setShowOnPilka(e.target.checked)}
                 />
-                <span>Показывать синие</span>
+                <span>На пиле</span>
               </label>
               <label className="empty-only-toggle">
                 <input
                   type="checkbox"
-                  checked={showYellowCells}
-                  onChange={(e) => setShowYellowCells(e.target.checked)}
+                  checked={showOnKromka}
+                  onChange={(e) => setShowOnKromka(e.target.checked)}
                 />
-                <span>Показывать желтые</span>
+                <span>На кромке</span>
               </label>
               <label className="empty-only-toggle">
                 <input
                   type="checkbox"
-                  checked={showCompletedRedCells}
-                  onChange={(e) => setShowCompletedRedCells(e.target.checked)}
+                  checked={showOnPras}
+                  onChange={(e) => setShowOnPras(e.target.checked)}
                 />
-                <span>Показывать выполненные (красные)</span>
+                <span>На присадке</span>
+              </label>
+              <label className="empty-only-toggle">
+                <input
+                  type="checkbox"
+                  checked={showReadyAssembly}
+                  onChange={(e) => setShowReadyAssembly(e.target.checked)}
+                />
+                <span>Готовы к сборке</span>
+              </label>
+              <label className="empty-only-toggle">
+                <input
+                  type="checkbox"
+                  checked={showShipped}
+                  onChange={(e) => setShowShipped(e.target.checked)}
+                />
+                <span>Отправленные</span>
               </label>
               <button className="mini" onClick={resetShipmentFilters}>
                 Сброс фильтров
@@ -1773,7 +1866,6 @@ export default function App() {
                     <tr>
                       <th>Группа</th>
                       <th>Изделие</th>
-                      <th>Цвет</th>
                       <th>Материал</th>
                       <th>План</th>
                       <th>Кол-во</th>
@@ -1810,30 +1902,6 @@ export default function App() {
                         >
                           <td>{row.section}</td>
                           <td>{row.item}</td>
-                          <td>
-                            <div className="color-edit-cell">
-                              <input
-                                value={colorDraftByOrder[String(row.item)] ?? ""}
-                                onChange={(e) =>
-                                  setColorDraftByOrder((prev) => ({
-                                    ...prev,
-                                    [String(row.item)]: e.target.value,
-                                  }))
-                                }
-                                placeholder="Цвет"
-                              />
-                              <button
-                                className="mini"
-                                disabled={actionLoading === `color:${String(row.item)}`}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  saveOrderColor({ item: row.item });
-                                }}
-                              >
-                                Сохранить
-                              </button>
-                            </div>
-                          </td>
                           <td>{row.material || "-"}</td>
                           <td>{row.week}</td>
                           <td>{row.qty}</td>
@@ -1896,14 +1964,13 @@ export default function App() {
                                 : c.inWork
                                   ? "ship-cell-lg inwork"
                                   : "ship-cell-lg blocked";
-                              const rawBg = c.bg || "#ffffff";
-                              const displayBg =
-                                c.inWork && isYellowCell(rawBg) ? "#f4f1e4" : rawBg;
+                              const stageKey = getShipmentStageKey(c, sourceRow, shipmentOrderByKey);
+                              const displayBg = stageBg(stageKey, c.bg || "#ffffff");
                               const sheetsN = Number(c.sheetsNeeded || 0);
                               const bottomPill =
                                 sheetsN > 0
                                   ? `${sheetsN} ${sheetsN === 1 ? "лист" : sheetsN < 5 ? "листа" : "листов"}`
-                                  : getShipmentCellStatusShort(c);
+                                  : stageLabel(stageKey);
                               return (
                                 <button
                                   key={`${sourceRow}-${sourceCol}`}
@@ -1912,7 +1979,7 @@ export default function App() {
                                   onMouseEnter={(e) =>
                                     setHoverTip({
                                       visible: true,
-                                      text: getShipmentCellStatus(c),
+                                      text: stageLabel(stageKey),
                                       x: e.clientX + 12,
                                       y: e.clientY + 12,
                                     })
@@ -2007,7 +2074,6 @@ export default function App() {
                     <tr>
                       <th>ID заказа</th>
                       <th>Изделие</th>
-                      <th>Цвет</th>
                       <th>План</th>
                       <th>Кол-во</th>
                       <th>Пилка (мин)</th>
@@ -2023,27 +2089,6 @@ export default function App() {
                       <tr key={`${r.orderId}-${r.item}`}>
                         <td>{r.orderId || "-"}</td>
                         <td>{r.item}</td>
-                        <td>
-                          <div className="color-edit-cell">
-                            <input
-                              value={colorDraftByOrder[String(r.orderId || r.item)] ?? ""}
-                              onChange={(e) =>
-                                setColorDraftByOrder((prev) => ({
-                                  ...prev,
-                                  [String(r.orderId || r.item)]: e.target.value,
-                                }))
-                              }
-                              placeholder="Цвет"
-                            />
-                            <button
-                              className="mini"
-                              disabled={actionLoading === `color:${String(r.orderId || r.item)}`}
-                              onClick={() => saveOrderColor({ orderId: r.orderId, item: r.item })}
-                            >
-                              Сохранить
-                            </button>
-                          </div>
-                        </td>
                         <td>{r.week || "-"}</td>
                         <td>{r.qty}</td>
                         <td>{r.pilkaMin}</td>
@@ -2071,7 +2116,6 @@ export default function App() {
                       <th>ID заказа</th>
                       <th>Этап</th>
                       <th>Изделие</th>
-                      <th>Цвет</th>
                       <th>План</th>
                       <th>Кол-во</th>
                       <th>Пила</th>
@@ -2087,27 +2131,6 @@ export default function App() {
                         <td>{o.orderId || "-"}</td>
                         <td>{getStageLabel(o)}</td>
                         <td>{o.item}</td>
-                        <td>
-                          <div className="color-edit-cell">
-                            <input
-                              value={colorDraftByOrder[String(o.orderId || o.row)] ?? String(o.colorName || "")}
-                              onChange={(e) =>
-                                setColorDraftByOrder((prev) => ({
-                                  ...prev,
-                                  [String(o.orderId || o.row)]: e.target.value,
-                                }))
-                              }
-                              placeholder="Цвет"
-                            />
-                            <button
-                              className="mini"
-                              disabled={actionLoading === `color:${String(o.orderId || o.item)}`}
-                              onClick={() => saveOrderColor(o)}
-                            >
-                              Сохранить
-                            </button>
-                          </div>
-                        </td>
                         <td>{o.week || "-"}</td>
                         <td>{o.qty || 0}</td>
                         <td>{o.pilkaStatus || "-"}</td>
@@ -2157,11 +2180,11 @@ export default function App() {
                   String(o.kromkaStatus || "").includes("Сережа") ? "Сережа" :
                   String(o.kromkaStatus || "").includes("Слава") ? "Слава" : "";
                 const currentPrasExec =
-                  String(o.prasStatus || "").includes("Виталик") ? "Виталик" :
-                  String(o.prasStatus || "").includes("Лёха") || String(o.prasStatus || "").includes("Леха") ? "Лёха" : "";
+                  String(o.prasStatus || "").includes("Сережа") ? "Сережа" :
+                  String(o.prasStatus || "").includes("Слава") ? "Слава" : "";
                 const pilkaExecValue = executorByOrder[`${orderId}:pilka`] || currentPilkaExec || "Слава";
                 const kromkaExecValue = executorByOrder[orderId] || currentKromkaExec || "Слава";
-                const prasExecValue = executorByOrder[`${orderId}:pras`] || currentPrasExec || "Лёха";
+                const prasExecValue = executorByOrder[`${orderId}:pras`] || currentPrasExec || "Слава";
                 const showPilka = tab === "all" || tab === "pilka";
                 const showKromka = tab === "all" || tab === "kromka";
                 const showPras = tab === "all" || tab === "pras";
@@ -2262,8 +2285,8 @@ export default function App() {
                   value={prasExecValue}
                   onChange={(e) => setExecutorByOrder((prev) => ({ ...prev, [`${orderId}:pras`]: e.target.value }))}
                 >
-                  <option>Лёха</option>
-                  <option>Виталик</option>
+                  <option>Слава</option>
+                  <option>Сережа</option>
                 </select>
               )}
               <button
