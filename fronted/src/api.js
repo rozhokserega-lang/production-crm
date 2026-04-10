@@ -84,6 +84,8 @@ const RPC_MAP = {
   webSetPilkaDone: "web_set_stage_done",
   webSetKromkaDone: "web_set_stage_done",
   webSetPrasDone: "web_set_stage_done",
+  webSetAssemblyDone: "web_set_stage_done",
+  webSetShippingDone: "web_set_stage_done",
   webSetPilkaPause: "web_set_stage_pause",
   webSetKromkaPause: "web_set_stage_pause",
   webSetPrasPause: "web_set_stage_pause",
@@ -96,6 +98,8 @@ function stageFromAction(action) {
   if (action.includes("Pilka")) return "pilka";
   if (action.includes("Kromka")) return "kromka";
   if (action.includes("Pras")) return "pras";
+  if (action.includes("Assembly")) return "assembly";
+  if (action.includes("Shipping")) return "shipping";
   return "";
 }
 

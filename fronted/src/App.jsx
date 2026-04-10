@@ -5,6 +5,8 @@ const TABS = [
   { id: "pilka", label: "Пила" },
   { id: "kromka", label: "Кромка" },
   { id: "pras", label: "Присадка" },
+  { id: "assembly", label: "Сборка" },
+  { id: "done", label: "Готово к отправке" },
 ];
 const VIEWS = [
   { id: "shipment", label: "Отгрузка" },
@@ -245,7 +247,7 @@ function getOverviewLaneId(order) {
   const pilkaDone = pilka.includes("готов");
   const kromkaDone = kromka.includes("готов");
   const prasDone = pras.includes("готов");
-  if (overall.includes("отправ") || overall.includes("отгруж")) return "done";
+  if (overall.includes("готово к отправке") || overall.includes("упаков") || overall.includes("отправ") || overall.includes("отгруж")) return "done";
   if (assembly.includes("собрано")) return "assembly";
   if (pilkaDone && kromkaDone && prasDone) return "assembly";
   if (pras.includes("в работе") || pras.includes("пауза") || (pilka.includes("готов") && kromka.includes("готов") && !pras.includes("готов"))) return "pras";
@@ -976,18 +978,28 @@ export default function App() {
       const pilkaStatus = String(o.pilkaStatus || o.pilka || "");
       const kromkaStatus = String(o.kromkaStatus || o.kromka || "");
       const prasStatus = String(o.prasStatus || o.pras || "");
+      const assemblyStatus = String(o.assemblyStatus || "");
+      const overallStatus = String(o.overallStatus || o.overall || "");
       const pilkaDone = isDone(pilkaStatus);
       const kromkaDone = isDone(kromkaStatus);
       const prasDone = isDone(prasStatus);
+      const assemblyDone = isDone(assemblyStatus);
+      const shipped = /отправ|отгруж/i.test(overallStatus);
+      const readyToShip = /готово к отправке/i.test(overallStatus);
+      const onPackaging = /упаков/i.test(overallStatus);
       if (tab === "pilka") return !pilkaDone;
       if (tab === "kromka") return pilkaDone && !kromkaDone;
       if (tab === "pras") return pilkaDone && kromkaDone && !prasDone;
+      if (tab === "assembly") return pilkaDone && kromkaDone && prasDone && !assemblyDone && !shipped;
+      if (tab === "done") return pilkaDone && kromkaDone && prasDone && assemblyDone && readyToShip && !onPackaging && !shipped;
       return true;
     });
     const isRowInWork = (o) => {
       if (tab === "pilka") return isInWork(o.pilkaStatus);
       if (tab === "kromka") return isInWork(o.kromkaStatus);
       if (tab === "pras") return isInWork(o.prasStatus);
+      if (tab === "assembly") return isInWork(o.assemblyStatus);
+      if (tab === "done") return false;
       return isInWork(o.pilkaStatus) || isInWork(o.kromkaStatus) || isInWork(o.prasStatus);
     };
     arr.sort((a, b) => {
@@ -2143,6 +2155,10 @@ export default function App() {
                 const showPilka = tab === "all" || tab === "pilka";
                 const showKromka = tab === "all" || tab === "kromka";
                 const showPras = tab === "all" || tab === "pras";
+                const showAssembly = tab === "all" || tab === "assembly";
+                const showDone = tab === "all" || tab === "done";
+                const assemblyDone = isDone(o.assemblyStatus);
+                const packagingDone = /упаков|отправ|отгруж/i.test(String(o.overallStatus || o.overall || ""));
                 return (
                   <>
               {showPilka && (
@@ -2264,6 +2280,28 @@ export default function App() {
                 onClick={() => runAction("webSetPrasPause", orderId)}
               >
                 {tab === "pras" ? "Пауза" : "Присадка: Пауза"}
+              </button>
+                </>
+              )}
+              {showAssembly && (
+                <>
+              <button
+                className="mini ok"
+                disabled={actionLoading === `webSetAssemblyDone:${orderId}` || assemblyDone}
+                onClick={() => runAction("webSetAssemblyDone", orderId)}
+              >
+                {tab === "assembly" ? "Готово" : "Сборка: Готово"}
+              </button>
+                </>
+              )}
+              {showDone && (
+                <>
+              <button
+                className="mini ok"
+                disabled={actionLoading === `webSetShippingDone:${orderId}` || packagingDone}
+                onClick={() => runAction("webSetShippingDone", orderId)}
+              >
+                {tab === "done" ? "Готово" : "Готово к отправке: Готово"}
               </button>
                 </>
               )}
