@@ -70,8 +70,9 @@ export function getOrderStageDisplayLabel(order) {
   const ps = order?.pipelineStage ?? inferPipelineStage(order);
   switch (ps) {
     case PipelineStage.SHIPPED:
+      return "Отгружено";
     case PipelineStage.READY_TO_SHIP:
-      return "Собран и отправлен";
+      return "Готово к отправке";
     case PipelineStage.ASSEMBLED:
       return "Собран";
     case PipelineStage.WORKSHOP_COMPLETE:

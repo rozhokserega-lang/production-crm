@@ -646,7 +646,8 @@ export default function App() {
   }
   function getStageClassByLabel(label) {
     const s = String(label || "").toLowerCase();
-    if (s.includes("отправ")) return "ship";
+    if (s.includes("отгруж")) return "ship";
+    if (s.includes("отправ") && !s.includes("готово к отправке")) return "ship";
     if (s.includes("собран")) return "done";
     if (s.includes("готов")) return "ready";
     if (s.includes("присад")) return "pras";
@@ -1527,9 +1528,15 @@ export default function App() {
         ) : view === "overview" ? (
           <>
             <div className="kpi"><span>Всего заказов</span><b>{filtered.length}</b></div>
-            <div className="kpi"><span>В работе</span><b>{filtered.filter((x) => statusClass(x) === "work").length}</b></div>
+            <div className="kpi">
+              <span>В производстве</span>
+              <b>{filtered.filter((x) => getOverviewLaneId(x) !== "done").length}</b>
+            </div>
             <div className="kpi"><span>На паузе</span><b>{filtered.filter((x) => statusClass(x) === "pause").length}</b></div>
-            <div className="kpi"><span>Готовы/собраны</span><b>{filtered.filter((x) => statusClass(x) === "done").length}</b></div>
+            <div className="kpi">
+              <span>Готово к отправке</span>
+              <b>{filtered.filter((x) => getOverviewLaneId(x) === "done").length}</b>
+            </div>
           </>
         ) : view === "labor" ? (
           <>
