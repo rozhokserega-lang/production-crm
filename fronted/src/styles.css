@@ -494,6 +494,17 @@ button:disabled {
   border-radius: 10px;
 }
 
+/* Действие «В работе» до нажатия — нейтральный вид (бирюзовый по умолчанию = не статус) */
+.mini.ghost {
+  background: #ffffff;
+  color: #155e66;
+  border: 1px solid #94b8bf;
+}
+
+.mini.ghost:hover:not(:disabled) {
+  background: #e8f4f5;
+}
+
 .mini.ok {
   background: #0f9d58;
 }

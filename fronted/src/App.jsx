@@ -1014,11 +1014,30 @@ export default function App() {
 
   const kpi = useMemo(() => {
     const total = filtered.length;
-    const work = filtered.filter((x) => statusClass(x) === "work").length;
-    const paused = filtered.filter((x) => statusClass(x) === "pause").length;
+    const stageWork = (o) => {
+      if (view !== "workshop") return statusClass(o) === "work";
+      if (tab === "pilka") return isInWork(o.pilkaStatus);
+      if (tab === "kromka") return isInWork(o.kromkaStatus);
+      if (tab === "pras") return isInWork(o.prasStatus);
+      if (tab === "assembly") return isInWork(o.assemblyStatus);
+      if (tab === "done") return false;
+      return isInWork(o.pilkaStatus) || isInWork(o.kromkaStatus) || isInWork(o.prasStatus);
+    };
+    const onPause = (s) => String(s || "").toLowerCase().includes("пауза");
+    const stagePause = (o) => {
+      if (view !== "workshop") return statusClass(o) === "pause";
+      if (tab === "pilka") return onPause(o.pilkaStatus);
+      if (tab === "kromka") return onPause(o.kromkaStatus);
+      if (tab === "pras") return onPause(o.prasStatus);
+      if (tab === "assembly") return onPause(o.assemblyStatus);
+      if (tab === "done") return false;
+      return onPause(o.pilkaStatus) || onPause(o.kromkaStatus) || onPause(o.prasStatus);
+    };
+    const work = filtered.filter(stageWork).length;
+    const paused = filtered.filter(stagePause).length;
     const done = filtered.filter((x) => statusClass(x) === "done").length;
     return { total, work, paused, done };
-  }, [filtered]);
+  }, [filtered, view, tab]);
   const statsGroups = useMemo(() => {
     if (view !== "stats") return [];
     const map = {};
@@ -1502,8 +1521,8 @@ export default function App() {
           <>
             <div className="kpi"><span>Заказов</span><b>{shipmentKpi.totalOrders}</b></div>
             <div className="kpi"><span>Кол-во (шт)</span><b>{shipmentKpi.totalQty}</b></div>
-            <div className="kpi"><span>Готово к сборке</span><b>{shipmentKpi.readyAssembly}</b></div>
-            <div className="kpi"><span>Собрано</span><b>{shipmentKpi.assembled}</b></div>
+            <div className="kpi"><span>К отправке в работу</span><b>{shipmentKpi.readyAssembly}</b></div>
+            <div className="kpi"><span>Отправлено в цех</span><b>{shipmentKpi.assembled}</b></div>
           </>
         ) : view === "overview" ? (
           <>
@@ -2203,7 +2222,8 @@ export default function App() {
               {showPilka && (
                 <>
               <button
-                className="mini"
+                type="button"
+                className={pilkaInWork ? "mini" : "mini ghost"}
                 disabled={actionLoading === `webSetPilkaInWork:${orderId}` || pilkaDone}
                 onClick={() =>
                   runAction("webSetPilkaInWork", orderId, {
@@ -2248,7 +2268,8 @@ export default function App() {
                 </select>
               )}
               <button
-                className="mini"
+                type="button"
+                className={kromkaInWork ? "mini" : "mini ghost"}
                 disabled={actionLoading === `webSetKromkaInWork:${orderId}` || kromkaDone}
                 onClick={() =>
                   runAction("webSetKromkaInWork", orderId, {
@@ -2287,7 +2308,8 @@ export default function App() {
                 </select>
               )}
               <button
-                className="mini"
+                type="button"
+                className={prasInWork ? "mini" : "mini ghost"}
                 disabled={actionLoading === `webSetPrasInWork:${orderId}` || prasDone}
                 onClick={() =>
                   runAction("webSetPrasInWork", orderId, {
