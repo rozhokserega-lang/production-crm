@@ -643,7 +643,10 @@ export default function App() {
     const kromka = String(order?.kromkaStatus || order?.kromka || "").toLowerCase();
     const pras = String(order?.prasStatus || order?.pras || "").toLowerCase();
 
-    if (overall.includes("отправ") || overall.includes("отгруж")) return "Собран и отправлен";
+    // "Отправлен на пилу" — это старт производства, а не финальная отгрузка.
+    if (overall.includes("на пилу")) return "Пила";
+    if (overall.includes("отгруж")) return "Собран и отправлен";
+    if (overall.includes("готово к отправке")) return "Собран и отправлен";
     if (assembly.includes("собрано")) return "Собран";
     if (pilka.includes("готов") && kromka.includes("готов") && pras.includes("готов")) return "Готов";
     if (pras.includes("в работе") || pras.includes("пауза") || (pilka.includes("готов") && kromka.includes("готов") && !pras.includes("готов"))) return "Присадка";
