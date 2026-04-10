@@ -1336,7 +1336,6 @@ export default function App() {
     <div className="page">
       <header className="top">
         <h1>Отгрузки - CRM</h1>
-        <button onClick={load} disabled={loading}>{loading ? "Обновляю..." : "Обновить"}</button>
       </header>
 
       <section className="view-switch">
