@@ -60,6 +60,8 @@ const STRAP_OPTIONS = [
   "Обвязка (544_80)",
   "Обвязка (288_80)",
   "Обвязка (520_80)",
+  "Фасад (396_305)",
+  "Фасад (153x320)",
 ];
 const STRAP_SHEET_WIDTH = 2800;
 const STRAP_SHEET_HEIGHT = 2070;
@@ -328,7 +330,7 @@ function normalizeShipmentBoard(data) {
 }
 
 function parseStrapSize(name) {
-  const m = String(name || "").match(/\((\d+)_(\d+)\)/);
+  const m = String(name || "").match(/\((\d+)\s*[_xх]\s*(\d+)\)/i);
   if (!m) return null;
   const length = Number(m[1]);
   const width = Number(m[2]);
