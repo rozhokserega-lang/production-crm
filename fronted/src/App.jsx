@@ -1,5 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { callBackend } from "./api";
+import {
+  inferPipelineStage,
+  getOrderStageDisplayLabel as getStageLabel,
+  getOverviewLaneId,
+  isCustomerShippedOverall,
+  isOrderCustomerShipped,
+} from "./orderPipeline";
 
 const TABS = [
   { id: "pilka", label: "Пила" },
@@ -207,13 +214,6 @@ function shipmentOrderKey(sourceRow, week) {
   return `${String(sourceRow || "").trim()}|${String(week || "").trim()}`;
 }
 
-/** Финальная отгрузка клиенту; «Отправлен на пилу» сюда не входит. */
-function isOverallCustomerShipped(overallRaw) {
-  const s = String(overallRaw || "").toLowerCase();
-  if (s.includes("на пилу")) return false;
-  return s.includes("отгруж") || s.includes("упаков") || s.includes("отправ");
-}
-
 function stageLabel(stageKey) {
   if (stageKey === "awaiting") return "Ожидаю заказ";
   if (stageKey === "on_pilka_wait") return "На пиле (ожидает запуск)";
@@ -288,13 +288,13 @@ function getShipmentStageKey(c, sourceRow, orderByShipmentKey) {
   const pras = String(order?.prasStatus || order?.pras_status || order?.pras || "").toLowerCase();
   const assembly = String(order?.assemblyStatus || order?.assembly_status || "").toLowerCase();
   const overall = String(order?.overallStatus || order?.overall_status || order?.overall || "").toLowerCase();
-  // Как в getStageLabel: старт производства («на пилу»), а не отгрузка.
+  // Старт производства («на пилу») — не финальная отгрузка (см. orderPipeline.js).
   if (overall.includes("на пилу")) {
     if (pilka.includes("готов")) return "on_kromka_wait";
     if (pilka.includes("в работе") || pilka.includes("пауза")) return "on_pilka_work";
     return "on_pilka_wait";
   }
-  if (isOverallCustomerShipped(overall)) return "shipped";
+  if (isCustomerShippedOverall(overall)) return "shipped";
   if (assembly.includes("собран") || overall.includes("готово к отправке")) return "assembled_wait_ship";
   if (pras.includes("готов")) return "ready_assembly";
   if (pras.includes("в работе")) return "on_pras_work";
@@ -322,37 +322,6 @@ function getMaterialLabel(item, material) {
   return tail || "Материал не указан";
 }
 
-/** Общая классификация этапа для обзора, статистики и колонок (вне компонента — см. getOverviewLaneId). */
-function getStageLabel(order) {
-  const overall = String(order?.overallStatus ?? order?.overall_status ?? order?.overall ?? "").toLowerCase();
-  const assembly = String(order?.assemblyStatus ?? order?.assembly_status ?? "").toLowerCase();
-  const pilka = String(order?.pilkaStatus ?? order?.pilka_status ?? order?.pilka ?? "").toLowerCase();
-  const kromka = String(order?.kromkaStatus ?? order?.kromka_status ?? order?.kromka ?? "").toLowerCase();
-  const pras = String(order?.prasStatus ?? order?.pras_status ?? order?.pras ?? "").toLowerCase();
-
-  if (overall.includes("на пилу")) return "Пила";
-  if (overall.includes("отгруж")) return "Собран и отправлен";
-  if (overall.includes("готово к отправке")) return "Собран и отправлен";
-  if (assembly.includes("собрано")) return "Собран";
-  if (pilka.includes("готов") && kromka.includes("готов") && pras.includes("готов")) return "Готов";
-  if (pras.includes("в работе") || pras.includes("пауза") || (pilka.includes("готов") && kromka.includes("готов") && !pras.includes("готов"))) return "Присадка";
-  if (kromka.includes("в работе") || kromka.includes("пауза") || (pilka.includes("готов") && !kromka.includes("готов"))) return "Кромка";
-  return "Пила";
-}
-
-function getOverviewLaneId(order) {
-  // Keep overview columns in sync with the global stage classifier.
-  const stage = String(getStageLabel(order) || "").toLowerCase();
-  if (stage.includes("пила")) return "pilka";
-  if (stage.includes("кром")) return "kromka";
-  if (stage.includes("присад")) return "pras";
-  // «Собран и отправлен» содержит подстроку «собран» — сначала финальная колонка.
-  if (stage.includes("отгруж") || stage.includes("упаков")) return "done";
-  if (stage.includes("отправ") && !stage.includes("на пилу")) return "done";
-  if (stage.includes("собран") || stage.includes("готов")) return "assembly";
-  return "pilka";
-}
-
 function toUserError(e) {
   const msg = String(e?.message || e || "");
   if (msg.includes("Система занята")) return "Система занята, повторите через 1-2 секунды.";
@@ -366,7 +335,7 @@ function extractErrorMessage(e) {
 
 function normalizeOrder(row) {
   if (!row || typeof row !== "object") return row;
-  return {
+  const out = {
     ...row,
     orderId: row.orderId ?? row.order_id ?? "",
     pilkaStatus: row.pilkaStatus ?? row.pilka_status ?? row.pilka ?? "",
@@ -378,6 +347,8 @@ function normalizeOrder(row) {
     createdAt: row.createdAt ?? row.created_at ?? "",
     sheetsNeeded: row.sheetsNeeded ?? row.sheets_needed ?? 0,
   };
+  out.pipelineStage = row.pipeline_stage ?? row.pipelineStage ?? inferPipelineStage(out);
+  return out;
 }
 
 function normalizeShipmentBoard(data) {
@@ -1103,7 +1074,7 @@ export default function App() {
       const kromkaDone = isDone(kromkaStatus);
       const prasDone = isDone(prasStatus);
       const assemblyDone = isDone(assemblyStatus);
-      const shipped = isOverallCustomerShipped(overallStatus);
+      const shipped = isOrderCustomerShipped(o);
       const onPackaging = /упаков/i.test(overallStatus);
       if (tab === "pilka") return !pilkaDone;
       if (tab === "kromka") return pilkaDone && !kromkaDone;
@@ -2226,7 +2197,7 @@ export default function App() {
                 const showAssembly = tab === "all" || tab === "assembly";
                 const showDone = tab === "all" || tab === "done";
                 const assemblyDone = isDone(o.assemblyStatus);
-                const packagingDone = isOverallCustomerShipped(String(o.overallStatus || o.overall || ""));
+                const packagingDone = isOrderCustomerShipped(o);
                 return (
                   <>
               {showPilka && (
