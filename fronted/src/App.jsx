@@ -1194,6 +1194,14 @@ export default function App() {
     }
   }
 
+  function toggleShipmentSelection(payload) {
+    setSelectedShipments((prev) => {
+      const exists = prev.some((s) => s.row === payload.row && s.col === payload.col);
+      if (exists) return prev.filter((s) => !(s.row === payload.row && s.col === payload.col));
+      return [...prev, payload];
+    });
+  }
+
   function openStrapDialog() {
     const nextDraft = STRAP_OPTIONS.reduce((acc, name) => ({ ...acc, [name]: "" }), {});
     strapItems.forEach((x) => {
@@ -1738,11 +1746,7 @@ export default function App() {
                               sheetsNeeded: row.sheets,
                               canSendToWork: !!row.canSendToWork,
                             };
-                            setSelectedShipments((prev) => {
-                              const exists = prev.some((s) => s.row === payload.row && s.col === payload.col);
-                              if (exists) return prev.filter((s) => !(s.row === payload.row && s.col === payload.col));
-                              return [...prev, payload];
-                            });
+                            toggleShipmentSelection(payload);
                           }}
                         >
                           <td>{row.section}</td>
@@ -1868,7 +1872,6 @@ export default function App() {
                                     color: getReadableTextColor(displayBg),
                                   }}
                                   onClick={() => {
-                                    if (!c.canSendToWork) return;
                                     const payload = {
                                       row: sourceRow,
                                       col: sourceCol,
@@ -1882,11 +1885,7 @@ export default function App() {
                                       sheetsNeeded: sheetsN,
                                       canSendToWork: !!c.canSendToWork,
                                     };
-                                    setSelectedShipments((prev) => {
-                                      const exists = prev.some((s) => s.row === payload.row && s.col === payload.col);
-                                      if (exists) return prev.filter((s) => !(s.row === payload.row && s.col === payload.col));
-                                      return [...prev, payload];
-                                    });
+                                    toggleShipmentSelection(payload);
                                   }}
                                 >
                                   {isSelected && <span className="selected-mark">✓</span>}
