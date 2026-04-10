@@ -28,10 +28,12 @@ function isDoneLine(status) {
   return v.includes("готов") || v.includes("собрано");
 }
 
-/** Финальная отгрузка клиенту; «Отправлен на пилу» сюда не входит. */
+/** Финальная отгрузка клиенту; «Отправлен на пилу» и «Готово к отправке» сюда не входят. */
 export function isCustomerShippedOverall(overallRaw) {
   const s = lc(overallRaw);
   if (s.includes("на пилу")) return false;
+  // В «готово к отправке» есть подстрока «отправ» — это ещё не отгрузка клиенту.
+  if (s.includes("готово к отправке")) return false;
   return s.includes("отгруж") || s.includes("упаков") || s.includes("отправ");
 }
 

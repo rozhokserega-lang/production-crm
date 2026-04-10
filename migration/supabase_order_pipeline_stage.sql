@@ -1,9 +1,40 @@
 -- Этап заказа в Supabase: колонка + вычисление (как fronted/src/orderPipeline.js) + RPC.
 -- Выполнить в SQL Editor Supabase (или supabase db push) один раз.
 --
--- Требования:
---   • public.orders
---   • public.resolve_color_name(text) — как в SUPABASE_STAGE1_SCHEMA.sql (или временно замените на NULL::text в SELECT).
+-- Требования: public.orders. Таблица public.item_color_map опциональна.
+
+-- ---------------------------------------------------------------------------
+-- 0. Цвет изделия — только если функции ещё нет (не затираем вашу реализацию)
+-- ---------------------------------------------------------------------------
+do $resolver$
+begin
+  if not exists (
+    select 1
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public'
+      and p.proname = 'resolve_color_name'
+      and pg_get_function_identity_arguments(p.oid) in ('text', 'p_item text')
+  ) then
+    create function public.resolve_color_name(p_item text)
+    returns text
+    language plpgsql
+    stable
+    as $fn$
+    begin
+      if to_regclass('public.item_color_map') is null then
+        return null;
+      end if;
+      return (
+        select m.color_name::text
+        from public.item_color_map m
+        where m.item_name = trim(coalesce(p_item, ''))
+        limit 1
+      );
+    end;
+    $fn$;
+  end if;
+end $resolver$;
 
 -- ---------------------------------------------------------------------------
 -- 1. Колонка
@@ -38,13 +69,14 @@ declare
   kr_d boolean;
   pr_d boolean;
 begin
+  -- Сначала «готово к отправке»: в фразе есть «отправ», но это не финальная отгрузка.
+  if o like '%готово к отправке%' then
+    return 'ready_to_ship';
+  end if;
+
   if o not like '%на пилу%'
      and (o like '%отгруж%' or o like '%упаков%' or o like '%отправ%') then
     return 'shipped';
-  end if;
-
-  if o like '%готово к отправке%' then
-    return 'ready_to_ship';
   end if;
 
   if a like '%собрано%' then
@@ -112,7 +144,14 @@ set pipeline_stage = public.compute_order_pipeline_stage(
 
 -- ---------------------------------------------------------------------------
 -- 5. Список заказов для фронта (основной RPC)
+-- На существующем проекте старые web_get_orders_* могут иметь другой RETURNS TABLE —
+-- сначала удаляем зависимые функции.
 -- ---------------------------------------------------------------------------
+drop function if exists public.web_get_orders_pras();
+drop function if exists public.web_get_orders_kromka();
+drop function if exists public.web_get_orders_pilka();
+drop function if exists public.web_get_orders_all();
+
 create or replace function public.web_get_orders_all()
 returns table (
   order_id text,
@@ -229,6 +268,8 @@ $$;
 -- ---------------------------------------------------------------------------
 -- 6. Статистика: добавить pipeline_stage (одно определение функции)
 -- ---------------------------------------------------------------------------
+drop function if exists public.web_get_order_stats();
+
 create or replace function public.web_get_order_stats()
 returns table (
   order_id text,
