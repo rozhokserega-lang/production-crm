@@ -305,6 +305,7 @@ function normalizeShipmentBoard(data) {
       canSendToWork: !!row?.can_send_to_work || !!row?.canSendToWork,
       inWork: !!row?.in_work || !!row?.inWork,
       sheetsNeeded: Number(row?.sheets_needed ?? row?.sheetsNeeded ?? 0),
+      outputPerSheet: Number(row?.output_per_sheet ?? row?.outputPerSheet ?? 0),
       availableSheets: Number(row?.available_sheets ?? row?.availableSheets ?? 0),
       materialEnoughForOrder:
         row?.material_enough_for_order == null
@@ -1045,6 +1046,7 @@ export default function App() {
             week: c.week || "-",
             qty: Number(c.qty || 0),
             sheets: Number(c.sheetsNeeded || 0),
+            outputPerSheet: Number(c.outputPerSheet || 0),
             availableSheets: Number(c.availableSheets || 0),
             bg: c.bg || "#ffffff",
             status: getShipmentCellStatus(c),
@@ -1092,9 +1094,14 @@ export default function App() {
   const selectedShipmentSummary = useMemo(() => {
     const items = selectedShipments.map((s) => {
       const qty = Number(s.qty || 0);
-      const sheetsNeeded = Number(s.sheetsNeeded || 0);
+      const sheetsRaw = Number(s.sheetsNeeded || 0);
+      const outputPerSheet = Number(s.outputPerSheet || 0);
+      const sheetsNeeded =
+        sheetsRaw > 0
+          ? sheetsRaw
+          : (outputPerSheet > 0 && qty > 0 ? Math.ceil(qty / outputPerSheet) : 0);
       const material = String(s.material || "Материал не указан");
-      return { ...s, qty, sheetsNeeded, material };
+      return { ...s, qty, sheetsNeeded, material, outputPerSheet, sheetsExact: sheetsRaw > 0 };
     });
     const byMaterial = {};
     let totalSheets = 0;
@@ -1535,7 +1542,11 @@ export default function App() {
                   {selectedShipmentSummary.items.map((x, idx) => (
                     <div key={`${x.row}-${x.col}-${idx}`} className="selection-summary-item">
                       <div>{x.item}</div>
-                      <div>{x.qty} шт. → {x.sheetsNeeded} лист(ов) {x.material}</div>
+                      <div>
+                        {x.qty} шт. → {x.sheetsNeeded} лист(ов) {x.material}
+                        {!x.sheetsExact && x.outputPerSheet > 0 ? " (оценка)" : ""}
+                        {!x.sheetsExact && x.outputPerSheet <= 0 ? " (нет данных по раскрою)" : ""}
+                      </div>
                     </div>
                   ))}
                   <div className="selection-summary-title" style={{ marginTop: 10 }}>Общее количество:</div>
@@ -1763,6 +1774,7 @@ export default function App() {
                               qty: row.qty,
                               material: getMaterialLabel(row.item, row.material),
                               sheetsNeeded: row.sheets,
+                              outputPerSheet: row.outputPerSheet,
                               canSendToWork: !!row.canSendToWork,
                             };
                             toggleShipmentSelection(payload);
@@ -1902,6 +1914,7 @@ export default function App() {
                                       qty: c.qty,
                                       material: materialLabel,
                                       sheetsNeeded: sheetsN,
+                                      outputPerSheet: Number(c.outputPerSheet || 0),
                                       canSendToWork: !!c.canSendToWork,
                                     };
                                     toggleShipmentSelection(payload);
