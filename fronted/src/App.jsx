@@ -759,6 +759,8 @@ export default function App() {
       });
     }
     return rows.filter((x) => {
+      // Скрываем тех/мусорные позиции во вкладках заказов (Производство/Обзор/Статистика).
+      if (isStorageLikeName(x.item) || isGarbageShipmentItemName(x.item)) return false;
       const byWeek = weekFilter === "all" || String(x.week || "") === weekFilter;
       const byQuery =
         !q ||
