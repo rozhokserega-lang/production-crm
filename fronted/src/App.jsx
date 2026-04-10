@@ -204,6 +204,13 @@ function shipmentOrderKey(sourceRow, week) {
   return `${String(sourceRow || "").trim()}|${String(week || "").trim()}`;
 }
 
+/** Финальная отгрузка клиенту; «Отправлен на пилу» сюда не входит. */
+function isOverallCustomerShipped(overallRaw) {
+  const s = String(overallRaw || "").toLowerCase();
+  if (s.includes("на пилу")) return false;
+  return s.includes("отгруж") || s.includes("упаков") || s.includes("отправ");
+}
+
 function stageLabel(stageKey) {
   if (stageKey === "awaiting") return "Ожидаю заказ";
   if (stageKey === "on_pilka_wait") return "На пиле (ожидает запуск)";
@@ -278,7 +285,13 @@ function getShipmentStageKey(c, sourceRow, orderByShipmentKey) {
   const pras = String(order?.prasStatus || order?.pras_status || order?.pras || "").toLowerCase();
   const assembly = String(order?.assemblyStatus || order?.assembly_status || "").toLowerCase();
   const overall = String(order?.overallStatus || order?.overall_status || order?.overall || "").toLowerCase();
-  if (overall.includes("отправ") || overall.includes("отгруж") || overall.includes("упаков")) return "shipped";
+  // Как в getStageLabel: старт производства («на пилу»), а не отгрузка.
+  if (overall.includes("на пилу")) {
+    if (pilka.includes("готов")) return "on_kromka_wait";
+    if (pilka.includes("в работе") || pilka.includes("пауза")) return "on_pilka_work";
+    return "on_pilka_wait";
+  }
+  if (isOverallCustomerShipped(overall)) return "shipped";
   if (assembly.includes("собран") || overall.includes("готово к отправке")) return "assembled_wait_ship";
   if (pras.includes("готов")) return "ready_assembly";
   if (pras.includes("в работе")) return "on_pras_work";
@@ -1084,7 +1097,7 @@ export default function App() {
       const kromkaDone = isDone(kromkaStatus);
       const prasDone = isDone(prasStatus);
       const assemblyDone = isDone(assemblyStatus);
-      const shipped = /отправ|отгруж/i.test(overallStatus);
+      const shipped = isOverallCustomerShipped(overallStatus);
       const onPackaging = /упаков/i.test(overallStatus);
       if (tab === "pilka") return !pilkaDone;
       if (tab === "kromka") return pilkaDone && !kromkaDone;
@@ -2207,7 +2220,7 @@ export default function App() {
                 const showAssembly = tab === "all" || tab === "assembly";
                 const showDone = tab === "all" || tab === "done";
                 const assemblyDone = isDone(o.assemblyStatus);
-                const packagingDone = /упаков|отправ|отгруж/i.test(String(o.overallStatus || o.overall || ""));
+                const packagingDone = isOverallCustomerShipped(String(o.overallStatus || o.overall || ""));
                 return (
                   <>
               {showPilka && (
