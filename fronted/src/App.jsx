@@ -22,6 +22,7 @@ const DEFAULT_SHIPMENT_PREFS = {
   showCompletedRedCells: true,
   collapsedSections: {},
 };
+const UI_SCALE_STORAGE_KEY = "crmUiScale";
 const SHIPMENT_SECTION_ORDER = [
   "Stabile",
   "Solito2",
@@ -357,6 +358,7 @@ export default function App() {
   const [shipmentViewMode, setShipmentViewMode] = useState("table");
   const [statsSort, setStatsSort] = useState("stage");
   const [laborSort, setLaborSort] = useState("total_desc");
+  const [uiScale, setUiScale] = useState("large");
   const [collapsedSections, setCollapsedSections] = useState({});
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState("");
@@ -469,6 +471,15 @@ export default function App() {
     } catch (_) {}
   }, []);
 
+  useEffect(() => {
+    try {
+      const savedScale = localStorage.getItem(UI_SCALE_STORAGE_KEY);
+      if (savedScale === "standard" || savedScale === "large") {
+        setUiScale(savedScale);
+      }
+    } catch (_) {}
+  }, []);
+
   function resetShipmentFilters() {
     setWeekFilter(DEFAULT_SHIPMENT_PREFS.weekFilter);
     setShipmentSort(DEFAULT_SHIPMENT_PREFS.shipmentSort);
@@ -495,6 +506,12 @@ export default function App() {
       );
     } catch (_) {}
   }, [weekFilter, shipmentSort, showOnlyEmpty, showBlueCells, showYellowCells, showCompletedRedCells, collapsedSections]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(UI_SCALE_STORAGE_KEY, uiScale);
+    } catch (_) {}
+  }, [uiScale]);
 
   function sectionCollapseKey(name) {
     return `${shipmentSort}:${String(name || "")}`;
@@ -1341,9 +1358,17 @@ export default function App() {
   }
 
   return (
-    <div className="page">
+    <div className={`page ${uiScale === "large" ? "scale-large" : "scale-standard"}`}>
       <header className="top">
-        <h1>Отгрузки - CRM</h1>
+        <h1>Управление производственными заказами</h1>
+        <button
+          type="button"
+          className="scale-toggle"
+          onClick={() => setUiScale((prev) => (prev === "large" ? "standard" : "large"))}
+          title="Переключить масштаб интерфейса"
+        >
+          Масштаб: {uiScale === "large" ? "Крупный" : "Стандарт"}
+        </button>
       </header>
 
       <section className="view-switch">
@@ -1920,14 +1945,14 @@ export default function App() {
                     {col.items.map((o) => {
                       const orderId = String(o.orderId || o.order_id || "");
                       return (
-                        <article key={`${col.id}-${orderId || o.item}`} className="overview-card">
+                        <article key={`${col.id}-${orderId || o.item}`} className={`overview-card lane-${col.id}`}>
                           <div className="overview-card__id">Заказ #{orderId || "-"}</div>
                           <div className="overview-card__item">{o.item}</div>
                           <div className="overview-card__meta">
                             <span>План: {o.week || "-"}</span>
                             <span>Кол-во: {Number(o.qty || 0)}</span>
                           </div>
-                          <div className="overview-card__stage">{getStageLabel(o)}</div>
+                          <div className={`overview-card__stage lane-${col.id}`}>{getStageLabel(o)}</div>
                         </article>
                       );
                     })}
