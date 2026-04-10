@@ -72,9 +72,12 @@ function statusClass(order) {
   const pilka = String(order?.pilkaStatus || order?.pilka || "");
   const kromka = String(order?.kromkaStatus || order?.kromka || "");
   const pras = String(order?.prasStatus || order?.pras || "");
-  if (String(order?.assemblyStatus || "").includes("СОБРАНО")) return "done";
-  if (pilka.includes("Пауза") || kromka.includes("Пауза") || pras.includes("Пауза")) return "pause";
-  if (pras.includes("В работе") || kromka.includes("В работе") || pilka.includes("В работе")) return "work";
+  const a = String(order?.assemblyStatus || "");
+  if (a.includes("СОБРАНО") || a.toLowerCase().includes("собрано")) return "done";
+  const inWork = (s) => s.toLowerCase().includes("в работе");
+  const onPause = (s) => s.toLowerCase().includes("пауза");
+  if (onPause(pilka) || onPause(kromka) || onPause(pras)) return "pause";
+  if (inWork(pras) || inWork(kromka) || inWork(pilka)) return "work";
   return "wait";
 }
 
@@ -677,7 +680,7 @@ export default function App() {
     return "pilka";
   }
   function isInWork(s) {
-    return String(s || "").includes("В работе");
+    return String(s || "").toLowerCase().includes("в работе");
   }
 
   function closeConsumeDialog() {
