@@ -101,10 +101,14 @@ function stageFromAction(action) {
 
 function buildRpcPayload(action, payload = {}) {
   if (/^webSet(Pilka|Kromka|Pras)(InWork|Done|Pause)$/.test(action)) {
-    return {
+    const rpcPayload = {
       p_order_id: payload.orderId,
       p_stage: stageFromAction(action),
     };
+    if (payload.executor != null && String(payload.executor).trim()) {
+      rpcPayload.p_executor = String(payload.executor).trim();
+    }
+    return rpcPayload;
   }
   if (action === "webSendPlanksToWork") {
     return { p_items: payload.items || [] };

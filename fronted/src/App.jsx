@@ -2128,12 +2128,16 @@ export default function App() {
                 const kromkaInWork = isInWork(o.kromkaStatus);
                 const prasDone = isDone(o.prasStatus);
                 const prasInWork = isInWork(o.prasStatus);
+                const currentPilkaExec =
+                  String(o.pilkaStatus || "").includes("Сережа") ? "Сережа" :
+                  String(o.pilkaStatus || "").includes("Слава") ? "Слава" : "";
                 const currentKromkaExec =
                   String(o.kromkaStatus || "").includes("Сережа") ? "Сережа" :
                   String(o.kromkaStatus || "").includes("Слава") ? "Слава" : "";
                 const currentPrasExec =
                   String(o.prasStatus || "").includes("Виталик") ? "Виталик" :
                   String(o.prasStatus || "").includes("Лёха") || String(o.prasStatus || "").includes("Леха") ? "Лёха" : "";
+                const pilkaExecValue = executorByOrder[`${orderId}:pilka`] || currentPilkaExec || "Слава";
                 const kromkaExecValue = executorByOrder[orderId] || currentKromkaExec || "Слава";
                 const prasExecValue = executorByOrder[`${orderId}:pras`] || currentPrasExec || "Лёха";
                 const showPilka = tab === "all" || tab === "pilka";
@@ -2143,10 +2147,23 @@ export default function App() {
                   <>
               {showPilka && (
                 <>
+              {!pilkaInWork && (
+                <select
+                  value={pilkaExecValue}
+                  onChange={(e) => setExecutorByOrder((prev) => ({ ...prev, [`${orderId}:pilka`]: e.target.value }))}
+                >
+                  <option>Слава</option>
+                  <option>Сережа</option>
+                </select>
+              )}
               <button
                 className="mini"
                 disabled={actionLoading === `webSetPilkaInWork:${orderId}` || pilkaDone}
-                onClick={() => runAction("webSetPilkaInWork", orderId)}
+                onClick={() =>
+                  runAction("webSetPilkaInWork", orderId, {
+                    executor: pilkaExecValue,
+                  })
+                }
               >
                 {tab === "pilka" ? "В работе" : "Пила: В работе"}
               </button>
