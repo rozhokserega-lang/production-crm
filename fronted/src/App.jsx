@@ -151,6 +151,14 @@ function isStorageLikeName(text) {
   return false;
 }
 
+function isGarbageShipmentItemName(text) {
+  const t = normText(text);
+  if (!t) return false;
+  if (t === "123" || t === "ава") return true;
+  if (t.includes("[obv-")) return true;
+  return false;
+}
+
 function parseColor(bg) {
   const raw = String(bg || "").toLowerCase().trim();
   let r = null, g = null, b = null;
@@ -696,6 +704,7 @@ export default function App() {
           ...s,
           items: (s.items || []).filter((it) => {
             if (isStorageLikeName(it.item)) return false;
+            if (isGarbageShipmentItemName(it.item)) return false;
             const visibleCells = (it.cells || []).filter((c) => {
               const qtyOk = (Number(c.qty) || 0) > 0;
               if (!qtyOk) return false;
