@@ -2185,7 +2185,7 @@ export default function App() {
                 const currentPrasExec =
                   String(o.prasStatus || "").includes("Сережа") ? "Сережа" :
                   String(o.prasStatus || "").includes("Слава") ? "Слава" : "";
-                const pilkaExecValue = executorByOrder[`${orderId}:pilka`] || currentPilkaExec || "Слава";
+                const pilkaExecValue = currentPilkaExec || "Слава";
                 const kromkaExecValue = executorByOrder[orderId] || currentKromkaExec || "Слава";
                 const prasExecValue = executorByOrder[`${orderId}:pras`] || currentPrasExec || "Слава";
                 const showPilka = tab === "all" || tab === "pilka";
@@ -2199,15 +2199,6 @@ export default function App() {
                   <>
               {showPilka && (
                 <>
-              {!pilkaInWork && (
-                <select
-                  value={pilkaExecValue}
-                  onChange={(e) => setExecutorByOrder((prev) => ({ ...prev, [`${orderId}:pilka`]: e.target.value }))}
-                >
-                  <option>Слава</option>
-                  <option>Сережа</option>
-                </select>
-              )}
               <button
                 className="mini"
                 disabled={actionLoading === `webSetPilkaInWork:${orderId}` || pilkaDone}
