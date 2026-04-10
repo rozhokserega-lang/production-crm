@@ -190,6 +190,14 @@ function parseColor(bg) {
   return { r, g, b };
 }
 
+function isWhiteCell(bg) {
+  const raw = String(bg || "").toLowerCase().trim();
+  if (raw === "#fff" || raw === "#ffffff" || raw === "white") return true;
+  const { r, g, b } = parseColor(bg);
+  if (r == null) return false;
+  return r >= 245 && g >= 245 && b >= 245;
+}
+
 function getShipmentCellStatus(c) {
   if (!c) return "Статус неизвестен";
   const materialInfoText =
@@ -744,7 +752,7 @@ export default function App() {
             const visibleCells = (it.cells || []).filter((c) => {
               const qtyOk = (Number(c.qty) || 0) > 0;
               if (!qtyOk) return false;
-              if (showOnlyEmpty) return !!c.canSendToWork; // только пустые (не начатые)
+              if (showOnlyEmpty) return isWhiteCell(c.bg); // только белые
               if (!showCompletedRedCells && isRedCell(c.bg)) return false;
               if (!passesBlueYellowFilter(c.bg, showBlueCells, showYellowCells)) return false;
               return true;
@@ -793,7 +801,7 @@ export default function App() {
     return (it?.cells || []).filter((c) => {
       const qtyOk = (Number(c.qty) || 0) > 0;
       if (!qtyOk) return false;
-      if (showOnlyEmpty) return !!c.canSendToWork;
+      if (showOnlyEmpty) return isWhiteCell(c.bg);
       if (!showCompletedRedCells && isRedCell(c.bg)) return false;
       if (!passesBlueYellowFilter(c.bg, showBlueCells, showYellowCells)) return false;
       return true;
