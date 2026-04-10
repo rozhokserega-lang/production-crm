@@ -414,15 +414,9 @@ export default function App() {
           data = await callBackend("webGetOrdersAll");
         }
       } else {
-        const action =
-          tab === "pilka"
-            ? "webGetOrdersPilka"
-            : tab === "kromka"
-              ? "webGetOrdersKromka"
-              : tab === "pras"
-                ? "webGetOrdersPras"
-                : "webGetOrdersAll";
-        data = await callBackend(action);
+        // Для согласованности с "Обзор заказов" всегда берем полный список
+        // и уже на фронте раскладываем по табам этапов.
+        data = await callBackend("webGetOrdersAll");
       }
       // Игнорируем запоздавшие ответы, чтобы старая вкладка не перетирала новую.
       if (seq !== loadSeqRef.current) return;
