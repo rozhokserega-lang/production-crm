@@ -8,6 +8,7 @@ const TABS = [
 ];
 const VIEWS = [
   { id: "shipment", label: "Отгрузка" },
+  { id: "overview", label: "Обзор заказов" },
   { id: "workshop", label: "Производство" },
   { id: "labor", label: "Трудоемкость" },
   { id: "stats", label: "Статистика" },
@@ -234,6 +235,19 @@ function getMaterialLabel(item, material) {
   return tail || "Материал не указан";
 }
 
+function getOverviewLaneId(order) {
+  const overall = String(order?.overallStatus || order?.overall || "").toLowerCase();
+  const assembly = String(order?.assemblyStatus || "").toLowerCase();
+  const pilka = String(order?.pilkaStatus || order?.pilka || "").toLowerCase();
+  const kromka = String(order?.kromkaStatus || order?.kromka || "").toLowerCase();
+  const pras = String(order?.prasStatus || order?.pras || "").toLowerCase();
+  if (overall.includes("отправ") || overall.includes("отгруж")) return "done";
+  if (assembly.includes("собрано")) return "assembly";
+  if (pras.includes("в работе") || pras.includes("пауза") || (pilka.includes("готов") && kromka.includes("готов") && !pras.includes("готов"))) return "pras";
+  if (kromka.includes("в работе") || kromka.includes("пауза") || (pilka.includes("готов") && !kromka.includes("готов"))) return "kromka";
+  return "pilka";
+}
+
 function toUserError(e) {
   const msg = String(e?.message || e || "");
   if (msg.includes("Система занята")) return "Система занята, повторите через 1-2 секунды.";
@@ -387,6 +401,8 @@ export default function App() {
         } catch (_) {
           data = await callBackend("webGetShipmentBoard");
         }
+      } else if (view === "overview") {
+        data = await callBackend("webGetOrdersAll");
       } else if (view === "labor") {
         data = await callBackend("webGetLaborTable");
       } else if (view === "stats") {
@@ -737,7 +753,7 @@ export default function App() {
         String(x.item || "").toLowerCase().includes(q) ||
         String(x.orderId || x.order_id || "").toLowerCase().includes(q);
       if (!byWeek || !byQuery) return false;
-      if (view === "stats") return true;
+      if (view === "stats" || view === "overview") return true;
       const pilkaStatus = String(x.pilkaStatus || x.pilka || "");
       const kromkaStatus = String(x.kromkaStatus || x.kromka || "");
       const prasStatus = String(x.prasStatus || x.pras || "");
@@ -964,6 +980,26 @@ export default function App() {
     });
     return arr;
   }, [filtered, view, tab]);
+  const overviewColumns = useMemo(() => {
+    if (view !== "overview") return [];
+    const defs = [
+      { id: "pilka", title: "Пила" },
+      { id: "kromka", title: "Кромка" },
+      { id: "pras", title: "Присадка" },
+      { id: "assembly", title: "Сборка" },
+      { id: "done", title: "Готово к отправке" },
+    ];
+    const grouped = Object.fromEntries(defs.map((x) => [x.id, []]));
+    (filtered || []).forEach((o) => {
+      const lane = getOverviewLaneId(o);
+      if (!grouped[lane]) grouped[lane] = [];
+      grouped[lane].push(o);
+    });
+    defs.forEach((d) => {
+      grouped[d.id].sort((a, b) => String(a.item || "").localeCompare(String(b.item || ""), "ru"));
+    });
+    return defs.map((d) => ({ ...d, items: grouped[d.id] || [] }));
+  }, [filtered, view]);
   const shipmentKpi = useMemo(() => {
     if (view !== "shipment") return { totalOrders: 0, totalQty: 0, readyAssembly: 0, assembled: 0 };
     let totalOrders = 0;
@@ -1325,6 +1361,13 @@ export default function App() {
             <div className="kpi"><span>Кол-во (шт)</span><b>{shipmentKpi.totalQty}</b></div>
             <div className="kpi"><span>Готово к сборке</span><b>{shipmentKpi.readyAssembly}</b></div>
             <div className="kpi"><span>Собрано</span><b>{shipmentKpi.assembled}</b></div>
+          </>
+        ) : view === "overview" ? (
+          <>
+            <div className="kpi"><span>Всего заказов</span><b>{filtered.length}</b></div>
+            <div className="kpi"><span>В работе</span><b>{filtered.filter((x) => statusClass(x) === "work").length}</b></div>
+            <div className="kpi"><span>На паузе</span><b>{filtered.filter((x) => statusClass(x) === "pause").length}</b></div>
+            <div className="kpi"><span>Готовы/собраны</span><b>{filtered.filter((x) => statusClass(x) === "done").length}</b></div>
           </>
         ) : view === "labor" ? (
           <>
@@ -1864,6 +1907,37 @@ export default function App() {
             ))}
             </div>
           </div>
+        )}
+        {view === "overview" && (
+          <>
+            {!overviewColumns.some((c) => c.items.length) && !loading && <div className="empty">Нет заказов для обзора</div>}
+            <div className="overview-board">
+              {overviewColumns.map((col) => (
+                <div key={col.id} className="overview-column">
+                  <div className="overview-column__head">
+                    <span>{col.title}</span>
+                    <span className="section-count">{col.items.length}</span>
+                  </div>
+                  <div className="overview-column__list">
+                    {col.items.map((o) => {
+                      const orderId = String(o.orderId || o.order_id || "");
+                      return (
+                        <article key={`${col.id}-${orderId || o.item}`} className="overview-card">
+                          <div className="overview-card__id">Заказ #{orderId || "-"}</div>
+                          <div className="overview-card__item">{o.item}</div>
+                          <div className="overview-card__meta">
+                            <span>План: {o.week || "-"}</span>
+                            <span>Кол-во: {Number(o.qty || 0)}</span>
+                          </div>
+                          <div className="overview-card__stage">{getStageLabel(o)}</div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
         )}
         {view === "labor" && (
           <>
