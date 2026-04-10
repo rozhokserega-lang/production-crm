@@ -322,6 +322,24 @@ function getMaterialLabel(item, material) {
   return tail || "Материал не указан";
 }
 
+/** Общая классификация этапа для обзора, статистики и колонок (вне компонента — см. getOverviewLaneId). */
+function getStageLabel(order) {
+  const overall = String(order?.overallStatus ?? order?.overall_status ?? order?.overall ?? "").toLowerCase();
+  const assembly = String(order?.assemblyStatus ?? order?.assembly_status ?? "").toLowerCase();
+  const pilka = String(order?.pilkaStatus ?? order?.pilka_status ?? order?.pilka ?? "").toLowerCase();
+  const kromka = String(order?.kromkaStatus ?? order?.kromka_status ?? order?.kromka ?? "").toLowerCase();
+  const pras = String(order?.prasStatus ?? order?.pras_status ?? order?.pras ?? "").toLowerCase();
+
+  if (overall.includes("на пилу")) return "Пила";
+  if (overall.includes("отгруж")) return "Собран и отправлен";
+  if (overall.includes("готово к отправке")) return "Собран и отправлен";
+  if (assembly.includes("собрано")) return "Собран";
+  if (pilka.includes("готов") && kromka.includes("готов") && pras.includes("готов")) return "Готов";
+  if (pras.includes("в работе") || pras.includes("пауза") || (pilka.includes("готов") && kromka.includes("готов") && !pras.includes("готов"))) return "Присадка";
+  if (kromka.includes("в работе") || kromka.includes("пауза") || (pilka.includes("готов") && !kromka.includes("готов"))) return "Кромка";
+  return "Пила";
+}
+
 function getOverviewLaneId(order) {
   // Keep overview columns in sync with the global stage classifier.
   const stage = String(getStageLabel(order) || "").toLowerCase();
@@ -652,23 +670,6 @@ export default function App() {
     const d = new Date(order?.createdAt || "");
     if (!isFinite(d.getTime())) return "Неизвестно";
     return d.toLocaleDateString("ru-RU", { weekday: "long" });
-  }
-  function getStageLabel(order) {
-    const overall = String(order?.overall || "").toLowerCase();
-    const assembly = String(order?.assemblyStatus || "").toLowerCase();
-    const pilka = String(order?.pilkaStatus || order?.pilka || "").toLowerCase();
-    const kromka = String(order?.kromkaStatus || order?.kromka || "").toLowerCase();
-    const pras = String(order?.prasStatus || order?.pras || "").toLowerCase();
-
-    // "Отправлен на пилу" — это старт производства, а не финальная отгрузка.
-    if (overall.includes("на пилу")) return "Пила";
-    if (overall.includes("отгруж")) return "Собран и отправлен";
-    if (overall.includes("готово к отправке")) return "Собран и отправлен";
-    if (assembly.includes("собрано")) return "Собран";
-    if (pilka.includes("готов") && kromka.includes("готов") && pras.includes("готов")) return "Готов";
-    if (pras.includes("в работе") || pras.includes("пауза") || (pilka.includes("готов") && kromka.includes("готов") && !pras.includes("готов"))) return "Присадка";
-    if (kromka.includes("в работе") || kromka.includes("пауза") || (pilka.includes("готов") && !kromka.includes("готов"))) return "Кромка";
-    return "Пила";
   }
   function getStageClassByLabel(label) {
     const s = String(label || "").toLowerCase();
