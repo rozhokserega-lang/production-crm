@@ -39,6 +39,8 @@ const DEFAULT_SHIPMENT_PREFS = {
   showOnKromka: true,
   showOnPras: true,
   showReadyAssembly: true,
+  /** Собран / готово к отправке клиенту — «ждёт отправку» (отдельно от «готовы к сборке»). */
+  showAwaitShipment: true,
   showShipped: true,
   collapsedSections: {},
 };
@@ -484,6 +486,7 @@ export default function App() {
   const [showOnKromka, setShowOnKromka] = useState(true);
   const [showOnPras, setShowOnPras] = useState(true);
   const [showReadyAssembly, setShowReadyAssembly] = useState(true);
+  const [showAwaitShipment, setShowAwaitShipment] = useState(true);
   const [showShipped, setShowShipped] = useState(true);
   const [shipmentSort, setShipmentSort] = useState("name");
   const [shipmentViewMode, setShipmentViewMode] = useState("table");
@@ -606,6 +609,7 @@ export default function App() {
         if (typeof prefs.showOnKromka === "boolean") setShowOnKromka(prefs.showOnKromka);
         if (typeof prefs.showOnPras === "boolean") setShowOnPras(prefs.showOnPras);
         if (typeof prefs.showReadyAssembly === "boolean") setShowReadyAssembly(prefs.showReadyAssembly);
+        if (typeof prefs.showAwaitShipment === "boolean") setShowAwaitShipment(prefs.showAwaitShipment);
         if (typeof prefs.showShipped === "boolean") setShowShipped(prefs.showShipped);
         if (typeof prefs.showOnlyEmpty === "boolean") setShowAwaiting(prefs.showOnlyEmpty);
         if (typeof prefs.showCompletedRedCells === "boolean") setShowShipped(prefs.showCompletedRedCells);
@@ -633,6 +637,7 @@ export default function App() {
     setShowOnKromka(DEFAULT_SHIPMENT_PREFS.showOnKromka);
     setShowOnPras(DEFAULT_SHIPMENT_PREFS.showOnPras);
     setShowReadyAssembly(DEFAULT_SHIPMENT_PREFS.showReadyAssembly);
+    setShowAwaitShipment(DEFAULT_SHIPMENT_PREFS.showAwaitShipment);
     setShowShipped(DEFAULT_SHIPMENT_PREFS.showShipped);
     setCollapsedSections(DEFAULT_SHIPMENT_PREFS.collapsedSections);
   }
@@ -649,12 +654,24 @@ export default function App() {
           showOnKromka,
           showOnPras,
           showReadyAssembly,
+          showAwaitShipment,
           showShipped,
           collapsedSections,
         })
       );
     } catch (_) {}
-  }, [weekFilter, shipmentSort, showAwaiting, showOnPilka, showOnKromka, showOnPras, showReadyAssembly, showShipped, collapsedSections]);
+  }, [
+    weekFilter,
+    shipmentSort,
+    showAwaiting,
+    showOnPilka,
+    showOnKromka,
+    showOnPras,
+    showReadyAssembly,
+    showAwaitShipment,
+    showShipped,
+    collapsedSections,
+  ]);
 
   useEffect(() => {
     try {
@@ -866,7 +883,8 @@ export default function App() {
     if (stageKey === "on_pilka_wait" || stageKey === "on_pilka_work") return showOnPilka;
     if (stageKey === "on_kromka_wait" || stageKey === "on_kromka_work") return showOnKromka;
     if (stageKey === "on_pras_wait" || stageKey === "on_pras_work") return showOnPras;
-    if (stageKey === "ready_assembly" || stageKey === "assembled_wait_ship") return showReadyAssembly;
+    if (stageKey === "ready_assembly") return showReadyAssembly;
+    if (stageKey === "assembled_wait_ship") return showAwaitShipment;
     if (stageKey === "shipped") return showShipped;
     return true;
   }
@@ -936,6 +954,7 @@ export default function App() {
     showOnKromka,
     showOnPras,
     showReadyAssembly,
+    showAwaitShipment,
     showShipped,
   ]);
 
@@ -1782,6 +1801,14 @@ export default function App() {
                   onChange={(e) => setShowReadyAssembly(e.target.checked)}
                 />
                 <span>Готовы к сборке</span>
+              </label>
+              <label className="empty-only-toggle">
+                <input
+                  type="checkbox"
+                  checked={showAwaitShipment}
+                  onChange={(e) => setShowAwaitShipment(e.target.checked)}
+                />
+                <span>Ждёт отправку</span>
               </label>
               <label className="empty-only-toggle">
                 <input
