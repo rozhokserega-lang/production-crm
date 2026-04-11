@@ -6,6 +6,7 @@ import {
   getOverviewLaneId,
   isCustomerShippedOverall,
   isOrderCustomerShipped,
+  PipelineStage,
 } from "./orderPipeline";
 
 const TABS = [
@@ -214,6 +215,48 @@ function shipmentOrderKey(sourceRow, week) {
   return `${String(sourceRow || "").trim()}|${String(week || "").trim()}`;
 }
 
+/** Резервная привязка заказа к ячейке, если в API нет source_row_id (типично для Supabase orders). */
+function shipmentOrderItemWeekKey(itemName, week) {
+  return `${normText(itemName)}|${String(week || "").trim()}`;
+}
+
+function orderUpdatedTs(o) {
+  return new Date(o?.updatedAt || o?.updated_at || o?.createdAt || o?.created_at || 0).getTime();
+}
+
+function mergeOrderPreferNewer(map, key, o) {
+  if (!key || !o) return;
+  const prev = map.get(key);
+  if (!prev || orderUpdatedTs(o) >= orderUpdatedTs(prev)) map.set(key, o);
+}
+
+/** Согласование этапа отгрузки с pipeline заказа (Производство ↔ Отгрузка). */
+function mapPipelineStageToShipmentKey(order) {
+  const ps = order?.pipelineStage ?? inferPipelineStage(order);
+  const pilka = String(order?.pilkaStatus || "").toLowerCase();
+  const kromka = String(order?.kromkaStatus || "").toLowerCase();
+  const pras = String(order?.prasStatus || "").toLowerCase();
+  switch (ps) {
+    case PipelineStage.SHIPPED:
+      return "shipped";
+    case PipelineStage.READY_TO_SHIP:
+    case PipelineStage.ASSEMBLED:
+      return "assembled_wait_ship";
+    case PipelineStage.WORKSHOP_COMPLETE:
+      return "ready_assembly";
+    case PipelineStage.PRAS:
+      if (pras.includes("в работе")) return "on_pras_work";
+      return "on_pras_wait";
+    case PipelineStage.KROMKA:
+      if (kromka.includes("в работе") || kromka.includes("пауза")) return "on_kromka_work";
+      return "on_kromka_wait";
+    case PipelineStage.PILKA:
+    default:
+      if (pilka.includes("в работе") || pilka.includes("пауза")) return "on_pilka_work";
+      return "on_pilka_wait";
+  }
+}
+
 function stageLabel(stageKey) {
   if (stageKey === "awaiting") return "Ожидаю заказ";
   if (stageKey === "on_pilka_wait") return "На пиле (ожидает запуск)";
@@ -279,29 +322,17 @@ function getShipmentCellStatusShort(c) {
   return "Статус";
 }
 
-function getShipmentStageKey(c, sourceRow, orderByShipmentKey) {
+function getShipmentStageKey(c, sourceRow, orderMaps, itemName) {
   if (!c) return "awaiting";
   if (c.canSendToWork && !c.inWork) return "awaiting";
-  const order = orderByShipmentKey.get(shipmentOrderKey(sourceRow, c.week));
-  const pilka = String(order?.pilkaStatus || order?.pilka_status || order?.pilka || "").toLowerCase();
-  const kromka = String(order?.kromkaStatus || order?.kromka_status || order?.kromka || "").toLowerCase();
-  const pras = String(order?.prasStatus || order?.pras_status || order?.pras || "").toLowerCase();
-  const assembly = String(order?.assemblyStatus || order?.assembly_status || "").toLowerCase();
-  const overall = String(order?.overallStatus || order?.overall_status || order?.overall || "").toLowerCase();
-  // Старт производства («на пилу») — не финальная отгрузка (см. orderPipeline.js).
-  if (overall.includes("на пилу")) {
-    if (pilka.includes("готов")) return "on_kromka_wait";
-    if (pilka.includes("в работе") || pilka.includes("пауза")) return "on_pilka_work";
-    return "on_pilka_wait";
+  const rowKey = shipmentOrderKey(sourceRow, c.week);
+  let order = orderMaps?.byRowWeek?.get(rowKey);
+  if (!order && itemName && orderMaps?.byItemWeek) {
+    order = orderMaps.byItemWeek.get(shipmentOrderItemWeekKey(itemName, c.week));
   }
-  if (isCustomerShippedOverall(overall)) return "shipped";
-  if (assembly.includes("собран") || overall.includes("готово к отправке")) return "assembled_wait_ship";
-  if (pras.includes("готов")) return "ready_assembly";
-  if (pras.includes("в работе")) return "on_pras_work";
-  if (kromka.includes("готов")) return "on_pras_wait";
-  if (kromka.includes("в работе")) return "on_kromka_work";
-  if (pilka.includes("готов")) return "on_kromka_wait";
-  if (pilka.includes("в работе")) return "on_pilka_work";
+  if (order) {
+    return mapPipelineStageToShipmentKey(order);
+  }
   if (c.inWork) return "on_pilka_wait";
   if (isRedCell(c.bg)) return "shipped";
   if (isBlueCell(c.bg)) return "on_kromka_work";
@@ -469,7 +500,8 @@ export default function App() {
   const loadInFlightRef = useRef(false);
 
   async function load() {
-    if (loadInFlightRef.current) return;
+    // Не выходим при «занято»: иначе при смене вкладки во время запроса новый load не стартует,
+    // старый ответ отбрасывается по seq — и список заказов может остаться пустым (Обзор/Производство).
     loadInFlightRef.current = true;
     const seq = ++loadSeqRef.current;
     setLoading(true);
@@ -797,19 +829,18 @@ export default function App() {
     return `${planSection}. ${chosenMaterial}`.replace(/\s+\./g, ".").trim();
   }, [planCatalogBySection, planSection, planMaterial]);
 
-  const shipmentOrderByKey = useMemo(() => {
-    const map = new Map();
+  const shipmentOrderMaps = useMemo(() => {
+    const byRowWeek = new Map();
+    const byItemWeek = new Map();
     (shipmentOrders || []).forEach((o) => {
-      const sourceRow = String(o?.source_row_id || o?.sourceRowId || "").trim();
       const week = String(o?.week || "").trim();
-      if (!sourceRow || !week) return;
-      const key = shipmentOrderKey(sourceRow, week);
-      const prev = map.get(key);
-      const prevTs = new Date(prev?.updatedAt || prev?.updated_at || prev?.createdAt || prev?.created_at || 0).getTime();
-      const curTs = new Date(o?.updatedAt || o?.updated_at || o?.createdAt || o?.created_at || 0).getTime();
-      if (!prev || curTs >= prevTs) map.set(key, o);
+      if (!week) return;
+      const sourceRow = String(o?.source_row_id || o?.sourceRowId || "").trim();
+      if (sourceRow) mergeOrderPreferNewer(byRowWeek, shipmentOrderKey(sourceRow, week), o);
+      const item = String(o?.item || "").trim();
+      if (item) mergeOrderPreferNewer(byItemWeek, shipmentOrderItemWeekKey(item, week), o);
     });
-    return map;
+    return { byRowWeek, byItemWeek };
   }, [shipmentOrders]);
 
   function passesShipmentStageFilter(stageKey) {
@@ -836,7 +867,7 @@ export default function App() {
             const visibleCells = (it.cells || []).filter((c) => {
               const qtyOk = (Number(c.qty) || 0) > 0;
               if (!qtyOk) return false;
-              const stageKey = getShipmentStageKey(c, sourceRow, shipmentOrderByKey);
+              const stageKey = getShipmentStageKey(c, sourceRow, shipmentOrderMaps, it.item);
               return passesShipmentStageFilter(stageKey);
             });
             const byWeek = weekFilter === "all" || visibleCells.some((c) => String(c.week || "") === weekFilter);
@@ -866,25 +897,36 @@ export default function App() {
         String(x.orderId || x.order_id || "").toLowerCase().includes(q);
       if (!byWeek || !byQuery) return false;
       if (view === "stats" || view === "overview") return true;
-      const pilkaStatus = String(x.pilkaStatus || x.pilka || "");
-      const kromkaStatus = String(x.kromkaStatus || x.kromka || "");
-      const prasStatus = String(x.prasStatus || x.pras || "");
-      const pilkaDone = isDone(pilkaStatus);
-      const kromkaDone = isDone(kromkaStatus);
-      const prasDone = isDone(prasStatus);
-      if (tab === "pilka") return !pilkaDone; // готовые не показываем
-      if (tab === "kromka") return pilkaDone && !kromkaDone;
-      if (tab === "pras") return pilkaDone && kromkaDone && !prasDone;
+      // Производство: те же «дорожки», что и в «Обзор заказов» (pipeline), иначе вкладки и канбан расходятся.
+      if (tab === "pilka") return getOverviewLaneId(x) === "pilka";
+      if (tab === "kromka") return getOverviewLaneId(x) === "kromka";
+      if (tab === "pras") return getOverviewLaneId(x) === "pras";
       return true;
     });
-  }, [rows, shipmentBoard, shipmentOrderByKey, laborRows, view, query, weekFilter, shipmentSort, showAwaiting, showOnPilka, showOnKromka, showOnPras, showReadyAssembly, showShipped]);
+  }, [
+    rows,
+    shipmentBoard,
+    shipmentOrderMaps,
+    laborRows,
+    view,
+    tab,
+    query,
+    weekFilter,
+    shipmentSort,
+    showAwaiting,
+    showOnPilka,
+    showOnKromka,
+    showOnPras,
+    showReadyAssembly,
+    showShipped,
+  ]);
 
   function visibleCellsForItem(it) {
     const sourceRow = it?.sourceRowId != null ? String(it.sourceRowId) : String(it?.row || "");
     return (it?.cells || []).filter((c) => {
       const qtyOk = (Number(c.qty) || 0) > 0;
       if (!qtyOk) return false;
-      const stageKey = getShipmentStageKey(c, sourceRow, shipmentOrderByKey);
+      const stageKey = getShipmentStageKey(c, sourceRow, shipmentOrderMaps, it.item);
       return passesShipmentStageFilter(stageKey);
     });
   }
@@ -1096,9 +1138,10 @@ export default function App() {
       const assemblyDone = isDone(assemblyStatus);
       const shipped = isOrderCustomerShipped(o);
       const onPackaging = /упаков/i.test(overallStatus);
-      if (tab === "pilka") return !pilkaDone;
-      if (tab === "kromka") return pilkaDone && !kromkaDone;
-      if (tab === "pras") return pilkaDone && kromkaDone && !prasDone;
+      const lane = getOverviewLaneId(o);
+      if (tab === "pilka") return lane === "pilka";
+      if (tab === "kromka") return lane === "kromka";
+      if (tab === "pras") return lane === "pras";
       if (tab === "assembly") return pilkaDone && kromkaDone && prasDone && !assemblyDone && !shipped;
       if (tab === "done") return assemblyDone && !onPackaging && !shipped;
       return true;
@@ -1165,7 +1208,7 @@ export default function App() {
         visibleCellsForItem(it).forEach((c) => {
           const sourceRow = it.sourceRowId != null ? String(it.sourceRowId) : String(it.row);
           const sourceCol = c.sourceColId != null ? String(c.sourceColId) : String(c.col);
-          const stageKey = getShipmentStageKey(c, sourceRow, shipmentOrderByKey);
+          const stageKey = getShipmentStageKey(c, sourceRow, shipmentOrderMaps, it.item);
           const displayBg = stageBg(stageKey, c.bg || "#ffffff");
           rowsFlat.push({
             key: `${sourceRow}-${sourceCol}`,
@@ -1189,7 +1232,7 @@ export default function App() {
       });
     });
     return rowsFlat;
-  }, [view, shipmentRenderSections, shipmentOrderByKey]);
+  }, [view, shipmentRenderSections, shipmentOrderMaps]);
   const laborTableRows = useMemo(() => {
     if (view !== "labor") return [];
     const toNum = (v) => Number(v || 0);
@@ -1554,6 +1597,8 @@ export default function App() {
           </>
         )}
       </section>
+
+      {loading && <div className="load-hint">Загрузка данных…</div>}
 
       {view === "shipment" && (
         <section className="color-legend">
@@ -1996,7 +2041,7 @@ export default function App() {
                                 : c.inWork
                                   ? "ship-cell-lg inwork"
                                   : "ship-cell-lg blocked";
-                              const stageKey = getShipmentStageKey(c, sourceRow, shipmentOrderByKey);
+                              const stageKey = getShipmentStageKey(c, sourceRow, shipmentOrderMaps, it.item);
                               const displayBg = stageBg(stageKey, c.bg || "#ffffff");
                               const sheetsN = Number(c.sheetsNeeded || 0);
                               const bottomPill =
