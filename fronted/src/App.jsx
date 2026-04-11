@@ -27,7 +27,6 @@ const TABS = [
 const VIEWS = [
   { id: "shipment", label: "Отгрузка" },
   { id: "overview", label: "Обзор заказов" },
-  { id: "orders_shipped", label: "Отгружено" },
   { id: "workshop", label: "Производство" },
   { id: "labor", label: "Трудоемкость" },
   { id: "stats", label: "Статистика" },
@@ -468,6 +467,8 @@ function formatDateTimeForPrint(date) {
 export default function App() {
   const [view, setView] = useState("shipment");
   const [tab, setTab] = useState("all");
+  /** Подраздел внутри «Обзор заказов»: канбан или список отгруженных (вкладка в конце блока). */
+  const [overviewSubView, setOverviewSubView] = useState("kanban");
   const [shipmentTab, setShipmentTab] = useState("orders");
   const [rows, setRows] = useState([]);
   const [shipmentBoard, setShipmentBoard] = useState({ sections: [] });
@@ -545,7 +546,7 @@ export default function App() {
         } catch (_) {
           setShipmentOrders([]);
         }
-      } else if (view === "overview" || view === "orders_shipped") {
+      } else if (view === "overview") {
         data = await callBackend("webGetOrdersAll");
       } else if (view === "labor") {
         data = await callBackend("webGetLaborTable");
@@ -587,6 +588,10 @@ export default function App() {
     const id = setInterval(load, 15000);
     return () => clearInterval(id);
   }, [tab, view]);
+
+  useEffect(() => {
+    if (view !== "overview") setOverviewSubView("kanban");
+  }, [view]);
 
   useEffect(() => {
     try {
@@ -909,7 +914,6 @@ export default function App() {
         String(x.item || "").toLowerCase().includes(q) ||
         String(x.orderId || x.order_id || "").toLowerCase().includes(q);
       if (!byWeek || !byQuery) return false;
-      if (view === "orders_shipped") return getOverviewLaneId(x) === "shipped";
       if (view === "stats" || view === "overview") return true;
       // Производство: те же «дорожки», что и в «Обзор заказов» (pipeline), иначе вкладки и канбан расходятся.
       if (tab === "pilka") return getOverviewLaneId(x) === "pilka";
@@ -934,6 +938,11 @@ export default function App() {
     showReadyAssembly,
     showShipped,
   ]);
+
+  const overviewShippedOnly = useMemo(() => {
+    if (view !== "overview") return [];
+    return filtered.filter((x) => getOverviewLaneId(x) === "shipped");
+  }, [view, filtered]);
 
   function visibleCellsForItem(it) {
     const sourceRow = it?.sourceRowId != null ? String(it.sourceRowId) : String(it?.row || "");
@@ -1181,7 +1190,6 @@ export default function App() {
   }, [filtered, view, tab]);
   const overviewColumns = useMemo(() => {
     if (view !== "overview") return [];
-    // Колонку «Отгружено» не показываем здесь — отдельная вкладка «Отгружено», чтобы не смешивать с «Готово к отправке».
     const defs = [
       { id: "pilka", title: "Пила" },
       { id: "kromka", title: "Кромка" },
@@ -1189,6 +1197,7 @@ export default function App() {
       { id: "workshop_complete", title: "Готов к сборке" },
       { id: "assembled", title: "Собран" },
       { id: "ready_to_ship", title: "Готово к отправке" },
+      { id: "shipped", title: "Отгружено" },
     ];
     const grouped = Object.fromEntries(defs.map((x) => [x.id, []]));
     (filtered || []).forEach((o) => {
@@ -1587,15 +1596,15 @@ export default function App() {
             <div className="kpi"><span>К отправке в работу</span><b>{shipmentKpi.readyAssembly}</b></div>
             <div className="kpi"><span>Отправлено в цех</span><b>{shipmentKpi.assembled}</b></div>
           </>
-        ) : view === "orders_shipped" ? (
+        ) : view === "overview" && overviewSubView === "shipped" ? (
           <>
             <div className="kpi">
               <span>Отгружено заказов</span>
-              <b>{filtered.length}</b>
+              <b>{overviewShippedOnly.length}</b>
             </div>
             <div className="kpi">
               <span>Суммарно шт</span>
-              <b>{filtered.reduce((s, x) => s + (Number(x.qty) || 0), 0)}</b>
+              <b>{overviewShippedOnly.reduce((s, x) => s + (Number(x.qty) || 0), 0)}</b>
             </div>
           </>
         ) : view === "overview" ? (
@@ -1662,6 +1671,24 @@ export default function App() {
       )}
 
       <section className="controls">
+        {view === "overview" && (
+          <div className="tabs tabs--overview-sub">
+            <button
+              type="button"
+              className={overviewSubView === "kanban" ? "tab active" : "tab"}
+              onClick={() => setOverviewSubView("kanban")}
+            >
+              Канбан
+            </button>
+            <button
+              type="button"
+              className={overviewSubView === "shipped" ? "tab active" : "tab"}
+              onClick={() => setOverviewSubView("shipped")}
+            >
+              Отгружено
+            </button>
+          </div>
+        )}
         {view === "workshop" && (
           <div className="tabs">
             {TABS.map((t) => (
@@ -2160,14 +2187,9 @@ export default function App() {
             </div>
           </div>
         )}
-        {view === "overview" && (
+        {view === "overview" && overviewSubView === "kanban" && (
           <>
             {!filtered.length && !loading && <div className="empty">Нет заказов для обзора</div>}
-            {filtered.length > 0 && !overviewColumns.some((c) => c.items.length) && !loading && (
-              <div className="empty empty--hint">
-                Все заказы сейчас в статусе «Отгружено» — откройте вкладку «Отгружено».
-              </div>
-            )}
             {overviewColumns.some((c) => c.items.length) && (
               <div className="overview-board">
                 {overviewColumns.map((col) => (
@@ -2198,36 +2220,36 @@ export default function App() {
             )}
           </>
         )}
-        {view === "orders_shipped" && (
+        {view === "overview" && overviewSubView === "shipped" && (
           <>
-            {!filtered.length && !loading && <div className="empty">Нет отгруженных заказов</div>}
-            {filtered.length > 0 && (
+            {!overviewShippedOnly.length && !loading && <div className="empty">Нет отгруженных заказов</div>}
+            {overviewShippedOnly.length > 0 && (
               <div className="overview-board overview-board--shipped-tab">
                 <div className="overview-column">
                   <div className="overview-column__head">
                     <span>Отгружено</span>
-                    <span className="section-count">{filtered.length}</span>
+                    <span className="section-count">{overviewShippedOnly.length}</span>
                   </div>
                   <div className="overview-column__list">
-                    {[...filtered]
+                    {[...overviewShippedOnly]
                       .sort((a, b) => String(a.item || "").localeCompare(String(b.item || ""), "ru"))
                       .map((o) => {
-                      const orderId = String(o.orderId || o.order_id || "");
-                      return (
-                        <article
-                          key={`shipped-${orderId || o.item}`}
-                          className="overview-card lane-shipped"
-                        >
-                          <div className="overview-card__id">Заказ #{orderId || "-"}</div>
-                          <div className="overview-card__item">{o.item}</div>
-                          <div className="overview-card__meta">
-                            <span>План: {o.week || "-"}</span>
-                            <span>Кол-во: {Number(o.qty || 0)}</span>
-                          </div>
-                          <div className="overview-card__stage lane-shipped">{getStageLabel(o)}</div>
-                        </article>
-                      );
-                    })}
+                        const orderId = String(o.orderId || o.order_id || "");
+                        return (
+                          <article
+                            key={`shipped-${orderId || o.item}`}
+                            className="overview-card lane-shipped"
+                          >
+                            <div className="overview-card__id">Заказ #{orderId || "-"}</div>
+                            <div className="overview-card__item">{o.item}</div>
+                            <div className="overview-card__meta">
+                              <span>План: {o.week || "-"}</span>
+                              <span>Кол-во: {Number(o.qty || 0)}</span>
+                            </div>
+                            <div className="overview-card__stage lane-shipped">{getStageLabel(o)}</div>
+                          </article>
+                        );
+                      })}
                   </div>
                 </div>
               </div>

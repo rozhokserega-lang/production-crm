@@ -276,6 +276,10 @@ button:disabled {
   grid-template-columns: minmax(240px, min(100%, 420px));
 }
 
+.tabs--overview-sub {
+  margin-bottom: 4px;
+}
+
 .empty.empty--hint {
   border-color: #bae6fd;
   background: #f0f9ff;
