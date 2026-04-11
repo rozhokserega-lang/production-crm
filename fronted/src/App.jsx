@@ -1,24 +1,33 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { callBackend } from "./api";
 import {
-  inferPipelineStage,
   getOrderStageDisplayLabel as getStageLabel,
   getOverviewLaneId,
+  OVERVIEW_POST_PRODUCTION_LANE_IDS,
   isCustomerShippedOverall,
   isOrderCustomerShipped,
   PipelineStage,
+  resolvePipelineStage,
 } from "./orderPipeline";
+
+/** Для KPI «Статистика»: собрано, готово к отправке клиенту, отгружено. */
+const TERMINAL_PIPELINE_STAGES = new Set([
+  PipelineStage.ASSEMBLED,
+  PipelineStage.READY_TO_SHIP,
+  PipelineStage.SHIPPED,
+]);
 
 const TABS = [
   { id: "pilka", label: "Пила" },
   { id: "kromka", label: "Кромка" },
   { id: "pras", label: "Присадка" },
   { id: "assembly", label: "Сборка" },
-  { id: "done", label: "Готово к отправке" },
+  { id: "done", label: "Финал" },
 ];
 const VIEWS = [
   { id: "shipment", label: "Отгрузка" },
   { id: "overview", label: "Обзор заказов" },
+  { id: "orders_shipped", label: "Отгружено" },
   { id: "workshop", label: "Производство" },
   { id: "labor", label: "Трудоемкость" },
   { id: "stats", label: "Статистика" },
@@ -77,15 +86,24 @@ const STRAP_SHEET_WIDTH = 2800;
 const STRAP_SHEET_HEIGHT = 2070;
 
 function statusClass(order) {
+  const ps = resolvePipelineStage(order);
+  if (ps === PipelineStage.SHIPPED || ps === PipelineStage.READY_TO_SHIP || ps === PipelineStage.ASSEMBLED) {
+    return "done";
+  }
+  const a = String(order?.assemblyStatus || "");
+  if (a.includes("СОБРАНО") || a.toLowerCase().includes("собрано")) return "done";
   const pilka = String(order?.pilkaStatus || order?.pilka || "");
   const kromka = String(order?.kromkaStatus || order?.kromka || "");
   const pras = String(order?.prasStatus || order?.pras || "");
-  const a = String(order?.assemblyStatus || "");
-  if (a.includes("СОБРАНО") || a.toLowerCase().includes("собрано")) return "done";
-  const inWork = (s) => s.toLowerCase().includes("в работе");
-  const onPause = (s) => s.toLowerCase().includes("пауза");
-  if (onPause(pilka) || onPause(kromka) || onPause(pras)) return "pause";
-  if (inWork(pras) || inWork(kromka) || inWork(pilka)) return "work";
+  const lc = (s) => String(s || "").toLowerCase();
+  const inWork = (s) => lc(s).includes("в работе");
+  const onPause = (s) => lc(s).includes("пауза");
+  if (ps === PipelineStage.PILKA && onPause(pilka)) return "pause";
+  if (ps === PipelineStage.KROMKA && onPause(kromka)) return "pause";
+  if (ps === PipelineStage.PRAS && onPause(pras)) return "pause";
+  if (ps === PipelineStage.PILKA && inWork(pilka)) return "work";
+  if (ps === PipelineStage.KROMKA && inWork(kromka)) return "work";
+  if (ps === PipelineStage.PRAS && inWork(pras)) return "work";
   return "wait";
 }
 
@@ -232,7 +250,7 @@ function mergeOrderPreferNewer(map, key, o) {
 
 /** Согласование этапа отгрузки с pipeline заказа (Производство ↔ Отгрузка). */
 function mapPipelineStageToShipmentKey(order) {
-  const ps = order?.pipelineStage ?? inferPipelineStage(order);
+  const ps = resolvePipelineStage(order);
   const pilka = String(order?.pilkaStatus || "").toLowerCase();
   const kromka = String(order?.kromkaStatus || "").toLowerCase();
   const pras = String(order?.prasStatus || "").toLowerCase();
@@ -378,7 +396,8 @@ function normalizeOrder(row) {
     createdAt: row.createdAt ?? row.created_at ?? "",
     sheetsNeeded: row.sheetsNeeded ?? row.sheets_needed ?? 0,
   };
-  out.pipelineStage = row.pipeline_stage ?? row.pipelineStage ?? inferPipelineStage(out);
+  out.pipelineStage = row.pipeline_stage ?? row.pipelineStage ?? null;
+  out.pipelineStage = resolvePipelineStage(out);
   return out;
 }
 
@@ -526,7 +545,7 @@ export default function App() {
         } catch (_) {
           setShipmentOrders([]);
         }
-      } else if (view === "overview") {
+      } else if (view === "overview" || view === "orders_shipped") {
         data = await callBackend("webGetOrdersAll");
       } else if (view === "labor") {
         data = await callBackend("webGetLaborTable");
@@ -656,13 +675,7 @@ export default function App() {
     return v.includes("готов") || v.includes("собрано");
   }
   function getCurrentStage(order) {
-    const pilkaDone = isDone(order.pilkaStatus);
-    const kromkaDone = isDone(order.kromkaStatus);
-    const prasDone = isDone(order.prasStatus);
-    if (!pilkaDone) return "Пила";
-    if (!kromkaDone) return "Кромка";
-    if (!prasDone) return "Присадка";
-    return "Завершено";
+    return getStageLabel(order);
   }
   function getColorGroup(item) {
     const text = String(item || "").trim();
@@ -896,6 +909,7 @@ export default function App() {
         String(x.item || "").toLowerCase().includes(q) ||
         String(x.orderId || x.order_id || "").toLowerCase().includes(q);
       if (!byWeek || !byQuery) return false;
+      if (view === "orders_shipped") return getOverviewLaneId(x) === "shipped";
       if (view === "stats" || view === "overview") return true;
       // Производство: те же «дорожки», что и в «Обзор заказов» (pipeline), иначе вкладки и канбан расходятся.
       if (tab === "pilka") return getOverviewLaneId(x) === "pilka";
@@ -1078,7 +1092,10 @@ export default function App() {
     };
     const work = filtered.filter(stageWork).length;
     const paused = filtered.filter(stagePause).length;
-    const done = filtered.filter((x) => statusClass(x) === "done").length;
+    const done =
+      view === "workshop"
+        ? filtered.filter((x) => resolvePipelineStage(x) === PipelineStage.ASSEMBLED).length
+        : filtered.filter((x) => TERMINAL_PIPELINE_STAGES.has(resolvePipelineStage(x))).length;
     return { total, work, paused, done };
   }, [filtered, view, tab]);
   const statsGroups = useMemo(() => {
@@ -1164,12 +1181,14 @@ export default function App() {
   }, [filtered, view, tab]);
   const overviewColumns = useMemo(() => {
     if (view !== "overview") return [];
+    // Колонку «Отгружено» не показываем здесь — отдельная вкладка «Отгружено», чтобы не смешивать с «Готово к отправке».
     const defs = [
       { id: "pilka", title: "Пила" },
       { id: "kromka", title: "Кромка" },
       { id: "pras", title: "Присадка" },
-      { id: "assembly", title: "Сборка" },
-      { id: "done", title: "Готово к отправке" },
+      { id: "workshop_complete", title: "Готов к сборке" },
+      { id: "assembled", title: "Собран" },
+      { id: "ready_to_ship", title: "Готово к отправке" },
     ];
     const grouped = Object.fromEntries(defs.map((x) => [x.id, []]));
     (filtered || []).forEach((o) => {
@@ -1568,17 +1587,38 @@ export default function App() {
             <div className="kpi"><span>К отправке в работу</span><b>{shipmentKpi.readyAssembly}</b></div>
             <div className="kpi"><span>Отправлено в цех</span><b>{shipmentKpi.assembled}</b></div>
           </>
+        ) : view === "orders_shipped" ? (
+          <>
+            <div className="kpi">
+              <span>Отгружено заказов</span>
+              <b>{filtered.length}</b>
+            </div>
+            <div className="kpi">
+              <span>Суммарно шт</span>
+              <b>{filtered.reduce((s, x) => s + (Number(x.qty) || 0), 0)}</b>
+            </div>
+          </>
         ) : view === "overview" ? (
           <>
             <div className="kpi"><span>Всего заказов</span><b>{filtered.length}</b></div>
             <div className="kpi">
               <span>В производстве</span>
-              <b>{filtered.filter((x) => getOverviewLaneId(x) !== "done").length}</b>
+              <b>
+                {
+                  filtered.filter(
+                    (x) => !OVERVIEW_POST_PRODUCTION_LANE_IDS.includes(getOverviewLaneId(x))
+                  ).length
+                }
+              </b>
             </div>
             <div className="kpi"><span>На паузе</span><b>{filtered.filter((x) => statusClass(x) === "pause").length}</b></div>
             <div className="kpi">
               <span>Готово к отправке</span>
-              <b>{filtered.filter((x) => getOverviewLaneId(x) === "done").length}</b>
+              <b>{filtered.filter((x) => getOverviewLaneId(x) === "ready_to_ship").length}</b>
+            </div>
+            <div className="kpi">
+              <span>Отгружено</span>
+              <b>{filtered.filter((x) => getOverviewLaneId(x) === "shipped").length}</b>
             </div>
           </>
         ) : view === "labor" ? (
@@ -1588,12 +1628,22 @@ export default function App() {
             <div className="kpi"><span>Всего изделий</span><b>{Math.round(laborKpi.totalQty)}</b></div>
             <div className="kpi"><span>Среднее / заказ (мин)</span><b>{Math.round(laborKpi.avgPerOrder)}</b></div>
           </>
-        ) : (
+        ) : view === "workshop" ? (
           <>
             <div className="kpi"><span>Всего</span><b>{kpi.total}</b></div>
             <div className="kpi"><span>В работе</span><b>{kpi.work}</b></div>
             <div className="kpi"><span>На паузе</span><b>{kpi.paused}</b></div>
             <div className="kpi"><span>Собрано</span><b>{kpi.done}</b></div>
+          </>
+        ) : (
+          <>
+            <div className="kpi"><span>Всего</span><b>{kpi.total}</b></div>
+            <div className="kpi"><span>В работе</span><b>{kpi.work}</b></div>
+            <div className="kpi"><span>На паузе</span><b>{kpi.paused}</b></div>
+            <div className="kpi">
+              <span>Собрано и отгрузка</span>
+              <b>{kpi.done}</b>
+            </div>
           </>
         )}
       </section>
@@ -2112,33 +2162,76 @@ export default function App() {
         )}
         {view === "overview" && (
           <>
-            {!overviewColumns.some((c) => c.items.length) && !loading && <div className="empty">Нет заказов для обзора</div>}
-            <div className="overview-board">
-              {overviewColumns.map((col) => (
-                <div key={col.id} className="overview-column">
+            {!filtered.length && !loading && <div className="empty">Нет заказов для обзора</div>}
+            {filtered.length > 0 && !overviewColumns.some((c) => c.items.length) && !loading && (
+              <div className="empty empty--hint">
+                Все заказы сейчас в статусе «Отгружено» — откройте вкладку «Отгружено».
+              </div>
+            )}
+            {overviewColumns.some((c) => c.items.length) && (
+              <div className="overview-board">
+                {overviewColumns.map((col) => (
+                  <div key={col.id} className="overview-column">
+                    <div className="overview-column__head">
+                      <span>{col.title}</span>
+                      <span className="section-count">{col.items.length}</span>
+                    </div>
+                    <div className="overview-column__list">
+                      {col.items.map((o) => {
+                        const orderId = String(o.orderId || o.order_id || "");
+                        return (
+                          <article key={`${col.id}-${orderId || o.item}`} className={`overview-card lane-${col.id}`}>
+                            <div className="overview-card__id">Заказ #{orderId || "-"}</div>
+                            <div className="overview-card__item">{o.item}</div>
+                            <div className="overview-card__meta">
+                              <span>План: {o.week || "-"}</span>
+                              <span>Кол-во: {Number(o.qty || 0)}</span>
+                            </div>
+                            <div className={`overview-card__stage lane-${col.id}`}>{getStageLabel(o)}</div>
+                          </article>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+        {view === "orders_shipped" && (
+          <>
+            {!filtered.length && !loading && <div className="empty">Нет отгруженных заказов</div>}
+            {filtered.length > 0 && (
+              <div className="overview-board overview-board--shipped-tab">
+                <div className="overview-column">
                   <div className="overview-column__head">
-                    <span>{col.title}</span>
-                    <span className="section-count">{col.items.length}</span>
+                    <span>Отгружено</span>
+                    <span className="section-count">{filtered.length}</span>
                   </div>
                   <div className="overview-column__list">
-                    {col.items.map((o) => {
+                    {[...filtered]
+                      .sort((a, b) => String(a.item || "").localeCompare(String(b.item || ""), "ru"))
+                      .map((o) => {
                       const orderId = String(o.orderId || o.order_id || "");
                       return (
-                        <article key={`${col.id}-${orderId || o.item}`} className={`overview-card lane-${col.id}`}>
+                        <article
+                          key={`shipped-${orderId || o.item}`}
+                          className="overview-card lane-shipped"
+                        >
                           <div className="overview-card__id">Заказ #{orderId || "-"}</div>
                           <div className="overview-card__item">{o.item}</div>
                           <div className="overview-card__meta">
                             <span>План: {o.week || "-"}</span>
                             <span>Кол-во: {Number(o.qty || 0)}</span>
                           </div>
-                          <div className={`overview-card__stage lane-${col.id}`}>{getStageLabel(o)}</div>
+                          <div className="overview-card__stage lane-shipped">{getStageLabel(o)}</div>
                         </article>
                       );
                     })}
                   </div>
                 </div>
-              ))}
-            </div>
+              </div>
+            )}
           </>
         )}
         {view === "labor" && (

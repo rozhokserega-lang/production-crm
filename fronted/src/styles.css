@@ -106,7 +106,7 @@ button:disabled {
 
 .kpi-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(120px, 180px));
+  grid-template-columns: repeat(auto-fit, minmax(118px, 160px));
   justify-content: start;
   gap: 10px;
   margin: 10px 0;
@@ -267,9 +267,19 @@ button:disabled {
 
 .overview-board {
   display: grid;
-  grid-template-columns: repeat(5, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: 10px;
   align-items: start;
+}
+
+.overview-board--shipped-tab {
+  grid-template-columns: minmax(240px, min(100%, 420px));
+}
+
+.empty.empty--hint {
+  border-color: #bae6fd;
+  background: #f0f9ff;
+  color: #0c4a6e;
 }
 
 .overview-column {
@@ -315,8 +325,16 @@ button:disabled {
   border-left-color: #f59e0b;
 }
 
-.overview-card.lane-assembly {
+.overview-card.lane-workshop_complete {
+  border-left-color: #ea580c;
+}
+
+.overview-card.lane-assembled {
   border-left-color: #16a34a;
+}
+
+.overview-card.lane-ready_to_ship {
+  border-left-color: #7c3aed;
 }
 
 .overview-card.lane-shipped {
@@ -376,10 +394,28 @@ button:disabled {
   border-color: #fde68a;
 }
 
-.overview-card__stage.lane-assembly {
+.overview-card__stage.lane-workshop_complete {
+  color: #9a3412;
+  background: #ffedd5;
+  border-color: #fed7aa;
+}
+
+.overview-card__stage.lane-assembled {
   color: #14532d;
   background: #dcfce7;
   border-color: #bbf7d0;
+}
+
+.overview-card__stage.lane-ready_to_ship {
+  color: #5b21b6;
+  background: #ede9fe;
+  border-color: #ddd6fe;
+}
+
+.overview-card__stage.lane-shipped {
+  color: #334155;
+  background: #e2e8f0;
+  border-color: #cbd5e1;
 }
 
 .card {

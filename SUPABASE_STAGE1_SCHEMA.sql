@@ -250,6 +250,7 @@ alter table public.orders add column if not exists pras_started_at timestamptz;
 alter table public.orders add column if not exists pras_done_at timestamptz;
 alter table public.orders add column if not exists pras_pause_started_at timestamptz;
 alter table public.orders add column if not exists pras_pause_acc_min integer not null default 0;
+alter table public.orders add column if not exists shipped boolean not null default false;
 
 create or replace function public.business_minutes(p_start timestamptz, p_end timestamptz)
 returns integer
@@ -297,44 +298,64 @@ begin
 end;
 $$;
 
-create or replace function public.web_set_stage_in_work(p_order_id text, p_stage text)
+-- Стадии цеха: «Готово» на пиле/кромке не переводит следующий этап в «В работе» (согласовано с фронтом).
+-- p_executor: опционально «В работе (Имя)» для учёта исполнителя.
+create or replace function public.web_set_stage_in_work(
+  p_order_id text,
+  p_stage text,
+  p_executor text default null
+)
 returns public.orders
 language plpgsql
+security definer
+set search_path to 'public', 'extensions', 'pg_temp'
 as $$
 declare
   v_now timestamptz := now();
   v_row public.orders;
+  v_executor text := nullif(trim(coalesce(p_executor, '')), '');
+  v_work_status text;
 begin
+  v_work_status := case
+    when v_executor is null then '🔨 В работе'
+    else '🔨 В работе (' || v_executor || ')'
+  end;
+
   if p_stage = 'pilka' then
     update public.orders
     set
-      pilka_status='🔨 В работе',
-      pilka_started_at=coalesce(pilka_started_at, v_now),
-      pilka_pause_started_at=null,
-      updated_at=v_now
-    where order_id=p_order_id
+      pilka_status = v_work_status,
+      pilka_started_at = coalesce(pilka_started_at, v_now),
+      pilka_pause_started_at = null,
+      updated_at = v_now
+    where order_id = p_order_id
     returning * into v_row;
   elsif p_stage = 'kromka' then
     update public.orders
     set
-      kromka_status='🔨 В работе',
-      kromka_started_at=coalesce(kromka_started_at, v_now),
-      kromka_pause_started_at=null,
-      updated_at=v_now
-    where order_id=p_order_id
+      kromka_status = v_work_status,
+      kromka_started_at = coalesce(kromka_started_at, v_now),
+      kromka_pause_started_at = null,
+      updated_at = v_now
+    where order_id = p_order_id
     returning * into v_row;
   elsif p_stage = 'pras' then
     update public.orders
     set
-      pras_status='🔨 В работе',
-      pras_started_at=coalesce(pras_started_at, v_now),
-      pras_pause_started_at=null,
-      updated_at=v_now
-    where order_id=p_order_id
+      pras_status = v_work_status,
+      pras_started_at = coalesce(pras_started_at, v_now),
+      pras_pause_started_at = null,
+      updated_at = v_now
+    where order_id = p_order_id
     returning * into v_row;
   else
     raise exception 'Unknown stage: %', p_stage;
   end if;
+
+  if v_row.id is null then
+    raise exception 'Order not found: %', p_order_id;
+  end if;
+
   return v_row;
 end;
 $$;
@@ -342,6 +363,8 @@ $$;
 create or replace function public.web_set_stage_pause(p_order_id text, p_stage text)
 returns public.orders
 language plpgsql
+security definer
+set search_path to 'public', 'extensions', 'pg_temp'
 as $$
 declare
   v_now timestamptz := now();
@@ -381,44 +404,54 @@ $$;
 create or replace function public.web_set_stage_done(p_order_id text, p_stage text)
 returns public.orders
 language plpgsql
+security definer
+set search_path to 'public', 'extensions', 'pg_temp'
 as $$
 declare
-  v_now timestamptz := now();
   v_row public.orders;
 begin
   if p_stage = 'pilka' then
     update public.orders
     set
       pilka_status='✅ Готово',
-      pilka_done_at=coalesce(pilka_done_at, v_now),
-      pilka_pause_acc_min=pilka_pause_acc_min + case when pilka_pause_started_at is not null then public.business_minutes(pilka_pause_started_at, v_now) else 0 end,
-      pilka_pause_started_at=null,
-      kromka_status=case when coalesce(kromka_status, '') like '%Готово%' then kromka_status else '🔨 В работе' end,
-      kromka_started_at=case when kromka_started_at is null then v_now else kromka_started_at end,
-      updated_at=v_now
+      updated_at=now()
     where order_id=p_order_id
     returning * into v_row;
   elsif p_stage = 'kromka' then
     update public.orders
     set
       kromka_status='✅ Готово',
-      kromka_done_at=coalesce(kromka_done_at, v_now),
-      kromka_pause_acc_min=kromka_pause_acc_min + case when kromka_pause_started_at is not null then public.business_minutes(kromka_pause_started_at, v_now) else 0 end,
-      kromka_pause_started_at=null,
-      pras_status=case when coalesce(pras_status, '') like '%Готово%' then pras_status else '🔨 В работе' end,
-      pras_started_at=case when pras_started_at is null then v_now else pras_started_at end,
-      updated_at=v_now
+      updated_at=now()
     where order_id=p_order_id
     returning * into v_row;
   elsif p_stage = 'pras' then
     update public.orders
     set
       pras_status='✅ Готово',
-      pras_done_at=coalesce(pras_done_at, v_now),
-      pras_pause_acc_min=pras_pause_acc_min + case when pras_pause_started_at is not null then public.business_minutes(pras_pause_started_at, v_now) else 0 end,
-      pras_pause_started_at=null,
-      overall_status=case when coalesce(overall_status, '') like '%отправ%' then overall_status else '✅ Готово к сборке' end,
-      updated_at=v_now
+      overall_status=case
+        when coalesce(overall_status, '') like '%отправ%' then overall_status
+        else '✅ Готово к сборке'
+      end,
+      updated_at=now()
+    where order_id=p_order_id
+    returning * into v_row;
+  elsif p_stage = 'assembly' then
+    update public.orders
+    set
+      assembly_status='✅ СОБРАНО',
+      overall_status=case
+        when coalesce(overall_status, '') like '%отправ%' then overall_status
+        else '✅ Готово к отправке'
+      end,
+      updated_at=now()
+    where order_id=p_order_id
+    returning * into v_row;
+  elsif p_stage = 'shipping' then
+    update public.orders
+    set
+      overall_status='📦 На упаковке',
+      shipped=true,
+      updated_at=now()
     where order_id=p_order_id
     returning * into v_row;
   else

@@ -19,6 +19,18 @@ export const PipelineStage = {
   SHIPPED: "shipped",
 };
 
+const KNOWN_PIPELINE_STAGES = new Set(Object.values(PipelineStage));
+
+/**
+ * Этап для UI и канбана: доверяем `pipeline_stage` из БД только если значение из известного набора,
+ * иначе пересчитываем из статусов (защита от устаревших/ошибочных значений).
+ */
+export function resolvePipelineStage(order) {
+  const raw = order?.pipelineStage ?? order?.pipeline_stage;
+  if (raw != null && KNOWN_PIPELINE_STAGES.has(String(raw))) return String(raw);
+  return inferPipelineStage(order);
+}
+
 function lc(s) {
   return String(s ?? "").toLowerCase();
 }
@@ -26,6 +38,11 @@ function lc(s) {
 function isDoneLine(status) {
   const v = lc(status);
   return v.includes("готов") || v.includes("собрано");
+}
+
+/** Линия цеха (пила/кромка/присадка) закрыта по статусу — для последовательности этапов и подсветки карточек. */
+export function isWorkshopLineDone(status) {
+  return isDoneLine(status);
 }
 
 /** Финальная отгрузка клиенту; «Отправлен на пилу» и «Готово к отправке» сюда не входят. */
@@ -38,8 +55,9 @@ export function isCustomerShippedOverall(overallRaw) {
 }
 
 /**
- * Вычисляет этап только из полей заказа. Порядок веток важен.
- * @param {Record<string, unknown>} order — уже с camelCase-полями как после normalizeOrder
+ * Вычисляет этап только из полей заказа.
+ * Цех — строго по цепочке: пила → кромка → присадка; не относим заказ к кромке/присадке, пока предыдущая линия не закрыта
+ * (даже если в БД на следующей строке стоит «в работе» из‑за ошибки ввода).
  */
 export function inferPipelineStage(order) {
   const overall = lc(order?.overallStatus ?? order?.overall_status ?? order?.overall);
@@ -58,16 +76,14 @@ export function inferPipelineStage(order) {
 
   if (pkD && krD && prD) return PipelineStage.WORKSHOP_COMPLETE;
 
-  if (pras.includes("в работе") || pras.includes("пауза") || (pkD && krD && !prD)) return PipelineStage.PRAS;
-  if (kromka.includes("в работе") || kromka.includes("пауза") || (pkD && !krD)) return PipelineStage.KROMKA;
-
-  if (overall.includes("на пилу")) return PipelineStage.PILKA;
+  if (pkD && krD && !prD) return PipelineStage.PRAS;
+  if (pkD && !krD) return PipelineStage.KROMKA;
   return PipelineStage.PILKA;
 }
 
 /** Подпись этапа для UI (карточки, статистика, обзор). */
 export function getOrderStageDisplayLabel(order) {
-  const ps = order?.pipelineStage ?? inferPipelineStage(order);
+  const ps = resolvePipelineStage(order);
   switch (ps) {
     case PipelineStage.SHIPPED:
       return "Отгружено";
@@ -86,9 +102,21 @@ export function getOrderStageDisplayLabel(order) {
   }
 }
 
-/** Колонка канбана «Обзор заказов». */
+/** Id колонок канбана после сборки (раздельно, без путаницы «готово» vs «отгружено»). */
+export const OVERVIEW_LANE_READY_TO_SHIP = "ready_to_ship";
+export const OVERVIEW_LANE_SHIPPED = "shipped";
+
+/** Цех закончил три линии, изделие ещё не «собрано» в assembly — отдельно от уже собранного. */
+export const OVERVIEW_LANE_WORKSHOP_COMPLETE = "workshop_complete";
+/** В assembly_status отмечено «собрано». */
+export const OVERVIEW_LANE_ASSEMBLED = "assembled";
+
+/** Колонки финала: не в активном производстве по смыслу KPI «В производстве». */
+export const OVERVIEW_POST_PRODUCTION_LANE_IDS = [OVERVIEW_LANE_READY_TO_SHIP, OVERVIEW_LANE_SHIPPED];
+
+/** Колонка канбана «Обзор заказов» (id колонки = id дорожки). */
 export function getOverviewLaneId(order) {
-  const ps = order?.pipelineStage ?? inferPipelineStage(order);
+  const ps = resolvePipelineStage(order);
   switch (ps) {
     case PipelineStage.PILKA:
       return "pilka";
@@ -97,16 +125,18 @@ export function getOverviewLaneId(order) {
     case PipelineStage.PRAS:
       return "pras";
     case PipelineStage.WORKSHOP_COMPLETE:
+      return OVERVIEW_LANE_WORKSHOP_COMPLETE;
     case PipelineStage.ASSEMBLED:
-      return "assembly";
+      return OVERVIEW_LANE_ASSEMBLED;
     case PipelineStage.READY_TO_SHIP:
+      return OVERVIEW_LANE_READY_TO_SHIP;
     case PipelineStage.SHIPPED:
-      return "done";
+      return OVERVIEW_LANE_SHIPPED;
     default:
       return "pilka";
   }
 }
 
 export function isOrderCustomerShipped(order) {
-  return (order?.pipelineStage ?? inferPipelineStage(order)) === PipelineStage.SHIPPED;
+  return resolvePipelineStage(order) === PipelineStage.SHIPPED;
 }
