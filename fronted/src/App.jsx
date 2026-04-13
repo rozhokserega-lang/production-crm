@@ -2392,18 +2392,15 @@ export default function App() {
                 const kromkaInWork = isInWork(o.kromkaStatus);
                 const prasDone = isDone(o.prasStatus);
                 const prasInWork = isInWork(o.prasStatus);
-                const currentPilkaExec =
-                  String(o.pilkaStatus || "").includes("Сережа") ? "Сережа" :
-                  String(o.pilkaStatus || "").includes("Слава") ? "Слава" : "";
                 const currentKromkaExec =
                   String(o.kromkaStatus || "").includes("Сережа") ? "Сережа" :
                   String(o.kromkaStatus || "").includes("Слава") ? "Слава" : "";
                 const currentPrasExec =
-                  String(o.prasStatus || "").includes("Сережа") ? "Сережа" :
-                  String(o.prasStatus || "").includes("Слава") ? "Слава" : "";
-                const pilkaExecValue = currentPilkaExec || "Слава";
+                  String(o.prasStatus || "").includes("Виталик") ? "Виталик" :
+                  String(o.prasStatus || "").includes("Леха") || String(o.prasStatus || "").includes("Лёха") ? "Леха" :
+                  "";
                 const kromkaExecValue = executorByOrder[orderId] || currentKromkaExec || "Слава";
-                const prasExecValue = executorByOrder[`${orderId}:pras`] || currentPrasExec || "Слава";
+                const prasExecValue = executorByOrder[`${orderId}:pras`] || currentPrasExec || "Леха";
                 const showPilka = tab === "all" || tab === "pilka";
                 const showKromka = tab === "all" || tab === "kromka";
                 const showPras = tab === "all" || tab === "pras";
@@ -2419,13 +2416,9 @@ export default function App() {
                 type="button"
                 className={pilkaInWork ? "mini" : "mini ghost"}
                 disabled={actionLoading === `webSetPilkaInWork:${orderId}` || pilkaDone}
-                onClick={() =>
-                  runAction("webSetPilkaInWork", orderId, {
-                    executor: pilkaExecValue,
-                  })
-                }
+                onClick={() => runAction("webSetPilkaInWork", orderId, {})}
               >
-                {tab === "pilka" ? "В работе" : "Пила: В работе"}
+                {tab === "pilka" ? "Начать" : "Пила: Начать"}
               </button>
               <button
                 className="mini ok"
@@ -2471,7 +2464,7 @@ export default function App() {
                   })
                 }
               >
-                {tab === "kromka" ? "В работе" : "Кромка: В работе"}
+                {tab === "kromka" ? "Начать" : "Кромка: Начать"}
               </button>
               <button
                 className="mini ok"
@@ -2497,8 +2490,8 @@ export default function App() {
                   value={prasExecValue}
                   onChange={(e) => setExecutorByOrder((prev) => ({ ...prev, [`${orderId}:pras`]: e.target.value }))}
                 >
-                  <option>Слава</option>
-                  <option>Сережа</option>
+                  <option>Леха</option>
+                  <option>Виталик</option>
                 </select>
               )}
               <button
@@ -2511,7 +2504,7 @@ export default function App() {
                   })
                 }
               >
-                {tab === "pras" ? "В работе" : "Присадка: В работе"}
+                {tab === "pras" ? "Начать" : "Присадка: Начать"}
               </button>
               <button
                 className="mini ok"
