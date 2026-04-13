@@ -717,7 +717,7 @@ export default function App() {
   function getColorGroup(item) {
     const text = String(item || "").trim();
     if (!text) return "Без цвета";
-    const parts = text.split(".");
+    const parts = text.split(".").map((x) => String(x || "").trim()).filter(Boolean);
     const tail = String(parts[parts.length - 1] || "").trim();
     return tail || "Без цвета";
   }
