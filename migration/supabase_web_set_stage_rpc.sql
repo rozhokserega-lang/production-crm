@@ -346,7 +346,31 @@ as $$
   order by total_min desc, l.order_id;
 $$;
 
+create or replace function public.web_get_materials_stock()
+returns table (
+  material text,
+  qty_sheets numeric,
+  size_label text,
+  sheet_width_mm integer,
+  sheet_height_mm integer,
+  updated_at timestamptz
+)
+language sql
+stable
+as $$
+  select
+    ms.material,
+    coalesce(ms.qty_sheets, 0)::numeric as qty_sheets,
+    ms.size_label,
+    ms.sheet_width_mm,
+    ms.sheet_height_mm,
+    ms.updated_at
+  from public.materials_stock ms
+  order by lower(coalesce(ms.material, ''));
+$$;
+
 grant execute on function public.web_set_stage_in_work(text, text, text) to authenticated, anon, service_role;
 grant execute on function public.web_set_stage_pause(text, text) to authenticated, anon, service_role;
 grant execute on function public.web_set_stage_done(text, text) to authenticated, anon, service_role;
 grant execute on function public.web_get_labor_table() to authenticated, anon, service_role;
+grant execute on function public.web_get_materials_stock() to authenticated, anon, service_role;

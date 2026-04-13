@@ -28,6 +28,7 @@ const VIEWS = [
   { id: "shipment", label: "Отгрузка" },
   { id: "overview", label: "Обзор заказов" },
   { id: "workshop", label: "Производство" },
+  { id: "warehouse", label: "Склад" },
   { id: "labor", label: "Трудоемкость" },
   { id: "stats", label: "Статистика" },
 ];
@@ -519,6 +520,7 @@ export default function App() {
   );
   const [strapItems, setStrapItems] = useState([]);
   const [laborRows, setLaborRows] = useState([]);
+  const [warehouseRows, setWarehouseRows] = useState([]);
   const loadSeqRef = useRef(0);
   const loadInFlightRef = useRef(false);
 
@@ -551,6 +553,8 @@ export default function App() {
         }
       } else if (view === "overview") {
         data = await callBackend("webGetOrdersAll");
+      } else if (view === "warehouse") {
+        data = await callBackend("webGetMaterialsStock");
       } else if (view === "labor") {
         data = await callBackend("webGetLaborTable");
       } else if (view === "stats") {
@@ -568,6 +572,8 @@ export default function App() {
       if (seq !== loadSeqRef.current) return;
       if (view === "shipment") {
         setShipmentBoard(normalizeShipmentBoard(data));
+      } else if (view === "warehouse") {
+        setWarehouseRows(Array.isArray(data) ? data : []);
       } else if (view === "labor") {
         setLaborRows(Array.isArray(data) ? data : []);
       } else {
@@ -586,6 +592,7 @@ export default function App() {
   useEffect(() => {
     if (view === "workshop") setRows([]);
     if (view === "shipment") setShipmentBoard({ sections: [] });
+    if (view === "warehouse") setWarehouseRows([]);
     if (view === "labor") setLaborRows([]);
     load();
     const id = setInterval(load, 15000);
@@ -1310,6 +1317,21 @@ export default function App() {
     const avgPerOrder = totalOrders > 0 ? totalMinutes / totalOrders : 0;
     return { totalOrders, totalMinutes, totalQty, avgPerOrder };
   }, [laborTableRows]);
+  const warehouseTableRows = useMemo(() => {
+    if (view !== "warehouse") return [];
+    const q = String(query || "").trim().toLowerCase();
+    return [...warehouseRows]
+      .map((x) => ({
+        material: String(x.material || ""),
+        qtySheets: Number(x.qty_sheets ?? x.qtySheets ?? 0),
+        sizeLabel: String(x.size_label || x.sizeLabel || ""),
+        widthMm: Number(x.sheet_width_mm ?? x.sheetWidthMm ?? 0),
+        heightMm: Number(x.sheet_height_mm ?? x.sheetHeightMm ?? 0),
+        updatedAt: String(x.updated_at || x.updatedAt || ""),
+      }))
+      .filter((x) => !q || x.material.toLowerCase().includes(q))
+      .sort((a, b) => a.material.localeCompare(b.material, "ru"));
+  }, [query, view, warehouseRows]);
 
   const selectedShipmentSummary = useMemo(() => {
     const items = selectedShipments.map((s) => {
@@ -1723,14 +1745,16 @@ export default function App() {
         )}
         <div className="filters">
           <input
-            placeholder={view === "shipment" ? "Поиск отгрузки: название или ID" : "Поиск по названию или ID"}
+            placeholder={view === "shipment" ? "Поиск отгрузки: название или ID" : view === "warehouse" ? "Поиск материала" : "Поиск по названию или ID"}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
-          <select value={weekFilter} onChange={(e) => setWeekFilter(e.target.value)}>
-            <option value="all">Все недели</option>
-            {weeks.map((w) => <option key={w} value={w}>Неделя {w}</option>)}
-          </select>
+          {view !== "warehouse" && (
+            <select value={weekFilter} onChange={(e) => setWeekFilter(e.target.value)}>
+              <option value="all">Все недели</option>
+              {weeks.map((w) => <option key={w} value={w}>Неделя {w}</option>)}
+            </select>
+          )}
           {view === "stats" && (
             <select value={statsSort} onChange={(e) => setStatsSort(e.target.value)}>
               <option value="stage">Сортировка: по этапам</option>
@@ -2314,6 +2338,39 @@ export default function App() {
                         <td>{r.prasMin}</td>
                         <td><b>{r.totalMin}</b></td>
                         <td>{r.dateFinished || "-"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
+        )}
+        {view === "warehouse" && (
+          <>
+            {!warehouseTableRows.length && !loading && <div className="empty">Нет данных по складу</div>}
+            {warehouseTableRows.length > 0 && (
+              <div className="sheet-table-wrap">
+                <table className="sheet-table">
+                  <thead>
+                    <tr>
+                      <th>Материал</th>
+                      <th>Листов в наличии</th>
+                      <th>Размер</th>
+                      <th>Ширина (мм)</th>
+                      <th>Высота (мм)</th>
+                      <th>Обновлено</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {warehouseTableRows.map((r) => (
+                      <tr key={`${r.material}-${r.sizeLabel}`}>
+                        <td>{r.material || "-"}</td>
+                        <td><b>{r.qtySheets}</b></td>
+                        <td>{r.sizeLabel || "-"}</td>
+                        <td>{r.widthMm || "-"}</td>
+                        <td>{r.heightMm || "-"}</td>
+                        <td>{r.updatedAt ? new Date(r.updatedAt).toLocaleString("ru-RU", { timeZone: "Europe/Moscow" }) : "-"}</td>
                       </tr>
                     ))}
                   </tbody>
