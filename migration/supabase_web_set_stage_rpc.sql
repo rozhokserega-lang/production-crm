@@ -356,6 +356,8 @@ returns table (
   updated_at timestamptz
 )
 language sql
+security definer
+set search_path to 'public', 'extensions', 'pg_temp'
 stable
 as $$
   select
