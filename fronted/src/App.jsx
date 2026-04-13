@@ -2879,7 +2879,7 @@ export default function App() {
                     <option value="">Нет артикулов для секции</option>
                   ) : (
                     sectionArticles.map((x) => (
-                      <option key={x.article} value={x.article}>{x.article}</option>
+                      <option key={x.article} value={x.article}>{x.itemName}</option>
                     ))
                   )}
                 </select>

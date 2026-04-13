@@ -449,7 +449,17 @@ security definer
 set search_path to 'public', 'extensions', 'pg_temp'
 stable
 as $$
-  with src as (
+  with stabile_articles(article, sort_order) as (
+    values
+      ('GXodStabile135x65CP', 10),
+      ('GXodStabile135x65INT', 20),
+      ('GXodStabile135x65CO', 30),
+      ('GXodStabile135x65VO', 40),
+      ('GXodStabile135x65OB', 50),
+      ('GXodStabile135x65BC', 60),
+      ('GXodStabile135x65AL', 70)
+  ),
+  src as (
     select distinct
       trim(pc.section_name) as section_name,
       trim(pc.item_name) as item_name,
@@ -458,17 +468,45 @@ as $$
     where trim(coalesce(pc.section_name, '')) <> ''
       and trim(coalesce(pc.item_name, '')) <> ''
       and trim(coalesce(pc.material, '')) <> ''
+  ),
+  stabile_src as (
+    select
+      'Stabile'::text as section_name,
+      iam.article,
+      trim(iam.item_name) as item_name,
+      trim(both ' .' from split_part(coalesce(iam.item_name, ''), '.', 3)) as material,
+      sa.sort_order
+    from stabile_articles sa
+    join public.item_article_map iam on iam.article = sa.article
+  ),
+  common_src as (
+    select
+      s.section_name,
+      coalesce(iam.article, 'ITEM-' || substr(md5(s.item_name || '|' || s.material), 1, 10)) as article,
+      s.item_name,
+      s.material,
+      999::integer as sort_order
+    from src s
+    left join public.item_article_map iam
+      on trim(coalesce(iam.item_name, '')) = s.item_name
+  ),
+  merged as (
+    select section_name, article, item_name, material, sort_order from common_src
+    union all
+    select section_name, article, item_name, material, sort_order from stabile_src
   )
   select
-    s.section_name,
-    coalesce(iam.article, 'ITEM-' || substr(md5(s.item_name || '|' || s.material), 1, 10)) as article,
-    s.item_name,
-    s.material
-  from src s
-  left join public.item_article_map iam
-    on trim(coalesce(iam.item_name, '')) = s.item_name
-  where p_section_name is null or trim(p_section_name) = '' or s.section_name = trim(p_section_name)
-  order by s.section_name, s.item_name, s.material;
+    m.section_name,
+    m.article,
+    m.item_name,
+    m.material
+  from merged m
+  where p_section_name is null or trim(p_section_name) = '' or m.section_name = trim(p_section_name)
+  order by
+    m.section_name,
+    m.sort_order,
+    m.item_name,
+    m.material;
 $$;
 
 create or replace function public.web_register_leftovers_for_order()
