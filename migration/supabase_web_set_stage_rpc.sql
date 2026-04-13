@@ -449,40 +449,31 @@ security definer
 set search_path to 'public', 'extensions', 'pg_temp'
 stable
 as $$
-  with stabile_articles(article, sort_order) as (
-    values
-      ('GXodStabile135x65CP', 10),
-      ('GXodStabile135x65INT', 20),
-      ('GXodStabile135x65CO', 30),
-      ('GXodStabile135x65VO', 40),
-      ('GXodStabile135x65OB', 50),
-      ('GXodStabile135x65BC', 60),
-      ('GXodStabile135x65AL', 70)
+  with catalog as (
+    select
+      trim(iam.section_name)::text as section_name,
+      trim(iam.article)::text as article,
+      trim(iam.item_name)::text as item_name,
+      trim(iam.table_color)::text as material,
+      coalesce(iam.sort_order, 999)::integer as sort_order
+    from public.item_article_map iam
+    where trim(coalesce(iam.section_name, '')) <> ''
+      and trim(coalesce(iam.table_color, '')) <> ''
   ),
   src as (
     select distinct
-      trim(pc.section_name) as section_name,
-      trim(pc.item_name) as item_name,
-      trim(pc.material) as material
+      trim(pc.section_name)::text as section_name,
+      trim(pc.item_name)::text as item_name,
+      trim(pc.material)::text as material
     from public.web_get_plan_catalog() pc
     where trim(coalesce(pc.section_name, '')) <> ''
       and trim(coalesce(pc.item_name, '')) <> ''
       and trim(coalesce(pc.material, '')) <> ''
   ),
-  stabile_src as (
-    select
-      'Stabile'::text as section_name,
-      iam.article,
-      trim(iam.item_name) as item_name,
-      trim(both ' .' from split_part(coalesce(iam.item_name, ''), '.', 3)) as material,
-      sa.sort_order
-    from stabile_articles sa
-    join public.item_article_map iam on iam.article = sa.article
-  ),
   common_src as (
     select
       s.section_name,
-      coalesce(iam.article, 'ITEM-' || substr(md5(s.item_name || '|' || s.material), 1, 10)) as article,
+      coalesce(iam.article, 'ITEM-' || substr(md5(s.item_name || '|' || s.material), 1, 10))::text as article,
       s.item_name,
       s.material,
       999::integer as sort_order
@@ -491,9 +482,17 @@ as $$
       on trim(coalesce(iam.item_name, '')) = s.item_name
   ),
   merged as (
-    select section_name, article, item_name, material, sort_order from common_src
+    select c.section_name, c.article, c.item_name, c.material, c.sort_order
+    from catalog c
     union all
-    select section_name, article, item_name, material, sort_order from stabile_src
+    select x.section_name, x.article, x.item_name, x.material, x.sort_order
+    from common_src x
+    where not exists (
+      select 1
+      from catalog c2
+      where c2.section_name = x.section_name
+        and trim(c2.item_name) = trim(x.item_name)
+    )
   )
   select
     m.section_name,

@@ -722,10 +722,12 @@ export default function App() {
     return tail || "Без цвета";
   }
   function resolvePlanMaterial(articleRow) {
+    const fromApi = String(articleRow?.material || "").trim();
+    if (fromApi) return fromApi;
     const itemName = String(articleRow?.itemName || "").trim();
     const parsedColor = getColorGroup(itemName);
     if (parsedColor && parsedColor !== "Без цвета") return parsedColor;
-    return String(articleRow?.material || "").trim();
+    return "";
   }
   function getWeekday(order) {
     const d = new Date(order?.createdAt || "");
