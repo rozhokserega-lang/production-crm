@@ -2357,8 +2357,6 @@ export default function App() {
                       <th>Материал</th>
                       <th>Листов в наличии</th>
                       <th>Размер</th>
-                      <th>Ширина (мм)</th>
-                      <th>Высота (мм)</th>
                       <th>Обновлено</th>
                     </tr>
                   </thead>
@@ -2368,8 +2366,6 @@ export default function App() {
                         <td>{r.material || "-"}</td>
                         <td><b>{r.qtySheets}</b></td>
                         <td>{r.sizeLabel || "-"}</td>
-                        <td>{r.widthMm || "-"}</td>
-                        <td>{r.heightMm || "-"}</td>
                         <td>{r.updatedAt ? new Date(r.updatedAt).toLocaleString("ru-RU", { timeZone: "Europe/Moscow" }) : "-"}</td>
                       </tr>
                     ))}
