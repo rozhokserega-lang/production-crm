@@ -385,6 +385,58 @@ create table if not exists public.materials_leftovers (
 create unique index if not exists ux_materials_leftovers_order_format
   on public.materials_leftovers(order_id, leftover_format);
 
+create table if not exists public.section_catalog (
+  section_name text primary key,
+  sort_order integer not null,
+  is_active boolean not null default true
+);
+
+insert into public.section_catalog(section_name, sort_order, is_active)
+values
+  ('Stabile', 10, true),
+  ('Solito2', 20, true),
+  ('Solito 1350 черный', 30, true),
+  ('Solito 1350 белый', 40, true),
+  ('Solito 1150', 50, true),
+  ('Cremona', 60, true),
+  ('Avella', 70, true),
+  ('Avella lite', 80, true),
+  ('Премьер черный', 90, true),
+  ('Премьер белый', 100, true),
+  ('Классико +', 110, true),
+  ('Классико', 120, true),
+  ('Donini Grande 806', 130, true),
+  ('Donini Grande 750', 140, true),
+  ('Donini 806', 150, true),
+  ('Donini 750', 160, true),
+  ('Donini R 806', 170, true),
+  ('Donini R 750', 180, true),
+  ('ТВ Лофт', 190, true),
+  ('ТВ Лофт 1500', 200, true),
+  ('ТВ Siena', 210, true)
+on conflict (section_name) do update
+set
+  sort_order = excluded.sort_order,
+  is_active = excluded.is_active;
+
+create or replace function public.web_get_section_catalog()
+returns table (
+  section_name text,
+  sort_order integer
+)
+language sql
+security definer
+set search_path to 'public', 'extensions', 'pg_temp'
+stable
+as $$
+  select
+    sc.section_name,
+    sc.sort_order
+  from public.section_catalog sc
+  where sc.is_active = true
+  order by sc.sort_order, sc.section_name;
+$$;
+
 create or replace function public.web_register_leftovers_for_order()
 returns trigger
 language plpgsql
@@ -477,4 +529,5 @@ grant execute on function public.web_set_stage_pause(text, text) to authenticate
 grant execute on function public.web_set_stage_done(text, text) to authenticated, anon, service_role;
 grant execute on function public.web_get_labor_table() to authenticated, anon, service_role;
 grant execute on function public.web_get_materials_stock() to authenticated, anon, service_role;
+grant execute on function public.web_get_section_catalog() to authenticated, anon, service_role;
 grant execute on function public.web_get_leftovers() to authenticated, anon, service_role;

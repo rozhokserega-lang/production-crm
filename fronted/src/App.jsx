@@ -456,6 +456,7 @@ export default function App() {
   const [rows, setRows] = useState([]);
   const [shipmentBoard, setShipmentBoard] = useState({ sections: [] });
   const [planCatalogRows, setPlanCatalogRows] = useState([]);
+  const [sectionCatalogRows, setSectionCatalogRows] = useState([]);
   const [shipmentOrders, setShipmentOrders] = useState([]);
   const [selectedShipments, setSelectedShipments] = useState([]);
   const [planPreviews, setPlanPreviews] = useState([]);
@@ -526,6 +527,12 @@ export default function App() {
           setPlanCatalogRows(Array.isArray(catalogData) ? catalogData : []);
         } catch (_) {
           setPlanCatalogRows([]);
+        }
+        try {
+          const sectionsData = await callBackend("webGetSectionCatalog");
+          setSectionCatalogRows(Array.isArray(sectionsData) ? sectionsData : []);
+        } catch (_) {
+          setSectionCatalogRows([]);
         }
         try {
           const shipmentOrdersData = await callBackend("webGetOrdersAll");
@@ -852,6 +859,15 @@ export default function App() {
     const names = Object.keys(planCatalogBySection).filter(Boolean);
     return [...new Set(names)].sort((a, b) => a.localeCompare(b, "ru"));
   }, [planCatalogBySection]);
+  const sectionCatalogNames = useMemo(() => {
+    return (sectionCatalogRows || [])
+      .map((x) => String(x.section_name || x.sectionName || "").trim())
+      .filter(Boolean);
+  }, [sectionCatalogRows]);
+  const sectionOptions = useMemo(() => {
+    return [...sectionCatalogNames, ...shipmentSectionNames, "Прочее"]
+      .filter((v, i, a) => a.indexOf(v) === i);
+  }, [sectionCatalogNames, shipmentSectionNames]);
   const planMaterialOptions = useMemo(() => {
     return planCatalogBySection[planSection] || [];
   }, [planCatalogBySection, planSection]);
@@ -1484,7 +1500,7 @@ export default function App() {
   }
 
   function openCreatePlanDialog() {
-    const firstSection = shipmentSectionNames[0] || "Прочее";
+    const firstSection = sectionOptions[0] || "Прочее";
     const firstWeek = weeks[0] || "";
     const firstMaterial = (planCatalogBySection[firstSection] || [])[0]?.material || "";
     setPlanSection(firstSection);
@@ -2818,7 +2834,7 @@ export default function App() {
                     setPlanMaterial(firstMaterial);
                   }}
                 >
-                  {[...shipmentSectionNames, "Прочее"].filter((v, i, a) => a.indexOf(v) === i).map((name) => (
+                  {sectionOptions.map((name) => (
                     <option key={name} value={name}>{name}</option>
                   ))}
                 </select>
