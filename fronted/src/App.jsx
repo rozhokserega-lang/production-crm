@@ -2298,7 +2298,6 @@ export default function App() {
                       <th>Пилка (мин)</th>
                       <th>Кромка (мин)</th>
                       <th>Присадка (мин)</th>
-                      <th>Сборка (мин)</th>
                       <th>Итого (мин)</th>
                       <th>Дата завершения</th>
                     </tr>
@@ -2313,7 +2312,6 @@ export default function App() {
                         <td>{r.pilkaMin}</td>
                         <td>{r.kromkaMin}</td>
                         <td>{r.prasMin}</td>
-                        <td>{r.assemblyMin}</td>
                         <td><b>{r.totalMin}</b></td>
                         <td>{r.dateFinished || "-"}</td>
                       </tr>
@@ -2415,7 +2413,7 @@ export default function App() {
               <button
                 type="button"
                 className={pilkaInWork ? "mini" : "mini ghost"}
-                disabled={actionLoading === `webSetPilkaInWork:${orderId}` || pilkaDone}
+                disabled={actionLoading === `webSetPilkaInWork:${orderId}` || pilkaDone || pilkaInWork}
                 onClick={() => runAction("webSetPilkaInWork", orderId, {})}
               >
                 {tab === "pilka" ? "Начать" : "Пила: Начать"}
@@ -2457,7 +2455,7 @@ export default function App() {
               <button
                 type="button"
                 className={kromkaInWork ? "mini" : "mini ghost"}
-                disabled={actionLoading === `webSetKromkaInWork:${orderId}` || kromkaDone}
+                disabled={actionLoading === `webSetKromkaInWork:${orderId}` || kromkaDone || kromkaInWork}
                 onClick={() =>
                   runAction("webSetKromkaInWork", orderId, {
                     executor: kromkaExecValue,
@@ -2497,7 +2495,7 @@ export default function App() {
               <button
                 type="button"
                 className={prasInWork ? "mini" : "mini ghost"}
-                disabled={actionLoading === `webSetPrasInWork:${orderId}` || prasDone}
+                disabled={actionLoading === `webSetPrasInWork:${orderId}` || prasDone || prasInWork}
                 onClick={() =>
                   runAction("webSetPrasInWork", orderId, {
                     executor: prasExecValue,
