@@ -521,7 +521,7 @@ export default function App() {
   const [strapItems, setStrapItems] = useState([]);
   const [laborRows, setLaborRows] = useState([]);
   const [warehouseRows, setWarehouseRows] = useState([]);
-  const [warehouseOrders, setWarehouseOrders] = useState([]);
+  const [leftoversRows, setLeftoversRows] = useState([]);
   const [warehouseSubView, setWarehouseSubView] = useState("sheets");
   const loadSeqRef = useRef(0);
   const loadInFlightRef = useRef(false);
@@ -558,10 +558,10 @@ export default function App() {
       } else if (view === "warehouse") {
         data = await callBackend("webGetMaterialsStock");
         try {
-          const warehouseOrdersData = await callBackend("webGetOrdersAll");
-          setWarehouseOrders(Array.isArray(warehouseOrdersData) ? warehouseOrdersData.map(normalizeOrder) : []);
+          const leftoversData = await callBackend("webGetLeftovers");
+          setLeftoversRows(Array.isArray(leftoversData) ? leftoversData : []);
         } catch (_) {
-          setWarehouseOrders([]);
+          setLeftoversRows([]);
         }
       } else if (view === "labor") {
         data = await callBackend("webGetLaborTable");
@@ -602,7 +602,7 @@ export default function App() {
     if (view === "shipment") setShipmentBoard({ sections: [] });
     if (view === "warehouse") {
       setWarehouseRows([]);
-      setWarehouseOrders([]);
+      setLeftoversRows([]);
     }
     if (view === "labor") setLaborRows([]);
     load();
@@ -1348,29 +1348,22 @@ export default function App() {
   }, [query, view, warehouseRows]);
   const leftoversTableRows = useMemo(() => {
     if (view !== "warehouse") return [];
-    const q = String(query || "").trim().toLowerCase();
-    return [...warehouseOrders]
+    return [...leftoversRows]
       .map((x) => ({
         orderId: String(x.orderId || x.order_id || ""),
         item: String(x.item || ""),
         material: String(x.material || ""),
         sheetsNeeded: Number(x.sheetsNeeded || x.sheets_needed || 0),
-        pilkaStatus: String(x.pilkaStatus || x.pilka_status || ""),
+        leftoverFormat: String(x.leftoverFormat || x.leftover_format || ""),
+        leftoversQty: Number(x.leftoversQty || x.leftovers_qty || 0),
+        createdAt: String(x.createdAt || x.created_at || ""),
       }))
       .filter((x) => {
-        const itemLc = x.item.toLowerCase();
-        const isSolito1350 = itemLc.includes("solito") && itemLc.includes("1350");
-        const onPilkaOrDone = /в работе|готов/i.test(x.pilkaStatus);
-        const byQuery = !q || x.item.toLowerCase().includes(q) || x.orderId.toLowerCase().includes(q);
-        return isSolito1350 && onPilkaOrDone && x.sheetsNeeded > 0 && byQuery;
+        const q = String(query || "").trim().toLowerCase();
+        return !q || x.item.toLowerCase().includes(q) || x.orderId.toLowerCase().includes(q) || x.material.toLowerCase().includes(q);
       })
-      .map((x) => ({
-        ...x,
-        leftoverFormat: "2000x624",
-        leftoversQty: Math.max(0, Math.floor(x.sheetsNeeded)),
-      }))
       .sort((a, b) => a.item.localeCompare(b.item, "ru"));
-  }, [query, view, warehouseOrders]);
+  }, [leftoversRows, query, view]);
 
   const selectedShipmentSummary = useMemo(() => {
     const items = selectedShipments.map((s) => {

@@ -72,6 +72,7 @@ const RPC_MAP = {
   webGetOrdersKromka: "web_get_orders_kromka",
   webGetOrdersPras: "web_get_orders_pras",
   webGetMaterialsStock: "web_get_materials_stock",
+  webGetLeftovers: "web_get_leftovers",
   webGetLaborTable: "web_get_labor_table",
   webGetOrderStats: "web_get_order_stats",
   webUpsertItemColorMap: "web_upsert_item_color_map",

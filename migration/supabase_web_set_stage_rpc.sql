@@ -371,8 +371,110 @@ as $$
   order by lower(coalesce(ms.material, ''));
 $$;
 
+create table if not exists public.materials_leftovers (
+  id uuid primary key default gen_random_uuid(),
+  order_id text not null,
+  item text,
+  material text,
+  sheets_needed numeric(12,2) not null default 0,
+  leftover_format text not null,
+  leftovers_qty numeric(12,2) not null default 0,
+  created_at timestamptz not null default now()
+);
+
+create unique index if not exists ux_materials_leftovers_order_format
+  on public.materials_leftovers(order_id, leftover_format);
+
+create or replace function public.web_register_leftovers_for_order()
+returns trigger
+language plpgsql
+security definer
+set search_path to 'public', 'extensions', 'pg_temp'
+as $$
+declare
+  v_item_lc text := lower(coalesce(new.item, ''));
+  v_sheets_needed numeric := 0;
+begin
+  if new.order_id is null then
+    return new;
+  end if;
+
+  -- Rule v1: Solito 1350 from large format -> leftover 2800x624 per used sheet.
+  if v_item_lc like '%solito%' and v_item_lc like '%1350%' then
+    select coalesce(sc.sheets_needed, 0)
+      into v_sheets_needed
+    from public.shipment_cells sc
+    where sc.source_row_id = new.source_row_id
+      and lower(coalesce(sc.item, '')) = v_item_lc
+    order by sc.updated_at desc nulls last
+    limit 1;
+
+    if v_sheets_needed > 0 then
+      insert into public.materials_leftovers(
+        order_id,
+        item,
+        material,
+        sheets_needed,
+        leftover_format,
+        leftovers_qty
+      )
+      values (
+        new.order_id,
+        new.item,
+        new.material,
+        v_sheets_needed,
+        '2800x624',
+        floor(v_sheets_needed)
+      )
+      on conflict (order_id, leftover_format) do update
+      set
+        item = excluded.item,
+        material = excluded.material,
+        sheets_needed = excluded.sheets_needed,
+        leftovers_qty = excluded.leftovers_qty;
+    end if;
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_register_leftovers_on_order_insert on public.orders;
+create trigger trg_register_leftovers_on_order_insert
+after insert on public.orders
+for each row
+execute function public.web_register_leftovers_for_order();
+
+create or replace function public.web_get_leftovers()
+returns table (
+  order_id text,
+  item text,
+  material text,
+  sheets_needed numeric,
+  leftover_format text,
+  leftovers_qty numeric,
+  created_at timestamptz
+)
+language sql
+security definer
+set search_path to 'public', 'extensions', 'pg_temp'
+stable
+as $$
+  select
+    ml.order_id,
+    ml.item,
+    ml.material,
+    ml.sheets_needed,
+    ml.leftover_format,
+    ml.leftovers_qty,
+    ml.created_at
+  from public.materials_leftovers ml
+  order by ml.created_at desc, ml.order_id;
+$$;
+
 grant execute on function public.web_set_stage_in_work(text, text, text) to authenticated, anon, service_role;
 grant execute on function public.web_set_stage_pause(text, text) to authenticated, anon, service_role;
 grant execute on function public.web_set_stage_done(text, text) to authenticated, anon, service_role;
 grant execute on function public.web_get_labor_table() to authenticated, anon, service_role;
 grant execute on function public.web_get_materials_stock() to authenticated, anon, service_role;
+grant execute on function public.web_get_leftovers() to authenticated, anon, service_role;
