@@ -893,7 +893,7 @@ export default function App() {
       .sort((a, b) => a.itemName.localeCompare(b.itemName, "ru"));
   }, [sectionArticleRows, planSection]);
   const selectedArticleRow = useMemo(() => {
-    return sectionArticles.find((x) => x.article === planArticle) || null;
+    return sectionArticles.find((x) => x.itemName === planArticle) || null;
   }, [sectionArticles, planArticle]);
   const resolvedPlanItem = useMemo(() => {
     return String(selectedArticleRow?.itemName || "").trim();
@@ -1573,7 +1573,7 @@ export default function App() {
       }))
       .find((x) => x.sectionName === firstSection && x.article);
     setPlanSection(firstSection);
-    setPlanArticle(firstArticle?.article || "");
+    setPlanArticle(firstArticle?.itemName || "");
     setPlanMaterial(resolvePlanMaterial(firstArticle));
     setPlanWeek(firstWeek);
     setPlanQty("");
@@ -2916,7 +2916,7 @@ export default function App() {
                         material: String(x.material || "").trim(),
                       }))
                       .find((x) => x.sectionName === nextSection && x.article);
-                    setPlanArticle(firstArticle?.article || "");
+                    setPlanArticle(firstArticle?.itemName || "");
                     setPlanMaterial(resolvePlanMaterial(firstArticle));
                   }}
                 >
@@ -2932,7 +2932,7 @@ export default function App() {
                   onChange={(e) => {
                     const nextArticle = e.target.value;
                     setPlanArticle(nextArticle);
-                    const matched = sectionArticles.find((x) => x.article === nextArticle);
+                    const matched = sectionArticles.find((x) => x.itemName === nextArticle);
                     setPlanMaterial(resolvePlanMaterial(matched));
                   }}
                 >
@@ -2940,7 +2940,7 @@ export default function App() {
                     <option value="">Нет артикулов для секции</option>
                   ) : (
                     sectionArticles.map((x) => (
-                      <option key={x.article} value={x.article}>{x.itemName}</option>
+                      <option key={`${x.article}::${x.itemName}`} value={x.itemName}>{x.itemName}</option>
                     ))
                   )}
                 </select>
