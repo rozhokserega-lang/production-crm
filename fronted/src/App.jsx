@@ -721,6 +721,12 @@ export default function App() {
     const tail = String(parts[parts.length - 1] || "").trim();
     return tail || "Без цвета";
   }
+  function resolvePlanMaterial(articleRow) {
+    const itemName = String(articleRow?.itemName || "").trim();
+    const parsedColor = getColorGroup(itemName);
+    if (parsedColor && parsedColor !== "Без цвета") return parsedColor;
+    return String(articleRow?.material || "").trim();
+  }
   function getWeekday(order) {
     const d = new Date(order?.createdAt || "");
     if (!isFinite(d.getTime())) return "Неизвестно";
@@ -1562,12 +1568,13 @@ export default function App() {
       .map((x) => ({
         sectionName: String(x.section_name || x.sectionName || "").trim(),
         article: String(x.article || "").trim(),
+        itemName: String(x.item_name || x.itemName || "").trim(),
         material: String(x.material || "").trim(),
       }))
       .find((x) => x.sectionName === firstSection && x.article);
     setPlanSection(firstSection);
     setPlanArticle(firstArticle?.article || "");
-    setPlanMaterial(firstArticle?.material || "");
+    setPlanMaterial(resolvePlanMaterial(firstArticle));
     setPlanWeek(firstWeek);
     setPlanQty("");
     setPlanDialogOpen(true);
@@ -2905,11 +2912,12 @@ export default function App() {
                       .map((x) => ({
                         sectionName: String(x.section_name || x.sectionName || "").trim(),
                         article: String(x.article || "").trim(),
+                        itemName: String(x.item_name || x.itemName || "").trim(),
                         material: String(x.material || "").trim(),
                       }))
                       .find((x) => x.sectionName === nextSection && x.article);
                     setPlanArticle(firstArticle?.article || "");
-                    setPlanMaterial(firstArticle?.material || "");
+                    setPlanMaterial(resolvePlanMaterial(firstArticle));
                   }}
                 >
                   {sectionOptions.map((name) => (
@@ -2925,7 +2933,7 @@ export default function App() {
                     const nextArticle = e.target.value;
                     setPlanArticle(nextArticle);
                     const matched = sectionArticles.find((x) => x.article === nextArticle);
-                    setPlanMaterial(String(matched?.material || ""));
+                    setPlanMaterial(resolvePlanMaterial(matched));
                   }}
                 >
                   {sectionArticles.length === 0 ? (

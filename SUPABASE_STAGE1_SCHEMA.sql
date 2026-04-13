@@ -181,12 +181,14 @@ as $$
   order by o.updated_at desc nulls last, o.order_id;
 $$;
 
-create or replace function public.web_upsert_item_color_map(p_item_name text, p_color_name text)
+drop function if exists public.web_upsert_item_color_map(text, text);
+
+create function public.web_upsert_item_color_map(p_item_name text, p_color_name text)
 returns table (
-  item_name text,
-  color_name text,
-  source text,
-  updated_at timestamptz
+  out_item_name text,
+  out_color_name text,
+  out_source text,
+  out_updated_at timestamptz
 )
 language plpgsql
 as $$
