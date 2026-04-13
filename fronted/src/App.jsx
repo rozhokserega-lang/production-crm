@@ -46,27 +46,7 @@ const DEFAULT_SHIPMENT_PREFS = {
   collapsedSections: {},
 };
 const UI_SCALE_STORAGE_KEY = "crmUiScale";
-const SHIPMENT_SECTION_ORDER = [
-  "Stabile",
-  "Solito2",
-  "Solito",
-  "Cremona",
-  "Avella",
-  "Avella lite",
-  "Премьер",
-  "Премьер белый",
-  "Классико +",
-  "Классико",
-  "Donini Grande",
-  "Donini 806",
-  "Donini 750",
-  "Donini R 750",
-  "Donini R 806",
-  "ТВ Лофт",
-  "ТВ Лофт 1500",
-  "TV Siena",
-  "ТВ Siena",
-];
+const SHIPMENT_SECTION_ORDER = [];
 const STRAP_OPTIONS = [
   "Бока (316_167)",
   "Обвязка (1000_80)",
