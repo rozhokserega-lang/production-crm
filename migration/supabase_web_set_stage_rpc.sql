@@ -509,6 +509,54 @@ as $$
     m.material;
 $$;
 
+create or replace function public.web_delete_shipment_plan_cell_by_source(p_row text, p_col text)
+returns table (
+  deleted_plan integer,
+  deleted_shipment integer
+)
+language plpgsql
+security definer
+set search_path to 'public', 'extensions', 'pg_temp'
+as $$
+declare
+  v_deleted_plan integer := 0;
+  v_deleted_shipment integer := 0;
+  v_in_work boolean := false;
+begin
+  if coalesce(trim(p_row), '') = '' or coalesce(trim(p_col), '') = '' then
+    raise exception 'Row/col are required';
+  end if;
+
+  select coalesce(sc.in_work, false)
+    into v_in_work
+  from public.shipment_cells sc
+  where sc.source_row_id = trim(p_row)
+    and sc.source_col_id = trim(p_col)
+  limit 1;
+
+  if v_in_work then
+    raise exception 'Нельзя удалить: позиция уже отправлена в работу';
+  end if;
+
+  delete from public.shipment_plan_cells sp
+  where sp.source_row_id = trim(p_row)
+    and sp.source_col_id = trim(p_col);
+  get diagnostics v_deleted_plan = row_count;
+
+  delete from public.shipment_cells sc
+  where sc.source_row_id = trim(p_row)
+    and sc.source_col_id = trim(p_col)
+    and coalesce(sc.in_work, false) = false;
+  get diagnostics v_deleted_shipment = row_count;
+
+  if v_deleted_plan = 0 and v_deleted_shipment = 0 then
+    raise exception 'Shipment cell not found: row %, col %', p_row, p_col;
+  end if;
+
+  return query select v_deleted_plan, v_deleted_shipment;
+end;
+$$;
+
 create or replace function public.web_register_leftovers_for_order()
 returns trigger
 language plpgsql
@@ -603,4 +651,5 @@ grant execute on function public.web_get_labor_table() to authenticated, anon, s
 grant execute on function public.web_get_materials_stock() to authenticated, anon, service_role;
 grant execute on function public.web_get_section_catalog() to authenticated, anon, service_role;
 grant execute on function public.web_get_section_articles(text) to authenticated, anon, service_role;
+grant execute on function public.web_delete_shipment_plan_cell_by_source(text, text) to authenticated, anon, service_role;
 grant execute on function public.web_get_leftovers() to authenticated, anon, service_role;

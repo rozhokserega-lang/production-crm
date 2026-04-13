@@ -82,6 +82,7 @@ const RPC_MAP = {
   webPreviewPlanFromShipment: "web_preview_plan_from_shipment",
   webPreviewPlansBatch: "web_preview_plans_batch",
   webCreateShipmentPlanCell: "web_create_shipment_plan_cell",
+  webDeleteShipmentPlanCell: "web_delete_shipment_plan_cell_by_source",
   webGetPlanCatalog: "web_get_plan_catalog",
   webSetPilkaInWork: "web_set_stage_in_work",
   webSetKromkaInWork: "web_set_stage_in_work",

@@ -1494,6 +1494,50 @@ export default function App() {
     }
   }
 
+  async function deleteSelectedShipmentPlan() {
+    if (!selectedShipments.length) return;
+    const deletable = selectedShipments.filter((s) => !!s.canSendToWork);
+    if (!deletable.length) {
+      setError("Среди выбранных ячеек нет доступных для удаления из плана.");
+      return;
+    }
+    const ok = window.confirm(`Удалить ${deletable.length} поз. из плана? Это действие необратимо.`);
+    if (!ok) return;
+    setActionLoading("shipment:delete");
+    setError("");
+    try {
+      for (const s of deletable) {
+        const attempts = [
+          { row: s.row, col: s.col },
+          { row: s.rawRow, col: s.rawCol },
+          { row: s.row, col: s.weekCol },
+          { row: s.rawRow, col: s.weekCol },
+        ].filter((x) => x.row != null && x.col != null && String(x.row).trim() && String(x.col).trim());
+        let done = false;
+        let lastErr = null;
+        for (const p of attempts) {
+          try {
+            await callBackend("webDeleteShipmentPlanCell", { row: p.row, col: p.col });
+            done = true;
+            break;
+          } catch (e) {
+            lastErr = e;
+            const msg = String(e?.message || e || "");
+            if (!/not found|не найден|not\s*exists/i.test(msg)) throw e;
+          }
+        }
+        if (!done) throw lastErr || new Error("Shipment cell not found");
+      }
+      setPlanPreviews([]);
+      setSelectedShipments([]);
+      await load();
+    } catch (e) {
+      setError(toUserError(e));
+    } finally {
+      setActionLoading("");
+    }
+  }
+
   function toggleShipmentSelection(payload) {
     setSelectedShipments((prev) => {
       const exists = prev.some((s) => s.row === payload.row && s.col === payload.col);
@@ -2027,6 +2071,15 @@ export default function App() {
                       ? `Отправить в работу (${strapItems.length})`
                       : `Отправить в работу (${sendableSelectedCount})`}
                   </button>
+                  {shipmentTab !== "straps" && (
+                    <button
+                      className="mini warn"
+                      disabled={actionLoading === "shipment:delete" || selectedShipments.filter((s) => !!s.canSendToWork).length === 0}
+                      onClick={deleteSelectedShipmentPlan}
+                    >
+                      Удалить из плана
+                    </button>
+                  )}
                   <button
                     className="mini"
                     onClick={() => {
