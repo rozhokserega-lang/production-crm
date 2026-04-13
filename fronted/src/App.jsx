@@ -521,6 +521,8 @@ export default function App() {
   const [strapItems, setStrapItems] = useState([]);
   const [laborRows, setLaborRows] = useState([]);
   const [warehouseRows, setWarehouseRows] = useState([]);
+  const [warehouseOrders, setWarehouseOrders] = useState([]);
+  const [warehouseSubView, setWarehouseSubView] = useState("sheets");
   const loadSeqRef = useRef(0);
   const loadInFlightRef = useRef(false);
 
@@ -555,6 +557,12 @@ export default function App() {
         data = await callBackend("webGetOrdersAll");
       } else if (view === "warehouse") {
         data = await callBackend("webGetMaterialsStock");
+        try {
+          const warehouseOrdersData = await callBackend("webGetOrdersAll");
+          setWarehouseOrders(Array.isArray(warehouseOrdersData) ? warehouseOrdersData.map(normalizeOrder) : []);
+        } catch (_) {
+          setWarehouseOrders([]);
+        }
       } else if (view === "labor") {
         data = await callBackend("webGetLaborTable");
       } else if (view === "stats") {
@@ -592,7 +600,10 @@ export default function App() {
   useEffect(() => {
     if (view === "workshop") setRows([]);
     if (view === "shipment") setShipmentBoard({ sections: [] });
-    if (view === "warehouse") setWarehouseRows([]);
+    if (view === "warehouse") {
+      setWarehouseRows([]);
+      setWarehouseOrders([]);
+    }
     if (view === "labor") setLaborRows([]);
     load();
     const id = setInterval(load, 15000);
@@ -601,6 +612,9 @@ export default function App() {
 
   useEffect(() => {
     if (view !== "overview") setOverviewSubView("kanban");
+  }, [view]);
+  useEffect(() => {
+    if (view !== "warehouse") setWarehouseSubView("sheets");
   }, [view]);
 
   useEffect(() => {
@@ -1332,6 +1346,31 @@ export default function App() {
       .filter((x) => !q || x.material.toLowerCase().includes(q))
       .sort((a, b) => a.material.localeCompare(b.material, "ru"));
   }, [query, view, warehouseRows]);
+  const leftoversTableRows = useMemo(() => {
+    if (view !== "warehouse") return [];
+    const q = String(query || "").trim().toLowerCase();
+    return [...warehouseOrders]
+      .map((x) => ({
+        orderId: String(x.orderId || x.order_id || ""),
+        item: String(x.item || ""),
+        material: String(x.material || ""),
+        sheetsNeeded: Number(x.sheetsNeeded || x.sheets_needed || 0),
+        pilkaStatus: String(x.pilkaStatus || x.pilka_status || ""),
+      }))
+      .filter((x) => {
+        const itemLc = x.item.toLowerCase();
+        const isSolito1350 = itemLc.includes("solito") && itemLc.includes("1350");
+        const onPilkaOrDone = /в работе|готов/i.test(x.pilkaStatus);
+        const byQuery = !q || x.item.toLowerCase().includes(q) || x.orderId.toLowerCase().includes(q);
+        return isSolito1350 && onPilkaOrDone && x.sheetsNeeded > 0 && byQuery;
+      })
+      .map((x) => ({
+        ...x,
+        leftoverFormat: "2000x624",
+        leftoversQty: Math.max(0, Math.floor(x.sheetsNeeded)),
+      }))
+      .sort((a, b) => a.item.localeCompare(b.item, "ru"));
+  }, [query, view, warehouseOrders]);
 
   const selectedShipmentSummary = useMemo(() => {
     const items = selectedShipments.map((s) => {
@@ -1743,9 +1782,27 @@ export default function App() {
             ))}
           </div>
         )}
+        {view === "warehouse" && (
+          <div className="tabs tabs--overview-sub">
+            <button
+              type="button"
+              className={warehouseSubView === "sheets" ? "tab active" : "tab"}
+              onClick={() => setWarehouseSubView("sheets")}
+            >
+              Листы
+            </button>
+            <button
+              type="button"
+              className={warehouseSubView === "leftovers" ? "tab active" : "tab"}
+              onClick={() => setWarehouseSubView("leftovers")}
+            >
+              Остатки
+            </button>
+          </div>
+        )}
         <div className="filters">
           <input
-            placeholder={view === "shipment" ? "Поиск отгрузки: название или ID" : view === "warehouse" ? "Поиск материала" : "Поиск по названию или ID"}
+            placeholder={view === "shipment" ? "Поиск отгрузки: название или ID" : view === "warehouse" ? (warehouseSubView === "leftovers" ? "Поиск по заказу или изделию" : "Поиск материала") : "Поиск по названию или ID"}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
@@ -2348,8 +2405,8 @@ export default function App() {
         )}
         {view === "warehouse" && (
           <>
-            {!warehouseTableRows.length && !loading && <div className="empty">Нет данных по складу</div>}
-            {warehouseTableRows.length > 0 && (
+            {warehouseSubView === "sheets" && !warehouseTableRows.length && !loading && <div className="empty">Нет данных по складу</div>}
+            {warehouseSubView === "sheets" && warehouseTableRows.length > 0 && (
               <div className="sheet-table-wrap">
                 <table className="sheet-table">
                   <thead>
@@ -2367,6 +2424,35 @@ export default function App() {
                         <td><b>{r.qtySheets}</b></td>
                         <td>{r.sizeLabel || "-"}</td>
                         <td>{r.updatedAt ? new Date(r.updatedAt).toLocaleString("ru-RU", { timeZone: "Europe/Moscow" }) : "-"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {warehouseSubView === "leftovers" && !leftoversTableRows.length && !loading && <div className="empty">Нет данных по остаткам</div>}
+            {warehouseSubView === "leftovers" && leftoversTableRows.length > 0 && (
+              <div className="sheet-table-wrap">
+                <table className="sheet-table">
+                  <thead>
+                    <tr>
+                      <th>ID заказа</th>
+                      <th>Изделие</th>
+                      <th>Материал</th>
+                      <th>Листов в раскрое</th>
+                      <th>Формат остатка</th>
+                      <th>Остатков (шт)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {leftoversTableRows.map((r) => (
+                      <tr key={`${r.orderId}-${r.item}`}>
+                        <td>{r.orderId || "-"}</td>
+                        <td>{r.item || "-"}</td>
+                        <td>{r.material || "-"}</td>
+                        <td>{r.sheetsNeeded}</td>
+                        <td>{r.leftoverFormat}</td>
+                        <td><b>{r.leftoversQty}</b></td>
                       </tr>
                     ))}
                   </tbody>
