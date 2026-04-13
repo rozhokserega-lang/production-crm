@@ -437,6 +437,40 @@ as $$
   order by sc.sort_order, sc.section_name;
 $$;
 
+create or replace function public.web_get_section_articles(p_section_name text default null)
+returns table (
+  section_name text,
+  article text,
+  item_name text,
+  material text
+)
+language sql
+security definer
+set search_path to 'public', 'extensions', 'pg_temp'
+stable
+as $$
+  with src as (
+    select distinct
+      trim(pc.section_name) as section_name,
+      trim(pc.item_name) as item_name,
+      trim(pc.material) as material
+    from public.web_get_plan_catalog() pc
+    where trim(coalesce(pc.section_name, '')) <> ''
+      and trim(coalesce(pc.item_name, '')) <> ''
+      and trim(coalesce(pc.material, '')) <> ''
+  )
+  select
+    s.section_name,
+    coalesce(iam.article, 'ITEM-' || substr(md5(s.item_name || '|' || s.material), 1, 10)) as article,
+    s.item_name,
+    s.material
+  from src s
+  left join public.item_article_map iam
+    on trim(coalesce(iam.item_name, '')) = s.item_name
+  where p_section_name is null or trim(p_section_name) = '' or s.section_name = trim(p_section_name)
+  order by s.section_name, s.item_name, s.material;
+$$;
+
 create or replace function public.web_register_leftovers_for_order()
 returns trigger
 language plpgsql
@@ -530,4 +564,5 @@ grant execute on function public.web_set_stage_done(text, text) to authenticated
 grant execute on function public.web_get_labor_table() to authenticated, anon, service_role;
 grant execute on function public.web_get_materials_stock() to authenticated, anon, service_role;
 grant execute on function public.web_get_section_catalog() to authenticated, anon, service_role;
+grant execute on function public.web_get_section_articles(text) to authenticated, anon, service_role;
 grant execute on function public.web_get_leftovers() to authenticated, anon, service_role;

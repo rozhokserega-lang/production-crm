@@ -457,6 +457,7 @@ export default function App() {
   const [shipmentBoard, setShipmentBoard] = useState({ sections: [] });
   const [planCatalogRows, setPlanCatalogRows] = useState([]);
   const [sectionCatalogRows, setSectionCatalogRows] = useState([]);
+  const [sectionArticleRows, setSectionArticleRows] = useState([]);
   const [shipmentOrders, setShipmentOrders] = useState([]);
   const [selectedShipments, setSelectedShipments] = useState([]);
   const [planPreviews, setPlanPreviews] = useState([]);
@@ -491,7 +492,7 @@ export default function App() {
   const [strapDialogOpen, setStrapDialogOpen] = useState(false);
   const [planDialogOpen, setPlanDialogOpen] = useState(false);
   const [planSection, setPlanSection] = useState("Прочее");
-  const [planItem, setPlanItem] = useState("");
+  const [planArticle, setPlanArticle] = useState("");
   const [planMaterial, setPlanMaterial] = useState("");
   const [planWeek, setPlanWeek] = useState("");
   const [planQty, setPlanQty] = useState("");
@@ -533,6 +534,12 @@ export default function App() {
           setSectionCatalogRows(Array.isArray(sectionsData) ? sectionsData : []);
         } catch (_) {
           setSectionCatalogRows([]);
+        }
+        try {
+          const articlesData = await callBackend("webGetSectionArticles");
+          setSectionArticleRows(Array.isArray(articlesData) ? articlesData : []);
+        } catch (_) {
+          setSectionArticleRows([]);
         }
         try {
           const shipmentOrdersData = await callBackend("webGetOrdersAll");
@@ -868,18 +875,23 @@ export default function App() {
     return [...sectionCatalogNames, ...shipmentSectionNames, "Прочее"]
       .filter((v, i, a) => a.indexOf(v) === i);
   }, [sectionCatalogNames, shipmentSectionNames]);
-  const planMaterialOptions = useMemo(() => {
-    return planCatalogBySection[planSection] || [];
-  }, [planCatalogBySection, planSection]);
+  const sectionArticles = useMemo(() => {
+    return (sectionArticleRows || [])
+      .map((x) => ({
+        sectionName: String(x.section_name || x.sectionName || "").trim(),
+        article: String(x.article || "").trim(),
+        itemName: String(x.item_name || x.itemName || "").trim(),
+        material: String(x.material || "").trim(),
+      }))
+      .filter((x) => x.sectionName === planSection && x.article && x.itemName)
+      .sort((a, b) => a.itemName.localeCompare(b.itemName, "ru"));
+  }, [sectionArticleRows, planSection]);
+  const selectedArticleRow = useMemo(() => {
+    return sectionArticles.find((x) => x.article === planArticle) || null;
+  }, [sectionArticles, planArticle]);
   const resolvedPlanItem = useMemo(() => {
-    const chosenMaterial = String(planMaterial || "").trim();
-    if (!chosenMaterial) return "";
-    const matched = (planCatalogBySection[planSection] || []).find(
-      (x) => normText(x.material) === normText(chosenMaterial)
-    );
-    if (matched?.itemName) return matched.itemName;
-    return `${planSection}. ${chosenMaterial}`.replace(/\s+\./g, ".").trim();
-  }, [planCatalogBySection, planSection, planMaterial]);
+    return String(selectedArticleRow?.itemName || "").trim();
+  }, [selectedArticleRow]);
 
   const shipmentOrderMaps = useMemo(() => {
     const byRowWeek = new Map();
@@ -1502,10 +1514,16 @@ export default function App() {
   function openCreatePlanDialog() {
     const firstSection = sectionOptions[0] || "Прочее";
     const firstWeek = weeks[0] || "";
-    const firstMaterial = (planCatalogBySection[firstSection] || [])[0]?.material || "";
+    const firstArticle = (sectionArticleRows || [])
+      .map((x) => ({
+        sectionName: String(x.section_name || x.sectionName || "").trim(),
+        article: String(x.article || "").trim(),
+        material: String(x.material || "").trim(),
+      }))
+      .find((x) => x.sectionName === firstSection && x.article);
     setPlanSection(firstSection);
-    setPlanItem("");
-    setPlanMaterial(firstMaterial);
+    setPlanArticle(firstArticle?.article || "");
+    setPlanMaterial(firstArticle?.material || "");
     setPlanWeek(firstWeek);
     setPlanQty("");
     setPlanDialogOpen(true);
@@ -1517,7 +1535,7 @@ export default function App() {
   }
 
   async function saveCreatePlanDialog() {
-    const item = String(resolvedPlanItem || planItem || "").trim();
+    const item = String(resolvedPlanItem || "").trim();
     const material = String(planMaterial || "").trim();
     const week = String(planWeek || "").trim();
     const qty = Number(String(planQty || "").replace(",", "."));
@@ -2830,8 +2848,15 @@ export default function App() {
                   onChange={(e) => {
                     const nextSection = e.target.value;
                     setPlanSection(nextSection);
-                    const firstMaterial = (planCatalogBySection[nextSection] || [])[0]?.material || "";
-                    setPlanMaterial(firstMaterial);
+                    const firstArticle = (sectionArticleRows || [])
+                      .map((x) => ({
+                        sectionName: String(x.section_name || x.sectionName || "").trim(),
+                        article: String(x.article || "").trim(),
+                        material: String(x.material || "").trim(),
+                      }))
+                      .find((x) => x.sectionName === nextSection && x.article);
+                    setPlanArticle(firstArticle?.article || "");
+                    setPlanMaterial(firstArticle?.material || "");
                   }}
                 >
                   {sectionOptions.map((name) => (
@@ -2840,27 +2865,28 @@ export default function App() {
                 </select>
               </div>
               <div className="strap-row" style={{ gridTemplateColumns: "170px 1fr" }}>
-                <label>Материал</label>
+                <label>Артикул</label>
                 <select
-                  value={planMaterial}
-                  onChange={(e) => setPlanMaterial(e.target.value)}
+                  value={planArticle}
+                  onChange={(e) => {
+                    const nextArticle = e.target.value;
+                    setPlanArticle(nextArticle);
+                    const matched = sectionArticles.find((x) => x.article === nextArticle);
+                    setPlanMaterial(String(matched?.material || ""));
+                  }}
                 >
-                  {planMaterialOptions.length === 0 ? (
-                    <option value="">Нет материалов для секции</option>
+                  {sectionArticles.length === 0 ? (
+                    <option value="">Нет артикулов для секции</option>
                   ) : (
-                    planMaterialOptions.map((x) => (
-                      <option key={`${planSection}:${x.material}`} value={x.material}>{x.material}</option>
+                    sectionArticles.map((x) => (
+                      <option key={x.article} value={x.article}>{x.article}</option>
                     ))
                   )}
                 </select>
               </div>
               <div className="strap-row" style={{ gridTemplateColumns: "170px 1fr" }}>
-                <label>Изделие (авто)</label>
-                <input
-                  value={resolvedPlanItem}
-                  readOnly
-                  placeholder="Изделие сформируется из секции и материала"
-                />
+                <label>Материал</label>
+                <input value={planMaterial} readOnly placeholder="Материал подставляется из артикула" />
               </div>
               <div className="strap-row" style={{ gridTemplateColumns: "170px 1fr" }}>
                 <label>Неделя</label>
