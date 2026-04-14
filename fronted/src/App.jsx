@@ -616,11 +616,19 @@ function buildFurnitureTemplates(workbook, sheetName) {
     const prev = bestByProduct.get(b.productName);
     if (!prev || b.details.length > prev.details.length) bestByProduct.set(b.productName, b);
   });
-  return [...bestByProduct.values()].sort((a, b) => a.productName.localeCompare(b.productName, "ru"));
+  const result = [...bestByProduct.values()];
+  const hasAvelaLite = result.some((x) => x.productName === "Авела Лайт");
+  const hasAvella = result.some((x) => x.productName === "Авелла");
+  if (hasAvelaLite && !hasAvella) {
+    const src = result.find((x) => x.productName === "Авела Лайт");
+    if (src) result.push({ ...src, productName: "Авелла" });
+  }
+  return result.sort((a, b) => a.productName.localeCompare(b.productName, "ru"));
 }
 
 function furnitureProductLabel(name) {
   return String(name || "")
+    .replace(/^Авела Лайт\b/i, "Авелла Лайт")
     .replace(/^Авела\b/i, "Авелла")
     .trim();
 }
@@ -3011,9 +3019,6 @@ export default function App() {
                         onChange={(e) => setFurnitureSelectedQty(e.target.value.replace(/[^0-9.,]/g, ""))}
                         placeholder="1"
                       />
-                    </div>
-                    <div style={{ fontSize: 13, color: "#334155", paddingBottom: 8 }}>
-                      Цвет: <b>{furnitureSelectedTemplate?.productColor || "—"}</b>
                     </div>
                   </div>
                   <table className="sheet-table">
