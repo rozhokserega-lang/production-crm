@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import * as XLSX from "xlsx";
 import { callBackend } from "./api";
 import { SUPABASE_ANON_KEY, SUPABASE_URL } from "./config";
+import furnitureWorkbookUrl from "./assets/furniture.xlsx?url";
 import {
   getOrderStageDisplayLabel as getStageLabel,
   getOverviewLaneId,
@@ -32,6 +34,7 @@ const VIEWS = [
   { id: "warehouse", label: "Склад" },
   { id: "labor", label: "Трудоемкость" },
   { id: "stats", label: "Статистика" },
+  { id: "furniture", label: "Мебель" },
 ];
 const DEFAULT_SHIPMENT_PREFS = {
   weekFilter: "all",
@@ -546,6 +549,29 @@ function formatDateTimeForPrint(date) {
   });
 }
 
+function parseFurnitureSheet(workbook, sheetName) {
+  const ws = workbook?.Sheets?.[sheetName];
+  if (!ws) return { headers: [], rows: [] };
+  const ref = String(ws["!ref"] || "A1:A1");
+  const range = XLSX.utils.decode_range(ref);
+  const allRows = [];
+  for (let r = range.s.r; r <= range.e.r; r++) {
+    const row = [];
+    for (let c = range.s.c; c <= range.e.c; c++) {
+      const addr = XLSX.utils.encode_cell({ r, c });
+      const cell = ws[addr];
+      const value = cell?.w ?? cell?.v ?? "";
+      row.push({
+        value: String(value ?? ""),
+        formula: cell?.f ? `=${cell.f}` : "",
+      });
+    }
+    allRows.push(row);
+  }
+  const headers = (allRows[0] || []).map((x, i) => x.value || `Колонка ${i + 1}`);
+  return { headers, rows: allRows.slice(1) };
+}
+
 export default function App() {
   const [view, setView] = useState("shipment");
   const [tab, setTab] = useState("all");
@@ -604,6 +630,11 @@ export default function App() {
   const [warehouseRows, setWarehouseRows] = useState([]);
   const [leftoversRows, setLeftoversRows] = useState([]);
   const [warehouseSubView, setWarehouseSubView] = useState("sheets");
+  const [furnitureLoading, setFurnitureLoading] = useState(false);
+  const [furnitureError, setFurnitureError] = useState("");
+  const [furnitureWorkbook, setFurnitureWorkbook] = useState(null);
+  const [furnitureActiveSheet, setFurnitureActiveSheet] = useState("");
+  const [furnitureShowFormulas, setFurnitureShowFormulas] = useState(false);
   const loadSeqRef = useRef(0);
   const loadInFlightRef = useRef(false);
 
@@ -664,6 +695,8 @@ export default function App() {
         } catch (_) {
           data = await callBackend("webGetOrdersAll");
         }
+      } else if (view === "furniture") {
+        data = [];
       } else {
         // Для согласованности с "Обзор заказов" всегда берем полный список
         // и уже на фронте раскладываем по табам этапов.
@@ -717,6 +750,33 @@ export default function App() {
 
   useEffect(() => {
     if (view !== "overview") setOverviewSubView("kanban");
+  }, [view]);
+
+  useEffect(() => {
+    if (view !== "furniture") return;
+    let alive = true;
+    setFurnitureLoading(true);
+    setFurnitureError("");
+    fetch(furnitureWorkbookUrl)
+      .then((r) => r.arrayBuffer())
+      .then((buf) => XLSX.read(buf, { type: "array", cellFormula: true, cellNF: true, cellText: true }))
+      .then((wb) => {
+        if (!alive) return;
+        const names = Array.isArray(wb?.SheetNames) ? wb.SheetNames : [];
+        setFurnitureWorkbook(wb);
+        setFurnitureActiveSheet((prev) => (names.includes(prev) ? prev : String(names[0] || "")));
+      })
+      .catch((e) => {
+        if (!alive) return;
+        setFurnitureError(`Не удалось прочитать файл Мебель.xlsx: ${extractErrorMessage(e)}`);
+      })
+      .finally(() => {
+        if (!alive) return;
+        setFurnitureLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
   }, [view]);
   useEffect(() => {
     if (view !== "warehouse") setWarehouseSubView("sheets");
@@ -1569,6 +1629,22 @@ export default function App() {
     const avgPerOrder = totalOrders > 0 ? totalMinutes / totalOrders : 0;
     return { totalOrders, totalMinutes, totalQty, avgPerOrder };
   }, [laborTableRows]);
+  const furnitureSheetNames = useMemo(() => {
+    return Array.isArray(furnitureWorkbook?.SheetNames) ? furnitureWorkbook.SheetNames : [];
+  }, [furnitureWorkbook]);
+  const furnitureSheetData = useMemo(() => {
+    if (!furnitureWorkbook || !furnitureActiveSheet) return { headers: [], rows: [] };
+    const parsed = parseFurnitureSheet(furnitureWorkbook, furnitureActiveSheet);
+    const q = String(query || "").trim().toLowerCase();
+    if (!q) return parsed;
+    const rows = parsed.rows.filter((row) =>
+      row.some((cell) =>
+        String(cell?.value || "").toLowerCase().includes(q) ||
+        String(cell?.formula || "").toLowerCase().includes(q)
+      )
+    );
+    return { headers: parsed.headers, rows };
+  }, [furnitureWorkbook, furnitureActiveSheet, query]);
   const warehouseTableRows = useMemo(() => {
     if (view !== "warehouse") return [];
     const q = String(query || "").trim().toLowerCase();
@@ -2080,14 +2156,19 @@ export default function App() {
         )}
         <div className="filters">
           <input
-            placeholder={view === "shipment" ? "Поиск отгрузки: название или ID" : view === "warehouse" ? (warehouseSubView === "leftovers" ? "Поиск по заказу или изделию" : "Поиск материала") : "Поиск по названию или ID"}
+            placeholder={view === "shipment" ? "Поиск отгрузки: название или ID" : view === "warehouse" ? (warehouseSubView === "leftovers" ? "Поиск по заказу или изделию" : "Поиск материала") : view === "furniture" ? "Поиск по таблице или формуле" : "Поиск по названию или ID"}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
-          {view !== "warehouse" && (
+          {view !== "warehouse" && view !== "furniture" && (
             <select value={weekFilter} onChange={(e) => setWeekFilter(e.target.value)}>
               <option value="all">Все недели</option>
               {weeks.map((w) => <option key={w} value={w}>Неделя {w}</option>)}
+            </select>
+          )}
+          {view === "furniture" && (
+            <select value={furnitureActiveSheet} onChange={(e) => setFurnitureActiveSheet(e.target.value)}>
+              {furnitureSheetNames.map((name) => <option key={name} value={name}>{name}</option>)}
             </select>
           )}
           {view === "stats" && (
@@ -2118,6 +2199,16 @@ export default function App() {
               <option value="week">Трудоемкость: по неделе</option>
               <option value="item">Трудоемкость: по изделию</option>
             </select>
+          )}
+          {view === "furniture" && (
+            <label className="empty-only-toggle">
+              <input
+                type="checkbox"
+                checked={furnitureShowFormulas}
+                onChange={(e) => setFurnitureShowFormulas(e.target.checked)}
+              />
+              <span>Показывать формулы</span>
+            </label>
           )}
           {view === "shipment" && (
             <div className="filters-right">
@@ -2781,6 +2872,39 @@ export default function App() {
                         <td>{o.prasStatus || "-"}</td>
                         <td>{o.assemblyStatus || "-"}</td>
                         <td>{o.overallStatus || "-"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
+        )}
+        {view === "furniture" && (
+          <>
+            {furnitureLoading && <div className="empty">Загружаю таблицу Мебель.xlsx...</div>}
+            {!furnitureLoading && furnitureError && <div className="error">{furnitureError}</div>}
+            {!furnitureLoading && !furnitureError && furnitureSheetData.headers.length === 0 && (
+              <div className="empty">В файле нет данных для отображения.</div>
+            )}
+            {!furnitureLoading && !furnitureError && furnitureSheetData.headers.length > 0 && (
+              <div className="sheet-table-wrap">
+                <table className="sheet-table">
+                  <thead>
+                    <tr>
+                      {furnitureSheetData.headers.map((h, idx) => (
+                        <th key={`f-h-${idx}`}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {furnitureSheetData.rows.map((row, rIdx) => (
+                      <tr key={`f-r-${rIdx}`}>
+                        {row.map((cell, cIdx) => (
+                          <td key={`f-c-${rIdx}-${cIdx}`}>
+                            {furnitureShowFormulas && cell.formula ? cell.formula : cell.value}
+                          </td>
+                        ))}
                       </tr>
                     ))}
                   </tbody>
