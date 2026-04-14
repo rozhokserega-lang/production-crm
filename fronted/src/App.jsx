@@ -2021,7 +2021,7 @@ export default function App() {
     const byMaterial = new Map();
     selectedShipments.forEach((s) => {
       const material = String(s.material || "Материал не указан").trim();
-      const key = normalizeLookupKey(material);
+      const key = normalizeFurnitureKey(material);
       const qty = Number(s.qty || 0);
       const sheetsRaw = Number(s.sheetsNeeded || 0);
       const outputPerSheet = Number(s.outputPerSheet || 0);
