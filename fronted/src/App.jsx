@@ -798,6 +798,7 @@ export default function App() {
   const [showReadyAssembly, setShowReadyAssembly] = useState(true);
   const [showAwaitShipment, setShowAwaitShipment] = useState(true);
   const [showShipped, setShowShipped] = useState(true);
+  const [hiddenShipmentGroups, setHiddenShipmentGroups] = useState({});
   const [shipmentSort, setShipmentSort] = useState("name");
   const [shipmentViewMode, setShipmentViewMode] = useState("table");
   const [statsSort, setStatsSort] = useState("stage");
@@ -1054,6 +1055,7 @@ export default function App() {
     setShowReadyAssembly(DEFAULT_SHIPMENT_PREFS.showReadyAssembly);
     setShowAwaitShipment(DEFAULT_SHIPMENT_PREFS.showAwaitShipment);
     setShowShipped(DEFAULT_SHIPMENT_PREFS.showShipped);
+    setHiddenShipmentGroups({});
     setCollapsedSections(DEFAULT_SHIPMENT_PREFS.collapsedSections);
   }
 
@@ -1903,6 +1905,13 @@ export default function App() {
       };
     });
   }, [shipmentTableRows, shipmentMaterialBalance]);
+  const shipmentTableGroupNames = useMemo(() => {
+    return [...new Set(shipmentTableRowsWithStockStatus.map((row) => String(row.section || "Прочее")))]
+      .sort((a, b) => a.localeCompare(b, "ru"));
+  }, [shipmentTableRowsWithStockStatus]);
+  const visibleShipmentTableRows = useMemo(() => {
+    return shipmentTableRowsWithStockStatus.filter((row) => !hiddenShipmentGroups[String(row.section || "Прочее")]);
+  }, [shipmentTableRowsWithStockStatus, hiddenShipmentGroups]);
   const shipmentPlanDeficits = useMemo(() => {
     return [...shipmentMaterialBalance.values()]
       .map((x) => ({
@@ -2728,17 +2737,6 @@ export default function App() {
         )}
       </section>
 
-      {view === "shipment" && (
-        <section className="color-legend">
-          <span className="legend-item"><i className="legend-dot white"></i> Белый: ожидаю заказ</span>
-          <span className="legend-item"><i className="legend-dot yellow"></i> Пила: бледно-желтый/желтый</span>
-          <span className="legend-item"><i className="legend-dot blue"></i> Кромка: голубой/синий</span>
-          <span className="legend-item"><i className="legend-dot orange"></i> Присадка/готово к сборке: бледно-оранжевый/коричневый/оранжевый</span>
-          <span className="legend-item"><i className="legend-dot green"></i> Собран, ждет отправку</span>
-          <span className="legend-item"><i className="legend-dot red"></i> Отправлен</span>
-        </section>
-      )}
-
       <section className="controls">
         {view === "overview" && (
           <div className="tabs tabs--overview-sub">
@@ -3204,67 +3202,97 @@ export default function App() {
               <div className="empty">Нет добавленной обвязки. Нажмите "Добавить обвязку".</div>
             )}
             {shipmentTab === "orders" && shipmentViewMode === "table" && (
-              <div className="sheet-table-wrap">
-                <table className="sheet-table">
-                  <thead>
-                    <tr>
-                      <th>Группа</th>
-                      <th>Изделие</th>
-                      <th>Материал</th>
-                      <th>План</th>
-                      <th>Кол-во</th>
-                      <th>Листов</th>
-                      <th>Доступно</th>
-                      <th>Статус</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {shipmentTableRowsWithStockStatus.map((row) => {
-                      const isSelected = selectedShipments.some((s) => s.row === row.sourceRow && s.col === row.sourceCol);
-                      const isDeficitSelected = selectedShipmentStockCheck.deficitSourceKeys.has(
-                        `${String(row.sourceRow || "").trim()}|${String(row.sourceCol || "").trim()}`
-                      );
-                      const rowBg = row.materialHasDeficit ? "#fbcfe8" : (isDeficitSelected && isSelected ? "#fbcfe8" : (row.bg || "#ffffff"));
-                      return (
-                        <tr
-                          key={row.key}
-                          className={isSelected ? "selected-row" : ""}
-                          style={{ backgroundColor: rowBg, color: getReadableTextColor(rowBg) }}
-                          onClick={() => {
-                            const payload = {
-                              row: row.sourceRow,
-                              col: row.sourceCol,
-                              rawRow: row.sourceRow,
-                              rawCol: row.sourceCol,
-                              item: row.item,
-                              week: row.week,
-                              weekCol: row.week,
-                              qty: row.qty,
-                              material: getMaterialLabel(row.item, row.material),
-                              sheetsNeeded: row.sheets,
-                              availableSheets: row.availableSheets,
-                              outputPerSheet: row.outputPerSheet,
-                              canSendToWork: !!row.canSendToWork,
-                            };
-                            toggleShipmentSelection(payload);
-                          }}
-                        >
-                          <td>{row.section}</td>
-                          <td>{row.item}</td>
-                          <td>{row.material || "-"}</td>
-                          <td>{row.week}</td>
-                          <td>{row.qty}</td>
-                          <td>{row.sheets}</td>
-                          <td>{row.availableSheets}</td>
-                          <td>
-                            {row.status}
-                            {row.materialHasDeficit ? ` • ❌ Не хватает: ${row.materialDeficit}` : " • ✅ Хватает"}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+              <div>
+                <div className="shipment-group-filters">
+                  <span className="shipment-group-filters__label">Группы:</span>
+                  {shipmentTableGroupNames.map((groupName) => {
+                    const hidden = !!hiddenShipmentGroups[groupName];
+                    return (
+                      <button
+                        type="button"
+                        key={groupName}
+                        className={hidden ? "mini shipment-group-chip hidden" : "mini shipment-group-chip"}
+                        onClick={() =>
+                          setHiddenShipmentGroups((prev) => ({ ...prev, [groupName]: !prev[groupName] }))
+                        }
+                        title={hidden ? "Показать группу" : "Скрыть группу"}
+                      >
+                        {groupName}
+                      </button>
+                    );
+                  })}
+                  {Object.values(hiddenShipmentGroups).some(Boolean) && (
+                    <button
+                      type="button"
+                      className="mini shipment-group-reset"
+                      onClick={() => setHiddenShipmentGroups({})}
+                    >
+                      Показать все
+                    </button>
+                  )}
+                </div>
+                <div className="sheet-table-wrap">
+                  <table className="sheet-table">
+                    <thead>
+                      <tr>
+                        <th>Группа</th>
+                        <th>Изделие</th>
+                        <th>Материал</th>
+                        <th>План</th>
+                        <th>Кол-во</th>
+                        <th>Листов</th>
+                        <th>Доступно</th>
+                        <th>Статус</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {visibleShipmentTableRows.map((row) => {
+                        const isSelected = selectedShipments.some((s) => s.row === row.sourceRow && s.col === row.sourceCol);
+                        const isDeficitSelected = selectedShipmentStockCheck.deficitSourceKeys.has(
+                          `${String(row.sourceRow || "").trim()}|${String(row.sourceCol || "").trim()}`
+                        );
+                        const rowBg = row.materialHasDeficit ? "#fbcfe8" : (isDeficitSelected && isSelected ? "#fbcfe8" : (row.bg || "#ffffff"));
+                        return (
+                          <tr
+                            key={row.key}
+                            className={isSelected ? "selected-row" : ""}
+                            style={{ backgroundColor: rowBg, color: getReadableTextColor(rowBg) }}
+                            onClick={() => {
+                              const payload = {
+                                row: row.sourceRow,
+                                col: row.sourceCol,
+                                rawRow: row.sourceRow,
+                                rawCol: row.sourceCol,
+                                item: row.item,
+                                week: row.week,
+                                weekCol: row.week,
+                                qty: row.qty,
+                                material: getMaterialLabel(row.item, row.material),
+                                sheetsNeeded: row.sheets,
+                                availableSheets: row.availableSheets,
+                                outputPerSheet: row.outputPerSheet,
+                                canSendToWork: !!row.canSendToWork,
+                              };
+                              toggleShipmentSelection(payload);
+                            }}
+                          >
+                            <td>{row.section}</td>
+                            <td>{row.item}</td>
+                            <td>{row.material || "-"}</td>
+                            <td>{row.week}</td>
+                            <td>{row.qty}</td>
+                            <td>{row.sheets}</td>
+                            <td>{row.availableSheets}</td>
+                            <td>
+                              {row.status}
+                              {row.materialHasDeficit ? ` • ❌ Не хватает: ${row.materialDeficit}` : " • ✅ Хватает"}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
             {!(shipmentTab === "orders" && shipmentViewMode === "table") && (shipmentTab === "straps" ? strapRenderSections : shipmentRenderSections).map((section) => (

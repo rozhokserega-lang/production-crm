@@ -241,19 +241,22 @@ button:disabled {
 .filters select,
 .filters input,
 .empty-only-toggle {
-  min-height: 40px;
+  min-height: 36px;
+  font-size: 12px;
+  padding-top: 6px;
+  padding-bottom: 6px;
 }
 
 .empty-only-toggle {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  font-size: 13px;
+  font-size: 12px;
   color: #334155;
   background: #fff;
   border: 1px solid #dfe6f2;
   border-radius: 10px;
-  padding: 6px 10px;
+  padding: 5px 9px;
   white-space: nowrap;
 }
 
@@ -534,9 +537,15 @@ button:disabled {
 }
 
 .mini {
-  padding: 8px 12px;
-  font-size: 13px;
+  min-height: 36px;
+  min-width: 104px;
+  padding: 6px 10px;
+  font-size: 12px;
   border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
 }
 
 /* Действие «В работе» до нажатия — нейтральный вид (бирюзовый по умолчанию = не статус) */
@@ -652,6 +661,35 @@ button:disabled {
   border-radius: 12px;
   overflow: auto;
   box-shadow: 0 8px 16px rgba(15, 23, 42, 0.07);
+}
+
+.shipment-group-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 8px;
+}
+
+.shipment-group-filters__label {
+  font-size: 12px;
+  color: #475569;
+  margin-right: 2px;
+}
+
+.shipment-group-chip {
+  min-width: 82px;
+}
+
+.shipment-group-chip.hidden {
+  background: #e2e8f0;
+  border-color: #cbd5e1;
+  color: #334155;
+}
+
+.shipment-group-reset {
+  background: #334155;
+  border-color: #1e293b;
 }
 
 .sheet-table {
