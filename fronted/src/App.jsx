@@ -1857,6 +1857,45 @@ export default function App() {
     });
     return rowsFlat;
   }, [view, shipmentRenderSections, shipmentOrderMaps]);
+  const shipmentMaterialBalance = useMemo(() => {
+    const byMaterial = new Map();
+    shipmentTableRows.forEach((row) => {
+      const material = String(row.material || "Материал не указан").trim();
+      const key = normalizeFurnitureKey(material);
+      const needed = Number(row.sheets || 0);
+      const available = Number(row.availableSheets || 0);
+      if (!byMaterial.has(key)) byMaterial.set(key, { material, needed: 0, available: 0 });
+      const bucket = byMaterial.get(key);
+      bucket.needed += needed;
+      bucket.available = Math.max(bucket.available, available);
+    });
+    return byMaterial;
+  }, [shipmentTableRows]);
+  const shipmentTableRowsWithStockStatus = useMemo(() => {
+    return shipmentTableRows.map((row) => {
+      const key = normalizeFurnitureKey(row.material || "");
+      const totals = shipmentMaterialBalance.get(key) || { needed: 0, available: 0 };
+      const deficit = Math.max(0, Number(totals.needed || 0) - Number(totals.available || 0));
+      return {
+        ...row,
+        materialNeededTotal: Number(totals.needed || 0),
+        materialAvailableTotal: Number(totals.available || 0),
+        materialDeficit: deficit,
+        materialHasDeficit: deficit > 0,
+      };
+    });
+  }, [shipmentTableRows, shipmentMaterialBalance]);
+  const shipmentPlanDeficits = useMemo(() => {
+    return [...shipmentMaterialBalance.values()]
+      .map((x) => ({
+        material: x.material,
+        needed: Number(x.needed || 0),
+        available: Number(x.available || 0),
+        deficit: Math.max(0, Number(x.needed || 0) - Number(x.available || 0)),
+      }))
+      .filter((x) => x.deficit > 0)
+      .sort((a, b) => b.deficit - a.deficit || a.material.localeCompare(b.material, "ru"));
+  }, [shipmentMaterialBalance]);
   const laborTableRows = useMemo(() => {
     if (view !== "labor") return [];
     const toNum = (v) => Number(v || 0);
@@ -2682,6 +2721,18 @@ export default function App() {
               ) : (
                 <div className="selection-summary placeholder">
                   Выделите ячейки в блоках отгрузки или добавьте обвязку, чтобы увидеть расчет листов.
+                  {shipmentPlanDeficits.length > 0 && (
+                    <>
+                      <div className="selection-summary-title" style={{ marginTop: 10, color: "#be123c" }}>
+                        Нехватка по всему плану:
+                      </div>
+                      {shipmentPlanDeficits.map((d) => (
+                        <div key={`plan-deficit-${d.material}`} style={{ color: "#be123c" }}>
+                          • {d.material}: нужно {d.needed}, доступно {d.available}, не хватает {d.deficit} лист(ов)
+                        </div>
+                      ))}
+                    </>
+                  )}
                 </div>
               )}
             </aside>
@@ -2867,12 +2918,12 @@ export default function App() {
                     </tr>
                   </thead>
                   <tbody>
-                    {shipmentTableRows.map((row) => {
+                    {shipmentTableRowsWithStockStatus.map((row) => {
                       const isSelected = selectedShipments.some((s) => s.row === row.sourceRow && s.col === row.sourceCol);
                       const isDeficitSelected = selectedShipmentStockCheck.deficitSourceKeys.has(
                         `${String(row.sourceRow || "").trim()}|${String(row.sourceCol || "").trim()}`
                       );
-                      const rowBg = isDeficitSelected && isSelected ? "#fbcfe8" : (row.bg || "#ffffff");
+                      const rowBg = row.materialHasDeficit ? "#fbcfe8" : (isDeficitSelected && isSelected ? "#fbcfe8" : (row.bg || "#ffffff"));
                       return (
                         <tr
                           key={row.key}
@@ -2904,7 +2955,10 @@ export default function App() {
                           <td>{row.qty}</td>
                           <td>{row.sheets}</td>
                           <td>{row.availableSheets}</td>
-                          <td>{row.status}</td>
+                          <td>
+                            {row.status}
+                            {row.materialHasDeficit ? ` • ❌ Не хватает: ${row.materialDeficit}` : " • ✅ Хватает"}
+                          </td>
                         </tr>
                       );
                     })}
@@ -2929,7 +2983,8 @@ export default function App() {
                       const itemCells = visibleCellsForItem(it);
                       const sheetsE = itemCells.length ? (Number(itemCells[0].availableSheets || 0) || 0) : 0;
                       const pendingCells = itemCells.filter((c) => c.canSendToWork);
-                      const hasPendingShortage = pendingCells.some((c) => c.materialEnoughForOrder === false);
+                      const materialTotals = shipmentMaterialBalance.get(normalizeFurnitureKey(it.material || "")) || { needed: 0, available: 0 };
+                      const hasPendingShortage = Number(materialTotals.needed || 0) > Number(materialTotals.available || 0);
                       const materialLabel = getMaterialLabel(it.item, it.material);
                       return (
                         <article
@@ -2993,9 +3048,9 @@ export default function App() {
                                   }
                                   onMouseLeave={() => setHoverTip({ visible: false, text: "", x: 0, y: 0 })}
                                   style={{
-                                    background: isDeficitSelected && isSelected ? "#fbcfe8" : displayBg,
+                                    background: hasPendingShortage ? "#fbcfe8" : (isDeficitSelected && isSelected ? "#fbcfe8" : displayBg),
                                     backgroundImage: "none",
-                                    color: getReadableTextColor(isDeficitSelected && isSelected ? "#fbcfe8" : displayBg),
+                                    color: getReadableTextColor(hasPendingShortage ? "#fbcfe8" : (isDeficitSelected && isSelected ? "#fbcfe8" : displayBg)),
                                   }}
                                   onClick={() => {
                                     const payload = {
