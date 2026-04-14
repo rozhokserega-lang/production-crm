@@ -1525,7 +1525,7 @@ export default function App() {
         let lastErr = null;
         for (const p of attempts) {
           try {
-            await callBackend("webDeleteShipmentPlanCell", { row: p.row, col: p.col });
+            await callBackend("webDeleteShipmentPlanCell", { p_row: p.row, p_col: p.col });
             done = true;
             break;
           } catch (e) {
