@@ -876,7 +876,6 @@ export default function App() {
   }, [view]);
 
   useEffect(() => {
-    if (view !== "furniture") return;
     let alive = true;
     setFurnitureLoading(true);
     setFurnitureError("");
@@ -904,7 +903,7 @@ export default function App() {
     return () => {
       alive = false;
     };
-  }, [view]);
+  }, []);
   useEffect(() => {
     if (view !== "warehouse") setWarehouseSubView("sheets");
   }, [view]);
