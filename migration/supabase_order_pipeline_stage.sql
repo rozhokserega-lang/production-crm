@@ -19,6 +19,8 @@ begin
     create function public.resolve_color_name(p_item text)
     returns text
     language plpgsql
+    security definer
+    set search_path to 'public', 'extensions', 'pg_temp'
     stable
     as $fn$
     begin

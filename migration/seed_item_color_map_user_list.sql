@@ -21,6 +21,8 @@ create index if not exists idx_item_color_map_norm_key
 create or replace function public.resolve_color_name(p_item text)
 returns text
 language plpgsql
+security definer
+set search_path to 'public', 'extensions', 'pg_temp'
 stable
 as $$
 declare
