@@ -1116,14 +1116,20 @@ button:disabled {
 
   .top,
   .view-switch,
+  .tabs,
   .kpi-grid,
   .color-legend,
   .controls,
   .shipment-toolbar,
   .selection-summary-pane,
   .shipment-section,
+  .sheet-table-wrap,
   .empty,
   .actions button:not(:first-child) {
+    display: none !important;
+  }
+
+  .print-area .actions {
     display: none !important;
   }
 

@@ -100,6 +100,7 @@ declare
   v_is_donini_grande boolean := false;
   v_is_klassiko boolean := false;
   v_is_premier boolean := false;
+  v_is_donini_r boolean := false;
 begin
   v_is_cremona := v_section = 'cremona' or v_item like '%cremona%';
   v_is_solito2 := v_section = 'solito2' or v_item like '%solito2%';
@@ -115,6 +116,9 @@ begin
     or v_item like '%классико%';
   v_is_premier := v_section in ('премьер', 'премьер белый', 'премьер черный')
     or v_item like '%премьер%';
+  v_is_donini_r := v_section in ('donini r 750', 'donini r 806')
+    or v_item like '%donini r 750%'
+    or v_item like '%donini r 806%';
   v_is_donini_target :=
     v_section = 'avella'
     or v_item like '%avella%'
@@ -126,6 +130,7 @@ begin
     or v_is_donini_grande
     or v_is_klassiko
     or v_is_premier
+    or v_is_donini_r
     or
     v_section in ('donini 806', 'donini 750', 'donini 806 белый', 'donini 750 белый')
     or v_item like '%donini 806%'
@@ -146,6 +151,9 @@ begin
   end if;
   if v_is_donini_grande then
     return 3;
+  end if;
+  if v_is_donini_r then
+    return 4;
   end if;
   if v_is_solito2 then
     return 6;
