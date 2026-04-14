@@ -455,6 +455,33 @@ function resolveDefaultConsumeSheets(order, shipmentOrders) {
   return 0;
 }
 
+function resolveDefaultConsumeSheetsFromBoard(order, shipmentBoard) {
+  const direct = Number(order?.sheetsNeeded ?? order?.sheets_needed ?? 0);
+  if (Number.isFinite(direct) && direct > 0) return direct;
+
+  const sourceRowId = String(order?.sourceRowId || order?.source_row_id || "").trim();
+  const week = String(order?.week || "").trim();
+  const item = String(order?.item || "").trim();
+  const sections = Array.isArray(shipmentBoard?.sections) ? shipmentBoard.sections : [];
+
+  let byRowWeek = 0;
+  let byItemWeek = 0;
+  for (const section of sections) {
+    for (const it of section?.items || []) {
+      const rowId = String(it?.sourceRowId || it?.source_row_id || it?.row || "").trim();
+      const itemName = String(it?.item || "").trim();
+      for (const c of it?.cells || []) {
+        const cellWeek = String(c?.week || "").trim();
+        const sheets = Number(c?.sheetsNeeded ?? c?.sheets_needed ?? 0);
+        if (!(Number.isFinite(sheets) && sheets > 0)) continue;
+        if (sourceRowId && week && rowId === sourceRowId && cellWeek === week) byRowWeek = Math.max(byRowWeek, sheets);
+        if (item && week && itemName === item && cellWeek === week) byItemWeek = Math.max(byItemWeek, sheets);
+      }
+    }
+  }
+  return byRowWeek || byItemWeek || 0;
+}
+
 function normalizeShipmentBoard(data) {
   if (data && Array.isArray(data.sections)) return data;
   if (!Array.isArray(data)) return { sections: [] };
@@ -655,6 +682,14 @@ export default function App() {
         setRows(normalizedRows);
         if (view === "workshop" || view === "overview" || view === "stats") {
           setShipmentOrders(normalizedRows);
+        }
+        if (view === "workshop") {
+          try {
+            const boardData = await callBackend("webGetShipmentBoard");
+            setShipmentBoard(normalizeShipmentBoard(boardData));
+          } catch (_) {
+            // keep previous shipment board snapshot
+          }
         }
       }
     } catch (e) {
@@ -2749,7 +2784,8 @@ export default function App() {
         {workshopRows.map((o) => (
           (() => {
             const orderId = String(o.orderId || o.order_id || "");
-            const displaySheetsNeeded = resolveDefaultConsumeSheets(o, shipmentOrders);
+            const displaySheetsNeeded =
+              resolveDefaultConsumeSheets(o, shipmentOrders) || resolveDefaultConsumeSheetsFromBoard(o, shipmentBoard);
             const displayMaterial = String(o.material || o.colorName || "").trim() || "Материал не указан";
             return (
           <article key={orderId || `${o.item}-${o.row}`} className={`card ${statusClass(o)}`}>
