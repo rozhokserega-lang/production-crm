@@ -2017,6 +2017,34 @@ export default function App() {
     () => selectedShipments.filter((x) => !!x.canSendToWork).length,
     [selectedShipments]
   );
+  const selectedShipmentStockCheck = useMemo(() => {
+    const byMaterial = new Map();
+    selectedShipments.forEach((s) => {
+      const material = String(s.material || "Материал не указан").trim();
+      const key = normalizeLookupKey(material);
+      const qty = Number(s.qty || 0);
+      const sheetsRaw = Number(s.sheetsNeeded || 0);
+      const outputPerSheet = Number(s.outputPerSheet || 0);
+      const sheetsNeeded =
+        sheetsRaw > 0
+          ? sheetsRaw
+          : (outputPerSheet > 0 && qty > 0 ? Math.ceil(qty / outputPerSheet) : 0);
+      const availableSheets = Number(s.availableSheets || 0);
+      if (!byMaterial.has(key)) {
+        byMaterial.set(key, { material, needed: 0, available: 0, sourceKeys: new Set() });
+      }
+      const bucket = byMaterial.get(key);
+      bucket.needed += sheetsNeeded;
+      bucket.available = Math.max(bucket.available, availableSheets);
+      bucket.sourceKeys.add(`${String(s.row || "").trim()}|${String(s.col || "").trim()}`);
+    });
+    const deficits = [...byMaterial.values()]
+      .map((x) => ({ ...x, deficit: x.needed - x.available }))
+      .filter((x) => x.deficit > 0);
+    const deficitSourceKeys = new Set();
+    deficits.forEach((x) => x.sourceKeys.forEach((k) => deficitSourceKeys.add(k)));
+    return { deficits, deficitSourceKeys };
+  }, [selectedShipments]);
 
   const strapCalculation = useMemo(() => {
     const lines = [];
@@ -2617,6 +2645,18 @@ export default function App() {
                   {selectedShipmentSummary.materials.map((m) => (
                     <div key={m.material}>• {m.material}: {m.sheets} лист(ов)</div>
                   ))}
+                  {selectedShipmentStockCheck.deficits.length > 0 && (
+                    <>
+                      <div className="selection-summary-title" style={{ marginTop: 10, color: "#be123c" }}>
+                        Нехватка материала по выбранным заказам:
+                      </div>
+                      {selectedShipmentStockCheck.deficits.map((d) => (
+                        <div key={`deficit-${d.material}`} style={{ color: "#be123c" }}>
+                          • {d.material}: нужно {d.needed}, доступно {d.available}, не хватает {d.deficit} лист(ов)
+                        </div>
+                      ))}
+                    </>
+                  )}
                   <div style={{ marginTop: 10 }}>Обработано ячеек: {selectedShipmentSummary.selectedCount}</div>
                   <div>Всего листов: {selectedShipmentSummary.totalSheets}</div>
                   {strapItems.length > 0 && (
@@ -2829,11 +2869,15 @@ export default function App() {
                   <tbody>
                     {shipmentTableRows.map((row) => {
                       const isSelected = selectedShipments.some((s) => s.row === row.sourceRow && s.col === row.sourceCol);
+                      const isDeficitSelected = selectedShipmentStockCheck.deficitSourceKeys.has(
+                        `${String(row.sourceRow || "").trim()}|${String(row.sourceCol || "").trim()}`
+                      );
+                      const rowBg = isDeficitSelected && isSelected ? "#fbcfe8" : (row.bg || "#ffffff");
                       return (
                         <tr
                           key={row.key}
                           className={isSelected ? "selected-row" : ""}
-                          style={{ backgroundColor: row.bg || "#ffffff", color: getReadableTextColor(row.bg || "#ffffff") }}
+                          style={{ backgroundColor: rowBg, color: getReadableTextColor(rowBg) }}
                           onClick={() => {
                             const payload = {
                               row: row.sourceRow,
@@ -2846,6 +2890,7 @@ export default function App() {
                               qty: row.qty,
                               material: getMaterialLabel(row.item, row.material),
                               sheetsNeeded: row.sheets,
+                              availableSheets: row.availableSheets,
                               outputPerSheet: row.outputPerSheet,
                               canSendToWork: !!row.canSendToWork,
                             };
@@ -2911,6 +2956,9 @@ export default function App() {
                               const sourceRow = it.sourceRowId != null ? String(it.sourceRowId) : String(it.row);
                               const sourceCol = c.sourceColId != null ? String(c.sourceColId) : String(c.col);
                               const isSelected = selectedShipments.some((s) => s.row === sourceRow && s.col === sourceCol);
+                              const isDeficitSelected = selectedShipmentStockCheck.deficitSourceKeys.has(
+                                `${String(sourceRow || "").trim()}|${String(sourceCol || "").trim()}`
+                              );
                               const cls = c.canSendToWork
                                 ? "ship-cell-lg selectable"
                                 : c.inWork
@@ -2945,9 +2993,9 @@ export default function App() {
                                   }
                                   onMouseLeave={() => setHoverTip({ visible: false, text: "", x: 0, y: 0 })}
                                   style={{
-                                    background: displayBg,
+                                    background: isDeficitSelected && isSelected ? "#fbcfe8" : displayBg,
                                     backgroundImage: "none",
-                                    color: getReadableTextColor(displayBg),
+                                    color: getReadableTextColor(isDeficitSelected && isSelected ? "#fbcfe8" : displayBg),
                                   }}
                                   onClick={() => {
                                     const payload = {
@@ -2961,6 +3009,7 @@ export default function App() {
                                       qty: c.qty,
                                       material: materialLabel,
                                       sheetsNeeded: sheetsN,
+                                      availableSheets: Number(c.availableSheets || 0),
                                       outputPerSheet: Number(c.outputPerSheet || 0),
                                       canSendToWork: !!c.canSendToWork,
                                     };
