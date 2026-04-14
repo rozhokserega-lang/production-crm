@@ -74,6 +74,7 @@ const RPC_MAP = {
   webGetMaterialsStock: "web_get_materials_stock",
   webGetSectionCatalog: "web_get_section_catalog",
   webGetSectionArticles: "web_get_section_articles",
+  webGetFurnitureProductArticles: "web_get_furniture_product_articles",
   webGetLeftovers: "web_get_leftovers",
   webGetLaborTable: "web_get_labor_table",
   webGetOrderStats: "web_get_order_stats",

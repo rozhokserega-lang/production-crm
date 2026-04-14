@@ -635,6 +635,7 @@ export default function App() {
   const [furnitureWorkbook, setFurnitureWorkbook] = useState(null);
   const [furnitureActiveSheet, setFurnitureActiveSheet] = useState("");
   const [furnitureShowFormulas, setFurnitureShowFormulas] = useState(false);
+  const [furnitureArticleRows, setFurnitureArticleRows] = useState([]);
   const loadSeqRef = useRef(0);
   const loadInFlightRef = useRef(false);
 
@@ -697,6 +698,12 @@ export default function App() {
         }
       } else if (view === "furniture") {
         data = [];
+        try {
+          const mappingData = await callBackend("webGetFurnitureProductArticles");
+          setFurnitureArticleRows(Array.isArray(mappingData) ? mappingData : []);
+        } catch (_) {
+          setFurnitureArticleRows([]);
+        }
       } else {
         // Для согласованности с "Обзор заказов" всегда берем полный список
         // и уже на фронте раскладываем по табам этапов.
@@ -1645,6 +1652,29 @@ export default function App() {
     );
     return { headers: parsed.headers, rows };
   }, [furnitureWorkbook, furnitureActiveSheet, query]);
+  const furnitureArticleGroups = useMemo(() => {
+    if (view !== "furniture") return [];
+    const q = String(query || "").trim().toLowerCase();
+    const grouped = new Map();
+    (furnitureArticleRows || []).forEach((r) => {
+      const productName = String(r.product_name || r.productName || "").trim();
+      const sectionName = String(r.section_name || r.sectionName || "").trim();
+      const article = String(r.article || "").trim();
+      const itemName = String(r.item_name || r.itemName || "").trim();
+      const color = String(r.table_color || r.tableColor || "").trim();
+      if (!productName || !article) return;
+      const text = `${productName} ${sectionName} ${article} ${itemName} ${color}`.toLowerCase();
+      if (q && !text.includes(q)) return;
+      if (!grouped.has(productName)) grouped.set(productName, []);
+      grouped.get(productName).push({ productName, sectionName, article, itemName, color });
+    });
+    return [...grouped.entries()]
+      .map(([productName, rows]) => ({
+        productName,
+        rows: rows.sort((a, b) => a.itemName.localeCompare(b.itemName, "ru")),
+      }))
+      .sort((a, b) => a.productName.localeCompare(b.productName, "ru"));
+  }, [furnitureArticleRows, query, view]);
   const warehouseTableRows = useMemo(() => {
     if (view !== "warehouse") return [];
     const q = String(query || "").trim().toLowerCase();
@@ -2888,27 +2918,60 @@ export default function App() {
               <div className="empty">В файле нет данных для отображения.</div>
             )}
             {!furnitureLoading && !furnitureError && furnitureSheetData.headers.length > 0 && (
-              <div className="sheet-table-wrap">
-                <table className="sheet-table">
-                  <thead>
-                    <tr>
-                      {furnitureSheetData.headers.map((h, idx) => (
-                        <th key={`f-h-${idx}`}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {furnitureSheetData.rows.map((row, rIdx) => (
-                      <tr key={`f-r-${rIdx}`}>
-                        {row.map((cell, cIdx) => (
-                          <td key={`f-c-${rIdx}-${cIdx}`}>
-                            {furnitureShowFormulas && cell.formula ? cell.formula : cell.value}
-                          </td>
+              <div style={{ display: "grid", gap: 12 }}>
+                <div className="sheet-table-wrap">
+                  <table className="sheet-table">
+                    <thead>
+                      <tr>
+                        {furnitureSheetData.headers.map((h, idx) => (
+                          <th key={`f-h-${idx}`}>{h}</th>
                         ))}
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {furnitureSheetData.rows.map((row, rIdx) => (
+                        <tr key={`f-r-${rIdx}`}>
+                          {row.map((cell, cIdx) => (
+                            <td key={`f-c-${rIdx}-${cIdx}`}>
+                              {furnitureShowFormulas && cell.formula ? cell.formula : cell.value}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="sheet-table-wrap">
+                  <table className="sheet-table">
+                    <thead>
+                      <tr>
+                        <th>Изделие (B)</th>
+                        <th>Секция</th>
+                        <th>Артикул</th>
+                        <th>Item name</th>
+                        <th>Цвет</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {furnitureArticleGroups.flatMap((g) =>
+                        g.rows.map((row, idx) => (
+                          <tr key={`${g.productName}-${row.article}-${idx}`}>
+                            <td>{idx === 0 ? g.productName : ""}</td>
+                            <td>{row.sectionName || "—"}</td>
+                            <td>{row.article}</td>
+                            <td>{row.itemName || "—"}</td>
+                            <td>{row.color || "—"}</td>
+                          </tr>
+                        ))
+                      )}
+                      {furnitureArticleGroups.length === 0 && (
+                        <tr>
+                          <td colSpan={5}>Нет сопоставленных артикулов для текущего фильтра.</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
           </>
