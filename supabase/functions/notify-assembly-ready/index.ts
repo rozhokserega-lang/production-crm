@@ -39,21 +39,30 @@ function moscowNow(): string {
 }
 
 serve(async (req) => {
+  const corsHeaders = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Content-Type": "application/json",
+  };
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
   if (req.method !== "POST") {
-    return new Response(JSON.stringify({ ok: false, error: "Method not allowed" }), { status: 405 });
+    return new Response(JSON.stringify({ ok: false, error: "Method not allowed" }), { status: 405, headers: corsHeaders });
   }
 
   const token = Deno.env.get("TELEGRAM_BOT_TOKEN") || FALLBACK_TELEGRAM_BOT_TOKEN;
   const chatId = Deno.env.get("TELEGRAM_CHAT_ID") || FALLBACK_TELEGRAM_CHAT_ID;
   if (!token || !chatId) {
-    return new Response(JSON.stringify({ ok: false, error: "Telegram env not configured" }), { status: 500 });
+    return new Response(JSON.stringify({ ok: false, error: "Telegram env not configured" }), { status: 500, headers: corsHeaders });
   }
 
   let payload: Payload = {};
   try {
     payload = (await req.json()) as Payload;
   } catch {
-    return new Response(JSON.stringify({ ok: false, error: "Invalid JSON payload" }), { status: 400 });
+    return new Response(JSON.stringify({ ok: false, error: "Invalid JSON payload" }), { status: 400, headers: corsHeaders });
   }
 
   const orderId = toText(payload.orderId);
@@ -64,7 +73,7 @@ serve(async (req) => {
   const qty = Number(payload.qty || 0);
   const executor = toText(payload.executor);
   if (!orderId || !item) {
-    return new Response(JSON.stringify({ ok: false, error: "orderId and item are required" }), { status: 400 });
+    return new Response(JSON.stringify({ ok: false, error: "orderId and item are required" }), { status: 400, headers: corsHeaders });
   }
 
   const title = stage === "final_done"
@@ -93,9 +102,9 @@ serve(async (req) => {
   });
   const tgJson = await tgRes.json().catch(() => ({}));
   if (!tgRes.ok || !tgJson?.ok) {
-    return new Response(JSON.stringify({ ok: false, telegram: tgJson }), { status: 502 });
+    return new Response(JSON.stringify({ ok: false, telegram: tgJson }), { status: 502, headers: corsHeaders });
   }
 
-  return new Response(JSON.stringify({ ok: true, messageId: tgJson?.result?.message_id ?? null }), { status: 200 });
+  return new Response(JSON.stringify({ ok: true, messageId: tgJson?.result?.message_id ?? null }), { status: 200, headers: corsHeaders });
 });
 

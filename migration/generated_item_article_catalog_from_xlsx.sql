@@ -8,9 +8,7 @@ values
   ('GXodStabile135x65VO', 'Stabile. 1350х650. Дуб Вотан', 'xlsx_catalog', 'Stabile', 'Дуб вотан', 40),
   ('GXodStabile135x65OB', 'Stabile. 1350х650. Дуб Бардолино натуральный', 'xlsx_catalog', 'Stabile', 'Бардолино', 50),
   ('GXodStabile135x65BC', 'Stabile. 1350х650. Бетон Чикаго светло-серый', 'xlsx_catalog', 'Stabile', 'Бетон чикаго', 60),
-  ('GXodStabile115x65CP', 'Stabile. 1150х650. Сосна Касцина', 'xlsx_catalog', 'Stabile', 'Сосна касцина', 70),
-  ('GXodStabile115x65OB', 'Stabile. 1150х650. Дуб Бардолино натуральный', 'xlsx_catalog', 'Stabile', 'Бардолино', 80),
-  ('GXodStabile115x65BC', 'Stabile. 1150х650. Бетон Чикаго светло-серый', 'xlsx_catalog', 'Stabile', 'Бетон чикаго', 90),
+  -- 1150x650 variants removed by request.
   ('GXofficedeskS2SU', 'Solito2. Серия 1156. Солнечный', 'xlsx_catalog', 'Solito2', 'Солнечный', 10),
   ('GXofficedeskS2MU', 'Solito2. Серия 1156. Муза', 'xlsx_catalog', 'Solito2', 'Муза', 20),
   ('GXofficedeskS2MA', 'Solito2. Серия 1156. Маренго', 'xlsx_catalog', 'Solito2', 'Маренго', 30),

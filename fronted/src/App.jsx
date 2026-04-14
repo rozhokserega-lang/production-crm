@@ -360,6 +360,14 @@ function normalizeCatalogItemName(name) {
     .trim();
 }
 
+function normalizeCatalogDedupKey(name) {
+  return normalizeCatalogItemName(name)
+    .toLowerCase()
+    .replaceAll("х", "x")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function toUserError(e) {
   const msg = String(e?.message || e || "");
   if (msg.includes("Система занята")) return "Система занята, повторите через 1-2 секунды.";
@@ -943,6 +951,14 @@ export default function App() {
             setConsumeDialogData(options || { orderId });
             const suggested = isPlankOrder ? "Черный" : String(options?.suggestedMaterial || "").trim();
             if (suggested) setConsumeMaterial(suggested);
+            const suggestedSheets = Number(options?.suggestedSheets ?? options?.sheetsNeeded ?? 0);
+            if (Number.isFinite(suggestedSheets) && suggestedSheets > 0) {
+              setConsumeQty((prev) => {
+                const prevNum = Number(String(prev || "").replace(",", "."));
+                if (Number.isFinite(prevNum) && prevNum > 0) return prev;
+                return String(suggestedSheets);
+              });
+            }
             if (!isPlankOrder && suggested) setConsumeEditMode(false);
           })
           .catch(() => {
@@ -1037,8 +1053,9 @@ export default function App() {
       .sort((a, b) => a.itemName.localeCompare(b.itemName, "ru"));
     const byItemName = new Map();
     rows.forEach((row) => {
-      if (!byItemName.has(row.itemName)) {
-        byItemName.set(row.itemName, row);
+      const dedupKey = normalizeCatalogDedupKey(row.itemName);
+      if (!byItemName.has(dedupKey)) {
+        byItemName.set(dedupKey, row);
       }
     });
     return [...byItemName.values()];
