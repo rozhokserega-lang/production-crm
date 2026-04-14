@@ -611,12 +611,11 @@ function buildFurnitureTemplates(workbook, sheetName) {
     }
   }
   if (current && current.details.length) blocks.push(current);
-  const bestByProduct = new Map();
+  const firstByProduct = new Map();
   blocks.forEach((b) => {
-    const prev = bestByProduct.get(b.productName);
-    if (!prev || b.details.length > prev.details.length) bestByProduct.set(b.productName, b);
+    if (!firstByProduct.has(b.productName)) firstByProduct.set(b.productName, b);
   });
-  const result = [...bestByProduct.values()];
+  const result = [...firstByProduct.values()];
   const hasAvelaLite = result.some((x) => x.productName === "Авела Лайт");
   const hasAvella = result.some((x) => x.productName === "Авелла");
   if (hasAvelaLite && !hasAvella) {
