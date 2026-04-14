@@ -572,6 +572,53 @@ function parseFurnitureSheet(workbook, sheetName) {
   return { headers, rows: allRows.slice(1) };
 }
 
+function toNum(v) {
+  const n = Number(String(v ?? "").replace(",", ".").trim());
+  return Number.isFinite(n) ? n : 0;
+}
+
+function buildFurnitureTemplates(workbook, sheetName) {
+  const ws = workbook?.Sheets?.[sheetName];
+  if (!ws) return [];
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: "" });
+  const blocks = [];
+  let current = null;
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i] || [];
+    const productName = String(r[1] || "").trim();
+    const productColor = String(r[2] || "").trim();
+    const baseQtyRaw = toNum(r[3]);
+    const detailColor = String(r[4] || "").trim();
+    const detailName = String(r[5] || "").trim();
+    const detailQtyRaw = toNum(r[6]);
+    if (productName) {
+      if (current && current.details.length) blocks.push(current);
+      current = {
+        productName,
+        productColor,
+        baseQty: baseQtyRaw > 0 ? baseQtyRaw : 1,
+        details: [],
+      };
+    }
+    if (current && detailName && detailQtyRaw > 0) {
+      const perUnit = current.baseQty > 0 ? detailQtyRaw / current.baseQty : detailQtyRaw;
+      current.details.push({
+        color: detailColor,
+        detailName,
+        sampleQty: detailQtyRaw,
+        perUnit,
+      });
+    }
+  }
+  if (current && current.details.length) blocks.push(current);
+  const bestByProduct = new Map();
+  blocks.forEach((b) => {
+    const prev = bestByProduct.get(b.productName);
+    if (!prev || b.details.length > prev.details.length) bestByProduct.set(b.productName, b);
+  });
+  return [...bestByProduct.values()].sort((a, b) => a.productName.localeCompare(b.productName, "ru"));
+}
+
 export default function App() {
   const [view, setView] = useState("shipment");
   const [tab, setTab] = useState("all");
@@ -636,6 +683,8 @@ export default function App() {
   const [furnitureActiveSheet, setFurnitureActiveSheet] = useState("");
   const [furnitureShowFormulas, setFurnitureShowFormulas] = useState(false);
   const [furnitureArticleRows, setFurnitureArticleRows] = useState([]);
+  const [furnitureSelectedProduct, setFurnitureSelectedProduct] = useState("");
+  const [furnitureSelectedQty, setFurnitureSelectedQty] = useState("1");
   const loadSeqRef = useRef(0);
   const loadInFlightRef = useRef(false);
 
@@ -771,7 +820,11 @@ export default function App() {
         if (!alive) return;
         const names = Array.isArray(wb?.SheetNames) ? wb.SheetNames : [];
         setFurnitureWorkbook(wb);
-        setFurnitureActiveSheet((prev) => (names.includes(prev) ? prev : String(names[0] || "")));
+        const nextSheet = names.includes(furnitureActiveSheet) ? furnitureActiveSheet : String(names[0] || "");
+        setFurnitureActiveSheet(nextSheet);
+        const templates = buildFurnitureTemplates(wb, nextSheet);
+        const firstProduct = String(templates[0]?.productName || "");
+        setFurnitureSelectedProduct((prev) => prev || firstProduct);
       })
       .catch((e) => {
         if (!alive) return;
@@ -1652,6 +1705,25 @@ export default function App() {
     );
     return { headers: parsed.headers, rows };
   }, [furnitureWorkbook, furnitureActiveSheet, query]);
+  const furnitureTemplates = useMemo(() => {
+    if (!furnitureWorkbook || !furnitureActiveSheet) return [];
+    return buildFurnitureTemplates(furnitureWorkbook, furnitureActiveSheet);
+  }, [furnitureWorkbook, furnitureActiveSheet]);
+  const furnitureSelectedTemplate = useMemo(() => {
+    return furnitureTemplates.find((x) => x.productName === furnitureSelectedProduct) || null;
+  }, [furnitureTemplates, furnitureSelectedProduct]);
+  const furnitureQtyNumber = useMemo(() => {
+    const n = toNum(furnitureSelectedQty);
+    return n > 0 ? n : 0;
+  }, [furnitureSelectedQty]);
+  const furnitureGeneratedDetails = useMemo(() => {
+    if (!furnitureSelectedTemplate || furnitureQtyNumber <= 0) return [];
+    return (furnitureSelectedTemplate.details || []).map((d) => {
+      const raw = d.perUnit * furnitureQtyNumber;
+      const qty = Math.round(raw * 1000) / 1000;
+      return { ...d, qty };
+    });
+  }, [furnitureSelectedTemplate, furnitureQtyNumber]);
   const furnitureArticleGroups = useMemo(() => {
     if (view !== "furniture") return [];
     const q = String(query || "").trim().toLowerCase();
@@ -1675,6 +1747,12 @@ export default function App() {
       }))
       .sort((a, b) => a.productName.localeCompare(b.productName, "ru"));
   }, [furnitureArticleRows, query, view]);
+  useEffect(() => {
+    if (view !== "furniture") return;
+    if (!furnitureTemplates.length) return;
+    if (furnitureTemplates.some((x) => x.productName === furnitureSelectedProduct)) return;
+    setFurnitureSelectedProduct(String(furnitureTemplates[0].productName || ""));
+  }, [view, furnitureTemplates, furnitureSelectedProduct]);
   const warehouseTableRows = useMemo(() => {
     if (view !== "warehouse") return [];
     const q = String(query || "").trim().toLowerCase();
@@ -2919,6 +2997,58 @@ export default function App() {
             )}
             {!furnitureLoading && !furnitureError && furnitureSheetData.headers.length > 0 && (
               <div style={{ display: "grid", gap: 12 }}>
+                <div className="sheet-table-wrap">
+                  <div style={{ display: "grid", gridTemplateColumns: "minmax(260px, 1fr) 180px auto", gap: 8, alignItems: "end", marginBottom: 10 }}>
+                    <div>
+                      <div style={{ fontSize: 12, color: "#475569", marginBottom: 4 }}>Изделие</div>
+                      <select
+                        value={furnitureSelectedProduct}
+                        onChange={(e) => setFurnitureSelectedProduct(e.target.value)}
+                      >
+                        {furnitureTemplates.map((t) => (
+                          <option key={t.productName} value={t.productName}>{t.productName}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 12, color: "#475569", marginBottom: 4 }}>Количество</div>
+                      <input
+                        inputMode="decimal"
+                        value={furnitureSelectedQty}
+                        onChange={(e) => setFurnitureSelectedQty(e.target.value.replace(/[^0-9.,]/g, ""))}
+                        placeholder="1"
+                      />
+                    </div>
+                    <div style={{ fontSize: 13, color: "#334155" }}>
+                      Цвет: <b>{furnitureSelectedTemplate?.productColor || "—"}</b>
+                    </div>
+                  </div>
+                  <table className="sheet-table">
+                    <thead>
+                      <tr>
+                        <th>Изделие</th>
+                        <th>Кол-во</th>
+                        <th>Деталь</th>
+                        <th>Кол-во</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {furnitureGeneratedDetails.map((d, idx) => (
+                        <tr key={`fg-${idx}`}>
+                          <td>{idx === 0 ? (furnitureSelectedTemplate?.productName || "—") : ""}</td>
+                          <td>{idx === 0 ? furnitureQtyNumber : ""}</td>
+                          <td>{d.detailName}</td>
+                          <td>{Number.isInteger(d.qty) ? d.qty : d.qty.toFixed(3)}</td>
+                        </tr>
+                      ))}
+                      {furnitureGeneratedDetails.length === 0 && (
+                        <tr>
+                          <td colSpan={4}>Выберите изделие и укажите количество.</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
                 <div className="sheet-table-wrap">
                   <table className="sheet-table">
                     <thead>
