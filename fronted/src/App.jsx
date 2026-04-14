@@ -70,6 +70,8 @@ const STRAP_OPTIONS = [
 ];
 const STRAP_SHEET_WIDTH = 2800;
 const STRAP_SHEET_HEIGHT = 2070;
+const WAREHOUSE_SYNC_SHEET_ID = "1SyFYOpXyHHMP31qYV5-XL8fINVUUDCrXIrewaZqkYkA";
+const WAREHOUSE_SYNC_GID = "1501570173";
 
 function statusClass(order) {
   const ps = resolvePipelineStage(order);
@@ -690,6 +692,7 @@ export default function App() {
   const [warehouseRows, setWarehouseRows] = useState([]);
   const [leftoversRows, setLeftoversRows] = useState([]);
   const [warehouseSubView, setWarehouseSubView] = useState("sheets");
+  const [warehouseSyncLoading, setWarehouseSyncLoading] = useState(false);
   const [furnitureLoading, setFurnitureLoading] = useState(false);
   const [furnitureError, setFurnitureError] = useState("");
   const [furnitureWorkbook, setFurnitureWorkbook] = useState(null);
@@ -1076,6 +1079,41 @@ export default function App() {
       });
     } catch (_) {
       // Notification is best-effort and should not block production workflow.
+    }
+  }
+
+  async function syncWarehouseFromGoogleSheet() {
+    const baseUrl = String(SUPABASE_URL || "").replace(/\/$/, "");
+    const token = String(SUPABASE_ANON_KEY || "").trim();
+    if (!baseUrl || !token) {
+      setError("Не настроен доступ к Supabase (URL/ANON key).");
+      return;
+    }
+    setWarehouseSyncLoading(true);
+    setError("");
+    try {
+      const resp = await fetch(`${baseUrl}/functions/v1/sync-materials-stock`, {
+        method: "POST",
+        headers: {
+          apikey: token,
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          sheetId: WAREHOUSE_SYNC_SHEET_ID,
+          gid: WAREHOUSE_SYNC_GID,
+        }),
+      });
+      const payload = await resp.json().catch(() => ({}));
+      if (!resp.ok || payload?.ok === false) {
+        const reason = String(payload?.error || `HTTP ${resp.status}`);
+        throw new Error(reason);
+      }
+      await load();
+    } catch (e) {
+      setError(`Не удалось синхронизировать склад: ${extractErrorMessage(e)}`);
+    } finally {
+      setWarehouseSyncLoading(false);
     }
   }
 
@@ -2272,6 +2310,15 @@ export default function App() {
               onClick={() => setWarehouseSubView("leftovers")}
             >
               Остатки
+            </button>
+            <button
+              type="button"
+              className="mini ok"
+              disabled={warehouseSyncLoading || loading}
+              onClick={syncWarehouseFromGoogleSheet}
+              title="Синхронизировать материалы из основной Google-таблицы склада"
+            >
+              {warehouseSyncLoading ? "Синхронизация..." : "Синхр. склад"}
             </button>
           </div>
         )}
