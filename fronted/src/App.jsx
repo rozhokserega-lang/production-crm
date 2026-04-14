@@ -1813,7 +1813,6 @@ export default function App() {
       { id: "workshop_complete", title: "Готов к сборке" },
       { id: "assembled", title: "Собран" },
       { id: "ready_to_ship", title: "Готово к отправке" },
-      { id: "shipped", title: "Отгружено" },
     ];
     const grouped = Object.fromEntries(defs.map((x) => [x.id, []]));
     (filtered || []).forEach((o) => {
