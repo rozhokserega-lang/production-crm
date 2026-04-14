@@ -559,7 +559,6 @@ as $$
   mapped_sections as (
     select distinct ma.section_name from mapped_articles ma
   ),
-  ),
   src as (
     select distinct
       trim(pc.section_name)::text as section_name,
@@ -576,8 +575,10 @@ as $$
       iam.article,
       trim(iam.item_name) as item_name,
       coalesce(
-        pm.material,
-        trim(regexp_replace(coalesce(iam.item_name, ''), '^.*\\.\\s*', ''))
+        nullif(trim(coalesce(iam.table_color, '')), ''),
+        nullif(trim(both ' .' from split_part(coalesce(iam.item_name, ''), '.', 3)), ''),
+        nullif(trim(regexp_replace(coalesce(iam.item_name, ''), '^.*\\.\\s*', '')), ''),
+        pm.material
       ) as material,
       ma.sort_order
     from mapped_articles ma
