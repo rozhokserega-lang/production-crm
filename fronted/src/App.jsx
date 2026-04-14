@@ -619,6 +619,12 @@ function buildFurnitureTemplates(workbook, sheetName) {
   return [...bestByProduct.values()].sort((a, b) => a.productName.localeCompare(b.productName, "ru"));
 }
 
+function furnitureProductLabel(name) {
+  return String(name || "")
+    .replace(/^Авела\b/i, "Авелла")
+    .trim();
+}
+
 export default function App() {
   const [view, setView] = useState("shipment");
   const [tab, setTab] = useState("all");
@@ -2263,20 +2269,17 @@ export default function App() {
           </div>
         )}
         <div className="filters">
-          <input
-            placeholder={view === "shipment" ? "Поиск отгрузки: название или ID" : view === "warehouse" ? (warehouseSubView === "leftovers" ? "Поиск по заказу или изделию" : "Поиск материала") : view === "furniture" ? "Поиск по таблице или формуле" : "Поиск по названию или ID"}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
+          {view !== "furniture" && (
+            <input
+              placeholder={view === "shipment" ? "Поиск отгрузки: название или ID" : view === "warehouse" ? (warehouseSubView === "leftovers" ? "Поиск по заказу или изделию" : "Поиск материала") : "Поиск по названию или ID"}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+          )}
           {view !== "warehouse" && view !== "furniture" && (
             <select value={weekFilter} onChange={(e) => setWeekFilter(e.target.value)}>
               <option value="all">Все недели</option>
               {weeks.map((w) => <option key={w} value={w}>Неделя {w}</option>)}
-            </select>
-          )}
-          {view === "furniture" && (
-            <select value={furnitureActiveSheet} onChange={(e) => setFurnitureActiveSheet(e.target.value)}>
-              {furnitureSheetNames.map((name) => <option key={name} value={name}>{name}</option>)}
             </select>
           )}
           {view === "stats" && (
@@ -2307,16 +2310,6 @@ export default function App() {
               <option value="week">Трудоемкость: по неделе</option>
               <option value="item">Трудоемкость: по изделию</option>
             </select>
-          )}
-          {view === "furniture" && (
-            <label className="empty-only-toggle">
-              <input
-                type="checkbox"
-                checked={furnitureShowFormulas}
-                onChange={(e) => setFurnitureShowFormulas(e.target.checked)}
-              />
-              <span>Показывать формулы</span>
-            </label>
           )}
           {view === "shipment" && (
             <div className="filters-right">
@@ -2998,19 +2991,19 @@ export default function App() {
             {!furnitureLoading && !furnitureError && furnitureSheetData.headers.length > 0 && (
               <div style={{ display: "grid", gap: 12 }}>
                 <div className="sheet-table-wrap">
-                  <div style={{ display: "grid", gridTemplateColumns: "minmax(260px, 1fr) 180px auto", gap: 8, alignItems: "end", marginBottom: 10 }}>
-                    <div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "end", marginBottom: 10, flexWrap: "wrap" }}>
+                    <div style={{ minWidth: 220 }}>
                       <div style={{ fontSize: 12, color: "#475569", marginBottom: 4 }}>Изделие</div>
                       <select
                         value={furnitureSelectedProduct}
                         onChange={(e) => setFurnitureSelectedProduct(e.target.value)}
                       >
                         {furnitureTemplates.map((t) => (
-                          <option key={t.productName} value={t.productName}>{t.productName}</option>
+                          <option key={t.productName} value={t.productName}>{furnitureProductLabel(t.productName)}</option>
                         ))}
                       </select>
                     </div>
-                    <div>
+                    <div style={{ width: 140 }}>
                       <div style={{ fontSize: 12, color: "#475569", marginBottom: 4 }}>Количество</div>
                       <input
                         inputMode="decimal"
@@ -3019,7 +3012,7 @@ export default function App() {
                         placeholder="1"
                       />
                     </div>
-                    <div style={{ fontSize: 13, color: "#334155" }}>
+                    <div style={{ fontSize: 13, color: "#334155", paddingBottom: 8 }}>
                       Цвет: <b>{furnitureSelectedTemplate?.productColor || "—"}</b>
                     </div>
                   </div>
@@ -3035,7 +3028,7 @@ export default function App() {
                     <tbody>
                       {furnitureGeneratedDetails.map((d, idx) => (
                         <tr key={`fg-${idx}`}>
-                          <td>{idx === 0 ? (furnitureSelectedTemplate?.productName || "—") : ""}</td>
+                          <td>{idx === 0 ? furnitureProductLabel(furnitureSelectedTemplate?.productName || "—") : ""}</td>
                           <td>{idx === 0 ? furnitureQtyNumber : ""}</td>
                           <td>{d.detailName}</td>
                           <td>{Number.isInteger(d.qty) ? d.qty : d.qty.toFixed(3)}</td>
@@ -3044,59 +3037,6 @@ export default function App() {
                       {furnitureGeneratedDetails.length === 0 && (
                         <tr>
                           <td colSpan={4}>Выберите изделие и укажите количество.</td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-                <div className="sheet-table-wrap">
-                  <table className="sheet-table">
-                    <thead>
-                      <tr>
-                        {furnitureSheetData.headers.map((h, idx) => (
-                          <th key={`f-h-${idx}`}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {furnitureSheetData.rows.map((row, rIdx) => (
-                        <tr key={`f-r-${rIdx}`}>
-                          {row.map((cell, cIdx) => (
-                            <td key={`f-c-${rIdx}-${cIdx}`}>
-                              {furnitureShowFormulas && cell.formula ? cell.formula : cell.value}
-                            </td>
-                          ))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                <div className="sheet-table-wrap">
-                  <table className="sheet-table">
-                    <thead>
-                      <tr>
-                        <th>Изделие (B)</th>
-                        <th>Секция</th>
-                        <th>Артикул</th>
-                        <th>Item name</th>
-                        <th>Цвет</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {furnitureArticleGroups.flatMap((g) =>
-                        g.rows.map((row, idx) => (
-                          <tr key={`${g.productName}-${row.article}-${idx}`}>
-                            <td>{idx === 0 ? g.productName : ""}</td>
-                            <td>{row.sectionName || "—"}</td>
-                            <td>{row.article}</td>
-                            <td>{row.itemName || "—"}</td>
-                            <td>{row.color || "—"}</td>
-                          </tr>
-                        ))
-                      )}
-                      {furnitureArticleGroups.length === 0 && (
-                        <tr>
-                          <td colSpan={5}>Нет сопоставленных артикулов для текущего фильтра.</td>
                         </tr>
                       )}
                     </tbody>
