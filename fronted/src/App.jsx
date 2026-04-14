@@ -364,6 +364,26 @@ function extractErrorMessage(e) {
   return String(e?.message || e || "").trim() || "Неизвестная ошибка";
 }
 
+function isShipmentCellMissingError(e) {
+  let raw = "";
+  try {
+    raw = JSON.stringify(e);
+  } catch {
+    raw = "";
+  }
+  const text = [
+    e?.message,
+    e?.details,
+    e?.hint,
+    e?.error_description,
+    raw,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  return /shipment cell not found|not\s*found|не найден|not\s*exists/.test(text);
+}
+
 function normalizeOrder(row) {
   if (!row || typeof row !== "object") return row;
   const out = {
@@ -1483,8 +1503,7 @@ export default function App() {
               break;
             } catch (e) {
               lastErr = e;
-              const msg = String(e?.message || e || "");
-              if (!/not found|не найден|not\s*exists/i.test(msg)) throw e;
+              if (!isShipmentCellMissingError(e)) throw e;
             }
           }
           if (!sent) throw lastErr || new Error("Shipment cell not found");
@@ -1530,8 +1549,7 @@ export default function App() {
             break;
           } catch (e) {
             lastErr = e;
-            const msg = String(e?.message || e || "");
-            if (!/not found|не найден|not\s*exists/i.test(msg)) throw e;
+            if (!isShipmentCellMissingError(e)) throw e;
           }
         }
         if (!done) throw lastErr || new Error("Shipment cell not found");
