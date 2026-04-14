@@ -398,6 +398,7 @@ values
   ('Solito 1350 черный', 30, true),
   ('Solito 1350 белый', 40, true),
   ('Solito 1150', 50, true),
+  ('Solito 1150 белый', 55, true),
   ('Cremona', 60, true),
   ('Avella', 70, true),
   ('Avella lite', 80, true),
@@ -408,7 +409,9 @@ values
   ('Donini Grande 806', 130, true),
   ('Donini Grande 750', 140, true),
   ('Donini 806', 150, true),
+  ('Donini 806 белый', 155, true),
   ('Donini 750', 160, true),
+  ('Donini 750 белый', 165, true),
   ('Donini R 806', 170, true),
   ('Donini R 750', 180, true),
   ('ТВ Лофт', 190, true),
@@ -603,10 +606,38 @@ as $$
       on trim(coalesce(iam.item_name, '')) = s.item_name
     where s.section_name not in (select ms.section_name from mapped_sections ms)
   ),
+  white_alias_src as (
+    select
+      'Solito 1150 белый'::text as section_name,
+      ms.article,
+      ms.item_name,
+      ms.material,
+      ms.sort_order
+    from mapped_src ms
+    where ms.section_name = 'Solito 1150'
+      and ms.item_name ilike '%белый%'
+
+    union all
+
+    select
+      case
+        when cs.section_name = 'Donini 806' then 'Donini 806 белый'
+        when cs.section_name = 'Donini 750' then 'Donini 750 белый'
+      end::text as section_name,
+      cs.article,
+      cs.item_name,
+      cs.material,
+      cs.sort_order
+    from common_src cs
+    where cs.section_name in ('Donini 806', 'Donini 750')
+      and cs.item_name ilike '%белые ноги%'
+  ),
   merged as (
     select section_name, article, item_name, material, sort_order from common_src
     union all
     select section_name, article, item_name, material, sort_order from mapped_src
+    union all
+    select section_name, article, item_name, material, sort_order from white_alias_src
   )
   select
     m.section_name,
@@ -614,7 +645,8 @@ as $$
     m.item_name,
     m.material
   from merged m
-  where p_section_name is null or trim(p_section_name) = '' or m.section_name = trim(p_section_name)
+  where (p_section_name is null or trim(p_section_name) = '' or m.section_name = trim(p_section_name))
+    and right(trim(coalesce(m.item_name, '')), 1) <> '.'
   order by
     m.section_name,
     m.sort_order,
