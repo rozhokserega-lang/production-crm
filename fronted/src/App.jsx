@@ -1797,8 +1797,6 @@ export default function App() {
         )}
       </section>
 
-      {loading && <div className="load-hint">Загрузка данных…</div>}
-
       {view === "shipment" && (
         <section className="color-legend">
           <span className="legend-item"><i className="legend-dot white"></i> Белый: ожидаю заказ</span>
