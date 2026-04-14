@@ -803,6 +803,7 @@ export default function App() {
   const [statsSort, setStatsSort] = useState("stage");
   const [laborSort, setLaborSort] = useState("total_desc");
   const [laborSubView, setLaborSubView] = useState("total");
+  const [laborPlannerQtyByGroup, setLaborPlannerQtyByGroup] = useState({});
   const [uiScale, setUiScale] = useState("large");
   const [collapsedSections, setCollapsedSections] = useState({});
   const [loading, setLoading] = useState(false);
@@ -2016,6 +2017,27 @@ export default function App() {
         return a.group.localeCompare(b.group, "ru");
       });
   }, [laborTableRows, view]);
+  const laborPlannerRows = useMemo(() => {
+    if (view !== "labor") return [];
+    return laborOrdersRows
+      .filter((r) => Number(r.laborPerQtyMin || 0) > 0)
+      .map((r) => {
+        const plannedQtyRaw = laborPlannerQtyByGroup[r.group];
+        const plannedQty = Number(String(plannedQtyRaw ?? "").replace(",", "."));
+        const kits = Number.isFinite(plannedQty) && plannedQty > 0 ? plannedQty : 0;
+        const totalMin = kits * Number(r.laborPerQtyMin || 0);
+        const hours = Math.floor(totalMin / 60);
+        const minutes = Math.round(totalMin % 60);
+        const hhmm = `${hours}:${String(minutes).padStart(2, "0")}`;
+        return {
+          group: r.group,
+          laborPerQtyMin: Number(r.laborPerQtyMin || 0),
+          kits,
+          totalMin,
+          hhmm,
+        };
+      });
+  }, [laborOrdersRows, laborPlannerQtyByGroup, view]);
   const laborKpi = useMemo(() => {
     const totalOrders = laborTableRows.length;
     const totalMinutes = laborTableRows.reduce((sum, x) => sum + x.totalMin, 0);
@@ -2658,6 +2680,13 @@ export default function App() {
               onClick={() => setLaborSubView("orders")}
             >
               По заказам
+            </button>
+            <button
+              type="button"
+              className={laborSubView === "planner" ? "tab active" : "tab"}
+              onClick={() => setLaborSubView("planner")}
+            >
+              Планировщик
             </button>
           </div>
         )}
@@ -3351,6 +3380,50 @@ export default function App() {
                         <td>{r.kromkaShare.toFixed(1)}%</td>
                         <td>{r.prasShare.toFixed(1)}%</td>
                         <td>{r.lastDate || "-"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {laborSubView === "planner" && !laborPlannerRows.length && !loading && (
+              <div className="empty">Нет данных для планировщика</div>
+            )}
+            {laborSubView === "planner" && laborPlannerRows.length > 0 && (
+              <div className="sheet-table-wrap">
+                <table className="sheet-table">
+                  <thead>
+                    <tr>
+                      <th>Группа изделия</th>
+                      <th>Норма (мин/комплект)</th>
+                      <th>План (комплектов)</th>
+                      <th>Время (мин)</th>
+                      <th>Время (ч:мм)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {laborPlannerRows.map((r) => (
+                      <tr key={`planner-${r.group}`}>
+                        <td>{r.group}</td>
+                        <td>{r.laborPerQtyMin.toFixed(2)}</td>
+                        <td>
+                          <input
+                            type="number"
+                            min="0"
+                            step="1"
+                            value={laborPlannerQtyByGroup[r.group] ?? ""}
+                            onChange={(e) =>
+                              setLaborPlannerQtyByGroup((prev) => ({
+                                ...prev,
+                                [r.group]: e.target.value,
+                              }))
+                            }
+                            style={{ width: 120 }}
+                            placeholder="0"
+                          />
+                        </td>
+                        <td>{Math.round(r.totalMin)}</td>
+                        <td><b>{r.hhmm}</b></td>
                       </tr>
                     ))}
                   </tbody>
