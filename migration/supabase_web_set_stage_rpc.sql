@@ -562,6 +562,14 @@ as $$
   mapped_sections as (
     select distinct ma.section_name from mapped_articles ma
   ),
+  white_section_pairs as (
+    select
+      trim(replace(sc.section_name, ' белый', ''))::text as base_section,
+      trim(sc.section_name)::text as white_section
+    from public.section_catalog sc
+    where sc.is_active = true
+      and trim(coalesce(sc.section_name, '')) ilike '% белый'
+  ),
   src as (
     select distinct
       trim(pc.section_name)::text as section_name,
@@ -608,34 +616,41 @@ as $$
   ),
   white_alias_src as (
     select
-      'Solito 1150 белый'::text as section_name,
+      wsp.white_section as section_name,
       ms.article,
       ms.item_name,
       ms.material,
       ms.sort_order
     from mapped_src ms
-    where ms.section_name = 'Solito 1150'
-      and ms.item_name ilike '%белый%'
+    join white_section_pairs wsp
+      on wsp.base_section = ms.section_name
+    where ms.item_name ilike '%белый%' or ms.item_name ilike '%белые ноги%'
 
     union all
 
     select
-      case
-        when cs.section_name = 'Donini 806' then 'Donini 806 белый'
-        when cs.section_name = 'Donini 750' then 'Donini 750 белый'
-      end::text as section_name,
+      wsp.white_section as section_name,
       cs.article,
       cs.item_name,
       cs.material,
       cs.sort_order
     from common_src cs
-    where cs.section_name in ('Donini 806', 'Donini 750')
-      and cs.item_name ilike '%белые ноги%'
+    join white_section_pairs wsp
+      on wsp.base_section = cs.section_name
+    where cs.item_name ilike '%белый%' or cs.item_name ilike '%белые ноги%'
   ),
   merged as (
-    select section_name, article, item_name, material, sort_order from common_src
+    select cs.section_name, cs.article, cs.item_name, cs.material, cs.sort_order
+    from common_src cs
+    left join white_section_pairs wsp
+      on wsp.base_section = cs.section_name
+    where not (wsp.base_section is not null and (cs.item_name ilike '%белый%' or cs.item_name ilike '%белые ноги%'))
     union all
-    select section_name, article, item_name, material, sort_order from mapped_src
+    select ms.section_name, ms.article, ms.item_name, ms.material, ms.sort_order
+    from mapped_src ms
+    left join white_section_pairs wsp
+      on wsp.base_section = ms.section_name
+    where not (wsp.base_section is not null and (ms.item_name ilike '%белый%' or ms.item_name ilike '%белые ноги%'))
     union all
     select section_name, article, item_name, material, sort_order from white_alias_src
   )
