@@ -449,16 +449,116 @@ security definer
 set search_path to 'public', 'extensions', 'pg_temp'
 stable
 as $$
-  with catalog as (
-    select
-      trim(iam.section_name)::text as section_name,
-      trim(iam.article)::text as article,
-      trim(iam.item_name)::text as item_name,
-      trim(iam.table_color)::text as material,
-      coalesce(iam.sort_order, 999)::integer as sort_order
-    from public.item_article_map iam
-    where trim(coalesce(iam.section_name, '')) <> ''
-      and trim(coalesce(iam.table_color, '')) <> ''
+  with mapped_articles(section_name, article, sort_order) as (
+    values
+      -- Stabile
+      ('Stabile', 'GXodStabile135x65CP', 10),
+      ('Stabile', 'GXodStabile135x65INT', 20),
+      ('Stabile', 'GXodStabile135x65CO', 30),
+      ('Stabile', 'GXodStabile135x65VO', 40),
+      ('Stabile', 'GXodStabile135x65OB', 50),
+      ('Stabile', 'GXodStabile135x65BC', 60),
+      ('Stabile', 'GXodStabile135x65AL', 70),
+      -- Solito2
+      ('Solito2', 'GXofficedeskS2CH', 10),
+      ('Solito2', 'GXofficedeskS2SU', 20),
+      ('Solito2', 'GXofficedeskS2MU', 30),
+      ('Solito2', 'GXofficedeskS2MA', 40),
+      -- Solito 1350 black
+      ('Solito 1350 черный', 'GXofficedesk135STSA', 10),
+      ('Solito 1350 черный', 'GXofficedesk135SKT', 20),
+      ('Solito 1350 черный', 'GXofficedesk135SDBC001', 30),
+      ('Solito 1350 черный', 'GXofficedesk135SCP001', 40),
+      ('Solito 1350 черный', 'GXofficedesk135SOB001', 50),
+      ('Solito 1350 черный', 'GXofficedesk135SBC001', 60),
+      -- Solito 1350 white
+      ('Solito 1350 белый', 'GXofficedesk135SWDBC001', 10),
+      ('Solito 1350 белый', 'GXofficedesk135SWCP001', 20),
+      ('Solito 1350 белый', 'GXofficedesk135SWOB001', 30),
+      ('Solito 1350 белый', 'GXofficedesk135SWBC001', 40),
+      ('Solito 1350 белый', 'GXofficedeskSWTSA', 50),
+      ('Solito 1350 белый', 'GXofficedeskSWCP001', 60),
+      -- Solito 1150 (black + white)
+      ('Solito 1150', 'GXofficedeskSTSA', 10),
+      ('Solito 1150', 'GXofficedeskSCP001', 20),
+      ('Solito 1150', 'GXofficedeskSOB001', 30),
+      ('Solito 1150', 'GXofficedeskSBC001', 40),
+      ('Solito 1150', 'GXofficedeskSWCP001', 50),
+      ('Solito 1150', 'GXofficedeskSWKT', 60),
+      ('Solito 1150', 'GXofficedeskSWOB001', 70),
+      -- Cremona
+      ('Cremona', 'GXodCremonaUt', 10),
+      ('Cremona', 'GXodCremonaCP', 20),
+      ('Cremona', 'GXodCremonaHDO', 30),
+      ('Cremona', 'GXodCremonaVO', 40),
+      ('Cremona', 'GXodCremonaOB', 50),
+      ('Cremona', 'GXodCremonaBC', 60),
+      -- Avella
+      ('Avella', 'GXofficedeskTA001', 10),
+      ('Avella', 'GXofficedeskSS001', 20),
+      ('Avella', 'GXofficedeskHDO001', 30),
+      ('Avella', 'GXofficedeskGB001', 40),
+      ('Avella', 'GXofficedeskVO001', 50),
+      ('Avella', 'GXofficedeskOB001', 60),
+      ('Avella', 'GXofficedeskBC001', 70),
+      -- Avella lite
+      ('Avella lite', 'GXofficedeskTA001L', 10),
+      ('Avella lite', 'GXofficedeskSS001L', 20),
+      ('Avella lite', 'GXofficedeskCARM001L', 30),
+      ('Avella lite', 'GXofficedeskPGS001L', 40),
+      ('Avella lite', 'GXofficedeskHDO001L', 50),
+      ('Avella lite', 'GXofficedeskOK001L', 60),
+      ('Avella lite', 'GXofficedeskGB001L', 70),
+      ('Avella lite', 'GXofficedeskVO001L', 80),
+      ('Avella lite', 'GXofficedeskOB001L', 90),
+      ('Avella lite', 'GXofficedeskBC001L', 100),
+      -- Премьер черный
+      ('Премьер черный', 'GXodPremTA', 10),
+      ('Премьер черный', 'GXodPremSS', 20),
+      ('Премьер черный', 'GXodPremDHO', 30),
+      ('Премьер черный', 'GXodPremBKO', 40),
+      ('Премьер черный', 'GXodPremBC', 50),
+      -- Премьер белый
+      ('Премьер белый', 'GXodPremWTA', 10),
+      ('Премьер белый', 'GXodPremWSS', 20),
+      ('Премьер белый', 'GXodPremWDHO', 30),
+      ('Премьер белый', 'GXodPremWBKO', 40),
+      ('Премьер белый', 'GXodPremWBC', 50),
+      -- Классико +
+      ('Классико +', 'GXodKlassiko+UT', 10),
+      ('Классико +', 'GXodKlassiko+OS', 20),
+      ('Классико +', 'GXodKlassiko+VO', 30),
+      -- Классико
+      ('Классико', 'GXodKlassikoAAD', 10),
+      ('Классико', 'GXodKlassikoCMT', 20),
+      ('Классико', 'GXodKlassikoCP', 30),
+      ('Классико', 'GXodKlassikoDBC', 40),
+      ('Классико', 'GXodKlassikoGMB', 50),
+      -- Donini Grande 806
+      ('Donini Grande 806', 'GXktDoGAAD', 10),
+      ('Donini Grande 806', 'GXktDoGUT', 20),
+      ('Donini Grande 806', 'GXktDoGPGS', 30),
+      ('Donini Grande 806', 'GXktDoGOS', 40),
+      ('Donini Grande 806', 'GXktDoGOK', 50),
+      ('Donini Grande 806', 'GXktDoGOD', 60),
+      ('Donini Grande 806', 'GXktDoGVO', 70),
+      ('Donini Grande 806', 'GXktDoGGE', 80),
+      ('Donini Grande 806', 'GXktDoGBT', 90),
+      -- Donini Grande 750
+      ('Donini Grande 750', 'GXktDoGAADs', 10),
+      ('Donini Grande 750', 'GXktDoGUTs', 20),
+      ('Donini Grande 750', 'GXktDoGCARMs', 30),
+      ('Donini Grande 750', 'GXktDoGPGSs', 40),
+      ('Donini Grande 750', 'GXktDoGOSs', 50),
+      ('Donini Grande 750', 'GXktDoGOKs', 60),
+      ('Donini Grande 750', 'GXktDoGODs', 70),
+      ('Donini Grande 750', 'GXktDoGVOs', 80),
+      ('Donini Grande 750', 'GXktDoGGEs', 90),
+      ('Donini Grande 750', 'GXktDoGBTs', 100)
+  ),
+  mapped_sections as (
+    select distinct ma.section_name from mapped_articles ma
+  ),
   ),
   src as (
     select distinct
@@ -470,6 +570,26 @@ as $$
       and trim(coalesce(pc.item_name, '')) <> ''
       and trim(coalesce(pc.material, '')) <> ''
   ),
+  mapped_src as (
+    select
+      ma.section_name,
+      iam.article,
+      trim(iam.item_name) as item_name,
+      coalesce(
+        pm.material,
+        trim(regexp_replace(coalesce(iam.item_name, ''), '^.*\\.\\s*', ''))
+      ) as material,
+      ma.sort_order
+    from mapped_articles ma
+    join public.item_article_map iam on iam.article = ma.article
+    left join lateral (
+      select trim(pc.material) as material
+      from public.web_get_plan_catalog() pc
+      where trim(coalesce(pc.item_name, '')) = trim(coalesce(iam.item_name, ''))
+        and trim(coalesce(pc.material, '')) <> ''
+      limit 1
+    ) pm on true
+  ),
   common_src as (
     select
       s.section_name,
@@ -480,19 +600,12 @@ as $$
     from src s
     left join public.item_article_map iam
       on trim(coalesce(iam.item_name, '')) = s.item_name
+    where s.section_name not in (select ms.section_name from mapped_sections ms)
   ),
   merged as (
-    select c.section_name, c.article, c.item_name, c.material, c.sort_order
-    from catalog c
+    select section_name, article, item_name, material, sort_order from common_src
     union all
-    select x.section_name, x.article, x.item_name, x.material, x.sort_order
-    from common_src x
-    where not exists (
-      select 1
-      from catalog c2
-      where c2.section_name = x.section_name
-        and trim(c2.item_name) = trim(x.item_name)
-    )
+    select section_name, article, item_name, material, sort_order from mapped_src
   )
   select
     m.section_name,
