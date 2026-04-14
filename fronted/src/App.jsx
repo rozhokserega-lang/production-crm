@@ -656,18 +656,32 @@ function buildFurnitureTemplates(workbook, sheetName) {
     }
   }
   if (current && current.details.length) blocks.push(current);
-  const firstByProduct = new Map();
+  const byProduct = new Map();
   blocks.forEach((b) => {
-    if (!firstByProduct.has(b.productName)) firstByProduct.set(b.productName, b);
+    if (!byProduct.has(b.productName)) byProduct.set(b.productName, []);
+    byProduct.get(b.productName).push(b);
   });
-  const result = [...firstByProduct.values()];
-  const hasAvelaLite = result.some((x) => x.productName === "Авела Лайт");
-  const hasAvella = result.some((x) => x.productName === "Авелла");
-  if (hasAvelaLite && !hasAvella) {
-    const src = result.find((x) => x.productName === "Авела Лайт");
-    if (src) result.push({ ...src, productName: "Авелла" });
-  }
-  return result.sort((a, b) => a.productName.localeCompare(b.productName, "ru"));
+
+  const result = [];
+  byProduct.forEach((arr, productName) => {
+    const variants = [...arr].sort((a, b) => b.details.length - a.details.length);
+    const main = variants[0];
+    if (main) result.push(main);
+
+    if (normalizeFurnitureKey(productName) === normalizeFurnitureKey("Авела Лайт")) {
+      const shortest = [...arr].sort((a, b) => a.details.length - b.details.length)[0];
+      const longest = variants[0];
+      if (shortest) result.push({ ...shortest, productName: "Авелла Лайт" });
+      if (longest) result.push({ ...longest, productName: "Авелла" });
+    }
+  });
+
+  const uniqueByName = new Map();
+  result.forEach((r) => {
+    const key = normalizeFurnitureKey(r.productName);
+    if (!uniqueByName.has(key)) uniqueByName.set(key, r);
+  });
+  return [...uniqueByName.values()].sort((a, b) => a.productName.localeCompare(b.productName, "ru"));
 }
 
 function furnitureProductLabel(name) {
@@ -692,18 +706,20 @@ function resolveFurnitureAliasKey(candidates) {
     { has: ["donini grande"], key: "донини гранде" },
     { has: ["donini r"], key: "донини r" },
     { has: ["donini"], key: "донини" },
-    { has: ["avella lite", "авелла лайт", "авела лайт"], key: "авела лайт" },
-    { has: ["avella", "авелла", "авела"], key: "авела лайт" },
+    { has: ["avella lite", "авелла лайт", "авела лайт"], key: "авелла лайт" },
+    { has: ["avella", "авелла", "авела"], key: "авелла" },
     { has: ["cremona", "кремона"], key: "кремона" },
     { has: ["stabile", "стабиле"], key: "стабиле" },
     { has: ["premier", "премьер", "примьера"], key: "примьера" },
     { has: ["classico", "классико"], key: "классико" },
     { has: ["solito2"], key: "solito2" },
-    { has: ["solito", "солито"], key: "солито" },
+    { has: ["solito", "солито"], key: "солито 1350" },
     { has: ["siena"], key: "siena" },
-    { has: ["тв тумба 1500", "tv stand 1500"], key: "тв тумба 1500" },
-    { has: ["тв тумба", "tv stand"], key: "тв тумба" },
+    { has: ["тумба под тв лофт 150", "тв лофт 150", "tv loft 150"], key: "тв тумба 1500" },
+    { has: ["тумба под тв лофт", "тв лофт", "tv loft"], key: "тв тумба" },
   ];
+  if ((text.includes("solito") || text.includes("солито")) && text.includes("1150")) return "солито 1150";
+  if ((text.includes("solito") || text.includes("солито")) && text.includes("1350")) return "солито 1350";
   for (const rule of checks) {
     if (rule.has.some((needle) => text.includes(needle))) return rule.key;
   }
