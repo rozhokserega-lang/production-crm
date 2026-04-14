@@ -843,6 +843,7 @@ export default function App() {
   const [furnitureArticleRows, setFurnitureArticleRows] = useState([]);
   const [furnitureSelectedProduct, setFurnitureSelectedProduct] = useState("");
   const [furnitureSelectedQty, setFurnitureSelectedQty] = useState("1");
+  const importPlanFileRef = useRef(null);
   const loadSeqRef = useRef(0);
   const loadInFlightRef = useRef(false);
 
@@ -1442,6 +1443,18 @@ export default function App() {
   const selectedArticleRow = useMemo(() => {
     return sectionArticles.find((x) => x.itemName === planArticle) || null;
   }, [sectionArticles, planArticle]);
+  const articleLookupByItemKey = useMemo(() => {
+    const map = new Map();
+    (sectionArticleRows || []).forEach((x) => {
+      const article = String(x.article || "").trim();
+      const itemName = String(x.item_name || x.itemName || "").trim();
+      if (!article || !itemName) return;
+      const key = normalizeFurnitureKey(itemName);
+      if (!key || map.has(key)) return;
+      map.set(key, article);
+    });
+    return map;
+  }, [sectionArticleRows]);
   const resolvedPlanItem = useMemo(() => {
     return String(selectedArticleRow?.itemName || "").trim();
   }, [selectedArticleRow]);
@@ -2497,6 +2510,126 @@ export default function App() {
     }
   }
 
+  function exportSelectedShipmentToExcel() {
+    if (shipmentTab === "straps" || !selectedShipments.length) return;
+    const planNumberRaw = window.prompt("Введите номер плана для экспорта:", String(selectedShipments[0]?.week || ""));
+    if (planNumberRaw == null) return;
+    const planNumber = String(planNumberRaw || "").trim();
+    if (!planNumber) {
+      setError("Укажите номер плана.");
+      return;
+    }
+
+    const byArticle = new Map();
+    const missingItems = [];
+    selectedShipments.forEach((s) => {
+      const item = String(s.item || "").trim();
+      const key = normalizeFurnitureKey(item);
+      let article = articleLookupByItemKey.get(key) || "";
+      if (!article && key) {
+        const match = [...articleLookupByItemKey.entries()].find(([itemKey]) => key.includes(itemKey) || itemKey.includes(key));
+        if (match) article = match[1];
+      }
+      if (!article) {
+        missingItems.push(item || "Без названия");
+        return;
+      }
+      const qty = Number(s.qty || 0);
+      byArticle.set(article, (byArticle.get(article) || 0) + (Number.isFinite(qty) ? qty : 0));
+    });
+
+    if (!byArticle.size) {
+      setError("Не найдено ни одного артикула для экспорта.");
+      return;
+    }
+
+    const rows = [...byArticle.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0], "ru"))
+      .map(([article, qty]) => [article, qty]);
+
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "План");
+    XLSX.writeFile(wb, `План_${planNumber}.xlsx`);
+
+    if (missingItems.length > 0) {
+      setError(`Экспорт выполнен частично: не найден артикул для ${missingItems.length} позиций.`);
+    } else {
+      setError("");
+    }
+  }
+
+  async function importShipmentPlanFromExcelFile(file) {
+    if (!file) return;
+    const planNumberRaw = window.prompt("Введите номер плана для импорта:", "");
+    if (planNumberRaw == null) return;
+    const planNumber = String(planNumberRaw || "").trim();
+    if (!planNumber) {
+      setError("Укажите номер плана.");
+      return;
+    }
+
+    setActionLoading("shipment:import");
+    setError("");
+    try {
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: "array" });
+      const firstSheet = String(wb?.SheetNames?.[0] || "");
+      if (!firstSheet) throw new Error("В файле не найден лист.");
+      const ws = wb.Sheets[firstSheet];
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: "" });
+      const importRows = rows
+        .map((r) => ({
+          article: String(r?.[0] || "").trim(),
+          qty: Number(String(r?.[1] || "").replace(",", ".")),
+        }))
+        .filter((x) => x.article && Number.isFinite(x.qty) && x.qty > 0);
+      if (!importRows.length) {
+        throw new Error("Не найдено валидных строк. Ожидается: колонка A — артикул, B — количество.");
+      }
+
+      const articleMap = new Map();
+      (sectionArticleRows || []).forEach((x) => {
+        const article = String(x.article || "").trim();
+        const sectionName = String(x.section_name || x.sectionName || "").trim();
+        const itemName = String(x.item_name || x.itemName || "").trim();
+        const material = String(x.material || "").trim();
+        if (!article || !sectionName || !itemName) return;
+        if (!articleMap.has(article)) {
+          articleMap.set(article, { sectionName, itemName, material });
+        }
+      });
+
+      const missing = [];
+      let imported = 0;
+      for (const row of importRows) {
+        const mapped = articleMap.get(row.article);
+        if (!mapped) {
+          missing.push(row.article);
+          continue;
+        }
+        await callBackend("webCreateShipmentPlanCell", {
+          sectionName: mapped.sectionName,
+          item: mapped.itemName,
+          material: mapped.material,
+          week: planNumber,
+          qty: row.qty,
+        });
+        imported += 1;
+      }
+
+      await load();
+      if (missing.length > 0) {
+        setError(`Импорт выполнен частично: ${imported} строк(и) добавлено, не найдены артикулы: ${missing.slice(0, 8).join(", ")}${missing.length > 8 ? "..." : ""}`);
+      }
+    } catch (e) {
+      setError(`Ошибка импорта Excel: ${extractErrorMessage(e)}`);
+    } finally {
+      setActionLoading("");
+      if (importPlanFileRef.current) importPlanFileRef.current.value = "";
+    }
+  }
+
   return (
     <div className={`page ${uiScale === "large" ? "scale-large" : "scale-standard"}`}>
       <header className="top">
@@ -2924,6 +3057,36 @@ export default function App() {
                     Предпросмотр плана
                     {shipmentTab !== "straps" && selectedShipments.length > 1 ? ` (${selectedShipments.length})` : ""}
                   </button>
+                  {shipmentTab !== "straps" && (
+                    <button
+                      className="mini"
+                      disabled={selectedShipments.length === 0}
+                      onClick={exportSelectedShipmentToExcel}
+                    >
+                      Экспорт в Excel
+                    </button>
+                  )}
+                  {shipmentTab !== "straps" && (
+                    <>
+                      <input
+                        ref={importPlanFileRef}
+                        type="file"
+                        accept=".xlsx,.xls,.csv"
+                        style={{ display: "none" }}
+                        onChange={(e) => {
+                          const f = e.target.files && e.target.files[0];
+                          importShipmentPlanFromExcelFile(f);
+                        }}
+                      />
+                      <button
+                        className="mini"
+                        disabled={actionLoading === "shipment:import"}
+                        onClick={() => importPlanFileRef.current?.click()}
+                      >
+                        {actionLoading === "shipment:import" ? "Импорт..." : "Импорт из Excel"}
+                      </button>
+                    </>
+                  )}
                   <button
                     className="mini"
                     disabled={
