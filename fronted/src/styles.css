@@ -744,7 +744,10 @@ button:disabled {
 
 .selection-summary.placeholder {
   color: #64748b;
-  font-size: 13px;
+  font-size: 12px;
+  padding: 7px 9px;
+  line-height: 1.25;
+  min-height: 52px;
 }
 
 .selection-summary-title {

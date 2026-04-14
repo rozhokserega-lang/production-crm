@@ -3304,7 +3304,10 @@ export default function App() {
                             <td>{row.availableSheets}</td>
                             <td>
                               {row.status}
-                              {row.materialHasDeficit ? ` • ❌ Не хватает: ${row.materialDeficit}` : " • ✅ Хватает"}
+                              {!row.inWork &&
+                                (row.materialHasDeficit
+                                  ? ` • ❌ Не хватает: ${row.materialDeficit}`
+                                  : " • ✅ Хватает")}
                             </td>
                           </tr>
                         );
