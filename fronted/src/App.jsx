@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { callBackend } from "./api";
+import { SUPABASE_ANON_KEY, SUPABASE_URL } from "./config";
 import {
   getOrderStageDisplayLabel as getStageLabel,
   getOverviewLaneId,
@@ -409,6 +410,43 @@ function normalizeOrder(row) {
   return out;
 }
 
+function resolveDefaultConsumeSheets(order, shipmentOrders) {
+  const direct = Number(order?.sheetsNeeded ?? order?.sheets_needed ?? 0);
+  if (Number.isFinite(direct) && direct > 0) return direct;
+
+  const orderId = String(order?.orderId || order?.order_id || "").trim();
+  const sourceRowId = String(order?.sourceRowId || order?.source_row_id || "").trim();
+  const week = String(order?.week || "").trim();
+  const item = String(order?.item || "").trim();
+  const all = Array.isArray(shipmentOrders) ? shipmentOrders : [];
+
+  const getSheets = (x) => Number(x?.sheetsNeeded ?? x?.sheets_needed ?? 0);
+
+  if (orderId) {
+    const byOrderId = all.find((x) => String(x?.orderId || x?.order_id || "").trim() === orderId && getSheets(x) > 0);
+    if (byOrderId) return getSheets(byOrderId);
+  }
+  if (sourceRowId && week) {
+    const byRowWeek = all.find(
+      (x) =>
+        String(x?.sourceRowId || x?.source_row_id || "").trim() === sourceRowId &&
+        String(x?.week || "").trim() === week &&
+        getSheets(x) > 0
+    );
+    if (byRowWeek) return getSheets(byRowWeek);
+  }
+  if (item && week) {
+    const byItemWeek = all.find(
+      (x) =>
+        String(x?.item || "").trim() === item &&
+        String(x?.week || "").trim() === week &&
+        getSheets(x) > 0
+    );
+    if (byItemWeek) return getSheets(byItemWeek);
+  }
+  return 0;
+}
+
 function normalizeShipmentBoard(data) {
   if (data && Array.isArray(data.sections)) return data;
   if (!Array.isArray(data)) return { sections: [] };
@@ -808,12 +846,85 @@ export default function App() {
     }
   }
 
+  async function notifyAssemblyReadyTelegram(meta = {}) {
+    const baseUrl = String(SUPABASE_URL || "").replace(/\/$/, "");
+    const token = String(SUPABASE_ANON_KEY || "").trim();
+    if (!baseUrl || !token) return;
+    try {
+      await fetch(`${baseUrl}/functions/v1/notify-assembly-ready`, {
+        method: "POST",
+        headers: {
+          apikey: token,
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          orderId: String(meta.orderId || "").trim(),
+          item: String(meta.item || "").trim(),
+          material: String(meta.material || "").trim(),
+          week: String(meta.week || "").trim(),
+          qty: Number(meta.qty || 0),
+          executor: String(meta.executor || "").trim(),
+        }),
+      });
+    } catch (_) {
+      // Notification is best-effort and should not block production workflow.
+    }
+  }
+
+  async function notifyFinalStageTelegram(meta = {}) {
+    const baseUrl = String(SUPABASE_URL || "").replace(/\/$/, "");
+    const token = String(SUPABASE_ANON_KEY || "").trim();
+    if (!baseUrl || !token) return;
+    try {
+      await fetch(`${baseUrl}/functions/v1/notify-assembly-ready`, {
+        method: "POST",
+        headers: {
+          apikey: token,
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          stage: "final_done",
+          orderId: String(meta.orderId || "").trim(),
+          item: String(meta.item || "").trim(),
+          material: String(meta.material || "").trim(),
+          week: String(meta.week || "").trim(),
+          qty: Number(meta.qty || 0),
+          executor: String(meta.executor || "").trim(),
+        }),
+      });
+    } catch (_) {
+      // Notification is best-effort and should not block production workflow.
+    }
+  }
+
   async function runAction(action, orderId, payload = {}, meta = {}) {
     const key = `${action}:${orderId}`;
     setActionLoading(key);
     setError("");
     try {
       const data = await callBackend(action, { orderId, ...payload });
+      if (action === "webSetPrasDone" && meta.notifyOnAssembly) {
+        notifyAssemblyReadyTelegram({
+          orderId,
+          item: meta.item,
+          material: meta.material,
+          week: meta.week,
+          qty: meta.qty,
+          executor: meta.executor,
+        });
+      }
+      if (action === "webSetShippingDone" && meta.notifyOnFinalStage) {
+        notifyFinalStageTelegram({
+          orderId,
+          item: meta.item,
+          material: meta.material,
+          week: meta.week,
+          qty: meta.qty,
+          executor: meta.executor,
+        });
+      }
       if (action === "webSetPilkaDone") {
         const isPlankOrder = !!meta.isPlankOrder;
         const defaultQty = Number(meta.defaultSheets || 0) > 0 ? String(Number(meta.defaultSheets || 0)) : "";
@@ -2665,7 +2776,7 @@ export default function App() {
                 disabled={actionLoading === `webSetPilkaDone:${orderId}` || pilkaDone || !pilkaInWork}
                 onClick={() =>
                   runAction("webSetPilkaDone", orderId, {}, {
-                    defaultSheets: o.sheetsNeeded,
+                    defaultSheets: resolveDefaultConsumeSheets(o, shipmentOrders),
                     item: o.item,
                     isPlankOrder: String(o.item || "").includes("Планки обвязки"),
                   })
@@ -2749,7 +2860,16 @@ export default function App() {
               <button
                 className="mini ok"
                 disabled={actionLoading === `webSetPrasDone:${orderId}` || prasDone || !prasInWork}
-                onClick={() => runAction("webSetPrasDone", orderId)}
+                onClick={() =>
+                  runAction("webSetPrasDone", orderId, {}, {
+                    notifyOnAssembly: pilkaDone && kromkaDone && !assemblyDone,
+                    item: o.item,
+                    material: getMaterialLabel(o.item, o.material || o.colorName || ""),
+                    week: o.week,
+                    qty: o.qty,
+                    executor: executorByOrder[orderId] || o.prasExecutor || "",
+                  })
+                }
               >
                 {tab === "pras" ? "Готово" : "Присадка: Готово"}
               </button>
@@ -2778,7 +2898,16 @@ export default function App() {
               <button
                 className="mini ok"
                 disabled={actionLoading === `webSetShippingDone:${orderId}` || packagingDone}
-                onClick={() => runAction("webSetShippingDone", orderId)}
+                onClick={() =>
+                  runAction("webSetShippingDone", orderId, {}, {
+                    notifyOnFinalStage: true,
+                    item: o.item,
+                    material: getMaterialLabel(o.item, o.material || o.colorName || ""),
+                    week: o.week,
+                    qty: o.qty,
+                    executor: executorByOrder[orderId] || o.prasExecutor || "",
+                  })
+                }
               >
                 {tab === "done" ? "Готово" : "Готово к отправке: Готово"}
               </button>
