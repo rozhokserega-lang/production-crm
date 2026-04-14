@@ -1016,6 +1016,17 @@ export default function App() {
       }
       await load();
     } catch (e) {
+      if (action === "webSetPilkaDone") {
+        const isPlankOrder = !!meta.isPlankOrder;
+        const defaultQty = Number(meta.defaultSheets || 0) > 0 ? String(Number(meta.defaultSheets || 0)) : "";
+        setConsumeDialogData({ orderId, item: String(meta.item || ""), suggestedMaterial: "", materials: [] });
+        setConsumeMaterial(isPlankOrder ? "Черный" : String(meta.material || "").trim());
+        setConsumeQty(defaultQty);
+        setConsumeEditMode(true);
+        setConsumeLoading(false);
+        setConsumeError(`Этап "Пила: Готово" вернул ошибку, но списание можно выполнить вручную: ${extractErrorMessage(e)}`);
+        setConsumeDialogOpen(true);
+      }
       setError(toUserError(e));
     } finally {
       setActionLoading("");
