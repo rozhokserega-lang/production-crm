@@ -634,6 +634,57 @@ function furnitureProductLabel(name) {
     .trim();
 }
 
+function normalizeFurnitureKey(v) {
+  return String(v || "")
+    .toLowerCase()
+    .replace(/[ё]/g, "е")
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function resolveFurnitureTemplateForPreview(preview, templates) {
+  const list = Array.isArray(templates) ? templates : [];
+  if (!list.length) return null;
+  const candidates = [
+    String(preview?.firstName || ""),
+    String(preview?.detailedName || ""),
+  ]
+    .map(normalizeFurnitureKey)
+    .filter(Boolean);
+  if (!candidates.length) return null;
+
+  const byExact = list.find((t) => {
+    const key = normalizeFurnitureKey(t?.productName || "");
+    return key && candidates.some((c) => c === key);
+  });
+  if (byExact) return byExact;
+
+  const byContains = list.find((t) => {
+    const key = normalizeFurnitureKey(t?.productName || "");
+    return key && candidates.some((c) => c.includes(key) || key.includes(c));
+  });
+  return byContains || null;
+}
+
+function buildPreviewRowsFromFurnitureTemplate(template, orderQty) {
+  const qtyNum = Number(orderQty || 0);
+  const baseQty = Number(template?.baseQty || 0) > 0 ? Number(template.baseQty) : 1;
+  if (!(qtyNum > 0) || !Array.isArray(template?.details)) return [];
+  return template.details.map((d) => {
+    const perUnit = Number(d?.perUnit || 0);
+    const raw = perUnit > 0 ? perUnit * qtyNum : 0;
+    const rounded = Math.round(raw * 1000) / 1000;
+    const normalizedQty = Number.isInteger(rounded) ? String(Math.trunc(rounded)) : String(rounded).replace(".", ",");
+    const partName = String(d?.detailName || "").trim();
+    return {
+      part: partName,
+      qty: normalizedQty,
+      baseQty,
+    };
+  }).filter((x) => x.part);
+}
+
 export default function App() {
   const [view, setView] = useState("shipment");
   const [tab, setTab] = useState("all");
@@ -2108,13 +2159,22 @@ export default function App() {
     setActionLoading("preview:batch");
     setError("");
     try {
+      const enrichPreviewFromFurniture = (preview) => {
+        if (!preview || preview.isStrapPlan) return preview;
+        const template = resolveFurnitureTemplateForPreview(preview, furnitureTemplates);
+        if (!template) return preview;
+        const rows = buildPreviewRowsFromFurnitureTemplate(template, preview.qty);
+        if (!rows.length) return preview;
+        return { ...preview, rows };
+      };
       if (selectedShipments.length === 1) {
         const s = selectedShipments[0];
         const preview = await callBackend("webPreviewPlanFromShipment", {
           row: s.row,
           col: s.col,
         });
-        setPlanPreviews(preview ? [{ ...preview, _key: `${s.row}-${s.col}` }] : []);
+        const enriched = preview ? enrichPreviewFromFurniture({ ...preview, _key: `${s.row}-${s.col}` }) : null;
+        setPlanPreviews(enriched ? [enriched] : []);
       } else {
         let plans = [];
         try {
@@ -2122,7 +2182,8 @@ export default function App() {
             items: selectedShipments.map((x) => ({ row: x.row, col: x.col })),
           });
           plans = (batch && Array.isArray(batch.plans) ? batch.plans : [])
-            .map((p) => ({ ...(p.plan || {}), _key: `${p.row}-${p.col}` }));
+            .map((p) => ({ ...(p.plan || {}), _key: `${p.row}-${p.col}` }))
+            .map(enrichPreviewFromFurniture);
         } catch (batchError) {
           // Fallback: если пачка упала из-за одной позиции, собираем предпросмотры поштучно.
           const settled = await Promise.allSettled(
@@ -2133,7 +2194,7 @@ export default function App() {
           );
           plans = settled
             .filter((x) => x.status === "fulfilled" && x.value)
-            .map((x) => x.value);
+            .map((x) => enrichPreviewFromFurniture(x.value));
           const failedCount = settled.length - plans.length;
           if (failedCount > 0) {
             setError(
