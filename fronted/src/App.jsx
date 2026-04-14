@@ -353,6 +353,12 @@ function getMaterialLabel(item, material) {
   return tail || "Материал не указан";
 }
 
+function normalizeCatalogItemName(name) {
+  return String(name || "")
+    .replace(/^стол\s+письменный\s+/i, "")
+    .trim();
+}
+
 function toUserError(e) {
   const msg = String(e?.message || e || "");
   if (msg.includes("Система занята")) return "Система занята, повторите через 1-2 секунды.";
@@ -908,7 +914,7 @@ export default function App() {
       .map((x) => ({
         sectionName: String(x.section_name || x.sectionName || "").trim(),
         article: String(x.article || "").trim(),
-        itemName: String(x.item_name || x.itemName || "").trim(),
+        itemName: normalizeCatalogItemName(String(x.item_name || x.itemName || "").trim()),
         material: String(x.material || "").trim(),
       }))
       .filter((x) => x.sectionName === planSection && x.article && x.itemName)
