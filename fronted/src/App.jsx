@@ -910,7 +910,8 @@ export default function App() {
       .filter((v, i, a) => a.indexOf(v) === i);
   }, [sectionCatalogNames, shipmentSectionNames]);
   const sectionArticles = useMemo(() => {
-    return (sectionArticleRows || [])
+    const hasWhiteAliasSection = sectionOptions.includes(`${planSection} белый`);
+    const rows = (sectionArticleRows || [])
       .map((x) => ({
         sectionName: String(x.section_name || x.sectionName || "").trim(),
         article: String(x.article || "").trim(),
@@ -918,8 +919,19 @@ export default function App() {
         material: String(x.material || "").trim(),
       }))
       .filter((x) => x.sectionName === planSection && x.article && x.itemName)
+      .filter((x) => {
+        if (!hasWhiteAliasSection) return true;
+        return !/(белый|белые ноги)/i.test(x.itemName);
+      })
       .sort((a, b) => a.itemName.localeCompare(b.itemName, "ru"));
-  }, [sectionArticleRows, planSection]);
+    const byItemName = new Map();
+    rows.forEach((row) => {
+      if (!byItemName.has(row.itemName)) {
+        byItemName.set(row.itemName, row);
+      }
+    });
+    return [...byItemName.values()];
+  }, [sectionArticleRows, planSection, sectionOptions]);
   const selectedArticleRow = useMemo(() => {
     return sectionArticles.find((x) => x.itemName === planArticle) || null;
   }, [sectionArticles, planArticle]);

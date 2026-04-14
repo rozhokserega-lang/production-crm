@@ -557,7 +557,24 @@ as $$
       ('Donini Grande 750', 'GXktDoGODs', 70),
       ('Donini Grande 750', 'GXktDoGVOs', 80),
       ('Donini Grande 750', 'GXktDoGGEs', 90),
-      ('Donini Grande 750', 'GXktDoGBTs', 100)
+      ('Donini Grande 750', 'GXktDoGBTs', 100),
+      -- ТВ Лофт
+      ('ТВ Лофт', 'GXtvsLoftBt', 10),
+      ('ТВ Лофт', 'GXtvsLoftVo', 20),
+      ('ТВ Лофт', 'GXtvsLoftOk', 30),
+      ('ТВ Лофт', 'GXtvsLoftMo', 40),
+      ('ТВ Лофт', 'GXtvsLoftOs', 50),
+      ('ТВ Лофт', 'GXtvsLoftInt', 60),
+      ('ТВ Лофт', 'GXtvsLoftTsa', 70),
+      ('ТВ Лофт', 'GXtvsLoftUt', 80),
+      ('ТВ Лофт', 'GXtvsLoftAAD', 90),
+      -- ТВ Лофт 1500
+      ('ТВ Лофт 1500', 'GXtvsLoftGVo', 10),
+      ('ТВ Лофт 1500', 'GXtvsLoftGMo', 20),
+      ('ТВ Лофт 1500', 'GXtvsLoftGOs', 30),
+      ('ТВ Лофт 1500', 'GXtvsLoftGInt', 40),
+      ('ТВ Лофт 1500', 'GXtvsLoftGTsa', 50),
+      ('ТВ Лофт 1500', 'GXtvsLoftGUt', 60)
   ),
   mapped_sections as (
     select distinct ma.section_name from mapped_articles ma
@@ -569,6 +586,12 @@ as $$
     from public.section_catalog sc
     where sc.is_active = true
       and trim(coalesce(sc.section_name, '')) ilike '% белый'
+      and exists (
+        select 1
+        from public.section_catalog sb
+        where sb.is_active = true
+          and trim(sb.section_name) = trim(replace(sc.section_name, ' белый', ''))
+      )
   ),
   src as (
     select distinct
@@ -731,7 +754,7 @@ begin
     return new;
   end if;
 
-  -- Rule v1: Solito 1350 from large format -> leftover 2800x624 per used sheet.
+  -- Rule v1: Solito 1350 -> leftover 2800x624 per used sheet.
   if v_item_lc like '%solito%' and v_item_lc like '%1350%' then
     select coalesce(sc.sheets_needed, 0)
       into v_sheets_needed
@@ -756,6 +779,43 @@ begin
         new.material,
         v_sheets_needed,
         '2800x624',
+        floor(v_sheets_needed)
+      )
+      on conflict (order_id, leftover_format) do update
+      set
+        item = excluded.item,
+        material = excluded.material,
+        sheets_needed = excluded.sheets_needed,
+        leftovers_qty = excluded.leftovers_qty;
+    end if;
+  end if;
+
+  -- Rule v2: Donini Grande 750/806 large format -> leftover 2800x550 per used sheet.
+  if (v_item_lc like '%donini grande 750%' or v_item_lc like '%donini grande 806%')
+     and regexp_replace(lower(coalesce(new.material, '')), '[\s*хx×]', '', 'g') like '%28002070%' then
+    select coalesce(sc.sheets_needed, 0)
+      into v_sheets_needed
+    from public.shipment_cells sc
+    where sc.source_row_id = new.source_row_id
+      and lower(coalesce(sc.item, '')) = v_item_lc
+    order by sc.updated_at desc nulls last
+    limit 1;
+
+    if v_sheets_needed > 0 then
+      insert into public.materials_leftovers(
+        order_id,
+        item,
+        material,
+        sheets_needed,
+        leftover_format,
+        leftovers_qty
+      )
+      values (
+        new.order_id,
+        new.item,
+        new.material,
+        v_sheets_needed,
+        '2800x550',
         floor(v_sheets_needed)
       )
       on conflict (order_id, leftover_format) do update
