@@ -1833,7 +1833,7 @@ export default function App() {
       }))
       .filter((x) => {
         const q = String(query || "").trim().toLowerCase();
-        return !q || x.item.toLowerCase().includes(q) || x.orderId.toLowerCase().includes(q) || x.material.toLowerCase().includes(q);
+        return !q || x.material.toLowerCase().includes(q) || x.leftoverFormat.toLowerCase().includes(q);
       })
       .sort((a, b) => a.item.localeCompare(b.item, "ru"));
   }, [leftoversRows, query, view]);
@@ -2325,7 +2325,7 @@ export default function App() {
         <div className="filters">
           {view !== "furniture" && (
             <input
-              placeholder={view === "shipment" ? "Поиск отгрузки: название или ID" : view === "warehouse" ? (warehouseSubView === "leftovers" ? "Поиск по заказу или изделию" : "Поиск материала") : "Поиск по названию или ID"}
+              placeholder={view === "shipment" ? "Поиск отгрузки: название или ID" : view === "warehouse" ? (warehouseSubView === "leftovers" ? "Поиск по цвету или размеру" : "Поиск материала") : "Поиск по названию или ID"}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
@@ -2969,22 +2969,16 @@ export default function App() {
                 <table className="sheet-table">
                   <thead>
                     <tr>
-                      <th>ID заказа</th>
-                      <th>Изделие</th>
-                      <th>Материал</th>
-                      <th>Листов в раскрое</th>
-                      <th>Формат остатка</th>
-                      <th>Остатков (шт)</th>
+                      <th>Цвет</th>
+                      <th>Размер</th>
+                      <th>Количество</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {leftoversTableRows.map((r) => (
-                      <tr key={`${r.orderId}-${r.item}`}>
-                        <td>{r.orderId || "-"}</td>
-                        <td>{r.item || "-"}</td>
+                    {leftoversTableRows.map((r, idx) => (
+                      <tr key={`${r.material}-${r.leftoverFormat}-${idx}`}>
                         <td>{r.material || "-"}</td>
-                        <td>{r.sheetsNeeded}</td>
-                        <td>{r.leftoverFormat}</td>
+                        <td>{r.leftoverFormat || "-"}</td>
                         <td><b>{r.leftoversQty}</b></td>
                       </tr>
                     ))}
