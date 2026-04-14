@@ -532,6 +532,49 @@ function normalizeShipmentBoard(data) {
   return { sections };
 }
 
+function mergeShipmentBoardWithTable(board, tableRows) {
+  const normalized = normalizeShipmentBoard(board);
+  const rows = Array.isArray(tableRows) ? tableRows : [];
+  if (!rows.length) return normalized;
+
+  const bySource = new Map();
+  rows.forEach((r) => {
+    const sourceRow = String(r?.source_row_id || r?.sourceRowId || "").trim();
+    const sourceCol = String(r?.source_col_id || r?.sourceColId || "").trim();
+    if (!sourceRow || !sourceCol) return;
+    bySource.set(`${sourceRow}|${sourceCol}`, {
+      availableSheets: Number(r?.available_sheets ?? r?.availableSheets ?? 0),
+      sheetsNeeded: Number(r?.sheets_needed ?? r?.sheetsNeeded ?? 0),
+      materialEnoughForOrder:
+        r?.material_enough_for_order == null
+          ? (r?.materialEnoughForOrder == null ? undefined : !!r?.materialEnoughForOrder)
+          : !!r?.material_enough_for_order,
+    });
+  });
+
+  return {
+    ...normalized,
+    sections: (normalized.sections || []).map((section) => ({
+      ...section,
+      items: (section.items || []).map((item) => ({
+        ...item,
+        cells: (item.cells || []).map((cell) => {
+          const key = `${String(item?.sourceRowId || item?.row || "").trim()}|${String(cell?.sourceColId || cell?.col || "").trim()}`;
+          const fromTable = bySource.get(key);
+          if (!fromTable) return cell;
+          return {
+            ...cell,
+            availableSheets: fromTable.availableSheets,
+            sheetsNeeded: fromTable.sheetsNeeded > 0 ? fromTable.sheetsNeeded : cell.sheetsNeeded,
+            materialEnoughForOrder:
+              fromTable.materialEnoughForOrder == null ? cell.materialEnoughForOrder : fromTable.materialEnoughForOrder,
+          };
+        }),
+      })),
+    })),
+  };
+}
+
 function parseStrapSize(name) {
   const m = String(name || "").match(/\((\d+)\s*[_xх]\s*(\d+)\)/i);
   if (!m) return null;
@@ -795,10 +838,18 @@ export default function App() {
     try {
       let data;
       if (view === "shipment") {
+        let boardData;
         try {
-          data = await callBackend("webGetShipmentBoard");
+          boardData = await callBackend("webGetShipmentBoard");
         } catch (_) {
-          data = await callBackend("webGetShipmentTable");
+          boardData = await callBackend("webGetShipmentTable");
+        }
+        data = normalizeShipmentBoard(boardData);
+        try {
+          const tableData = await callBackend("webGetShipmentTable");
+          data = mergeShipmentBoardWithTable(data, tableData);
+        } catch (_) {
+          // keep shipment board data if table snapshot is unavailable
         }
         try {
           const catalogData = await callBackend("webGetPlanCatalog");
