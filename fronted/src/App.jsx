@@ -591,9 +591,9 @@ export default function App() {
       let data;
       if (view === "shipment") {
         try {
-          data = await callBackend("webGetShipmentTable");
-        } catch (_) {
           data = await callBackend("webGetShipmentBoard");
+        } catch (_) {
+          data = await callBackend("webGetShipmentTable");
         }
         try {
           const catalogData = await callBackend("webGetPlanCatalog");
@@ -936,38 +936,44 @@ export default function App() {
       if (action === "webSetPilkaDone") {
         const isPlankOrder = !!meta.isPlankOrder;
         const defaultQty = Number(meta.defaultSheets || 0) > 0 ? String(Number(meta.defaultSheets || 0)) : "";
-        // Открываем диалог сразу, а подсказки подтягиваем в фоне.
-        setConsumeDialogData({ orderId, item: String(meta.item || ""), suggestedMaterial: "", materials: [] });
-        setConsumeMaterial(isPlankOrder ? "Черный" : "");
-        setConsumeQty(defaultQty);
-        setConsumeEditMode(true);
-        setConsumeError("");
-        setConsumeLoading(true);
-        setConsumeDialogOpen(true);
-
-        // Не блокируем UI ожиданием подсказок.
-        callBackend("webGetConsumeOptions", { orderId })
-          .then((options) => {
-            setConsumeDialogData(options || { orderId });
-            const suggested = isPlankOrder ? "Черный" : String(options?.suggestedMaterial || "").trim();
-            if (suggested) setConsumeMaterial(suggested);
-            const suggestedSheets = Number(options?.suggestedSheets ?? options?.sheetsNeeded ?? 0);
-            if (Number.isFinite(suggestedSheets) && suggestedSheets > 0) {
-              setConsumeQty((prev) => {
-                const prevNum = Number(String(prev || "").replace(",", "."));
-                if (Number.isFinite(prevNum) && prevNum > 0) return prev;
-                return String(suggestedSheets);
-              });
-            }
-            if (!isPlankOrder && suggested) setConsumeEditMode(false);
-          })
-          .catch(() => {
-            // Оставляем ручной режим без подсказок.
-          })
-          .finally(() => setConsumeLoading(false));
-
-        await load();
-        return;
+        const fallbackOpenManualDialog = (options = null, errMsg = "") => {
+          setConsumeDialogData(options || { orderId, item: String(meta.item || ""), suggestedMaterial: "", materials: [] });
+          const suggested = isPlankOrder
+            ? "Черный"
+            : String(options?.suggestedMaterial || meta.material || "").trim();
+          setConsumeMaterial(suggested);
+          const suggestedSheetsRaw = options?.suggestedSheets ?? options?.sheetsNeeded ?? defaultQty ?? 0;
+          const suggestedSheets = Number(suggestedSheetsRaw);
+          setConsumeQty(suggestedSheets > 0 ? String(suggestedSheets) : defaultQty);
+          setConsumeEditMode(true);
+          setConsumeError(errMsg || "");
+          setConsumeLoading(false);
+          setConsumeDialogOpen(true);
+        };
+        try {
+          const options = await callBackend("webGetConsumeOptions", { orderId });
+          const suggestedMaterial = isPlankOrder
+            ? "Черный"
+            : String(options?.suggestedMaterial || meta.material || "").trim();
+          const suggestedSheetsRaw = options?.suggestedSheets ?? options?.sheetsNeeded ?? defaultQty ?? 0;
+          const suggestedSheets = Number(suggestedSheetsRaw);
+          if (suggestedMaterial && Number.isFinite(suggestedSheets) && suggestedSheets > 0) {
+            await callBackend("webConsumeSheetsByOrderId", {
+              orderId,
+              material: suggestedMaterial,
+              qty: suggestedSheets,
+            });
+            await load();
+            return;
+          }
+          fallbackOpenManualDialog(options, "Не удалось определить материал или количество листов автоматически.");
+          await load();
+          return;
+        } catch (consumeAutoError) {
+          fallbackOpenManualDialog(null, `Автосписание не выполнено: ${extractErrorMessage(consumeAutoError)}`);
+          await load();
+          return;
+        }
       }
       await load();
     } catch (e) {
@@ -2751,6 +2757,9 @@ export default function App() {
             <div className="line2">
               <span>ID: {orderId || "-"}</span>
               <span>Листов нужно: {Number(o.sheetsNeeded || 0)}</span>
+              <span>
+                Листы: {String(o.material || "").trim() || "Материал не указан"} ({Number(o.sheetsNeeded || 0)} шт)
+              </span>
             </div>
             {view === "workshop" && tab !== "all" && <div className="actions">
               {(() => {
@@ -2795,6 +2804,7 @@ export default function App() {
                   runAction("webSetPilkaDone", orderId, {}, {
                     defaultSheets: resolveDefaultConsumeSheets(o, shipmentOrders),
                     item: o.item,
+                    material: o.material,
                     isPlankOrder: String(o.item || "").includes("Планки обвязки"),
                   })
                 }
