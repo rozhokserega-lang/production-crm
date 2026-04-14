@@ -983,6 +983,9 @@ export default function App() {
         setConsumeError("");
         setConsumeLoading(true);
         setConsumeDialogOpen(true);
+        if (view === "workshop" && tab === "pilka") {
+          setTab("kromka");
+        }
 
         // Не блокируем UI ожиданием подсказок.
         callBackend("webGetConsumeOptions", { orderId })
