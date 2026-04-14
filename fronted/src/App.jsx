@@ -2933,6 +2933,30 @@ export default function App() {
               <button className="mini ok" onClick={openCreatePlanDialog}>
                 Добавить план
               </button>
+              <button
+                className="mini"
+                disabled={selectedShipments.length === 0}
+                onClick={exportSelectedShipmentToExcel}
+              >
+                Экспорт в Excel
+              </button>
+              <input
+                ref={importPlanFileRef}
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                style={{ display: "none" }}
+                onChange={(e) => {
+                  const f = e.target.files && e.target.files[0];
+                  importShipmentPlanFromExcelFile(f);
+                }}
+              />
+              <button
+                className="mini"
+                disabled={actionLoading === "shipment:import"}
+                onClick={() => importPlanFileRef.current?.click()}
+              >
+                {actionLoading === "shipment:import" ? "Импорт..." : "Импорт из Excel"}
+              </button>
             </div>
           )}
         </div>
@@ -3057,36 +3081,6 @@ export default function App() {
                     Предпросмотр плана
                     {shipmentTab !== "straps" && selectedShipments.length > 1 ? ` (${selectedShipments.length})` : ""}
                   </button>
-                  {shipmentTab !== "straps" && (
-                    <button
-                      className="mini"
-                      disabled={selectedShipments.length === 0}
-                      onClick={exportSelectedShipmentToExcel}
-                    >
-                      Экспорт в Excel
-                    </button>
-                  )}
-                  {shipmentTab !== "straps" && (
-                    <>
-                      <input
-                        ref={importPlanFileRef}
-                        type="file"
-                        accept=".xlsx,.xls,.csv"
-                        style={{ display: "none" }}
-                        onChange={(e) => {
-                          const f = e.target.files && e.target.files[0];
-                          importShipmentPlanFromExcelFile(f);
-                        }}
-                      />
-                      <button
-                        className="mini"
-                        disabled={actionLoading === "shipment:import"}
-                        onClick={() => importPlanFileRef.current?.click()}
-                      >
-                        {actionLoading === "shipment:import" ? "Импорт..." : "Импорт из Excel"}
-                      </button>
-                    </>
-                  )}
                   <button
                     className="mini"
                     disabled={
