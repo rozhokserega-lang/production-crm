@@ -3227,6 +3227,19 @@ export default function App() {
                       </button>
                     );
                   })}
+                  {shipmentTableGroupNames.length > 0 && (
+                    <button
+                      type="button"
+                      className="mini shipment-group-reset"
+                      onClick={() =>
+                        setHiddenShipmentGroups(
+                          Object.fromEntries(shipmentTableGroupNames.map((name) => [name, true]))
+                        )
+                      }
+                    >
+                      Скрыть все
+                    </button>
+                  )}
                   {Object.values(hiddenShipmentGroups).some(Boolean) && (
                     <button
                       type="button"
