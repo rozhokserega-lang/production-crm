@@ -802,6 +802,7 @@ export default function App() {
   const [shipmentViewMode, setShipmentViewMode] = useState("table");
   const [statsSort, setStatsSort] = useState("stage");
   const [laborSort, setLaborSort] = useState("total_desc");
+  const [laborSubView, setLaborSubView] = useState("total");
   const [uiScale, setUiScale] = useState("large");
   const [collapsedSections, setCollapsedSections] = useState({});
   const [loading, setLoading] = useState(false);
@@ -1003,6 +1004,9 @@ export default function App() {
   }, []);
   useEffect(() => {
     if (view !== "warehouse") setWarehouseSubView("sheets");
+  }, [view]);
+  useEffect(() => {
+    if (view !== "labor") setLaborSubView("total");
   }, [view]);
 
   useEffect(() => {
@@ -1919,6 +1923,99 @@ export default function App() {
     });
     return list;
   }, [filtered, laborSort, view]);
+  const laborOrdersRows = useMemo(() => {
+    if (view !== "labor") return [];
+    const completed = laborTableRows.filter((x) => x.pilkaMin > 0 && x.kromkaMin > 0 && x.prasMin > 0);
+    const norm = (v) =>
+      String(v || "")
+        .toLowerCase()
+        .replace(/[ё]/g, "е")
+        .replace(/[^\p{L}\p{N}\s]/gu, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+    const resolveGroup = (itemRaw) => {
+      const n = norm(itemRaw);
+      if (n.includes("обвязка") || n.includes("планка")) return "";
+      if (n.includes("1153") && n.includes("320")) return "";
+      if (n.includes("avella lite") || n.includes("авелла лайт") || n.includes("авела лайт")) return "Avella lite";
+      if (n.includes("avella") || n.includes("авелла") || n.includes("авела")) return "Avella";
+      if (n.includes("cremona") || n.includes("кремона")) return "Cremona";
+      if (n.includes("stabile") || n.includes("стабиле")) return "Stabile";
+      if (n.includes("donini grande")) return "Donini Grande";
+      if (n.includes("donini r")) return "Donini r";
+      if (n.includes("donini")) return "Donini";
+      if (n.includes("solito2")) return "Solito2";
+      if (n.includes("solito") || n.includes("солито")) return "Solito";
+      if (n.includes("премьер") || n.includes("premier")) return "Премьер";
+      if (n.includes("тв лофт") || n.includes("tv loft") || n.includes("тумба под тв")) return "ТВ Лофт";
+      if (n.includes("классико") || n.includes("classico")) return "Классико";
+      if (n.includes("siena")) return "Siena";
+      const first = String(itemRaw || "").split(".")[0].trim();
+      return first || "Прочее";
+    };
+    const grouped = new Map();
+    completed.forEach((x) => {
+      const group = resolveGroup(x.item);
+      if (!group) return;
+      if (!grouped.has(group)) {
+        grouped.set(group, {
+          group,
+          orders: 0,
+          qty: 0,
+          pilkaMin: 0,
+          kromkaMin: 0,
+          prasMin: 0,
+          totalMin: 0,
+          lastDate: "",
+        });
+      }
+      const g = grouped.get(group);
+      g.orders += 1;
+      g.qty += Number(x.qty || 0);
+      g.pilkaMin += Number(x.pilkaMin || 0);
+      g.kromkaMin += Number(x.kromkaMin || 0);
+      g.prasMin += Number(x.prasMin || 0);
+      g.totalMin += Number(x.totalMin || 0);
+      const d = String(x.dateFinished || "");
+      if (d && (!g.lastDate || d > g.lastDate)) g.lastDate = d;
+    });
+    const ORDER = [
+      "Avella",
+      "Avella lite",
+      "Cremona",
+      "Donini",
+      "Donini Grande",
+      "Donini r",
+      "Solito",
+      "Solito2",
+      "Stabile",
+      "Премьер",
+      "ТВ Лофт",
+    ];
+    const rank = new Map(ORDER.map((x, i) => [x, i]));
+    return [...grouped.values()]
+      .map((g) => {
+        const total = Number(g.totalMin || 0);
+        const pilkaShare = total > 0 ? (g.pilkaMin * 100) / total : 0;
+        const kromkaShare = total > 0 ? (g.kromkaMin * 100) / total : 0;
+        const prasShare = total > 0 ? (g.prasMin * 100) / total : 0;
+        return {
+          ...g,
+          laborPerOrderHour: g.orders > 0 ? total / g.orders / 60 : 0,
+          laborPerQtyMin: g.qty > 0 ? total / g.qty : 0,
+          laborPerQtyHour: g.qty > 0 ? total / g.qty / 60 : 0,
+          pilkaShare,
+          kromkaShare,
+          prasShare,
+        };
+      })
+      .sort((a, b) => {
+        const ra = rank.has(a.group) ? rank.get(a.group) : 9999;
+        const rb = rank.has(b.group) ? rank.get(b.group) : 9999;
+        if (ra !== rb) return ra - rb;
+        return a.group.localeCompare(b.group, "ru");
+      });
+  }, [laborTableRows, view]);
   const laborKpi = useMemo(() => {
     const totalOrders = laborTableRows.length;
     const totalMinutes = laborTableRows.reduce((sum, x) => sum + x.totalMin, 0);
@@ -2546,6 +2643,24 @@ export default function App() {
             </button>
           </div>
         )}
+        {view === "labor" && (
+          <div className="tabs tabs--overview-sub">
+            <button
+              type="button"
+              className={laborSubView === "total" ? "tab active" : "tab"}
+              onClick={() => setLaborSubView("total")}
+            >
+              Общая
+            </button>
+            <button
+              type="button"
+              className={laborSubView === "orders" ? "tab active" : "tab"}
+              onClick={() => setLaborSubView("orders")}
+            >
+              По заказам
+            </button>
+          </div>
+        )}
         <div className="filters">
           {view !== "furniture" && (
             <input
@@ -2581,7 +2696,7 @@ export default function App() {
               <option value="cards">Вид: карточки</option>
             </select>
           )}
-          {view === "labor" && (
+          {view === "labor" && laborSubView === "total" && (
             <select value={laborSort} onChange={(e) => setLaborSort(e.target.value)}>
               <option value="total_desc">Трудоемкость: больше времени</option>
               <option value="total_asc">Трудоемкость: меньше времени</option>
@@ -3160,8 +3275,8 @@ export default function App() {
         )}
         {view === "labor" && (
           <>
-            {!laborTableRows.length && !loading && <div className="empty">Нет данных по трудоемкости</div>}
-            {laborTableRows.length > 0 && (
+            {laborSubView === "total" && !laborTableRows.length && !loading && <div className="empty">Нет данных по трудоемкости</div>}
+            {laborSubView === "total" && laborTableRows.length > 0 && (
               <div className="sheet-table-wrap">
                 <table className="sheet-table">
                   <thead>
@@ -3189,6 +3304,53 @@ export default function App() {
                         <td>{r.prasMin}</td>
                         <td><b>{r.totalMin}</b></td>
                         <td>{r.dateFinished || "-"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {laborSubView === "orders" && !laborOrdersRows.length && !loading && (
+              <div className="empty">Нет завершенных заказов для сводной трудоемкости</div>
+            )}
+            {laborSubView === "orders" && laborOrdersRows.length > 0 && (
+              <div className="sheet-table-wrap">
+                <table className="sheet-table">
+                  <thead>
+                    <tr>
+                      <th>Группа изделия</th>
+                      <th>Заказов</th>
+                      <th>Кол-во (шт)</th>
+                      <th>Пилка (мин)</th>
+                      <th>Кромка (мин)</th>
+                      <th>Присадка (мин)</th>
+                      <th>Итого (мин)</th>
+                      <th>Трудоемкость (ч/заказ)</th>
+                      <th>Трудоемкость (мин/шт)</th>
+                      <th>Трудоемкость (ч/шт)</th>
+                      <th>Доля пилки</th>
+                      <th>Доля кромки</th>
+                      <th>Доля присадки</th>
+                      <th>Последнее обновление</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {laborOrdersRows.map((r) => (
+                      <tr key={r.group}>
+                        <td>{r.group}</td>
+                        <td>{r.orders}</td>
+                        <td>{r.qty}</td>
+                        <td>{Math.round(r.pilkaMin)}</td>
+                        <td>{Math.round(r.kromkaMin)}</td>
+                        <td>{Math.round(r.prasMin)}</td>
+                        <td><b>{Math.round(r.totalMin)}</b></td>
+                        <td>{r.laborPerOrderHour.toFixed(2)}</td>
+                        <td>{r.laborPerQtyMin.toFixed(2)}</td>
+                        <td>{r.laborPerQtyHour.toFixed(2)}</td>
+                        <td>{r.pilkaShare.toFixed(1)}%</td>
+                        <td>{r.kromkaShare.toFixed(1)}%</td>
+                        <td>{r.prasShare.toFixed(1)}%</td>
+                        <td>{r.lastDate || "-"}</td>
                       </tr>
                     ))}
                   </tbody>
