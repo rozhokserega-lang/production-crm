@@ -643,6 +643,30 @@ function normalizeFurnitureKey(v) {
     .trim();
 }
 
+function resolveFurnitureAliasKey(candidates) {
+  const text = candidates.join(" ");
+  const checks = [
+    { has: ["donini grande"], key: "донини гранде" },
+    { has: ["donini r"], key: "донини r" },
+    { has: ["donini"], key: "донини" },
+    { has: ["avella lite", "авелла лайт", "авела лайт"], key: "авела лайт" },
+    { has: ["avella", "авелла", "авела"], key: "авела лайт" },
+    { has: ["cremona", "кремона"], key: "кремона" },
+    { has: ["stabile", "стабиле"], key: "стабиле" },
+    { has: ["premier", "премьер", "примьера"], key: "примьера" },
+    { has: ["classico", "классико"], key: "классико" },
+    { has: ["solito2"], key: "solito2" },
+    { has: ["solito", "солито"], key: "солито" },
+    { has: ["siena"], key: "siena" },
+    { has: ["тв тумба 1500", "tv stand 1500"], key: "тв тумба 1500" },
+    { has: ["тв тумба", "tv stand"], key: "тв тумба" },
+  ];
+  for (const rule of checks) {
+    if (rule.has.some((needle) => text.includes(needle))) return rule.key;
+  }
+  return "";
+}
+
 function resolveFurnitureTemplateForPreview(preview, templates) {
   const list = Array.isArray(templates) ? templates : [];
   if (!list.length) return null;
@@ -653,6 +677,12 @@ function resolveFurnitureTemplateForPreview(preview, templates) {
     .map(normalizeFurnitureKey)
     .filter(Boolean);
   if (!candidates.length) return null;
+
+  const aliasKey = resolveFurnitureAliasKey(candidates);
+  if (aliasKey) {
+    const byAlias = list.find((t) => normalizeFurnitureKey(t?.productName || "") === aliasKey);
+    if (byAlias) return byAlias;
+  }
 
   const byExact = list.find((t) => {
     const key = normalizeFurnitureKey(t?.productName || "");
