@@ -651,7 +651,11 @@ export default function App() {
       } else if (view === "labor") {
         setLaborRows(Array.isArray(data) ? data : []);
       } else {
-        setRows(Array.isArray(data) ? data.map(normalizeOrder) : []);
+        const normalizedRows = Array.isArray(data) ? data.map(normalizeOrder) : [];
+        setRows(normalizedRows);
+        if (view === "workshop" || view === "overview" || view === "stats") {
+          setShipmentOrders(normalizedRows);
+        }
       }
     } catch (e) {
       if (seq !== loadSeqRef.current) return;
@@ -2745,6 +2749,8 @@ export default function App() {
         {workshopRows.map((o) => (
           (() => {
             const orderId = String(o.orderId || o.order_id || "");
+            const displaySheetsNeeded = resolveDefaultConsumeSheets(o, shipmentOrders);
+            const displayMaterial = String(o.material || o.colorName || "").trim() || "Материал не указан";
             return (
           <article key={orderId || `${o.item}-${o.row}`} className={`card ${statusClass(o)}`}>
             <div className="line1">
@@ -2756,9 +2762,9 @@ export default function App() {
             </div>
             <div className="line2">
               <span>ID: {orderId || "-"}</span>
-              <span>Листов нужно: {Number(o.sheetsNeeded || 0)}</span>
+              <span>Листов нужно: {Number(displaySheetsNeeded || 0)}</span>
               <span>
-                Листы: {String(o.material || "").trim() || "Материал не указан"} ({Number(o.sheetsNeeded || 0)} шт)
+                Листы: {displayMaterial} ({Number(displaySheetsNeeded || 0)} шт)
               </span>
             </div>
             {view === "workshop" && tab !== "all" && <div className="actions">
@@ -2802,9 +2808,9 @@ export default function App() {
                 disabled={actionLoading === `webSetPilkaDone:${orderId}` || pilkaDone || !pilkaInWork}
                 onClick={() =>
                   runAction("webSetPilkaDone", orderId, {}, {
-                    defaultSheets: resolveDefaultConsumeSheets(o, shipmentOrders),
+                    defaultSheets: displaySheetsNeeded,
                     item: o.item,
-                    material: o.material,
+                    material: displayMaterial,
                     isPlankOrder: String(o.item || "").includes("Планки обвязки"),
                   })
                 }
