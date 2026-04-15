@@ -2596,10 +2596,66 @@ export default function App() {
     }
   }
 
+  function getStatsOrderSourceCell(order) {
+    const fromOrderRow = String(
+      order?.sourceRowId ||
+      order?.source_row_id ||
+      order?.sourceRow ||
+      order?.row_ref ||
+      order?.rowRef ||
+      order?.row ||
+      ""
+    ).trim();
+    const fromOrderCol = String(
+      order?.sourceColId ||
+      order?.source_col_id ||
+      order?.sourceCol ||
+      order?.col_ref ||
+      order?.colRef ||
+      order?.col ||
+      ""
+    ).trim();
+    if (fromOrderRow && fromOrderCol) return { row: fromOrderRow, col: fromOrderCol };
+
+    const orderId = String(order?.orderId || order?.order_id || "").trim();
+    if (!orderId) return { row: "", col: "" };
+
+    const linked = (rows || []).find((r) => String(r?.orderId || r?.order_id || "").trim() === orderId);
+    if (!linked) return { row: "", col: "" };
+
+    return {
+      row: String(
+        linked?.sourceRowId ||
+        linked?.source_row_id ||
+        linked?.sourceRow ||
+        linked?.row_ref ||
+        linked?.rowRef ||
+        linked?.row ||
+        ""
+      ).trim(),
+      col: String(
+        linked?.sourceColId ||
+        linked?.source_col_id ||
+        linked?.sourceCol ||
+        linked?.col_ref ||
+        linked?.colRef ||
+        linked?.col ||
+        ""
+      ).trim(),
+    };
+  }
+
+  function getStatsDeleteActionKey(order) {
+    const orderId = String(order?.orderId || order?.order_id || "").trim();
+    const source = getStatsOrderSourceCell(order);
+    return `stats:delete:${orderId || `${source.row}-${source.col}`}`;
+  }
+
   async function deleteStatsOrder(order) {
     const orderId = String(order?.orderId || order?.order_id || "").trim();
-    const sourceRow = String(order?.sourceRowId || order?.source_row_id || order?.row || "").trim();
-    const sourceCol = String(order?.sourceColId || order?.source_col_id || order?.col || "").trim();
+    const source = getStatsOrderSourceCell(order);
+    const sourceRow = source.row;
+    const sourceCol = source.col;
     if (!sourceRow || !sourceCol) {
       setError("Для этого заказа нет source row/col, удалить через текущий API нельзя.");
       return;
@@ -2608,11 +2664,16 @@ export default function App() {
       `Удалить заказ ${orderId || ""} из плана? Действие необратимо.`
     );
     if (!ok) return;
-    const actionKey = `stats:delete:${orderId || `${sourceRow}-${sourceCol}`}`;
+    const actionKey = getStatsDeleteActionKey(order);
     setActionLoading(actionKey);
     setError("");
     try {
-      await callBackend("webDeleteShipmentPlanCell", { p_row: sourceRow, p_col: sourceCol });
+      await callBackend("webDeleteShipmentPlanCell", {
+        p_row: sourceRow,
+        p_col: sourceCol,
+        row: sourceRow,
+        col: sourceCol,
+      });
       await load();
     } catch (e) {
       setError(toUserError(e));
@@ -4092,7 +4153,7 @@ export default function App() {
                             className="mini warn stats-delete-btn"
                             title="Удалить заказ"
                             disabled={
-                              actionLoading === `stats:delete:${String(o.orderId || o.order_id || "").trim() || `${String(o.sourceRowId || o.source_row_id || o.row || "").trim()}-${String(o.sourceColId || o.source_col_id || o.col || "").trim()}`}`
+                              actionLoading === getStatsDeleteActionKey(o)
                             }
                             onClick={() => deleteStatsOrder(o)}
                           >
