@@ -178,6 +178,10 @@ function isStorageLikeName(text) {
   return false;
 }
 
+function isObvyazkaSectionName(name) {
+  return normText(name).includes("обвяз");
+}
+
 function isGarbageShipmentItemName(text) {
   const t = normText(text);
   if (!t) return false;
@@ -709,6 +713,21 @@ function normalizeStrapProductKey(v) {
   return key;
 }
 
+function normalizeDetailPatternKey(v) {
+  return normalizeFurnitureKey(v)
+    .replace(/[xх_]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function extractDetailSizeToken(v) {
+  const raw = String(v || "").trim();
+  if (!raw) return "";
+  const m = raw.match(/(\d{2,4})\s*[_xх]\s*(\d{2,4})/i);
+  if (!m) return "";
+  return `${m[1]}_${m[2]}`;
+}
+
 function resolveFurnitureAliasKey(candidates) {
   const text = candidates.join(" ");
   const checks = [
@@ -860,6 +879,7 @@ export default function App() {
   const [consumeLoading, setConsumeLoading] = useState(false);
   const [strapDialogOpen, setStrapDialogOpen] = useState(false);
   const [strapTargetProduct, setStrapTargetProduct] = useState("");
+  const [strapPlanWeek, setStrapPlanWeek] = useState("");
   const [planDialogOpen, setPlanDialogOpen] = useState(false);
   const [planSection, setPlanSection] = useState("Прочее");
   const [planArticle, setPlanArticle] = useState("");
@@ -1559,7 +1579,7 @@ export default function App() {
         .map((s) => ({
           ...s,
           items: (s.items || []).filter((it) => {
-            if (isStorageLikeName(it.item)) return false;
+            if (isStorageLikeName(it.item) && !isObvyazkaSectionName(s.name)) return false;
             if (isGarbageShipmentItemName(it.item)) return false;
             const sourceRow = it.sourceRowId != null ? String(it.sourceRowId) : String(it.row);
             const visibleCells = (it.cells || []).filter((c) => {
@@ -1598,7 +1618,8 @@ export default function App() {
     }
     return rows.filter((x) => {
       // Скрываем тех/мусорные позиции во вкладках заказов (Производство/Обзор/Статистика).
-      if (isStorageLikeName(x.item) || isGarbageShipmentItemName(x.item)) return false;
+      const sectionName = String(x.section_name || x.sectionName || "").trim();
+      if ((isStorageLikeName(x.item) && !isObvyazkaSectionName(sectionName)) || isGarbageShipmentItemName(x.item)) return false;
       const byWeek = weekFilter === "all" || String(x.week || "") === weekFilter;
       const byQuery =
         !q ||
@@ -2201,27 +2222,45 @@ export default function App() {
   }, [furnitureSelectedQty]);
   const furnitureGeneratedDetails = useMemo(() => {
     if (!furnitureSelectedTemplate || furnitureQtyNumber <= 0) return [];
-    const productKey = normalizeFurnitureKey(furnitureSelectedTemplate.productName || "");
-    const detailMap = new Map();
+    const productKey = normalizeStrapProductKey(furnitureSelectedTemplate.productName || "");
+    const detailMapBySize = new Map();
+    const detailMapByPattern = new Map();
     (furnitureDetailArticleRows || []).forEach((r) => {
-      const pKey = normalizeFurnitureKey(r.product_name || r.productName || "");
+      const pKey = normalizeStrapProductKey(r.product_name || r.productName || "");
       if (pKey !== productKey) return;
-      const pattern = normalizeFurnitureKey(r.detail_name_pattern || r.detailNamePattern || "");
+      const pattern = normalizeDetailPatternKey(r.detail_name_pattern || r.detailNamePattern || "");
+      const sizeToken = extractDetailSizeToken(r.detail_name_pattern || r.detailNamePattern || "");
       const article = String(r.article || "").trim();
       if (!pattern || !article) return;
-      if (!detailMap.has(pattern)) detailMap.set(pattern, new Set());
-      detailMap.get(pattern).add(article);
+      if (sizeToken) {
+        if (!detailMapBySize.has(sizeToken)) detailMapBySize.set(sizeToken, new Set());
+        detailMapBySize.get(sizeToken).add(article);
+      }
+      if (!detailMapByPattern.has(pattern)) detailMapByPattern.set(pattern, new Set());
+      detailMapByPattern.get(pattern).add(article);
     });
     return (furnitureSelectedTemplate.details || []).map((d) => {
       const raw = d.perUnit * furnitureQtyNumber;
       const qty = Math.round(raw * 1000) / 1000;
-      const detailKey = normalizeFurnitureKey(d.detailName || "");
+      const detailKey = normalizeDetailPatternKey(d.detailName || "");
+      const detailSizeToken = extractDetailSizeToken(d.detailName || "");
       const matchedArticles = [];
-      detailMap.forEach((articles, pattern) => {
-        if (detailKey.includes(pattern) || pattern.includes(detailKey)) {
+      if (detailSizeToken && detailMapBySize.has(detailSizeToken)) {
+        matchedArticles.push(...Array.from(detailMapBySize.get(detailSizeToken)));
+      } else {
+        detailMapByPattern.forEach((articles, pattern) => {
+          if (detailKey.includes(pattern) || pattern.includes(detailKey)) {
+            matchedArticles.push(...Array.from(articles));
+          }
+        });
+      }
+      if (matchedArticles.length === 0) {
+        detailMapByPattern.forEach((articles, pattern) => {
+          if (detailKey.includes(pattern) || pattern.includes(detailKey)) {
           matchedArticles.push(...Array.from(articles));
-        }
-      });
+          }
+        });
+      }
       return {
         ...d,
         qty,
@@ -2522,6 +2561,8 @@ export default function App() {
   function openStrapDialog() {
     const defaultProduct = strapItems[0]?.productName || strapProductNames[0] || "Обвязка";
     setStrapTargetProduct(defaultProduct);
+    const defaultWeek = weekFilter !== "all" ? String(weekFilter) : String(weeks[0] || "").trim();
+    setStrapPlanWeek(defaultWeek);
     const options = strapOptionsByProduct.length > 0
       ? (strapOptionsByProduct.find((x) => normalizeStrapProductKey(x.productName) === normalizeStrapProductKey(defaultProduct))?.options || [])
       : STRAP_OPTIONS;
@@ -2605,13 +2646,41 @@ export default function App() {
     }
   }
 
-  function saveStrapDialog() {
+  async function saveStrapDialog() {
     const next = strapOptionsForSelectedProduct
       .map((name) => ({ name, qty: Number(String(strapDraft[name] || "").replace(",", ".")) }))
       .filter((x) => Number.isFinite(x.qty) && x.qty > 0)
       .map((x) => ({ ...x, productName: strapTargetProduct || "" }));
-    setStrapItems(next);
-    setStrapDialogOpen(false);
+    if (!next.length) {
+      setStrapItems([]);
+      setStrapDialogOpen(false);
+      return;
+    }
+    const week = String(strapPlanWeek || "").trim();
+    if (!week) {
+      setError("Укажите неделю плана для обвязки.");
+      return;
+    }
+    setActionLoading("shipment:strapsave");
+    setError("");
+    try {
+      for (const row of next) {
+        await callBackend("webCreateShipmentPlanCell", {
+          sectionName: "Обвязка",
+          item: strapNameToOrderItem(row.name),
+          material: "Черный",
+          week,
+          qty: Number(row.qty || 0),
+        });
+      }
+      setStrapItems([]);
+      setStrapDialogOpen(false);
+      await load();
+    } catch (e) {
+      setError(toUserError(e));
+    } finally {
+      setActionLoading("");
+    }
   }
 
   async function previewSelectedShipmentPlan() {
@@ -2624,22 +2693,21 @@ export default function App() {
       const now = new Date();
       const strapPreviews = (() => {
         if (strapSelections.length === 0) return [];
-        const byProduct = new Map();
-        strapSelections.forEach((x) => {
+        return strapSelections.map((x, idx) => {
           const product = String(x.strapProduct || "Обвязка").trim() || "Обвязка";
-          if (!byProduct.has(product)) byProduct.set(product, []);
-          byProduct.get(product).push(x);
-        });
-        return [...byProduct.entries()].map(([product, rows], idx) => ({
-          _key: `strap-plan-selected-${idx}`,
+          return {
+            _key: `strap-plan-selected-${idx}-${x.row}-${x.col}`,
           isStrapPlan: true,
           generatedAt: formatDateTimeForPrint(now),
           products: [product],
-          rows: rows.map((x) => ({
-            part: `${String(x.item || "")} (${product})`,
-            qty: Number(x.qty || 0),
-          })),
-        }));
+            rows: [
+              {
+                part: `${String(x.item || "")} (${product})`,
+                qty: Number(x.qty || 0),
+              },
+            ],
+          };
+        });
       })();
 
       const enrichPreviewFromFurniture = (preview) => {
@@ -4353,7 +4421,7 @@ export default function App() {
             <div className="line2" style={{ marginBottom: 10 }}>
               Укажите количество для нужных позиций. Пусто или 0 — не добавлять.
             </div>
-            <div className="strap-row" style={{ marginBottom: 10 }}>
+            <div className="strap-row strap-row--product" style={{ marginBottom: 10 }}>
               <label>Изделие</label>
               <select
                 value={strapTargetProduct}
@@ -4363,6 +4431,14 @@ export default function App() {
                   <option key={name} value={name}>{name}</option>
                 ))}
               </select>
+            </div>
+            <div className="strap-row" style={{ marginBottom: 10 }}>
+              <label>Неделя плана</label>
+              <input
+                value={strapPlanWeek}
+                onChange={(e) => setStrapPlanWeek(e.target.value.replace(/[^\d-]/g, ""))}
+                placeholder="Например: 71"
+              />
             </div>
             <div className="strap-grid">
               {strapOptionsForSelectedProduct.map((name) => (
@@ -4383,14 +4459,15 @@ export default function App() {
               ))}
             </div>
             <div className="actions" style={{ marginTop: 10 }}>
-              <button className="mini ok" onClick={saveStrapDialog}>
-                Готово
+              <button className="mini ok" disabled={actionLoading === "shipment:strapsave"} onClick={saveStrapDialog}>
+                {actionLoading === "shipment:strapsave" ? "Сохраняю..." : "Готово"}
               </button>
-              <button className="mini" onClick={() => setStrapDialogOpen(false)}>
+              <button className="mini" disabled={actionLoading === "shipment:strapsave"} onClick={() => setStrapDialogOpen(false)}>
                 Отмена
               </button>
               <button
                 className="mini warn"
+                disabled={actionLoading === "shipment:strapsave"}
                 onClick={() => {
                   setStrapItems([]);
                   setStrapDraft(strapOptionsForSelectedProduct.reduce((acc, name) => ({ ...acc, [name]: "" }), {}));
