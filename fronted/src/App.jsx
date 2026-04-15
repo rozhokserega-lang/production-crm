@@ -21,6 +21,12 @@ const TERMINAL_PIPELINE_STAGES = new Set([
 ]);
 
 const CRM_ROLES = ["viewer", "operator", "manager", "admin"];
+const CRM_ROLE_LABELS = {
+  viewer: "Наблюдатель",
+  operator: "Оператор",
+  manager: "Менеджер",
+  admin: "Админ",
+};
 
 function normalizeCrmRole(rawRole) {
   const role = String(rawRole || "").trim().toLowerCase();
@@ -966,6 +972,7 @@ export default function App() {
   const loadInFlightRef = useRef(false);
   const canOperateProduction = crmRole === "operator" || crmRole === "manager" || crmRole === "admin";
   const canManageOrders = crmRole === "manager" || crmRole === "admin";
+  const crmRoleLabel = CRM_ROLE_LABELS[crmRole] || CRM_ROLE_LABELS.viewer;
 
   function denyActionByRole(message) {
     setError(message);
@@ -3226,14 +3233,19 @@ export default function App() {
     <div className={`page ${uiScale === "large" ? "scale-large" : "scale-standard"}`}>
       <header className="top">
         <h1>Управление производственными заказами</h1>
-        <button
-          type="button"
-          className="scale-toggle"
-          onClick={() => setUiScale((prev) => (prev === "large" ? "standard" : "large"))}
-          title="Переключить масштаб интерфейса"
-        >
-          Масштаб: {uiScale === "large" ? "Крупный" : "Стандарт"}
-        </button>
+        <div className="top-actions">
+          <span className={`role-badge role-${crmRole}`} title="Текущая роль CRM">
+            Роль: {crmRoleLabel}
+          </span>
+          <button
+            type="button"
+            className="scale-toggle"
+            onClick={() => setUiScale((prev) => (prev === "large" ? "standard" : "large"))}
+            title="Переключить масштаб интерфейса"
+          >
+            Масштаб: {uiScale === "large" ? "Крупный" : "Стандарт"}
+          </button>
+        </div>
       </header>
 
       <section className="view-switch">

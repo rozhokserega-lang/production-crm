@@ -60,6 +60,48 @@ body {
   margin-bottom: 10px;
 }
 
+.top-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.role-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 10px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+  color: #334155;
+}
+
+.role-badge.role-admin {
+  background: #ecfeff;
+  border-color: #67e8f9;
+  color: #0f766e;
+}
+
+.role-badge.role-manager {
+  background: #ecfdf5;
+  border-color: #86efac;
+  color: #166534;
+}
+
+.role-badge.role-operator {
+  background: #eff6ff;
+  border-color: #93c5fd;
+  color: #1d4ed8;
+}
+
+.role-badge.role-viewer {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  color: #475569;
+}
+
 h1 {
   font-size: var(--title-size);
   font-weight: 800;
