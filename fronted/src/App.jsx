@@ -345,7 +345,9 @@ function getShipmentStageKey(c, sourceRow, orderMaps, itemName) {
   if (order) {
     return mapPipelineStageToShipmentKey(order);
   }
-  if (c.inWork) return "on_pilka_wait";
+  // Fallback for cells without bound order: if already in work,
+  // show active pilka stage instead of "waiting launch".
+  if (c.inWork) return "on_pilka_work";
   if (isRedCell(c.bg)) return "shipped";
   if (isBlueCell(c.bg)) return "on_kromka_work";
   if (isYellowCell(c.bg)) return "on_pilka_work";
