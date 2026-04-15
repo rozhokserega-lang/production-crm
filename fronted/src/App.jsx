@@ -29,6 +29,7 @@ const TABS = [
 ];
 const VIEWS = [
   { id: "shipment", label: "Отгрузка" },
+  { id: "sheetMirror", label: "Google Mirror" },
   { id: "overview", label: "Обзор заказов" },
   { id: "workshop", label: "Производство" },
   { id: "warehouse", label: "Склад" },
@@ -72,6 +73,7 @@ const STRAP_SHEET_WIDTH = 2800;
 const STRAP_SHEET_HEIGHT = 2070;
 const WAREHOUSE_SYNC_SHEET_ID = "1SyFYOpXyHHMP31qYV5-XL8fINVUUDCrXIrewaZqkYkA";
 const WAREHOUSE_SYNC_GID = "1501570173";
+const SHEET_MIRROR_GID = "1772676601";
 
 function statusClass(order) {
   const ps = resolvePipelineStage(order);
@@ -904,6 +906,8 @@ export default function App() {
         }
       } else if (view === "overview") {
         data = await callBackend("webGetOrdersAll");
+      } else if (view === "sheetMirror") {
+        data = await callBackend("webGetSheetOrdersMirror", { p_sheet_gid: SHEET_MIRROR_GID });
       } else if (view === "warehouse") {
         data = await callBackend("webGetMaterialsStock");
         try {
@@ -937,6 +941,8 @@ export default function App() {
       if (seq !== loadSeqRef.current) return;
       if (view === "shipment") {
         setShipmentBoard(normalizeShipmentBoard(data));
+      } else if (view === "sheetMirror") {
+        setRows(Array.isArray(data) ? data : []);
       } else if (view === "warehouse") {
         setWarehouseRows(Array.isArray(data) ? data : []);
       } else if (view === "labor") {
@@ -1527,6 +1533,17 @@ export default function App() {
         return byWeek && byQuery;
       });
     }
+    if (view === "sheetMirror") {
+      return rows.filter((x) => {
+        const byQuery =
+          !q ||
+          String(x.item_label || x.itemLabel || "").toLowerCase().includes(q) ||
+          String(x.article_code || x.articleCode || "").toLowerCase().includes(q) ||
+          String(x.order_code || x.orderCode || "").toLowerCase().includes(q) ||
+          String(x.material_raw || x.materialRaw || "").toLowerCase().includes(q);
+        return byQuery;
+      });
+    }
     return rows.filter((x) => {
       // Скрываем тех/мусорные позиции во вкладках заказов (Производство/Обзор/Статистика).
       if (isStorageLikeName(x.item) || isGarbageShipmentItemName(x.item)) return false;
@@ -1849,6 +1866,14 @@ export default function App() {
       });
     });
     return { totalOrders, totalQty, readyAssembly, assembled };
+  }, [filtered, view]);
+  const sheetMirrorKpi = useMemo(() => {
+    if (view !== "sheetMirror") return { total: 0, shipped: 0, done: 0, waiting: 0 };
+    const total = filtered.length;
+    const shipped = filtered.filter((x) => String(x.shipped_raw || x.shippedRaw || "").toUpperCase() === "TRUE").length;
+    const done = filtered.filter((x) => String(x.overall_status || x.overallStatus || "").toLowerCase() === "done").length;
+    const waiting = filtered.filter((x) => String(x.overall_status || x.overallStatus || "").toLowerCase() === "waiting").length;
+    return { total, shipped, done, waiting };
   }, [filtered, view]);
   const shipmentTableRows = useMemo(() => {
     if (view !== "shipment") return [];
@@ -2739,6 +2764,13 @@ export default function App() {
             <div className="kpi"><span>Всего изделий</span><b>{Math.round(laborKpi.totalQty)}</b></div>
             <div className="kpi"><span>Среднее / заказ (мин)</span><b>{Math.round(laborKpi.avgPerOrder)}</b></div>
           </>
+        ) : view === "sheetMirror" ? (
+          <>
+            <div className="kpi"><span>Строк в зеркале</span><b>{sheetMirrorKpi.total}</b></div>
+            <div className="kpi"><span>С меткой отправки</span><b>{sheetMirrorKpi.shipped}</b></div>
+            <div className="kpi"><span>Статус done</span><b>{sheetMirrorKpi.done}</b></div>
+            <div className="kpi"><span>Статус waiting</span><b>{sheetMirrorKpi.waiting}</b></div>
+          </>
         ) : view === "workshop" ? (
           <>
             <div className="kpi"><span>Всего</span><b>{kpi.total}</b></div>
@@ -2846,12 +2878,12 @@ export default function App() {
         <div className="filters">
           {view !== "furniture" && (
             <input
-              placeholder={view === "shipment" ? "Поиск отгрузки: название или ID" : view === "warehouse" ? (warehouseSubView === "leftovers" ? "Поиск по цвету или размеру" : "Поиск материала") : "Поиск по названию или ID"}
+              placeholder={view === "shipment" ? "Поиск отгрузки: название или ID" : view === "sheetMirror" ? "Поиск: артикул, изделие, материал или order code" : view === "warehouse" ? (warehouseSubView === "leftovers" ? "Поиск по цвету или размеру" : "Поиск материала") : "Поиск по названию или ID"}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
           )}
-          {view !== "warehouse" && view !== "furniture" && (
+          {view !== "warehouse" && view !== "furniture" && view !== "sheetMirror" && (
             <select value={weekFilter} onChange={(e) => setWeekFilter(e.target.value)}>
               <option value="all">Все недели</option>
               {weeks.map((w) => <option key={w} value={w}>Неделя {w}</option>)}
@@ -3758,6 +3790,53 @@ export default function App() {
                         <td>{o.prasStatus || "-"}</td>
                         <td>{o.assemblyStatus || "-"}</td>
                         <td>{o.overallStatus || "-"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
+        )}
+        {view === "sheetMirror" && (
+          <>
+            {!filtered.length && !loading && <div className="empty">Нет данных в Google Mirror</div>}
+            {filtered.length > 0 && (
+              <div className="sheet-table-wrap">
+                <table className="sheet-table">
+                  <thead>
+                    <tr>
+                      <th>Строка</th>
+                      <th>Артикул</th>
+                      <th>Изделие</th>
+                      <th>Материал</th>
+                      <th>План</th>
+                      <th>Кол-во</th>
+                      <th>Пила</th>
+                      <th>Кромка</th>
+                      <th>Присадка</th>
+                      <th>Сборка</th>
+                      <th>Общий</th>
+                      <th>Отправлен</th>
+                      <th>Синк</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filtered.map((r) => (
+                      <tr key={`mirror-${r.sheet_row || r.sheetRow}`}>
+                        <td>{r.sheet_row || r.sheetRow || "-"}</td>
+                        <td>{r.article_code || r.articleCode || "-"}</td>
+                        <td>{r.item_label || r.itemLabel || "-"}</td>
+                        <td>{r.material_raw || r.materialRaw || "-"}</td>
+                        <td>{r.plan_value ?? r.planValue ?? "-"}</td>
+                        <td>{r.qty_value ?? r.qtyValue ?? "-"}</td>
+                        <td>{r.pilka_status || r.pilkaStatus || "-"}</td>
+                        <td>{r.kromka_status || r.kromkaStatus || "-"}</td>
+                        <td>{r.prisadka_status || r.prisadkaStatus || "-"}</td>
+                        <td>{r.assembly_status || r.assemblyStatus || "-"}</td>
+                        <td>{r.overall_status || r.overallStatus || "-"}</td>
+                        <td>{String(r.shipped_raw || r.shippedRaw || "-")}</td>
+                        <td>{formatDateTimeRu(r.source_synced_at || r.sourceSyncedAt || "")}</td>
                       </tr>
                     ))}
                   </tbody>
