@@ -575,6 +575,14 @@ button:disabled {
   cursor: not-allowed;
 }
 
+.stats-delete-btn {
+  min-width: 34px;
+  min-height: 30px;
+  padding: 2px 8px;
+  font-weight: 700;
+  line-height: 1;
+}
+
 .badge {
   background: #eef4ff;
   color: #1e40af;

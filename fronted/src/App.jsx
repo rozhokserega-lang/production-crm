@@ -2596,6 +2596,31 @@ export default function App() {
     }
   }
 
+  async function deleteStatsOrder(order) {
+    const orderId = String(order?.orderId || order?.order_id || "").trim();
+    const sourceRow = String(order?.sourceRowId || order?.source_row_id || order?.row || "").trim();
+    const sourceCol = String(order?.sourceColId || order?.source_col_id || order?.col || "").trim();
+    if (!sourceRow || !sourceCol) {
+      setError("Для этого заказа нет source row/col, удалить через текущий API нельзя.");
+      return;
+    }
+    const ok = window.confirm(
+      `Удалить заказ ${orderId || ""} из плана? Действие необратимо.`
+    );
+    if (!ok) return;
+    const actionKey = `stats:delete:${orderId || `${sourceRow}-${sourceCol}`}`;
+    setActionLoading(actionKey);
+    setError("");
+    try {
+      await callBackend("webDeleteShipmentPlanCell", { p_row: sourceRow, p_col: sourceCol });
+      await load();
+    } catch (e) {
+      setError(toUserError(e));
+    } finally {
+      setActionLoading("");
+    }
+  }
+
   function toggleShipmentSelection(payload) {
     setSelectedShipments((prev) => {
       const exists = prev.some((s) => s.row === payload.row && s.col === payload.col);
@@ -4045,6 +4070,7 @@ export default function App() {
                       <th>Присадка</th>
                       <th>Сборка</th>
                       <th>Общий статус</th>
+                      <th>Удалить</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -4060,6 +4086,19 @@ export default function App() {
                         <td>{o.prasStatus || "-"}</td>
                         <td>{o.assemblyStatus || "-"}</td>
                         <td>{o.overallStatus || "-"}</td>
+                        <td>
+                          <button
+                            type="button"
+                            className="mini warn stats-delete-btn"
+                            title="Удалить заказ"
+                            disabled={
+                              actionLoading === `stats:delete:${String(o.orderId || o.order_id || "").trim() || `${String(o.sourceRowId || o.source_row_id || o.row || "").trim()}-${String(o.sourceColId || o.source_col_id || o.col || "").trim()}`}`
+                            }
+                            onClick={() => deleteStatsOrder(o)}
+                          >
+                            X
+                          </button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
