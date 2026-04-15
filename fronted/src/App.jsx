@@ -639,7 +639,7 @@ function buildFurnitureTemplates(workbook, sheetName) {
   let current = null;
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i] || [];
-    const productName = String(r[1] || "").trim();
+    const productName = furnitureProductLabel(String(r[1] || "").trim());
     const productColor = String(r[2] || "").trim();
     const baseQtyRaw = toNum(r[3]);
     const detailColor = String(r[4] || "").trim();
@@ -676,13 +676,6 @@ function buildFurnitureTemplates(workbook, sheetName) {
     const variants = [...arr].sort((a, b) => b.details.length - a.details.length);
     const main = variants[0];
     if (main) result.push(main);
-
-    if (normalizeFurnitureKey(productName) === normalizeFurnitureKey("Авела Лайт")) {
-      const shortest = [...arr].sort((a, b) => a.details.length - b.details.length)[0];
-      const longest = variants[0];
-      if (shortest) result.push({ ...shortest, productName: "Авелла Лайт" });
-      if (longest) result.push({ ...longest, productName: "Авелла" });
-    }
   });
 
   const uniqueByName = new Map();
@@ -851,6 +844,7 @@ export default function App() {
   const [furnitureActiveSheet, setFurnitureActiveSheet] = useState("");
   const [furnitureShowFormulas, setFurnitureShowFormulas] = useState(false);
   const [furnitureArticleRows, setFurnitureArticleRows] = useState([]);
+  const [furnitureDetailArticleRows, setFurnitureDetailArticleRows] = useState([]);
   const [furnitureSelectedProduct, setFurnitureSelectedProduct] = useState("");
   const [furnitureSelectedQty, setFurnitureSelectedQty] = useState("1");
   const importPlanFileRef = useRef(null);
@@ -931,6 +925,12 @@ export default function App() {
           setFurnitureArticleRows(Array.isArray(mappingData) ? mappingData : []);
         } catch (_) {
           setFurnitureArticleRows([]);
+        }
+        try {
+          const detailArticles = await callBackend("webGetFurnitureDetailArticles");
+          setFurnitureDetailArticleRows(Array.isArray(detailArticles) ? detailArticles : []);
+        } catch (_) {
+          setFurnitureDetailArticleRows([]);
         }
       } else {
         // Для согласованности с "Обзор заказов" всегда берем полный список
@@ -2127,12 +2127,34 @@ export default function App() {
   }, [furnitureSelectedQty]);
   const furnitureGeneratedDetails = useMemo(() => {
     if (!furnitureSelectedTemplate || furnitureQtyNumber <= 0) return [];
+    const productKey = normalizeFurnitureKey(furnitureSelectedTemplate.productName || "");
+    const detailMap = new Map();
+    (furnitureDetailArticleRows || []).forEach((r) => {
+      const pKey = normalizeFurnitureKey(r.product_name || r.productName || "");
+      if (pKey !== productKey) return;
+      const pattern = normalizeFurnitureKey(r.detail_name_pattern || r.detailNamePattern || "");
+      const article = String(r.article || "").trim();
+      if (!pattern || !article) return;
+      if (!detailMap.has(pattern)) detailMap.set(pattern, new Set());
+      detailMap.get(pattern).add(article);
+    });
     return (furnitureSelectedTemplate.details || []).map((d) => {
       const raw = d.perUnit * furnitureQtyNumber;
       const qty = Math.round(raw * 1000) / 1000;
-      return { ...d, qty };
+      const detailKey = normalizeFurnitureKey(d.detailName || "");
+      const matchedArticles = [];
+      detailMap.forEach((articles, pattern) => {
+        if (detailKey.includes(pattern) || pattern.includes(detailKey)) {
+          matchedArticles.push(...Array.from(articles));
+        }
+      });
+      return {
+        ...d,
+        qty,
+        linkedArticles: [...new Set(matchedArticles)].sort((a, b) => a.localeCompare(b, "ru")),
+      };
     });
-  }, [furnitureSelectedTemplate, furnitureQtyNumber]);
+  }, [furnitureDetailArticleRows, furnitureSelectedTemplate, furnitureQtyNumber]);
   const furnitureArticleGroups = useMemo(() => {
     if (view !== "furniture") return [];
     const q = String(query || "").trim().toLowerCase();
@@ -3884,6 +3906,7 @@ export default function App() {
                         <th>Кол-во</th>
                         <th>Деталь</th>
                         <th>Кол-во</th>
+                        <th>Артикулы (из БД)</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -3893,11 +3916,12 @@ export default function App() {
                           <td>{idx === 0 ? furnitureQtyNumber : ""}</td>
                           <td>{d.detailName}</td>
                           <td>{Number.isInteger(d.qty) ? d.qty : d.qty.toFixed(3)}</td>
+                          <td>{(d.linkedArticles || []).join(", ") || "-"}</td>
                         </tr>
                       ))}
                       {furnitureGeneratedDetails.length === 0 && (
                         <tr>
-                          <td colSpan={4}>Выберите изделие и укажите количество.</td>
+                          <td colSpan={5}>Выберите изделие и укажите количество.</td>
                         </tr>
                       )}
                     </tbody>
