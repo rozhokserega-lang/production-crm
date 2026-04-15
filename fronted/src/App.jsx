@@ -1671,6 +1671,17 @@ export default function App() {
     return arr;
   }
 
+  const blackStockSheets = useMemo(() => {
+    if (!Array.isArray(materialsStockRows) || materialsStockRows.length === 0) return 0;
+    return materialsStockRows.reduce((max, row) => {
+      const material = String(row?.material || "").trim();
+      const key = normalizeFurnitureKey(material);
+      if (!key.includes("черн")) return max;
+      const qtySheets = Number(row?.qty_sheets ?? row?.qtySheets ?? 0);
+      return Math.max(max, Number.isFinite(qtySheets) ? qtySheets : 0);
+    }, 0);
+  }, [materialsStockRows]);
+
   const shipmentRenderSections = useMemo(() => {
     if (view !== "shipment") return [];
 
@@ -2346,17 +2357,6 @@ export default function App() {
     }
     return { lines, totalSheets };
   }, [strapItems]);
-
-  const blackStockSheets = useMemo(() => {
-    if (!Array.isArray(materialsStockRows) || materialsStockRows.length === 0) return 0;
-    return materialsStockRows.reduce((max, row) => {
-      const material = String(row?.material || "").trim();
-      const key = normalizeFurnitureKey(material);
-      if (!key.includes("черн")) return max;
-      const qtySheets = Number(row?.qty_sheets ?? row?.qtySheets ?? 0);
-      return Math.max(max, Number.isFinite(qtySheets) ? qtySheets : 0);
-    }, 0);
-  }, [materialsStockRows]);
 
   const strapOptionsByProduct = useMemo(() => {
     const grouped = new Map();
