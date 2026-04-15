@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
-import { callBackend } from "./api";
+import { callBackend, supabaseCall } from "./api";
 import { SUPABASE_ANON_KEY, SUPABASE_URL } from "./config";
 import furnitureWorkbookUrl from "./assets/furniture.xlsx?url";
 import {
@@ -2603,22 +2603,38 @@ export default function App() {
         throw new Error("Не найдено валидных строк. Ожидается: колонка A — артикул, B — количество.");
       }
 
+      let importCatalogRows = [];
+      try {
+        // Excel import must use full article map from Supabase even when UI runs in GAS mode.
+        const catalogData = await supabaseCall("webGetArticlesForImport");
+        importCatalogRows = Array.isArray(catalogData) ? catalogData : [];
+      } catch (_) {
+        try {
+          const catalogData = await callBackend("webGetArticlesForImport");
+          importCatalogRows = Array.isArray(catalogData) ? catalogData : [];
+        } catch (_) {
+          // Fallback to UI catalog if dedicated import RPC is unavailable.
+          importCatalogRows = Array.isArray(sectionArticleRows) ? sectionArticleRows : [];
+        }
+      }
+
       const articleMap = new Map();
-      (sectionArticleRows || []).forEach((x) => {
+      importCatalogRows.forEach((x) => {
         const article = String(x.article || "").trim();
         const sectionName = String(x.section_name || x.sectionName || "").trim();
         const itemName = String(x.item_name || x.itemName || "").trim();
         const material = String(x.material || "").trim();
         if (!article || !sectionName || !itemName) return;
-        if (!articleMap.has(article)) {
-          articleMap.set(article, { sectionName, itemName, material });
+        const key = article.toUpperCase();
+        if (!articleMap.has(key)) {
+          articleMap.set(key, { sectionName, itemName, material });
         }
       });
 
       const missing = [];
       let imported = 0;
       for (const row of importRows) {
-        const mapped = articleMap.get(row.article);
+        const mapped = articleMap.get(String(row.article || "").trim().toUpperCase());
         if (!mapped) {
           missing.push(row.article);
           continue;
