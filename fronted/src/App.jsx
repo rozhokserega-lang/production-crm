@@ -728,6 +728,15 @@ function resolveFurnitureAliasKey(candidates) {
   return "";
 }
 
+function detailPatternToStrapName(pattern) {
+  const raw = String(pattern || "").trim();
+  if (!raw) return "";
+  const sizeMatch = raw.match(/(\d{3,4}_\d{2,3})/);
+  if (sizeMatch) return `Обвязка (${sizeMatch[1]})`;
+  if (raw.toLowerCase().includes("обвязк")) return "Обвязка";
+  return "";
+}
+
 function resolveFurnitureTemplateForPreview(preview, templates) {
   const list = Array.isArray(templates) ? templates : [];
   if (!list.length) return null;
@@ -822,6 +831,7 @@ export default function App() {
   const [consumeError, setConsumeError] = useState("");
   const [consumeLoading, setConsumeLoading] = useState(false);
   const [strapDialogOpen, setStrapDialogOpen] = useState(false);
+  const [strapTargetProduct, setStrapTargetProduct] = useState("");
   const [planDialogOpen, setPlanDialogOpen] = useState(false);
   const [planSection, setPlanSection] = useState("Прочее");
   const [planArticle, setPlanArticle] = useState("");
@@ -897,6 +907,12 @@ export default function App() {
           setShipmentOrders(Array.isArray(shipmentOrdersData) ? shipmentOrdersData.map(normalizeOrder) : []);
         } catch (_) {
           setShipmentOrders([]);
+        }
+        try {
+          const detailArticles = await callBackend("webGetFurnitureDetailArticles");
+          setFurnitureDetailArticleRows(Array.isArray(detailArticles) ? detailArticles : []);
+        } catch (_) {
+          setFurnitureDetailArticleRows([]);
         }
       } else if (view === "overview") {
         data = await callBackend("webGetOrdersAll");
@@ -2300,6 +2316,45 @@ export default function App() {
     return { lines, totalSheets };
   }, [strapItems]);
 
+  const strapOptionsByProduct = useMemo(() => {
+    const grouped = new Map();
+    (furnitureDetailArticleRows || []).forEach((r) => {
+      const productRaw = String(r.product_name || r.productName || "").trim();
+      const productName = furnitureProductLabel(productRaw);
+      const pattern = String(r.detail_name_pattern || r.detailNamePattern || "").trim();
+      if (!productName || !pattern.toLowerCase().includes("обвяз")) return;
+      const optionName = detailPatternToStrapName(pattern);
+      if (!optionName) return;
+      const key = normalizeFurnitureKey(productName);
+      if (!grouped.has(key)) grouped.set(key, { productName, options: new Set() });
+      grouped.get(key).options.add(optionName);
+    });
+    const rows = [...grouped.values()].map((x) => ({
+      productName: x.productName,
+      options: [...x.options].sort((a, b) => a.localeCompare(b, "ru")),
+    }));
+    rows.sort((a, b) => a.productName.localeCompare(b.productName, "ru"));
+    return rows;
+  }, [furnitureDetailArticleRows]);
+
+  const strapProductNames = useMemo(() => {
+    if (strapOptionsByProduct.length > 0) return strapOptionsByProduct.map((x) => x.productName);
+    return ["Обвязка"];
+  }, [strapOptionsByProduct]);
+
+  const strapOptionsForSelectedProduct = useMemo(() => {
+    if (strapOptionsByProduct.length === 0) return STRAP_OPTIONS;
+    const key = normalizeFurnitureKey(strapTargetProduct || strapProductNames[0] || "");
+    const hit = strapOptionsByProduct.find((x) => normalizeFurnitureKey(x.productName) === key);
+    return hit?.options?.length ? hit.options : [];
+  }, [strapOptionsByProduct, strapTargetProduct, strapProductNames]);
+
+  useEffect(() => {
+    if (!strapProductNames.length) return;
+    if (strapProductNames.some((name) => normalizeFurnitureKey(name) === normalizeFurnitureKey(strapTargetProduct))) return;
+    setStrapTargetProduct(strapProductNames[0]);
+  }, [strapProductNames, strapTargetProduct]);
+
   async function sendSelectedShipmentToWork() {
     if (shipmentTab === "straps") {
       if (!strapItems.length) return;
@@ -2418,13 +2473,26 @@ export default function App() {
   }
 
   function openStrapDialog() {
-    const nextDraft = STRAP_OPTIONS.reduce((acc, name) => ({ ...acc, [name]: "" }), {});
+    const defaultProduct = strapItems[0]?.productName || strapProductNames[0] || "Обвязка";
+    setStrapTargetProduct(defaultProduct);
+    const options = strapOptionsByProduct.length > 0
+      ? (strapOptionsByProduct.find((x) => normalizeFurnitureKey(x.productName) === normalizeFurnitureKey(defaultProduct))?.options || [])
+      : STRAP_OPTIONS;
+    const nextDraft = options.reduce((acc, name) => ({ ...acc, [name]: "" }), {});
     strapItems.forEach((x) => {
       if (nextDraft[x.name] !== undefined) nextDraft[x.name] = String(x.qty || "");
     });
     setStrapDraft(nextDraft);
     setStrapDialogOpen(true);
   }
+
+  useEffect(() => {
+    if (!strapDialogOpen) return;
+    const options = strapOptionsForSelectedProduct;
+    const nextDraft = options.reduce((acc, name) => ({ ...acc, [name]: strapDraft[name] || "" }), {});
+    setStrapDraft(nextDraft);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [strapDialogOpen, strapTargetProduct, strapOptionsForSelectedProduct.join("|")]);
 
   function openCreatePlanDialog() {
     const firstSection = sectionOptions[0] || "Прочее";
@@ -2491,9 +2559,10 @@ export default function App() {
   }
 
   function saveStrapDialog() {
-    const next = STRAP_OPTIONS
+    const next = strapOptionsForSelectedProduct
       .map((name) => ({ name, qty: Number(String(strapDraft[name] || "").replace(",", ".")) }))
-      .filter((x) => Number.isFinite(x.qty) && x.qty > 0);
+      .filter((x) => Number.isFinite(x.qty) && x.qty > 0)
+      .map((x) => ({ ...x, productName: strapTargetProduct || "" }));
     setStrapItems(next);
     setStrapDialogOpen(false);
   }
@@ -4241,8 +4310,16 @@ export default function App() {
             <div className="line2" style={{ marginBottom: 10 }}>
               Укажите количество для нужных позиций. Пусто или 0 — не добавлять.
             </div>
+            <div className="strap-row" style={{ marginBottom: 10 }}>
+              <label>Изделие</label>
+              <select value={strapTargetProduct} onChange={(e) => setStrapTargetProduct(e.target.value)}>
+                {strapProductNames.map((name) => (
+                  <option key={name} value={name}>{name}</option>
+                ))}
+              </select>
+            </div>
             <div className="strap-grid">
-              {STRAP_OPTIONS.map((name) => (
+              {strapOptionsForSelectedProduct.map((name) => (
                 <div key={name} className="strap-row">
                   <label>{name}</label>
                   <input
@@ -4270,7 +4347,7 @@ export default function App() {
                 className="mini warn"
                 onClick={() => {
                   setStrapItems([]);
-                  setStrapDraft(STRAP_OPTIONS.reduce((acc, name) => ({ ...acc, [name]: "" }), {}));
+                  setStrapDraft(strapOptionsForSelectedProduct.reduce((acc, name) => ({ ...acc, [name]: "" }), {}));
                   setStrapDialogOpen(false);
                 }}
               >
