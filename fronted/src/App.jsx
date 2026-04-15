@@ -745,6 +745,10 @@ function strapNameToOrderItem(name) {
   return raw.replace(/^обвязка\s*/i, "").replace(/[()]/g, "").trim() || raw;
 }
 
+function isStrapVirtualRowId(rowId) {
+  return String(rowId || "").startsWith("strap-order:");
+}
+
 function canonicalStrapProductName(name) {
   const label = furnitureProductLabel(name);
   const key = normalizeFurnitureKey(label);
@@ -862,6 +866,7 @@ export default function App() {
   const [strapItems, setStrapItems] = useState([]);
   const [laborRows, setLaborRows] = useState([]);
   const [warehouseRows, setWarehouseRows] = useState([]);
+  const [materialsStockRows, setMaterialsStockRows] = useState([]);
   const [leftoversRows, setLeftoversRows] = useState([]);
   const [warehouseSubView, setWarehouseSubView] = useState("sheets");
   const [warehouseSyncLoading, setWarehouseSyncLoading] = useState(false);
@@ -931,12 +936,19 @@ export default function App() {
         } catch (_) {
           setFurnitureDetailArticleRows([]);
         }
+        try {
+          const stockData = await callBackend("webGetMaterialsStock");
+          setMaterialsStockRows(Array.isArray(stockData) ? stockData : []);
+        } catch (_) {
+          setMaterialsStockRows([]);
+        }
       } else if (view === "overview") {
         data = await callBackend("webGetOrdersAll");
       } else if (view === "sheetMirror") {
         data = await callBackend("webGetSheetOrdersMirror", { p_sheet_gid: SHEET_MIRROR_GID });
       } else if (view === "warehouse") {
         data = await callBackend("webGetMaterialsStock");
+        setMaterialsStockRows(Array.isArray(data) ? data : []);
         try {
           const leftoversData = await callBackend("webGetLeftovers");
           setLeftoversRows(Array.isArray(leftoversData) ? leftoversData : []);
@@ -1731,6 +1743,7 @@ export default function App() {
       row: `strap-order:${idx}`,
       sourceRowId: `strap-order:${idx}`,
       item: strapNameToOrderItem(x.name),
+      strapProduct: String(x.productName || "").trim(),
       material: "Черный",
       cells: [
         {
@@ -1742,13 +1755,14 @@ export default function App() {
           canSendToWork: false,
           inWork: false,
           sheetsNeeded: 0,
+          availableSheets: blackStockSheets,
           note: "Обвязка: добавлена как заказ",
         },
       ],
     }));
 
     return [...baseSections, { name: "Обвязка", items: sortItemsForShipment(strapRows) }];
-  }, [view, shipmentSort, filtered, strapItems]);
+  }, [view, shipmentSort, filtered, strapItems, blackStockSheets]);
 
   const kpi = useMemo(() => {
     const total = filtered.length;
@@ -1921,6 +1935,7 @@ export default function App() {
             key: `${sourceRow}-${sourceCol}`,
             section: section.name,
             item: it.item,
+            strapProduct: String(it.strapProduct || ""),
             material: it.material || "",
             week: c.week || "-",
             qty: Number(c.qty || 0),
@@ -2332,13 +2347,25 @@ export default function App() {
     return { lines, totalSheets };
   }, [strapItems]);
 
+  const blackStockSheets = useMemo(() => {
+    if (!Array.isArray(materialsStockRows) || materialsStockRows.length === 0) return 0;
+    return materialsStockRows.reduce((max, row) => {
+      const material = String(row?.material || "").trim();
+      const key = normalizeFurnitureKey(material);
+      if (!key.includes("черн")) return max;
+      const qtySheets = Number(row?.qty_sheets ?? row?.qtySheets ?? 0);
+      return Math.max(max, Number.isFinite(qtySheets) ? qtySheets : 0);
+    }, 0);
+  }, [materialsStockRows]);
+
   const strapOptionsByProduct = useMemo(() => {
     const grouped = new Map();
     (furnitureDetailArticleRows || []).forEach((r) => {
       const productRaw = String(r.product_name || r.productName || "").trim();
       const productName = canonicalStrapProductName(productRaw);
       const pattern = String(r.detail_name_pattern || r.detailNamePattern || "").trim();
-      if (!productName || !pattern.toLowerCase().includes("обвяз")) return;
+      const patternLc = pattern.toLowerCase();
+      if (!productName || (!patternLc.includes("обвяз") && !patternLc.includes("планк"))) return;
       const optionName = detailPatternToStrapName(pattern);
       if (!optionName) return;
       const key = normalizeFurnitureKey(productName);
@@ -2573,9 +2600,26 @@ export default function App() {
 
   async function previewSelectedShipmentPlan() {
     if (!selectedShipments.length) return;
+    const strapSelections = selectedShipments.filter((s) => isStrapVirtualRowId(s.row));
+    const shipmentSelections = selectedShipments.filter((s) => !isStrapVirtualRowId(s.row));
     setActionLoading("preview:batch");
     setError("");
     try {
+      const now = new Date();
+      const strapPreview =
+        strapSelections.length > 0
+          ? {
+              _key: "strap-plan-selected",
+              isStrapPlan: true,
+              generatedAt: formatDateTimeForPrint(now),
+              products: [...new Set(strapSelections.map((x) => String(x.strapProduct || "").trim()).filter(Boolean))],
+              rows: strapSelections.map((x) => ({
+                part: `${String(x.item || "")}${x.strapProduct ? ` (${x.strapProduct})` : ""}`,
+                qty: Number(x.qty || 0),
+              })),
+            }
+          : null;
+
       const enrichPreviewFromFurniture = (preview) => {
         if (!preview || preview.isStrapPlan) return preview;
         const template = resolveFurnitureTemplateForPreview(preview, furnitureTemplates);
@@ -2584,19 +2628,25 @@ export default function App() {
         if (!rows.length) return preview;
         return { ...preview, rows };
       };
-      if (selectedShipments.length === 1) {
-        const s = selectedShipments[0];
+      if (shipmentSelections.length === 0) {
+        setPlanPreviews(strapPreview ? [strapPreview] : []);
+        return;
+      }
+      if (shipmentSelections.length === 1) {
+        const s = shipmentSelections[0];
         const preview = await callBackend("webPreviewPlanFromShipment", {
           row: s.row,
           col: s.col,
         });
         const enriched = preview ? enrichPreviewFromFurniture({ ...preview, _key: `${s.row}-${s.col}` }) : null;
-        setPlanPreviews(enriched ? [enriched] : []);
+        const plans = enriched ? [enriched] : [];
+        if (strapPreview) plans.push(strapPreview);
+        setPlanPreviews(plans);
       } else {
         let plans = [];
         try {
           const batch = await callBackend("webPreviewPlansBatch", {
-            items: selectedShipments.map((x) => ({ row: x.row, col: x.col })),
+            items: shipmentSelections.map((x) => ({ row: x.row, col: x.col })),
           });
           plans = (batch && Array.isArray(batch.plans) ? batch.plans : [])
             .map((p) => ({ ...(p.plan || {}), _key: `${p.row}-${p.col}` }))
@@ -2604,7 +2654,7 @@ export default function App() {
         } catch (batchError) {
           // Fallback: если пачка упала из-за одной позиции, собираем предпросмотры поштучно.
           const settled = await Promise.allSettled(
-            selectedShipments.map((s) =>
+            shipmentSelections.map((s) =>
               callBackend("webPreviewPlanFromShipment", { row: s.row, col: s.col })
                 .then((plan) => ({ ...plan, _key: `${s.row}-${s.col}` }))
             )
@@ -2620,9 +2670,10 @@ export default function App() {
             );
           }
         }
-        if (!plans.length) {
+        if (!plans.length && !strapPreview) {
           throw new Error("Не удалось построить предпросмотр ни для одной выбранной позиции.");
         }
+        if (strapPreview) plans.push(strapPreview);
         setPlanPreviews(plans);
       }
     } catch (e) {
@@ -3231,6 +3282,11 @@ export default function App() {
                   <>
                     <div className="strap-print-title">ЗАДАНИЕ В РАБОТУ: ПЛАНКИ ОБВЯЗКИ</div>
                     <div className="strap-print-meta">Дата: {planPreview.generatedAt}</div>
+                    {Array.isArray(planPreview.products) && planPreview.products.length > 0 && (
+                      <div className="strap-print-meta">
+                        Изделие: {planPreview.products.join(", ")}
+                      </div>
+                    )}
                     <table className="plan-table strap-plan-table">
                       <thead>
                         <tr>
@@ -3385,6 +3441,7 @@ export default function App() {
                                 rawRow: row.sourceRow,
                                 rawCol: row.sourceCol,
                                 item: row.item,
+                                strapProduct: row.strapProduct,
                                 week: row.week,
                                 weekCol: row.week,
                                 qty: row.qty,
@@ -3512,6 +3569,7 @@ export default function App() {
                                       rawRow: String(it.row),
                                       rawCol: String(c.col),
                                       item: it.item,
+                                      strapProduct: String(it.strapProduct || ""),
                                       week: c.week,
                                       weekCol: c.week,
                                       qty: c.qty,
@@ -4268,7 +4326,7 @@ export default function App() {
       )}
       {strapDialogOpen && (
         <div className="dialog-backdrop">
-          <div className="dialog-card">
+          <div className="dialog-card strap-dialog-card">
             <h3 style={{ marginTop: 0 }}>Конструктор планок (обвязка)</h3>
             <div className="line2" style={{ marginBottom: 10 }}>
               Укажите количество для нужных позиций. Пусто или 0 — не добавлять.

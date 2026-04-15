@@ -1013,6 +1013,26 @@ button:disabled {
   padding: 6px 8px;
 }
 
+.strap-dialog-card {
+  width: min(760px, 96vw);
+  max-height: 88vh;
+  overflow: auto;
+}
+
+.strap-dialog-card .strap-grid {
+  gap: 8px;
+  max-height: 56vh;
+}
+
+.strap-dialog-card .strap-row {
+  grid-template-columns: minmax(220px, 1fr) 96px;
+}
+
+.strap-dialog-card .strap-row label {
+  line-height: 1.25;
+  word-break: break-word;
+}
+
 @media (max-width: 900px) {
   .overview-board {
     grid-template-columns: 1fr;
