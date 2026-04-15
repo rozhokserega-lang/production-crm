@@ -2651,15 +2651,45 @@ export default function App() {
     return `stats:delete:${orderId || `${source.row}-${source.col}`}`;
   }
 
+  async function resolveStatsOrderSourceCell(order) {
+    const fromCurrent = getStatsOrderSourceCell(order);
+    if (fromCurrent.row && fromCurrent.col) return fromCurrent;
+
+    const orderId = String(order?.orderId || order?.order_id || "").trim();
+    if (!orderId) return fromCurrent;
+
+    try {
+      const allOrdersRaw = await callBackend("webGetOrdersAll");
+      const allOrders = Array.isArray(allOrdersRaw) ? allOrdersRaw : [];
+      const linked = allOrders.find((r) => String(r?.orderId || r?.order_id || "").trim() === orderId);
+      if (!linked) return fromCurrent;
+      return {
+        row: String(
+          linked?.sourceRowId ||
+          linked?.source_row_id ||
+          linked?.sourceRow ||
+          linked?.row_ref ||
+          linked?.rowRef ||
+          linked?.row ||
+          ""
+        ).trim(),
+        col: String(
+          linked?.sourceColId ||
+          linked?.source_col_id ||
+          linked?.sourceCol ||
+          linked?.col_ref ||
+          linked?.colRef ||
+          linked?.col ||
+          ""
+        ).trim(),
+      };
+    } catch (_) {
+      return fromCurrent;
+    }
+  }
+
   async function deleteStatsOrder(order) {
     const orderId = String(order?.orderId || order?.order_id || "").trim();
-    const source = getStatsOrderSourceCell(order);
-    const sourceRow = source.row;
-    const sourceCol = source.col;
-    if (!sourceRow || !sourceCol) {
-      setError("Для этого заказа нет source row/col, удалить через текущий API нельзя.");
-      return;
-    }
     const ok = window.confirm(
       `Удалить заказ ${orderId || ""} из плана? Действие необратимо.`
     );
@@ -2668,6 +2698,13 @@ export default function App() {
     setActionLoading(actionKey);
     setError("");
     try {
+      const source = await resolveStatsOrderSourceCell(order);
+      const sourceRow = source.row;
+      const sourceCol = source.col;
+      if (!sourceRow || !sourceCol) {
+        setError("Для этого заказа не найдена привязка к ячейке плана (row/col).");
+        return;
+      }
       await callBackend("webDeleteShipmentPlanCell", {
         p_row: sourceRow,
         p_col: sourceCol,
