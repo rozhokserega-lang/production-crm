@@ -702,6 +702,13 @@ function normalizeFurnitureKey(v) {
     .trim();
 }
 
+function normalizeStrapProductKey(v) {
+  const key = normalizeFurnitureKey(v);
+  if (key === "авела") return "авелла";
+  if (key === "авела лайт") return "авелла лайт";
+  return key;
+}
+
 function resolveFurnitureAliasKey(candidates) {
   const text = candidates.join(" ");
   const checks = [
@@ -1750,27 +1757,36 @@ export default function App() {
     }
 
     if (!strapItems.length) return baseSections;
-    const strapRows = strapItems.map((x, idx) => ({
-      row: `strap-order:${idx}`,
-      sourceRowId: `strap-order:${idx}`,
-      item: strapNameToOrderItem(x.name),
-      strapProduct: String(x.productName || "").trim(),
-      material: "Черный",
-      cells: [
-        {
-          col: `strap-order-col:${idx}`,
-          sourceColId: `strap-order-col:${idx}`,
-          week: "-",
-          qty: Number(x.qty || 0),
-          bg: "#ffffff",
-          canSendToWork: false,
-          inWork: false,
-          sheetsNeeded: 0,
-          availableSheets: blackStockSheets,
-          note: "Обвязка: добавлена как заказ",
-        },
-      ],
-    }));
+    const strapRows = strapItems.map((x, idx) => {
+      const size = parseStrapSize(x.name);
+      const stripsPerSheet = size ? Math.floor(STRAP_SHEET_HEIGHT / size.width) : 0;
+      const perStrip = size ? Math.floor(STRAP_SHEET_WIDTH / size.length) : 0;
+      const outputPerSheet = stripsPerSheet * perStrip;
+      const qty = Number(x.qty || 0);
+      const sheetsNeeded = outputPerSheet > 0 ? Math.ceil(qty / outputPerSheet) : 0;
+      return {
+        row: `strap-order:${idx}`,
+        sourceRowId: `strap-order:${idx}`,
+        item: strapNameToOrderItem(x.name),
+        strapProduct: String(x.productName || "").trim(),
+        material: "Черный",
+        cells: [
+          {
+            col: `strap-order-col:${idx}`,
+            sourceColId: `strap-order-col:${idx}`,
+            week: "-",
+            qty,
+            bg: "#ffffff",
+            canSendToWork: false,
+            inWork: false,
+            sheetsNeeded,
+            outputPerSheet,
+            availableSheets: blackStockSheets,
+            note: "Обвязка: добавлена как заказ",
+          },
+        ],
+      };
+    });
 
     return [...baseSections, { name: "Обвязка", items: sortItemsForShipment(strapRows) }];
   }, [view, shipmentSort, filtered, strapItems, blackStockSheets]);
@@ -2368,11 +2384,11 @@ export default function App() {
       if (!productName || (!patternLc.includes("обвяз") && !patternLc.includes("планк"))) return;
       const optionName = detailPatternToStrapName(pattern);
       if (!optionName) return;
-      const key = normalizeFurnitureKey(productName);
+      const key = normalizeStrapProductKey(productName);
       if (!grouped.has(key)) grouped.set(key, { productName, options: new Set() });
       const bucket = grouped.get(key).options;
       if (optionName === "Обвязка") {
-        const pKey = normalizeFurnitureKey(productName);
+        const pKey = normalizeStrapProductKey(productName);
         if (pKey === "донини" || pKey === "донини r") {
           bucket.add("Обвязка (1000_80)");
           bucket.add("Обвязка (558_80)");
@@ -2396,14 +2412,14 @@ export default function App() {
 
   const strapOptionsForSelectedProduct = useMemo(() => {
     if (strapOptionsByProduct.length === 0) return STRAP_OPTIONS;
-    const key = normalizeFurnitureKey(strapTargetProduct || strapProductNames[0] || "");
-    const hit = strapOptionsByProduct.find((x) => normalizeFurnitureKey(x.productName) === key);
+    const key = normalizeStrapProductKey(strapTargetProduct || strapProductNames[0] || "");
+    const hit = strapOptionsByProduct.find((x) => normalizeStrapProductKey(x.productName) === key);
     return hit?.options?.length ? hit.options : [];
   }, [strapOptionsByProduct, strapTargetProduct, strapProductNames]);
 
   useEffect(() => {
     if (!strapProductNames.length) return;
-    if (strapProductNames.some((name) => normalizeFurnitureKey(name) === normalizeFurnitureKey(strapTargetProduct))) return;
+    if (strapProductNames.some((name) => normalizeStrapProductKey(name) === normalizeStrapProductKey(strapTargetProduct))) return;
     setStrapTargetProduct(strapProductNames[0]);
   }, [strapProductNames, strapTargetProduct]);
 
@@ -2507,7 +2523,7 @@ export default function App() {
     const defaultProduct = strapItems[0]?.productName || strapProductNames[0] || "Обвязка";
     setStrapTargetProduct(defaultProduct);
     const options = strapOptionsByProduct.length > 0
-      ? (strapOptionsByProduct.find((x) => normalizeFurnitureKey(x.productName) === normalizeFurnitureKey(defaultProduct))?.options || [])
+      ? (strapOptionsByProduct.find((x) => normalizeStrapProductKey(x.productName) === normalizeStrapProductKey(defaultProduct))?.options || [])
       : STRAP_OPTIONS;
     const nextDraft = options.reduce((acc, name) => ({ ...acc, [name]: "" }), {});
     strapItems.forEach((x) => {
@@ -2606,19 +2622,25 @@ export default function App() {
     setError("");
     try {
       const now = new Date();
-      const strapPreview =
-        strapSelections.length > 0
-          ? {
-              _key: "strap-plan-selected",
-              isStrapPlan: true,
-              generatedAt: formatDateTimeForPrint(now),
-              products: [...new Set(strapSelections.map((x) => String(x.strapProduct || "").trim()).filter(Boolean))],
-              rows: strapSelections.map((x) => ({
-                part: `${String(x.item || "")}${x.strapProduct ? ` (${x.strapProduct})` : ""}`,
-                qty: Number(x.qty || 0),
-              })),
-            }
-          : null;
+      const strapPreviews = (() => {
+        if (strapSelections.length === 0) return [];
+        const byProduct = new Map();
+        strapSelections.forEach((x) => {
+          const product = String(x.strapProduct || "Обвязка").trim() || "Обвязка";
+          if (!byProduct.has(product)) byProduct.set(product, []);
+          byProduct.get(product).push(x);
+        });
+        return [...byProduct.entries()].map(([product, rows], idx) => ({
+          _key: `strap-plan-selected-${idx}`,
+          isStrapPlan: true,
+          generatedAt: formatDateTimeForPrint(now),
+          products: [product],
+          rows: rows.map((x) => ({
+            part: `${String(x.item || "")} (${product})`,
+            qty: Number(x.qty || 0),
+          })),
+        }));
+      })();
 
       const enrichPreviewFromFurniture = (preview) => {
         if (!preview || preview.isStrapPlan) return preview;
@@ -2629,7 +2651,7 @@ export default function App() {
         return { ...preview, rows };
       };
       if (shipmentSelections.length === 0) {
-        setPlanPreviews(strapPreview ? [strapPreview] : []);
+        setPlanPreviews(strapPreviews);
         return;
       }
       if (shipmentSelections.length === 1) {
@@ -2640,7 +2662,7 @@ export default function App() {
         });
         const enriched = preview ? enrichPreviewFromFurniture({ ...preview, _key: `${s.row}-${s.col}` }) : null;
         const plans = enriched ? [enriched] : [];
-        if (strapPreview) plans.push(strapPreview);
+        plans.push(...strapPreviews);
         setPlanPreviews(plans);
       } else {
         let plans = [];
@@ -2670,10 +2692,10 @@ export default function App() {
             );
           }
         }
-        if (!plans.length && !strapPreview) {
+        if (!plans.length && strapPreviews.length === 0) {
           throw new Error("Не удалось построить предпросмотр ни для одной выбранной позиции.");
         }
-        if (strapPreview) plans.push(strapPreview);
+        plans.push(...strapPreviews);
         setPlanPreviews(plans);
       }
     } catch (e) {
@@ -4336,7 +4358,6 @@ export default function App() {
               <select
                 value={strapTargetProduct}
                 onChange={(e) => setStrapTargetProduct(e.target.value)}
-                style={{ minWidth: 220 }}
               >
                 {strapProductNames.map((name) => (
                   <option key={name} value={name}>{name}</option>

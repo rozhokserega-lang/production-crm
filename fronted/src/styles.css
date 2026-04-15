@@ -1033,6 +1033,17 @@ button:disabled {
   word-break: break-word;
 }
 
+.strap-dialog-card select {
+  width: 100%;
+  min-width: 0;
+}
+
+@media (max-width: 760px) {
+  .strap-dialog-card .strap-row {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 900px) {
   .overview-board {
     grid-template-columns: 1fr;
