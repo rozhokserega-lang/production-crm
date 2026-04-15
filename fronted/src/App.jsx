@@ -3668,67 +3668,80 @@ export default function App() {
                       </tr>
                     </thead>
                     <tbody>
-                      {visibleShipmentTableRows.flatMap((row, idx, arr) => {
-                        const isSelected = selectedShipments.some((s) => s.row === row.sourceRow && s.col === row.sourceCol);
-                        const isDeficitSelected = selectedShipmentStockCheck.deficitSourceKeys.has(
-                          `${String(row.sourceRow || "").trim()}|${String(row.sourceCol || "").trim()}`
+                      {shipmentTableGroupNames.flatMap((groupName) => {
+                        const hidden = !!hiddenShipmentGroups[groupName];
+                        const groupRows = shipmentTableRowsWithStockStatus.filter(
+                          (row) => String(row.section || "Прочее") === groupName
                         );
-                        const prevSection = idx > 0 ? String(arr[idx - 1]?.section || "Прочее") : "";
-                        const currentSection = String(row.section || "Прочее");
-                        const showSectionHeader = idx === 0 || prevSection !== currentSection;
-                        const showDeficitHighlight = !!row.canSendToWork && !row.inWork && row.materialHasDeficit;
-                        const rowBg = showDeficitHighlight
-                          ? "#fbcfe8"
-                          : (isDeficitSelected && isSelected ? "#fbcfe8" : (row.bg || "#ffffff"));
-                        const rows = [];
-                        if (showSectionHeader) {
+                        const rows = [
+                          <tr key={`section-${groupName}`} className="shipment-plan-group-row">
+                            <td colSpan={7}>
+                              <button
+                                type="button"
+                                className="shipment-plan-group-toggle"
+                                onClick={() =>
+                                  setHiddenShipmentGroups((prev) => ({ ...prev, [groupName]: !prev[groupName] }))
+                                }
+                                title={hidden ? "Показать группу" : "Скрыть группу"}
+                              >
+                                <span className="shipment-plan-group-marker">{hidden ? "▸" : "▾"}</span>
+                                <span className="shipment-plan-group-title">{groupName}</span>
+                              </button>
+                            </td>
+                          </tr>,
+                        ];
+                        if (hidden) return rows;
+                        groupRows.forEach((row) => {
+                          const isSelected = selectedShipments.some((s) => s.row === row.sourceRow && s.col === row.sourceCol);
+                          const isDeficitSelected = selectedShipmentStockCheck.deficitSourceKeys.has(
+                            `${String(row.sourceRow || "").trim()}|${String(row.sourceCol || "").trim()}`
+                          );
+                          const showDeficitHighlight = !!row.canSendToWork && !row.inWork && row.materialHasDeficit;
+                          const rowBg = showDeficitHighlight
+                            ? "#fbcfe8"
+                            : (isDeficitSelected && isSelected ? "#fbcfe8" : (row.bg || "#ffffff"));
                           rows.push(
-                            <tr key={`section-${currentSection}-${idx}`} className="shipment-plan-group-row">
-                              <td colSpan={7}>{currentSection}</td>
+                            <tr
+                              key={row.key}
+                              className={isSelected ? "selected-row" : ""}
+                              style={{ backgroundColor: rowBg, color: getReadableTextColor(rowBg) }}
+                              onClick={() => {
+                                const payload = {
+                                  row: row.sourceRow,
+                                  col: row.sourceCol,
+                                  rawRow: row.sourceRow,
+                                  rawCol: row.sourceCol,
+                                  section: row.section,
+                                  item: row.item,
+                                  strapProduct: row.strapProduct,
+                                  week: row.week,
+                                  weekCol: row.week,
+                                  qty: row.qty,
+                                  material: getMaterialLabel(row.item, row.material),
+                                  sheetsNeeded: row.sheets,
+                                  availableSheets: row.availableSheets,
+                                  outputPerSheet: row.outputPerSheet,
+                                  canSendToWork: !!row.canSendToWork,
+                                };
+                                toggleShipmentSelection(payload);
+                              }}
+                            >
+                              <td>{row.item}</td>
+                              <td>{row.material || "-"}</td>
+                              <td>{row.week}</td>
+                              <td>{row.qty}</td>
+                              <td>{row.sheets}</td>
+                              <td>{row.availableSheets}</td>
+                              <td>
+                                {row.status}
+                                {!!row.canSendToWork && !row.inWork &&
+                                  (row.materialHasDeficit
+                                    ? ` • ❌ Не хватает: ${row.materialDeficit}`
+                                    : " • ✅ Хватает")}
+                              </td>
                             </tr>
                           );
-                        }
-                        rows.push(
-                          <tr
-                            key={row.key}
-                            className={isSelected ? "selected-row" : ""}
-                            style={{ backgroundColor: rowBg, color: getReadableTextColor(rowBg) }}
-                            onClick={() => {
-                              const payload = {
-                                row: row.sourceRow,
-                                col: row.sourceCol,
-                                rawRow: row.sourceRow,
-                                rawCol: row.sourceCol,
-                                section: row.section,
-                                item: row.item,
-                                strapProduct: row.strapProduct,
-                                week: row.week,
-                                weekCol: row.week,
-                                qty: row.qty,
-                                material: getMaterialLabel(row.item, row.material),
-                                sheetsNeeded: row.sheets,
-                                availableSheets: row.availableSheets,
-                                outputPerSheet: row.outputPerSheet,
-                                canSendToWork: !!row.canSendToWork,
-                              };
-                              toggleShipmentSelection(payload);
-                            }}
-                          >
-                            <td>{row.item}</td>
-                            <td>{row.material || "-"}</td>
-                            <td>{row.week}</td>
-                            <td>{row.qty}</td>
-                            <td>{row.sheets}</td>
-                            <td>{row.availableSheets}</td>
-                            <td>
-                              {row.status}
-                              {!!row.canSendToWork && !row.inWork &&
-                                (row.materialHasDeficit
-                                  ? ` • ❌ Не хватает: ${row.materialDeficit}`
-                                  : " • ✅ Хватает")}
-                            </td>
-                          </tr>
-                        );
+                        });
                         return rows;
                       })}
                     </tbody>
