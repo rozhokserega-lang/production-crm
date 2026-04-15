@@ -731,6 +731,17 @@ button:disabled {
   vertical-align: middle;
 }
 
+.shipment-plan-table th:nth-child(2),
+.shipment-plan-table td:nth-child(2) {
+  width: 260px;
+  max-width: 260px;
+}
+
+.shipment-plan-table td:nth-child(2) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .sheet-table th {
   position: sticky;
   top: 0;

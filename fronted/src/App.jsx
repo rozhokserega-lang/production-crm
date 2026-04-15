@@ -3512,7 +3512,7 @@ export default function App() {
                   )}
                 </div>
                 <div className="sheet-table-wrap">
-                  <table className="sheet-table">
+                  <table className="sheet-table shipment-plan-table">
                     <thead>
                       <tr>
                         <th>Группа</th>
