@@ -82,6 +82,8 @@ const RPC_MAP = {
   webGetLaborTable: "web_get_labor_table",
   webGetOrderStats: "web_get_order_stats",
   webGetMyRole: "web_effective_crm_role",
+  webGetCrmAuthStrict: "web_is_crm_auth_strict",
+  webSetCrmAuthStrict: "web_set_crm_auth_strict",
   webUpsertItemColorMap: "web_upsert_item_color_map",
   webGetConsumeOptions: "web_get_consume_options",
   webPreviewPlanFromShipment: "web_preview_plan_from_shipment",
@@ -179,6 +181,11 @@ function buildRpcPayload(action, payload = {}) {
     return {
       p_item_name: String(payload.itemName || "").trim(),
       p_color_name: String(payload.colorName || "").trim(),
+    };
+  }
+  if (action === "webSetCrmAuthStrict") {
+    return {
+      p_enabled: Boolean(payload.enabled),
     };
   }
   return payload || {};

@@ -102,6 +102,20 @@ body {
   color: #475569;
 }
 
+.strict-mode-toggle {
+  padding: 7px 10px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 700;
+  background: #475569;
+  border-color: #334155;
+}
+
+.strict-mode-toggle.enabled {
+  background: #b45309;
+  border-color: #92400e;
+}
+
 h1 {
   font-size: var(--title-size);
   font-weight: 800;

@@ -48,6 +48,26 @@ function parseCrmRoleResponse(payload) {
   return "";
 }
 
+function parseStrictModeResponse(payload) {
+  if (typeof payload === "boolean") return payload;
+  if (typeof payload === "string") return payload.trim().toLowerCase() === "true";
+  if (Array.isArray(payload) && payload.length > 0) {
+    const first = payload[0];
+    if (typeof first === "boolean") return first;
+    if (first && typeof first === "object") {
+      if (typeof first.enabled === "boolean") return first.enabled;
+      if (typeof first.web_is_crm_auth_strict === "boolean") return first.web_is_crm_auth_strict;
+      if (typeof first.value === "boolean") return first.value;
+    }
+  }
+  if (payload && typeof payload === "object") {
+    if (typeof payload.enabled === "boolean") return payload.enabled;
+    if (typeof payload.web_is_crm_auth_strict === "boolean") return payload.web_is_crm_auth_strict;
+    if (typeof payload.value === "boolean") return payload.value;
+  }
+  return false;
+}
+
 const TABS = [
   { id: "pilka", label: "Пила" },
   { id: "kromka", label: "Кромка" },
@@ -929,6 +949,8 @@ export default function App() {
   const [actionLoading, setActionLoading] = useState("");
   const [error, setError] = useState("");
   const [crmRole, setCrmRole] = useState("admin");
+  const [crmAuthStrict, setCrmAuthStrict] = useState(false);
+  const [crmAuthStrictSaving, setCrmAuthStrictSaving] = useState(false);
   const [executorByOrder, setExecutorByOrder] = useState({});
   const [consumeDialogOpen, setConsumeDialogOpen] = useState(false);
   const [consumeEditMode, setConsumeEditMode] = useState(false);
@@ -972,6 +994,7 @@ export default function App() {
   const loadInFlightRef = useRef(false);
   const canOperateProduction = crmRole === "operator" || crmRole === "manager" || crmRole === "admin";
   const canManageOrders = crmRole === "manager" || crmRole === "admin";
+  const canAdminSettings = crmRole === "admin";
   const crmRoleLabel = CRM_ROLE_LABELS[crmRole] || CRM_ROLE_LABELS.viewer;
 
   function denyActionByRole(message) {
@@ -983,9 +1006,13 @@ export default function App() {
     let cancelled = false;
     async function loadCrmRole() {
       try {
-        const rolePayload = await callBackend("webGetMyRole");
+        const [rolePayload, strictPayload] = await Promise.all([
+          callBackend("webGetMyRole"),
+          callBackend("webGetCrmAuthStrict").catch(() => false),
+        ]);
         const role = normalizeCrmRole(parseCrmRoleResponse(rolePayload));
         if (!cancelled) setCrmRole(role);
+        if (!cancelled) setCrmAuthStrict(parseStrictModeResponse(strictPayload));
       } catch (_) {
         // Keep backward-compatible default role for environments without role RPC.
       }
@@ -995,6 +1022,29 @@ export default function App() {
       cancelled = true;
     };
   }, []);
+
+  async function toggleCrmAuthStrict() {
+    if (!canAdminSettings || crmAuthStrictSaving) return;
+    const next = !crmAuthStrict;
+    const ok = window.confirm(
+      next
+        ? "Включить строгий режим авторизации? Без входа пользователя роль anon станет viewer."
+        : "Выключить строгий режим авторизации и вернуть совместимый режим?"
+    );
+    if (!ok) return;
+    setCrmAuthStrictSaving(true);
+    setError("");
+    try {
+      const result = await callBackend("webSetCrmAuthStrict", { enabled: next });
+      setCrmAuthStrict(parseStrictModeResponse(result));
+      const rolePayload = await callBackend("webGetMyRole").catch(() => null);
+      if (rolePayload != null) setCrmRole(normalizeCrmRole(parseCrmRoleResponse(rolePayload)));
+    } catch (e) {
+      setError(toUserError(e));
+    } finally {
+      setCrmAuthStrictSaving(false);
+    }
+  }
 
   async function load() {
     // Не выходим при «занято»: иначе при смене вкладки во время запроса новый load не стартует,
@@ -3237,6 +3287,19 @@ export default function App() {
           <span className={`role-badge role-${crmRole}`} title="Текущая роль CRM">
             Роль: {crmRoleLabel}
           </span>
+          {canAdminSettings && (
+            <button
+              type="button"
+              className={`strict-mode-toggle ${crmAuthStrict ? "enabled" : ""}`}
+              onClick={toggleCrmAuthStrict}
+              disabled={crmAuthStrictSaving}
+              title="Управление строгим режимом авторизации CRM"
+            >
+              {crmAuthStrictSaving
+                ? "Сохраняю..."
+                : `Strict mode: ${crmAuthStrict ? "ON" : "OFF"}`}
+            </button>
+          )}
           <button
             type="button"
             className="scale-toggle"
