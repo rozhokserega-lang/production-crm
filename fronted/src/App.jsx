@@ -710,6 +710,11 @@ function normalizeStrapProductKey(v) {
   const key = normalizeFurnitureKey(v);
   if (key === "авела") return "авелла";
   if (key === "авела лайт") return "авелла лайт";
+  const hasDonini = key.includes("донини") || key.includes("donini");
+  const hasWhite = key.includes("бел") || key.includes("white");
+  const isR = key.includes("донини r") || key.includes("donini r");
+  const isGrande = key.includes("донини гранде") || key.includes("donini grande");
+  if (hasDonini && hasWhite && !isR && !isGrande) return "донини белый";
   return key;
 }
 
@@ -777,12 +782,18 @@ function isStrapVirtualRowId(rowId) {
 
 function canonicalStrapProductName(name) {
   const label = furnitureProductLabel(name);
-  const key = normalizeFurnitureKey(label);
+  const key = normalizeStrapProductKey(label);
   if (key === "авела лайт" || key === "авелла лайт") return "Авелла Лайт";
-  if (key === "донини r") return "Донини R";
+  if (key === "донини белый") return "Донини Белый";
   if (key === "донини гранде") return "Донини Гранде";
   if (key === "донини") return "Донини";
   return label;
+}
+
+function resolveStrapMaterialByProduct(productName) {
+  const key = normalizeStrapProductKey(productName);
+  if (key.includes("бел")) return "Белый";
+  return "Черный";
 }
 
 function resolveFurnitureTemplateForPreview(preview, templates) {
@@ -1699,15 +1710,18 @@ export default function App() {
     return arr;
   }
 
-  const blackStockSheets = useMemo(() => {
-    if (!Array.isArray(materialsStockRows) || materialsStockRows.length === 0) return 0;
-    return materialsStockRows.reduce((max, row) => {
+  const strapStockByMaterial = useMemo(() => {
+    const result = { "Черный": 0, "Белый": 0 };
+    if (!Array.isArray(materialsStockRows) || materialsStockRows.length === 0) return result;
+    materialsStockRows.forEach((row) => {
       const material = String(row?.material || "").trim();
       const key = normalizeFurnitureKey(material);
-      if (!key.includes("черн")) return max;
       const qtySheets = Number(row?.qty_sheets ?? row?.qtySheets ?? 0);
-      return Math.max(max, Number.isFinite(qtySheets) ? qtySheets : 0);
-    }, 0);
+      const qty = Number.isFinite(qtySheets) ? qtySheets : 0;
+      if (key.includes("черн")) result["Черный"] = Math.max(result["Черный"], qty);
+      if (key.includes("бел")) result["Белый"] = Math.max(result["Белый"], qty);
+    });
+    return result;
   }, [materialsStockRows]);
 
   const shipmentRenderSections = useMemo(() => {
@@ -1785,12 +1799,14 @@ export default function App() {
       const outputPerSheet = stripsPerSheet * perStrip;
       const qty = Number(x.qty || 0);
       const sheetsNeeded = outputPerSheet > 0 ? Math.ceil(qty / outputPerSheet) : 0;
+      const material = resolveStrapMaterialByProduct(x.productName || "");
+      const availableSheets = Number(strapStockByMaterial[material] || 0);
       return {
         row: `strap-order:${idx}`,
         sourceRowId: `strap-order:${idx}`,
         item: strapNameToOrderItem(x.name),
         strapProduct: String(x.productName || "").trim(),
-        material: "Черный",
+        material,
         cells: [
           {
             col: `strap-order-col:${idx}`,
@@ -1802,7 +1818,7 @@ export default function App() {
             inWork: false,
             sheetsNeeded,
             outputPerSheet,
-            availableSheets: blackStockSheets,
+            availableSheets,
             note: "Обвязка: добавлена как заказ",
           },
         ],
@@ -1810,7 +1826,7 @@ export default function App() {
     });
 
     return [...baseSections, { name: "Обвязка", items: sortItemsForShipment(strapRows) }];
-  }, [view, shipmentSort, filtered, strapItems, blackStockSheets]);
+  }, [view, shipmentSort, filtered, strapItems, strapStockByMaterial]);
 
   const kpi = useMemo(() => {
     const total = filtered.length;
@@ -2226,6 +2242,8 @@ export default function App() {
     const detailMapBySize = new Map();
     const detailMapByPattern = new Map();
     (furnitureDetailArticleRows || []).forEach((r) => {
+      const isActive = r?.is_active ?? r?.isActive;
+      if (isActive === false) return;
       const pKey = normalizeStrapProductKey(r.product_name || r.productName || "");
       if (pKey !== productKey) return;
       const pattern = normalizeDetailPatternKey(r.detail_name_pattern || r.detailNamePattern || "");
@@ -2416,6 +2434,8 @@ export default function App() {
   const strapOptionsByProduct = useMemo(() => {
     const grouped = new Map();
     (furnitureDetailArticleRows || []).forEach((r) => {
+      const isActive = r?.is_active ?? r?.isActive;
+      if (isActive === false) return;
       const productRaw = String(r.product_name || r.productName || "").trim();
       const productName = canonicalStrapProductName(productRaw);
       const pattern = String(r.detail_name_pattern || r.detailNamePattern || "").trim();
@@ -2428,7 +2448,7 @@ export default function App() {
       const bucket = grouped.get(key).options;
       if (optionName === "Обвязка") {
         const pKey = normalizeStrapProductKey(productName);
-        if (pKey === "донини" || pKey === "донини r") {
+        if (pKey === "донини" || pKey === "донини белый") {
           bucket.add("Обвязка (1000_80)");
           bucket.add("Обвязка (558_80)");
           return;
@@ -2442,6 +2462,32 @@ export default function App() {
     }));
     rows.sort((a, b) => a.productName.localeCompare(b.productName, "ru"));
     return rows;
+  }, [furnitureDetailArticleRows]);
+
+  const strapProductBySizeToken = useMemo(() => {
+    const map = new Map();
+    (furnitureDetailArticleRows || []).forEach((r) => {
+      const isActive = r?.is_active ?? r?.isActive;
+      if (isActive === false) return;
+      const productRaw = String(r.product_name || r.productName || "").trim();
+      const productName = canonicalStrapProductName(productRaw);
+      const pattern = String(r.detail_name_pattern || r.detailNamePattern || "").trim();
+      const patternLc = pattern.toLowerCase();
+      if (!productName || (!patternLc.includes("обвяз") && !patternLc.includes("планк"))) return;
+      const token = extractDetailSizeToken(pattern);
+      if (!token) return;
+      const key = normalizeStrapProductKey(token);
+      if (!map.has(key)) {
+        map.set(key, productName);
+        return;
+      }
+      const existing = String(map.get(key) || "");
+      if (normalizeStrapProductKey(existing) !== normalizeStrapProductKey(productName)) {
+        // Ambiguous mapping for same size token, skip wrong auto-substitution.
+        map.set(key, "");
+      }
+    });
+    return map;
   }, [furnitureDetailArticleRows]);
 
   const strapProductNames = useMemo(() => {
@@ -2665,10 +2711,11 @@ export default function App() {
     setError("");
     try {
       for (const row of next) {
+        const material = resolveStrapMaterialByProduct(row.productName || "");
         await callBackend("webCreateShipmentPlanCell", {
           sectionName: "Обвязка",
           item: strapNameToOrderItem(row.name),
-          material: "Черный",
+          material,
           week,
           qty: Number(row.qty || 0),
         });
@@ -2718,6 +2765,21 @@ export default function App() {
         if (!rows.length) return preview;
         return { ...preview, rows };
       };
+      const enrichPreviewWithStrapProduct = (preview, shipmentRow) => {
+        if (!preview) return preview;
+        const sectionKey = normalizeFurnitureKey(shipmentRow?.section || "");
+        if (!sectionKey.includes("обвяз")) return preview;
+        const token =
+          extractDetailSizeToken(shipmentRow?.item || "") ||
+          extractDetailSizeToken(preview?.firstName || "") ||
+          extractDetailSizeToken(preview?.detailedName || "");
+        const productName = token ? String(strapProductBySizeToken.get(normalizeStrapProductKey(token)) || "").trim() : "";
+        if (!productName) return preview;
+        return {
+          ...preview,
+          colorName: productName,
+        };
+      };
       if (shipmentSelections.length === 0) {
         setPlanPreviews(strapPreviews);
         return;
@@ -2728,11 +2790,13 @@ export default function App() {
           row: s.row,
           col: s.col,
         });
-        const enriched = preview ? enrichPreviewFromFurniture({ ...preview, _key: `${s.row}-${s.col}` }) : null;
+        const enrichedRaw = preview ? enrichPreviewFromFurniture({ ...preview, _key: `${s.row}-${s.col}` }) : null;
+        const enriched = enrichPreviewWithStrapProduct(enrichedRaw, s);
         const plans = enriched ? [enriched] : [];
         plans.push(...strapPreviews);
         setPlanPreviews(plans);
       } else {
+        const byKey = new Map(shipmentSelections.map((x) => [`${x.row}-${x.col}`, x]));
         let plans = [];
         try {
           const batch = await callBackend("webPreviewPlansBatch", {
@@ -2740,7 +2804,7 @@ export default function App() {
           });
           plans = (batch && Array.isArray(batch.plans) ? batch.plans : [])
             .map((p) => ({ ...(p.plan || {}), _key: `${p.row}-${p.col}` }))
-            .map(enrichPreviewFromFurniture);
+            .map((p) => enrichPreviewWithStrapProduct(enrichPreviewFromFurniture(p), byKey.get(p._key)));
         } catch (batchError) {
           // Fallback: если пачка упала из-за одной позиции, собираем предпросмотры поштучно.
           const settled = await Promise.allSettled(
@@ -2751,7 +2815,7 @@ export default function App() {
           );
           plans = settled
             .filter((x) => x.status === "fulfilled" && x.value)
-            .map((x) => enrichPreviewFromFurniture(x.value));
+            .map((x) => enrichPreviewWithStrapProduct(enrichPreviewFromFurniture(x.value), byKey.get(x.value?._key)));
           const failedCount = settled.length - plans.length;
           if (failedCount > 0) {
             setError(
@@ -3530,6 +3594,7 @@ export default function App() {
                                 col: row.sourceCol,
                                 rawRow: row.sourceRow,
                                 rawCol: row.sourceCol,
+                                section: row.section,
                                 item: row.item,
                                 strapProduct: row.strapProduct,
                                 week: row.week,
@@ -3658,6 +3723,7 @@ export default function App() {
                                       col: sourceCol,
                                       rawRow: String(it.row),
                                       rawCol: String(c.col),
+                                      section: section.name,
                                       item: it.item,
                                       strapProduct: String(it.strapProduct || ""),
                                       week: c.week,
