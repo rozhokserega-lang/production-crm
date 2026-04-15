@@ -653,7 +653,7 @@ button:disabled {
 
 .shipment-layout {
   display: grid;
-  grid-template-columns: 320px minmax(0, 1fr) 260px;
+  grid-template-columns: 320px minmax(0, 1fr) 172px;
   gap: 12px;
   align-items: start;
 }
@@ -740,6 +740,18 @@ button:disabled {
 .shipment-plan-table td:nth-child(2) {
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.shipment-plan-table th:nth-child(5),
+.shipment-plan-table td:nth-child(5),
+.shipment-plan-table th:nth-child(6),
+.shipment-plan-table td:nth-child(6),
+.shipment-plan-table th:nth-child(7),
+.shipment-plan-table td:nth-child(7) {
+  width: 58px;
+  max-width: 58px;
+  padding-left: 6px;
+  padding-right: 6px;
 }
 
 .sheet-table th {
