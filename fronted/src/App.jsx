@@ -20,6 +20,28 @@ const TERMINAL_PIPELINE_STAGES = new Set([
   PipelineStage.SHIPPED,
 ]);
 
+const CRM_ROLES = ["viewer", "operator", "manager", "admin"];
+
+function normalizeCrmRole(rawRole) {
+  const role = String(rawRole || "").trim().toLowerCase();
+  return CRM_ROLES.includes(role) ? role : "viewer";
+}
+
+function parseCrmRoleResponse(payload) {
+  if (typeof payload === "string") return payload;
+  if (Array.isArray(payload) && payload.length > 0) {
+    const first = payload[0];
+    if (typeof first === "string") return first;
+    if (first && typeof first === "object") {
+      return first.web_effective_crm_role || first.role || first.crm_role || Object.values(first)[0];
+    }
+  }
+  if (payload && typeof payload === "object") {
+    return payload.web_effective_crm_role || payload.role || payload.crm_role || "";
+  }
+  return "";
+}
+
 const TABS = [
   { id: "pilka", label: "Пила" },
   { id: "kromka", label: "Кромка" },
@@ -900,6 +922,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState("");
   const [error, setError] = useState("");
+  const [crmRole, setCrmRole] = useState("admin");
   const [executorByOrder, setExecutorByOrder] = useState({});
   const [consumeDialogOpen, setConsumeDialogOpen] = useState(false);
   const [consumeEditMode, setConsumeEditMode] = useState(false);
@@ -941,6 +964,30 @@ export default function App() {
   const importPlanFileRef = useRef(null);
   const loadSeqRef = useRef(0);
   const loadInFlightRef = useRef(false);
+  const canOperateProduction = crmRole === "operator" || crmRole === "manager" || crmRole === "admin";
+  const canManageOrders = crmRole === "manager" || crmRole === "admin";
+
+  function denyActionByRole(message) {
+    setError(message);
+    return false;
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadCrmRole() {
+      try {
+        const rolePayload = await callBackend("webGetMyRole");
+        const role = normalizeCrmRole(parseCrmRoleResponse(rolePayload));
+        if (!cancelled) setCrmRole(role);
+      } catch (_) {
+        // Keep backward-compatible default role for environments without role RPC.
+      }
+    }
+    loadCrmRole();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function load() {
     // Не выходим при «занято»: иначе при смене вкладки во время запроса новый load не стартует,
@@ -1279,6 +1326,10 @@ export default function App() {
   }
 
   async function submitConsume(materialRaw, qtyRaw) {
+    if (!canOperateProduction) {
+      setConsumeError("Недостаточно прав для списания листов.");
+      return;
+    }
     if (!consumeDialogData?.orderId) return;
     const material = String(materialRaw || "").trim();
     const qty = Number(String(qtyRaw || "").replace(",", "."));
@@ -1390,6 +1441,10 @@ export default function App() {
   }
 
   async function runAction(action, orderId, payload = {}, meta = {}) {
+    if (!canOperateProduction) {
+      denyActionByRole("Недостаточно прав для изменения этапов производства.");
+      return;
+    }
     const key = `${action}:${orderId}`;
     setActionLoading(key);
     setError("");
@@ -2530,6 +2585,10 @@ export default function App() {
   }, [strapProductNames, strapTargetProduct]);
 
   async function sendSelectedShipmentToWork() {
+    if (!canOperateProduction) {
+      denyActionByRole("Недостаточно прав для отправки заказов в работу.");
+      return;
+    }
     if (!selectedShipments.length) return;
     const sendable = selectedShipments.filter((s) => !!s.canSendToWork);
     if (!sendable.length) {
@@ -2575,6 +2634,10 @@ export default function App() {
   }
 
   async function deleteSelectedShipmentPlan() {
+    if (!canManageOrders) {
+      denyActionByRole("Недостаточно прав для удаления позиций из плана.");
+      return;
+    }
     if (!selectedShipments.length) return;
     const deletable = selectedShipments.filter((s) => !!s.canSendToWork);
     if (!deletable.length) {
@@ -2710,6 +2773,10 @@ export default function App() {
   }
 
   async function deleteStatsOrder(order) {
+    if (!canManageOrders) {
+      denyActionByRole("Недостаточно прав для удаления заказов.");
+      return;
+    }
     const orderId = String(order?.orderId || order?.order_id || "").trim();
     if (!orderId) {
       setError("Для этого заказа не найден orderId.");
@@ -2767,6 +2834,10 @@ export default function App() {
   }
 
   function openStrapDialog() {
+    if (!canOperateProduction) {
+      denyActionByRole("Недостаточно прав для добавления обвязки.");
+      return;
+    }
     const defaultProduct = strapItems[0]?.productName || strapProductNames[0] || "Обвязка";
     setStrapTargetProduct(defaultProduct);
     const defaultWeek = weekFilter !== "all" ? String(weekFilter) : String(weeks[0] || "").trim();
@@ -2791,6 +2862,10 @@ export default function App() {
   }, [strapDialogOpen, strapTargetProduct, strapOptionsForSelectedProduct.join("|")]);
 
   function openCreatePlanDialog() {
+    if (!canOperateProduction) {
+      denyActionByRole("Недостаточно прав для добавления плана.");
+      return;
+    }
     const firstSection = sectionOptions[0] || "Прочее";
     const firstWeek = weeks[0] || "";
     const firstArticle = (sectionArticleRows || [])
@@ -2815,6 +2890,10 @@ export default function App() {
   }
 
   async function saveCreatePlanDialog() {
+    if (!canOperateProduction) {
+      denyActionByRole("Недостаточно прав для изменения плана.");
+      return;
+    }
     const item = String(resolvedPlanItem || "").trim();
     const material = String(planMaterial || "").trim();
     const week = String(planWeek || "").trim();
@@ -2855,6 +2934,10 @@ export default function App() {
   }
 
   async function saveStrapDialog() {
+    if (!canOperateProduction) {
+      denyActionByRole("Недостаточно прав для изменения плана.");
+      return;
+    }
     const next = strapOptionsForSelectedProduct
       .map((name) => ({ name, qty: Number(String(strapDraft[name] || "").replace(",", ".")) }))
       .filter((x) => Number.isFinite(x.qty) && x.qty > 0)
@@ -3049,6 +3132,10 @@ export default function App() {
   }
 
   async function importShipmentPlanFromExcelFile(file) {
+    if (!canOperateProduction) {
+      denyActionByRole("Недостаточно прав для импорта плана.");
+      return;
+    }
     if (!file) return;
     const planNumberRaw = window.prompt("Введите номер плана для импорта:", "");
     if (planNumberRaw == null) return;
@@ -3428,10 +3515,10 @@ export default function App() {
               <button className="mini" onClick={resetShipmentFilters}>
                 Сброс фильтров
               </button>
-              <button className="mini" onClick={openStrapDialog}>
+              <button className="mini" disabled={!canOperateProduction} onClick={openStrapDialog}>
                 Добавить обвязку
               </button>
-              <button className="mini ok" onClick={openCreatePlanDialog}>
+              <button className="mini ok" disabled={!canOperateProduction} onClick={openCreatePlanDialog}>
                 Добавить план
               </button>
               <button
@@ -3453,7 +3540,7 @@ export default function App() {
               />
               <button
                 className="mini"
-                disabled={actionLoading === "shipment:import"}
+                disabled={actionLoading === "shipment:import" || !canOperateProduction}
                 onClick={() => importPlanFileRef.current?.click()}
               >
                 {actionLoading === "shipment:import" ? "Импорт..." : "Импорт из Excel"}
@@ -3923,7 +4010,8 @@ export default function App() {
                       className="mini"
                       disabled={
                         actionLoading === "shipment:bulk" ||
-                        sendableSelectedCount === 0
+                        sendableSelectedCount === 0 ||
+                        !canOperateProduction
                       }
                       onClick={sendSelectedShipmentToWork}
                     >
@@ -3931,7 +4019,11 @@ export default function App() {
                     </button>
                     <button
                       className="mini warn"
-                      disabled={actionLoading === "shipment:delete" || selectedShipments.filter((s) => !!s.canSendToWork).length === 0}
+                      disabled={
+                        actionLoading === "shipment:delete" ||
+                        selectedShipments.filter((s) => !!s.canSendToWork).length === 0 ||
+                        !canManageOrders
+                      }
                       onClick={deleteSelectedShipmentPlan}
                     >
                       Удалить из плана
@@ -4257,7 +4349,7 @@ export default function App() {
                             className="mini warn stats-delete-btn"
                             title="Удалить заказ"
                             disabled={
-                              actionLoading === getStatsDeleteActionKey(o)
+                              actionLoading === getStatsDeleteActionKey(o) || !canManageOrders
                             }
                             onClick={() => deleteStatsOrder(o)}
                           >
@@ -4439,14 +4531,14 @@ export default function App() {
               <button
                 type="button"
                 className={pilkaInWork ? "mini" : "mini ghost"}
-                disabled={actionLoading === `webSetPilkaInWork:${orderId}` || pilkaDone || pilkaInWork}
+                disabled={actionLoading === `webSetPilkaInWork:${orderId}` || pilkaDone || pilkaInWork || !canOperateProduction}
                 onClick={() => runAction("webSetPilkaInWork", orderId, {})}
               >
                 {tab === "pilka" ? "Начать" : "Пила: Начать"}
               </button>
               <button
                 className="mini ok"
-                disabled={actionLoading === `webSetPilkaDone:${orderId}` || pilkaDone || !pilkaInWork}
+                disabled={actionLoading === `webSetPilkaDone:${orderId}` || pilkaDone || !pilkaInWork || !canOperateProduction}
                 onClick={() =>
                   runAction("webSetPilkaDone", orderId, {}, {
                     defaultSheets: displaySheetsNeeded,
@@ -4460,7 +4552,7 @@ export default function App() {
               </button>
               <button
                 className="mini warn"
-                disabled={actionLoading === `webSetPilkaPause:${orderId}` || pilkaDone || !pilkaInWork}
+                disabled={actionLoading === `webSetPilkaPause:${orderId}` || pilkaDone || !pilkaInWork || !canOperateProduction}
                 onClick={() => runAction("webSetPilkaPause", orderId)}
               >
                 {tab === "pilka" ? "Пауза" : "Пила: Пауза"}
@@ -4473,6 +4565,7 @@ export default function App() {
               {!kromkaInWork && (
                 <select
                   value={kromkaExecValue}
+                  disabled={!canOperateProduction}
                   onChange={(e) => setExecutorByOrder((prev) => ({ ...prev, [orderId]: e.target.value }))}
                 >
                   <option>Слава</option>
@@ -4482,7 +4575,7 @@ export default function App() {
               <button
                 type="button"
                 className={kromkaInWork ? "mini" : "mini ghost"}
-                disabled={actionLoading === `webSetKromkaInWork:${orderId}` || kromkaDone || kromkaInWork}
+                disabled={actionLoading === `webSetKromkaInWork:${orderId}` || kromkaDone || kromkaInWork || !canOperateProduction}
                 onClick={() =>
                   runAction("webSetKromkaInWork", orderId, {
                     executor: kromkaExecValue,
@@ -4493,14 +4586,14 @@ export default function App() {
               </button>
               <button
                 className="mini ok"
-                disabled={actionLoading === `webSetKromkaDone:${orderId}` || kromkaDone || !kromkaInWork}
+                disabled={actionLoading === `webSetKromkaDone:${orderId}` || kromkaDone || !kromkaInWork || !canOperateProduction}
                 onClick={() => runAction("webSetKromkaDone", orderId)}
               >
                 {tab === "kromka" ? "Готово" : "Кромка: Готово"}
               </button>
               <button
                 className="mini warn"
-                disabled={actionLoading === `webSetKromkaPause:${orderId}` || kromkaDone || !kromkaInWork}
+                disabled={actionLoading === `webSetKromkaPause:${orderId}` || kromkaDone || !kromkaInWork || !canOperateProduction}
                 onClick={() => runAction("webSetKromkaPause", orderId)}
               >
                 {tab === "kromka" ? "Пауза" : "Кромка: Пауза"}
@@ -4513,6 +4606,7 @@ export default function App() {
               {!prasInWork && (
                 <select
                   value={prasExecValue}
+                  disabled={!canOperateProduction}
                   onChange={(e) => setExecutorByOrder((prev) => ({ ...prev, [`${orderId}:pras`]: e.target.value }))}
                 >
                   <option>Леха</option>
@@ -4522,7 +4616,7 @@ export default function App() {
               <button
                 type="button"
                 className={prasInWork ? "mini" : "mini ghost"}
-                disabled={actionLoading === `webSetPrasInWork:${orderId}` || prasDone || prasInWork}
+                disabled={actionLoading === `webSetPrasInWork:${orderId}` || prasDone || prasInWork || !canOperateProduction}
                 onClick={() =>
                   runAction("webSetPrasInWork", orderId, {
                     executor: prasExecValue,
@@ -4533,7 +4627,7 @@ export default function App() {
               </button>
               <button
                 className="mini ok"
-                disabled={actionLoading === `webSetPrasDone:${orderId}` || prasDone || !prasInWork}
+                disabled={actionLoading === `webSetPrasDone:${orderId}` || prasDone || !prasInWork || !canOperateProduction}
                 onClick={() =>
                   runAction("webSetPrasDone", orderId, {}, {
                     notifyOnAssembly: pilkaDone && kromkaDone && !assemblyDone,
@@ -4549,7 +4643,7 @@ export default function App() {
               </button>
               <button
                 className="mini warn"
-                disabled={actionLoading === `webSetPrasPause:${orderId}` || prasDone || !prasInWork}
+                disabled={actionLoading === `webSetPrasPause:${orderId}` || prasDone || !prasInWork || !canOperateProduction}
                 onClick={() => runAction("webSetPrasPause", orderId)}
               >
                 {tab === "pras" ? "Пауза" : "Присадка: Пауза"}
@@ -4560,7 +4654,7 @@ export default function App() {
                 <>
               <button
                 className="mini ok"
-                disabled={actionLoading === `webSetAssemblyDone:${orderId}` || assemblyDone}
+                disabled={actionLoading === `webSetAssemblyDone:${orderId}` || assemblyDone || !canOperateProduction}
                 onClick={() => runAction("webSetAssemblyDone", orderId)}
               >
                 {tab === "assembly" ? "Готово" : "Сборка: Готово"}
@@ -4571,7 +4665,7 @@ export default function App() {
                 <>
               <button
                 className="mini ok"
-                disabled={actionLoading === `webSetShippingDone:${orderId}` || packagingDone}
+                disabled={actionLoading === `webSetShippingDone:${orderId}` || packagingDone || !canOperateProduction}
                 onClick={() =>
                   runAction("webSetShippingDone", orderId, {}, {
                     notifyOnFinalStage: true,

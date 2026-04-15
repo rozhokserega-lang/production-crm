@@ -81,6 +81,7 @@ const RPC_MAP = {
   webGetSheetOrdersMirror: "web_get_sheet_orders_mirror",
   webGetLaborTable: "web_get_labor_table",
   webGetOrderStats: "web_get_order_stats",
+  webGetMyRole: "web_effective_crm_role",
   webUpsertItemColorMap: "web_upsert_item_color_map",
   webGetConsumeOptions: "web_get_consume_options",
   webPreviewPlanFromShipment: "web_preview_plan_from_shipment",
