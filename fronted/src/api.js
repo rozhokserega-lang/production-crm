@@ -1,5 +1,101 @@
 import { BACKEND_PROVIDER, GAS_WEBAPP_URL, SUPABASE_ANON_KEY, SUPABASE_URL } from "./config";
 
+const SUPABASE_AUTH_STORAGE_KEY = "crm_supabase_auth_session";
+
+function readStoredSupabaseSession() {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(SUPABASE_AUTH_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return null;
+    if (!parsed.access_token) return null;
+    return parsed;
+  } catch (_) {
+    return null;
+  }
+}
+
+let supabaseAuthSession = readStoredSupabaseSession();
+
+function persistSupabaseSession(session) {
+  supabaseAuthSession = session && session.access_token ? session : null;
+  if (typeof window === "undefined") return;
+  try {
+    if (supabaseAuthSession) {
+      window.localStorage.setItem(SUPABASE_AUTH_STORAGE_KEY, JSON.stringify(supabaseAuthSession));
+    } else {
+      window.localStorage.removeItem(SUPABASE_AUTH_STORAGE_KEY);
+    }
+  } catch (_) {
+    // Ignore storage failures (private mode, quotas).
+  }
+}
+
+function getSupabaseAccessToken() {
+  return String(supabaseAuthSession?.access_token || "").trim();
+}
+
+function getSupabaseBaseUrl() {
+  return String(SUPABASE_URL || "").replace(/\/$/, "");
+}
+
+export function getSupabaseAuthSession() {
+  return supabaseAuthSession;
+}
+
+export function getSupabaseAuthUser() {
+  return supabaseAuthSession?.user || null;
+}
+
+async function supabaseAuthFetch(path, body, bearerToken = "") {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+    throw new Error("Заполните SUPABASE_URL и SUPABASE_ANON_KEY в src/config.js");
+  }
+  const headers = {
+    apikey: SUPABASE_ANON_KEY,
+    "Content-Type": "application/json",
+  };
+  if (bearerToken) {
+    headers.Authorization = `Bearer ${bearerToken}`;
+  }
+  const res = await fetch(`${getSupabaseBaseUrl()}/auth/v1/${path}`, {
+    method: "POST",
+    headers,
+    body: body == null ? undefined : JSON.stringify(body),
+  });
+  const text = await res.text();
+  let json = null;
+  try {
+    json = text ? JSON.parse(text) : null;
+  } catch (_) {
+    json = text;
+  }
+  if (!res.ok) {
+    throw new Error(typeof json === "string" ? json : JSON.stringify(json));
+  }
+  return json;
+}
+
+export async function supabaseSignInWithPassword(email, password) {
+  const payload = await supabaseAuthFetch("token?grant_type=password", { email, password });
+  persistSupabaseSession(payload);
+  return payload;
+}
+
+export async function supabaseSignOut() {
+  const token = getSupabaseAccessToken();
+  if (!token) {
+    persistSupabaseSession(null);
+    return;
+  }
+  try {
+    await supabaseAuthFetch("logout", {}, token);
+  } finally {
+    persistSupabaseSession(null);
+  }
+}
+
 export async function gasCall(action, payload = {}) {
   if (!GAS_WEBAPP_URL || GAS_WEBAPP_URL.includes("PASTE_YOUR_WEBAPP_URL_HERE")) {
     throw new Error("Заполните GAS_WEBAPP_URL в src/config.js");
@@ -220,7 +316,7 @@ export async function supabaseCall(action, payload = {}) {
     method: "POST",
     headers: {
       apikey: SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      Authorization: `Bearer ${getSupabaseAccessToken() || SUPABASE_ANON_KEY}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify(body),

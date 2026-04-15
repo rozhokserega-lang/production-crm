@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
-import { callBackend, supabaseCall } from "./api";
+import {
+  callBackend,
+  getSupabaseAuthUser,
+  supabaseCall,
+  supabaseSignInWithPassword,
+  supabaseSignOut,
+} from "./api";
 import { SUPABASE_ANON_KEY, SUPABASE_URL } from "./config";
 import furnitureWorkbookUrl from "./assets/furniture.xlsx?url";
 import {
@@ -970,6 +976,10 @@ export default function App() {
   const [newCrmUserId, setNewCrmUserId] = useState("");
   const [newCrmUserRole, setNewCrmUserRole] = useState("viewer");
   const [newCrmUserNote, setNewCrmUserNote] = useState("");
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authSaving, setAuthSaving] = useState(false);
+  const [authUser, setAuthUser] = useState(() => getSupabaseAuthUser());
   const [executorByOrder, setExecutorByOrder] = useState({});
   const [consumeDialogOpen, setConsumeDialogOpen] = useState(false);
   const [consumeEditMode, setConsumeEditMode] = useState(false);
@@ -1015,6 +1025,8 @@ export default function App() {
   const canManageOrders = crmRole === "manager" || crmRole === "admin";
   const canAdminSettings = crmRole === "admin";
   const crmRoleLabel = CRM_ROLE_LABELS[crmRole] || CRM_ROLE_LABELS.viewer;
+  const authEnabled = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
+  const authUserLabel = String(authUser?.email || authUser?.phone || authUser?.id || "").trim();
 
   function denyActionByRole(message) {
     setError(message);
@@ -1040,7 +1052,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [authUser?.id]);
 
   useEffect(() => {
     if (view !== "admin" || !canAdminSettings) return;
@@ -1137,6 +1149,43 @@ export default function App() {
       setError(toUserError(e));
     } finally {
       setCrmUsersSaving("");
+    }
+  }
+
+  async function signInWithSupabase() {
+    if (!authEnabled || authSaving) return;
+    const email = String(authEmail || "").trim();
+    if (!email || !authPassword) {
+      setError("Введите email и пароль.");
+      return;
+    }
+    setAuthSaving(true);
+    setError("");
+    try {
+      const session = await supabaseSignInWithPassword(email, authPassword);
+      setAuthUser(session?.user || null);
+      setAuthPassword("");
+      await load();
+    } catch (e) {
+      setError(toUserError(e));
+    } finally {
+      setAuthSaving(false);
+    }
+  }
+
+  async function signOutSupabaseUser() {
+    if (!authEnabled || authSaving) return;
+    setAuthSaving(true);
+    setError("");
+    try {
+      await supabaseSignOut();
+      setAuthUser(null);
+      setCrmUsers([]);
+      await load();
+    } catch (e) {
+      setError(toUserError(e));
+    } finally {
+      setAuthSaving(false);
     }
   }
 
@@ -3378,6 +3427,57 @@ export default function App() {
       <header className="top">
         <h1>Управление производственными заказами</h1>
         <div className="top-actions">
+          {authEnabled && (
+            <div className="auth-controls">
+              {authUserLabel ? (
+                <>
+                  <span className="role-badge role-viewer" title="Текущий авторизованный пользователь Supabase">
+                    Вход: {authUserLabel}
+                  </span>
+                  <button
+                    type="button"
+                    className="mini"
+                    disabled={authSaving}
+                    onClick={signOutSupabaseUser}
+                    title="Выйти из текущей Supabase-сессии"
+                  >
+                    {authSaving ? "Выход..." : "Выйти"}
+                  </button>
+                </>
+              ) : (
+                <>
+                  <input
+                    className="auth-input"
+                    type="email"
+                    placeholder="Email"
+                    value={authEmail}
+                    onChange={(e) => setAuthEmail(e.target.value)}
+                    autoComplete="username"
+                  />
+                  <input
+                    className="auth-input"
+                    type="password"
+                    placeholder="Пароль"
+                    value={authPassword}
+                    onChange={(e) => setAuthPassword(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") signInWithSupabase();
+                    }}
+                    autoComplete="current-password"
+                  />
+                  <button
+                    type="button"
+                    className="mini ok"
+                    disabled={authSaving}
+                    onClick={signInWithSupabase}
+                    title="Войти через Supabase Auth"
+                  >
+                    {authSaving ? "Вход..." : "Войти"}
+                  </button>
+                </>
+              )}
+            </div>
+          )}
           <span className={`role-badge role-${crmRole}`} title="Текущая роль CRM">
             Роль: {crmRoleLabel}
           </span>
