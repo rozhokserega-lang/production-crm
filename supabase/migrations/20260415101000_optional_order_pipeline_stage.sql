@@ -1,0 +1,2 @@
+-- Устарело: используйте migration/supabase_order_pipeline_stage.sql
+-- (колонка orders.pipeline_stage, триггер, web_get_orders_all, web_get_order_stats).
