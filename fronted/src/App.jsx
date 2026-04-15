@@ -3658,7 +3658,6 @@ export default function App() {
                   <table className="sheet-table shipment-plan-table">
                     <thead>
                       <tr>
-                        <th>Группа</th>
                         <th>Изделие</th>
                         <th>Материал</th>
                         <th>План</th>
@@ -3669,16 +3668,27 @@ export default function App() {
                       </tr>
                     </thead>
                     <tbody>
-                      {visibleShipmentTableRows.map((row) => {
+                      {visibleShipmentTableRows.flatMap((row, idx, arr) => {
                         const isSelected = selectedShipments.some((s) => s.row === row.sourceRow && s.col === row.sourceCol);
                         const isDeficitSelected = selectedShipmentStockCheck.deficitSourceKeys.has(
                           `${String(row.sourceRow || "").trim()}|${String(row.sourceCol || "").trim()}`
                         );
+                        const prevSection = idx > 0 ? String(arr[idx - 1]?.section || "Прочее") : "";
+                        const currentSection = String(row.section || "Прочее");
+                        const showSectionHeader = idx === 0 || prevSection !== currentSection;
                         const showDeficitHighlight = !!row.canSendToWork && !row.inWork && row.materialHasDeficit;
                         const rowBg = showDeficitHighlight
                           ? "#fbcfe8"
                           : (isDeficitSelected && isSelected ? "#fbcfe8" : (row.bg || "#ffffff"));
-                        return (
+                        const rows = [];
+                        if (showSectionHeader) {
+                          rows.push(
+                            <tr key={`section-${currentSection}-${idx}`} className="shipment-plan-group-row">
+                              <td colSpan={7}>{currentSection}</td>
+                            </tr>
+                          );
+                        }
+                        rows.push(
                           <tr
                             key={row.key}
                             className={isSelected ? "selected-row" : ""}
@@ -3704,7 +3714,6 @@ export default function App() {
                               toggleShipmentSelection(payload);
                             }}
                           >
-                            <td>{row.section}</td>
                             <td>{row.item}</td>
                             <td>{row.material || "-"}</td>
                             <td>{row.week}</td>
@@ -3720,6 +3729,7 @@ export default function App() {
                             </td>
                           </tr>
                         );
+                        return rows;
                       })}
                     </tbody>
                   </table>

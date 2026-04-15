@@ -739,27 +739,35 @@ button:disabled {
   vertical-align: middle;
 }
 
-.shipment-plan-table th:nth-child(2),
-.shipment-plan-table td:nth-child(2) {
+.shipment-plan-table th:nth-child(1),
+.shipment-plan-table td:nth-child(1) {
   width: 260px;
   max-width: 260px;
 }
 
-.shipment-plan-table td:nth-child(2) {
+.shipment-plan-table td:nth-child(1) {
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
+.shipment-plan-table th:nth-child(4),
+.shipment-plan-table td:nth-child(4),
 .shipment-plan-table th:nth-child(5),
 .shipment-plan-table td:nth-child(5),
 .shipment-plan-table th:nth-child(6),
-.shipment-plan-table td:nth-child(6),
-.shipment-plan-table th:nth-child(7),
-.shipment-plan-table td:nth-child(7) {
+.shipment-plan-table td:nth-child(6) {
   width: 58px;
   max-width: 58px;
   padding-left: 6px;
   padding-right: 6px;
+}
+
+.shipment-plan-group-row td {
+  background: #eef2f7;
+  color: #0f172a;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  border-top: 2px solid #c5d1e3;
 }
 
 .sheet-table th {
