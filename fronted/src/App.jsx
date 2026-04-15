@@ -381,15 +381,34 @@ function normalizeCatalogDedupKey(name) {
     .trim();
 }
 
+function extractErrorMessage(e) {
+  const raw = String(e?.message || e || "").trim();
+  if (!raw) return "Неизвестная ошибка";
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object") {
+      const preferred = [
+        parsed.message,
+        parsed.error,
+        parsed.details,
+        parsed.hint,
+        parsed.error_description,
+      ]
+        .map((x) => String(x || "").trim())
+        .find(Boolean);
+      return preferred || raw;
+    }
+  } catch (_) {
+    // Raw value is not JSON, keep original string.
+  }
+  return raw;
+}
+
 function toUserError(e) {
-  const msg = String(e?.message || e || "");
+  const msg = extractErrorMessage(e);
   if (msg.includes("Система занята")) return "Система занята, повторите через 1-2 секунды.";
   if (msg.includes("Failed to fetch") || msg.includes("NetworkError")) return "Нет связи с сервером. Проверьте интернет и повторите.";
   return msg || "Неизвестная ошибка";
-}
-
-function extractErrorMessage(e) {
-  return String(e?.message || e || "").trim() || "Неизвестная ошибка";
 }
 
 function isShipmentCellMissingError(e) {
