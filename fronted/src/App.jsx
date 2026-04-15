@@ -737,6 +737,16 @@ function detailPatternToStrapName(pattern) {
   return "";
 }
 
+function canonicalStrapProductName(name) {
+  const label = furnitureProductLabel(name);
+  const key = normalizeFurnitureKey(label);
+  if (key === "авела лайт" || key === "авелла лайт") return "Авелла Лайт";
+  if (key === "донини r") return "Донини R";
+  if (key === "донини гранде") return "Донини Гранде";
+  if (key === "донини") return "Донини";
+  return label;
+}
+
 function resolveFurnitureTemplateForPreview(preview, templates) {
   const list = Array.isArray(templates) ? templates : [];
   if (!list.length) return null;
@@ -2320,14 +2330,23 @@ export default function App() {
     const grouped = new Map();
     (furnitureDetailArticleRows || []).forEach((r) => {
       const productRaw = String(r.product_name || r.productName || "").trim();
-      const productName = furnitureProductLabel(productRaw);
+      const productName = canonicalStrapProductName(productRaw);
       const pattern = String(r.detail_name_pattern || r.detailNamePattern || "").trim();
       if (!productName || !pattern.toLowerCase().includes("обвяз")) return;
       const optionName = detailPatternToStrapName(pattern);
       if (!optionName) return;
       const key = normalizeFurnitureKey(productName);
       if (!grouped.has(key)) grouped.set(key, { productName, options: new Set() });
-      grouped.get(key).options.add(optionName);
+      const bucket = grouped.get(key).options;
+      if (optionName === "Обвязка") {
+        const pKey = normalizeFurnitureKey(productName);
+        if (pKey === "донини" || pKey === "донини r") {
+          bucket.add("Обвязка (1000_80)");
+          bucket.add("Обвязка (558_80)");
+          return;
+        }
+      }
+      bucket.add(optionName);
     });
     const rows = [...grouped.values()].map((x) => ({
       productName: x.productName,
@@ -4312,7 +4331,11 @@ export default function App() {
             </div>
             <div className="strap-row" style={{ marginBottom: 10 }}>
               <label>Изделие</label>
-              <select value={strapTargetProduct} onChange={(e) => setStrapTargetProduct(e.target.value)}>
+              <select
+                value={strapTargetProduct}
+                onChange={(e) => setStrapTargetProduct(e.target.value)}
+                style={{ minWidth: 220 }}
+              >
                 {strapProductNames.map((name) => (
                   <option key={name} value={name}>{name}</option>
                 ))}
