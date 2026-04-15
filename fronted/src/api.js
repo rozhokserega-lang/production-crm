@@ -84,6 +84,9 @@ const RPC_MAP = {
   webGetMyRole: "web_effective_crm_role",
   webGetCrmAuthStrict: "web_is_crm_auth_strict",
   webSetCrmAuthStrict: "web_set_crm_auth_strict",
+  webListCrmUserRoles: "web_list_crm_user_roles",
+  webSetCrmUserRole: "web_set_crm_user_role",
+  webRemoveCrmUserRole: "web_remove_crm_user_role",
   webUpsertItemColorMap: "web_upsert_item_color_map",
   webGetConsumeOptions: "web_get_consume_options",
   webPreviewPlanFromShipment: "web_preview_plan_from_shipment",
@@ -186,6 +189,18 @@ function buildRpcPayload(action, payload = {}) {
   if (action === "webSetCrmAuthStrict") {
     return {
       p_enabled: Boolean(payload.enabled),
+    };
+  }
+  if (action === "webSetCrmUserRole") {
+    return {
+      p_user_id: String(payload.userId || payload.p_user_id || "").trim(),
+      p_role: String(payload.role || payload.p_role || "").trim(),
+      p_note: String(payload.note || payload.p_note || "").trim() || null,
+    };
+  }
+  if (action === "webRemoveCrmUserRole") {
+    return {
+      p_user_id: String(payload.userId || payload.p_user_id || "").trim(),
     };
   }
   return payload || {};

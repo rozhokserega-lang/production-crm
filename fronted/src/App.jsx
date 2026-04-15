@@ -68,6 +68,18 @@ function parseStrictModeResponse(payload) {
   return false;
 }
 
+function normalizeCrmUsers(payload) {
+  const list = Array.isArray(payload) ? payload : [];
+  return list.map((x) => ({
+    userId: String(x?.user_id || x?.userId || "").trim(),
+    email: String(x?.email || "").trim(),
+    role: normalizeCrmRole(x?.role),
+    note: String(x?.note || "").trim(),
+    assignedBy: String(x?.assigned_by || x?.assignedBy || "").trim(),
+    updatedAt: String(x?.updated_at || x?.updatedAt || "").trim(),
+  })).filter((x) => x.userId);
+}
+
 const TABS = [
   { id: "pilka", label: "Пила" },
   { id: "kromka", label: "Кромка" },
@@ -84,6 +96,7 @@ const VIEWS = [
   { id: "labor", label: "Трудоемкость" },
   { id: "stats", label: "Статистика" },
   { id: "furniture", label: "Мебель" },
+  { id: "admin", label: "Админ" },
 ];
 const DEFAULT_SHIPMENT_PREFS = {
   weekFilter: "all",
@@ -951,6 +964,9 @@ export default function App() {
   const [crmRole, setCrmRole] = useState("admin");
   const [crmAuthStrict, setCrmAuthStrict] = useState(false);
   const [crmAuthStrictSaving, setCrmAuthStrictSaving] = useState(false);
+  const [crmUsers, setCrmUsers] = useState([]);
+  const [crmUsersLoading, setCrmUsersLoading] = useState(false);
+  const [crmUsersSaving, setCrmUsersSaving] = useState("");
   const [executorByOrder, setExecutorByOrder] = useState({});
   const [consumeDialogOpen, setConsumeDialogOpen] = useState(false);
   const [consumeEditMode, setConsumeEditMode] = useState(false);
@@ -1023,6 +1039,12 @@ export default function App() {
     };
   }, []);
 
+  useEffect(() => {
+    if (view !== "admin" || !canAdminSettings) return;
+    loadCrmUsers();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, canAdminSettings]);
+
   async function toggleCrmAuthStrict() {
     if (!canAdminSettings || crmAuthStrictSaving) return;
     const next = !crmAuthStrict;
@@ -1043,6 +1065,49 @@ export default function App() {
       setError(toUserError(e));
     } finally {
       setCrmAuthStrictSaving(false);
+    }
+  }
+
+  async function loadCrmUsers() {
+    if (!canAdminSettings) return;
+    setCrmUsersLoading(true);
+    try {
+      const payload = await callBackend("webListCrmUserRoles");
+      setCrmUsers(normalizeCrmUsers(payload));
+    } catch (e) {
+      setError(toUserError(e));
+    } finally {
+      setCrmUsersLoading(false);
+    }
+  }
+
+  async function updateCrmUserRole(userId, role) {
+    if (!canAdminSettings || !userId || !role) return;
+    setCrmUsersSaving(userId);
+    setError("");
+    try {
+      await callBackend("webSetCrmUserRole", { userId, role });
+      await loadCrmUsers();
+    } catch (e) {
+      setError(toUserError(e));
+    } finally {
+      setCrmUsersSaving("");
+    }
+  }
+
+  async function removeCrmUserRole(userId) {
+    if (!canAdminSettings || !userId) return;
+    const ok = window.confirm("Удалить роль пользователя? Он получит роль viewer по умолчанию.");
+    if (!ok) return;
+    setCrmUsersSaving(userId);
+    setError("");
+    try {
+      await callBackend("webRemoveCrmUserRole", { userId });
+      await loadCrmUsers();
+    } catch (e) {
+      setError(toUserError(e));
+    } finally {
+      setCrmUsersSaving("");
     }
   }
 
@@ -3313,6 +3378,7 @@ export default function App() {
 
       <section className="view-switch">
         {VIEWS.map((v) => (
+          (v.id !== "admin" || canAdminSettings) && (
           <button
             key={v.id}
             className={view === v.id ? "tab active" : "tab"}
@@ -3323,6 +3389,7 @@ export default function App() {
           >
             {v.label}
           </button>
+          )
         ))}
       </section>
 
@@ -4548,6 +4615,69 @@ export default function App() {
                 </div>
               </div>
             )}
+          </>
+        )}
+        {view === "admin" && canAdminSettings && (
+          <>
+            <div className="admin-panel">
+              <div className="admin-panel__head">
+                <div className="admin-panel__title">Управление ролями пользователей</div>
+                <button
+                  className="mini"
+                  disabled={crmUsersLoading || crmUsersSaving !== ""}
+                  onClick={loadCrmUsers}
+                >
+                  {crmUsersLoading ? "Обновляю..." : "Обновить"}
+                </button>
+              </div>
+              {!crmUsersLoading && crmUsers.length === 0 && (
+                <div className="empty">Назначенных ролей пока нет.</div>
+              )}
+              {crmUsers.length > 0 && (
+                <div className="sheet-table-wrap">
+                  <table className="sheet-table">
+                    <thead>
+                      <tr>
+                        <th>Email</th>
+                        <th>Роль</th>
+                        <th>Комментарий</th>
+                        <th>Обновлено</th>
+                        <th>Действия</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {crmUsers.map((u) => (
+                        <tr key={u.userId}>
+                          <td>{u.email || u.userId}</td>
+                          <td>
+                            <select
+                              value={u.role}
+                              disabled={crmUsersSaving === u.userId}
+                              onChange={(e) => updateCrmUserRole(u.userId, e.target.value)}
+                            >
+                              {CRM_ROLES.map((r) => (
+                                <option key={r} value={r}>{CRM_ROLE_LABELS[r]}</option>
+                              ))}
+                            </select>
+                          </td>
+                          <td>{u.note || "-"}</td>
+                          <td>{u.updatedAt ? formatDateTimeRu(u.updatedAt) : "-"}</td>
+                          <td>
+                            <button
+                              className="mini warn"
+                              disabled={crmUsersSaving === u.userId}
+                              onClick={() => removeCrmUserRole(u.userId)}
+                            >
+                              Удалить роль
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
           </>
         )}
         {view === "workshop" && (

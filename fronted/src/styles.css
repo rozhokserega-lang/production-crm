@@ -116,6 +116,24 @@ body {
   border-color: #92400e;
 }
 
+.admin-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.admin-panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.admin-panel__title {
+  font-weight: 800;
+  font-size: 16px;
+  color: #0f172a;
+}
+
 h1 {
   font-size: var(--title-size);
   font-weight: 800;
