@@ -626,7 +626,7 @@ button:disabled {
 .shipment-toolbar {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
   background: #fff;
   border-radius: 10px;
@@ -636,6 +636,23 @@ button:disabled {
   z-index: 25;
   border: 1px solid #dbe3ef;
   box-shadow: 0 2px 10px rgba(15, 23, 42, 0.08);
+}
+
+.shipment-toolbar__summary {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.shipment-toolbar__actions {
+  flex: 0 0 220px;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+  justify-items: stretch;
+}
+
+.shipment-toolbar__actions .mini {
+  width: 100%;
 }
 
 .shipment-layout {
@@ -1075,6 +1092,11 @@ button:disabled {
   }
   .shipment-toolbar {
     position: static;
+    align-items: stretch;
+  }
+  .shipment-toolbar__actions {
+    flex: 1 1 100%;
+    grid-template-columns: repeat(2, minmax(150px, 1fr));
   }
   .shipment-layout {
     grid-template-columns: 1fr;

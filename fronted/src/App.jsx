@@ -3379,7 +3379,7 @@ export default function App() {
             <div className="shipment-main">
             {selectedShipments.length > 0 && (
               <div className="shipment-toolbar">
-                <div>
+                <div className="shipment-toolbar__summary">
                   <>Выбрано ячеек: <b>{selectedShipments.length}</b> | Готово к отправке: <b>{sendableSelectedCount}</b></>
                   {strapItems.length > 0 && (
                     <> | Обвязка: <b>{strapItems.reduce((sum, x) => sum + Number(x.qty || 0), 0)} шт.</b></>
@@ -3390,7 +3390,7 @@ export default function App() {
                     </>
                   )}
                 </div>
-                <div className="actions">
+                <div className="actions shipment-toolbar__actions">
                   <button
                     className="mini"
                     disabled={
