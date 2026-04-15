@@ -3377,57 +3377,6 @@ export default function App() {
               )}
             </aside>
             <div className="shipment-main">
-            {selectedShipments.length > 0 && (
-              <div className="shipment-toolbar">
-                <div className="shipment-toolbar__summary">
-                  <>Выбрано ячеек: <b>{selectedShipments.length}</b> | Готово к отправке: <b>{sendableSelectedCount}</b></>
-                  {strapItems.length > 0 && (
-                    <> | Обвязка: <b>{strapItems.reduce((sum, x) => sum + Number(x.qty || 0), 0)} шт.</b></>
-                  )}
-                  {selectedShipments.length === 1 && (
-                    <>
-                      {" "} | <b>{selectedShipments[0].item}</b> | Неделя <b>{selectedShipments[0].week || "-"}</b> | Кол-во <b>{selectedShipments[0].qty}</b>
-                    </>
-                  )}
-                </div>
-                <div className="actions shipment-toolbar__actions">
-                  <button
-                    className="mini"
-                    disabled={
-                      actionLoading === "preview:batch" ||
-                      selectedShipments.length === 0
-                    }
-                    onClick={previewSelectedShipmentPlan}
-                  >
-                    Предпросмотр плана
-                    {selectedShipments.length > 1 ? ` (${selectedShipments.length})` : ""}
-                  </button>
-                  <button
-                    className="mini"
-                    disabled={
-                      actionLoading === "shipment:bulk" ||
-                      sendableSelectedCount === 0
-                    }
-                    onClick={sendSelectedShipmentToWork}
-                  >
-                    Отправить в работу ({sendableSelectedCount})
-                  </button>
-                  <button
-                    className="mini warn"
-                    disabled={actionLoading === "shipment:delete" || selectedShipments.filter((s) => !!s.canSendToWork).length === 0}
-                    onClick={deleteSelectedShipmentPlan}
-                  >
-                    Удалить из плана
-                  </button>
-                  <button
-                    className="mini"
-                    onClick={() => setSelectedShipments([])}
-                  >
-                    Сбросить выбор
-                  </button>
-                </div>
-              </div>
-            )}
             {planPreviews.length > 0 && (
               <div className="print-area">
                 {planPreviews.map((planPreview, idx) => (
@@ -3754,6 +3703,59 @@ export default function App() {
               </div>
             ))}
             </div>
+            <aside className="shipment-actions-pane">
+              {selectedShipments.length > 0 && (
+                <div className="shipment-toolbar shipment-toolbar--side">
+                  <div className="shipment-toolbar__summary">
+                    <>Выбрано ячеек: <b>{selectedShipments.length}</b> | Готово к отправке: <b>{sendableSelectedCount}</b></>
+                    {strapItems.length > 0 && (
+                      <> | Обвязка: <b>{strapItems.reduce((sum, x) => sum + Number(x.qty || 0), 0)} шт.</b></>
+                    )}
+                    {selectedShipments.length === 1 && (
+                      <>
+                        {" "} | <b>{selectedShipments[0].item}</b> | Неделя <b>{selectedShipments[0].week || "-"}</b> | Кол-во <b>{selectedShipments[0].qty}</b>
+                      </>
+                    )}
+                  </div>
+                  <div className="actions shipment-toolbar__actions">
+                    <button
+                      className="mini"
+                      disabled={
+                        actionLoading === "preview:batch" ||
+                        selectedShipments.length === 0
+                      }
+                      onClick={previewSelectedShipmentPlan}
+                    >
+                      Предпросмотр плана
+                      {selectedShipments.length > 1 ? ` (${selectedShipments.length})` : ""}
+                    </button>
+                    <button
+                      className="mini"
+                      disabled={
+                        actionLoading === "shipment:bulk" ||
+                        sendableSelectedCount === 0
+                      }
+                      onClick={sendSelectedShipmentToWork}
+                    >
+                      Отправить в работу ({sendableSelectedCount})
+                    </button>
+                    <button
+                      className="mini warn"
+                      disabled={actionLoading === "shipment:delete" || selectedShipments.filter((s) => !!s.canSendToWork).length === 0}
+                      onClick={deleteSelectedShipmentPlan}
+                    >
+                      Удалить из плана
+                    </button>
+                    <button
+                      className="mini"
+                      onClick={() => setSelectedShipments([])}
+                    >
+                      Сбросить выбор
+                    </button>
+                  </div>
+                </div>
+              )}
+            </aside>
           </div>
         )}
         {view === "overview" && overviewSubView === "kanban" && (
