@@ -2690,6 +2690,10 @@ export default function App() {
 
   async function deleteStatsOrder(order) {
     const orderId = String(order?.orderId || order?.order_id || "").trim();
+    if (!orderId) {
+      setError("Для этого заказа не найден orderId.");
+      return;
+    }
     const ok = window.confirm(
       `Удалить заказ ${orderId || ""} из плана? Действие необратимо.`
     );
@@ -2698,19 +2702,33 @@ export default function App() {
     setActionLoading(actionKey);
     setError("");
     try {
-      const source = await resolveStatsOrderSourceCell(order);
-      const sourceRow = source.row;
-      const sourceCol = source.col;
-      if (!sourceRow || !sourceCol) {
-        setError("Для этого заказа не найдена привязка к ячейке плана (row/col).");
-        return;
+      try {
+        await callBackend("webDeleteOrderById", {
+          orderId,
+          p_order_id: orderId,
+        });
+      } catch (deleteByOrderErr) {
+        const msg = String(deleteByOrderErr?.message || deleteByOrderErr || "");
+        const missingAction =
+          msg.includes("не настроен для action") ||
+          msg.includes("Unknown action") ||
+          msg.includes("not configured");
+        if (!missingAction) throw deleteByOrderErr;
+        // Fallback for legacy backends without delete-by-order endpoint.
+        const source = await resolveStatsOrderSourceCell(order);
+        const sourceRow = source.row;
+        const sourceCol = source.col;
+        if (!sourceRow || !sourceCol) {
+          setError("Для этого заказа не найдена привязка к ячейке плана (row/col).");
+          return;
+        }
+        await callBackend("webDeleteShipmentPlanCell", {
+          p_row: sourceRow,
+          p_col: sourceCol,
+          row: sourceRow,
+          col: sourceCol,
+        });
       }
-      await callBackend("webDeleteShipmentPlanCell", {
-        p_row: sourceRow,
-        p_col: sourceCol,
-        row: sourceRow,
-        col: sourceCol,
-      });
       await load();
     } catch (e) {
       setError(toUserError(e));
