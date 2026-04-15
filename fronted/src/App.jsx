@@ -967,6 +967,9 @@ export default function App() {
   const [crmUsers, setCrmUsers] = useState([]);
   const [crmUsersLoading, setCrmUsersLoading] = useState(false);
   const [crmUsersSaving, setCrmUsersSaving] = useState("");
+  const [newCrmUserId, setNewCrmUserId] = useState("");
+  const [newCrmUserRole, setNewCrmUserRole] = useState("viewer");
+  const [newCrmUserNote, setNewCrmUserNote] = useState("");
   const [executorByOrder, setExecutorByOrder] = useState({});
   const [consumeDialogOpen, setConsumeDialogOpen] = useState(false);
   const [consumeEditMode, setConsumeEditMode] = useState(false);
@@ -1103,6 +1106,32 @@ export default function App() {
     setError("");
     try {
       await callBackend("webRemoveCrmUserRole", { userId });
+      await loadCrmUsers();
+    } catch (e) {
+      setError(toUserError(e));
+    } finally {
+      setCrmUsersSaving("");
+    }
+  }
+
+  async function createCrmUserRole() {
+    const userId = String(newCrmUserId || "").trim();
+    if (!canAdminSettings) return;
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(userId)) {
+      setError("Укажите корректный user_id (UUID).");
+      return;
+    }
+    setCrmUsersSaving(userId);
+    setError("");
+    try {
+      await callBackend("webSetCrmUserRole", {
+        userId,
+        role: newCrmUserRole,
+        note: newCrmUserNote,
+      });
+      setNewCrmUserId("");
+      setNewCrmUserRole("viewer");
+      setNewCrmUserNote("");
       await loadCrmUsers();
     } catch (e) {
       setError(toUserError(e));
@@ -4628,6 +4657,33 @@ export default function App() {
                   onClick={loadCrmUsers}
                 >
                   {crmUsersLoading ? "Обновляю..." : "Обновить"}
+                </button>
+              </div>
+              <div className="admin-panel__create">
+                <input
+                  placeholder="user_id (UUID)"
+                  value={newCrmUserId}
+                  onChange={(e) => setNewCrmUserId(e.target.value)}
+                />
+                <select
+                  value={newCrmUserRole}
+                  onChange={(e) => setNewCrmUserRole(e.target.value)}
+                >
+                  {CRM_ROLES.map((r) => (
+                    <option key={`new-role-${r}`} value={r}>{CRM_ROLE_LABELS[r]}</option>
+                  ))}
+                </select>
+                <input
+                  placeholder="Комментарий (опционально)"
+                  value={newCrmUserNote}
+                  onChange={(e) => setNewCrmUserNote(e.target.value)}
+                />
+                <button
+                  className="mini ok"
+                  disabled={crmUsersSaving !== ""}
+                  onClick={createCrmUserRole}
+                >
+                  Назначить роль
                 </button>
               </div>
               {!crmUsersLoading && crmUsers.length === 0 && (
