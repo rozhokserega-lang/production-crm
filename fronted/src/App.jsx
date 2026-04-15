@@ -3674,7 +3674,10 @@ export default function App() {
                         const isDeficitSelected = selectedShipmentStockCheck.deficitSourceKeys.has(
                           `${String(row.sourceRow || "").trim()}|${String(row.sourceCol || "").trim()}`
                         );
-                        const rowBg = row.materialHasDeficit ? "#fbcfe8" : (isDeficitSelected && isSelected ? "#fbcfe8" : (row.bg || "#ffffff"));
+                        const showDeficitHighlight = !!row.canSendToWork && !row.inWork && row.materialHasDeficit;
+                        const rowBg = showDeficitHighlight
+                          ? "#fbcfe8"
+                          : (isDeficitSelected && isSelected ? "#fbcfe8" : (row.bg || "#ffffff"));
                         return (
                           <tr
                             key={row.key}
@@ -3710,7 +3713,7 @@ export default function App() {
                             <td>{row.availableSheets}</td>
                             <td>
                               {row.status}
-                              {!row.inWork &&
+                              {!!row.canSendToWork && !row.inWork &&
                                 (row.materialHasDeficit
                                   ? ` • ❌ Не хватает: ${row.materialDeficit}`
                                   : " • ✅ Хватает")}
@@ -3741,7 +3744,9 @@ export default function App() {
                       const sheetsE = itemCells.length ? (Number(itemCells[0].availableSheets || 0) || 0) : 0;
                       const pendingCells = itemCells.filter((c) => c.canSendToWork);
                       const materialTotals = shipmentMaterialBalance.get(normalizeFurnitureKey(it.material || "")) || { needed: 0, available: 0 };
-                      const hasPendingShortage = Number(materialTotals.needed || 0) > Number(materialTotals.available || 0);
+                      const hasPendingShortage =
+                        pendingCells.length > 0 &&
+                        Number(materialTotals.needed || 0) > Number(materialTotals.available || 0);
                       const materialLabel = getMaterialLabel(it.item, it.material);
                       return (
                         <article
