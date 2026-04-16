@@ -1049,6 +1049,7 @@ export default function App() {
   const [strapItems, setStrapItems] = useState([]);
   const [laborRows, setLaborRows] = useState([]);
   const [stageAuditRows, setStageAuditRows] = useState([]);
+  const [activeOrderIds, setActiveOrderIds] = useState([]);
   const [warehouseRows, setWarehouseRows] = useState([]);
   const [materialsStockRows, setMaterialsStockRows] = useState([]);
   const [leftoversRows, setLeftoversRows] = useState([]);
@@ -1321,6 +1322,17 @@ export default function App() {
           setStageAuditRows(Array.isArray(auditData) ? auditData : []);
         } catch (_) {
           setStageAuditRows([]);
+        }
+        try {
+          const allOrdersData = await callBackend("webGetOrdersAll");
+          const ids = Array.isArray(allOrdersData)
+            ? allOrdersData
+                .map((x) => String(x?.order_id || x?.orderId || "").trim())
+                .filter(Boolean)
+            : [];
+          setActiveOrderIds([...new Set(ids)]);
+        } catch (_) {
+          setActiveOrderIds([]);
         }
       } else if (view === "stats") {
         try {
@@ -2576,6 +2588,7 @@ export default function App() {
   const laborStageTimelineRows = useMemo(() => {
     if (view !== "labor" || laborSubView !== "stages") return [];
     const q = query.trim().toLowerCase();
+    const activeSet = new Set((activeOrderIds || []).map((x) => String(x || "").trim()).filter(Boolean));
     const events = parseStageAuditRows(stageAuditRows).sort(
       (a, b) => new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime(),
     );
@@ -2618,9 +2631,10 @@ export default function App() {
       });
     });
     return [...byOrder.values()]
+      .filter((r) => activeSet.size === 0 || activeSet.has(String(r.orderId || "").trim()))
       .filter((r) => !q || String(r.orderId || "").toLowerCase().includes(q))
       .sort((a, b) => new Date(b.lastEventAt || 0).getTime() - new Date(a.lastEventAt || 0).getTime());
-  }, [view, laborSubView, stageAuditRows, query]);
+  }, [view, laborSubView, stageAuditRows, query, activeOrderIds]);
   const laborPlannerRows = useMemo(() => {
     if (view !== "labor") return [];
     return laborOrdersRows
