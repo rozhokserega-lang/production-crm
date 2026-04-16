@@ -34,24 +34,6 @@ body {
   --overview-stage-size: 13px;
 }
 
-.page.scale-standard {
-  --title-size: 30px;
-  --kpi-label-size: 10px;
-  --kpi-value-size: 20px;
-  --section-title-size: 24px;
-  --section-count-size: 11px;
-  --shipment-title-size: 30px;
-  --shipment-pill-size: 11px;
-  --cell-week-size: 14px;
-  --cell-qty-size: 32px;
-  --cell-badge-size: 11px;
-  --overview-col-title-size: 22px;
-  --overview-id-size: 26px;
-  --overview-item-size: 14px;
-  --overview-meta-size: 12px;
-  --overview-stage-size: 12px;
-}
-
 .top {
   display: flex;
   justify-content: space-between;
@@ -162,15 +144,6 @@ h1 {
   font-weight: 800;
   letter-spacing: -0.02em;
   margin: 0;
-}
-
-.scale-toggle {
-  padding: 7px 12px;
-  border-radius: 10px;
-  font-size: 12px;
-  font-weight: 700;
-  background: #0f766e;
-  border-color: #0b5f58;
 }
 
 button, input, select {
