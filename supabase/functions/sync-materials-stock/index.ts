@@ -54,6 +54,28 @@ function parseCsvLine(line: string): string[] {
   return result;
 }
 
+function parseLeftoversRow(cells: string[]): { material: string; leftover_format: string; leftovers_qty: number } | null {
+  // Preferred format from "Остатки" export:
+  // updated_at_utc | order_id | item | material | leftover_format | leftovers_qty
+  const qty6 = cells.length >= 6 ? parseQty(cells[5]) : null;
+  if (qty6 !== null) {
+    const material = normalizeMaterial(cells[3]);
+    const leftover_format = String(cells[4] || "").trim();
+    if (!material || !leftover_format) return null;
+    return { material, leftover_format, leftovers_qty: Number(qty6.toFixed(2)) };
+  }
+  // Compact manual format:
+  // material | leftover_format | leftovers_qty
+  const qty3 = cells.length >= 3 ? parseQty(cells[2]) : null;
+  if (qty3 !== null) {
+    const material = normalizeMaterial(cells[0]);
+    const leftover_format = String(cells[1] || "").trim();
+    if (!material || !leftover_format) return null;
+    return { material, leftover_format, leftovers_qty: Number(qty3.toFixed(2)) };
+  }
+  return null;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS_HEADERS });
   if (req.method !== "POST") {
@@ -67,6 +89,7 @@ serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const sheetId = String(body?.sheetId || "").trim();
     const gid = String(body?.gid || "").trim();
+    const leftoversGid = String(body?.leftoversGid || "").trim();
     if (!sheetId || !gid) {
       return new Response(JSON.stringify({ ok: false, error: "sheetId and gid are required" }), {
         status: 400,
@@ -134,7 +157,82 @@ serve(async (req) => {
       });
     }
 
-    return new Response(JSON.stringify({ ok: true, synced: rows.length }), {
+    let leftoversSynced = 0;
+    if (leftoversGid) {
+      const leftoversCsvUrl = `https://docs.google.com/spreadsheets/d/${encodeURIComponent(sheetId)}/export?format=csv&gid=${encodeURIComponent(leftoversGid)}`;
+      const leftoversResp = await fetch(leftoversCsvUrl);
+      if (!leftoversResp.ok) {
+        return new Response(
+          JSON.stringify({ ok: false, error: `Leftovers sheet request failed: ${leftoversResp.status}` }),
+          { status: 502, headers: CORS_HEADERS },
+        );
+      }
+      const leftoversText = await leftoversResp.text();
+      const leftoversLines = leftoversText.split(/\r?\n/).filter((line) => line.trim().length > 0);
+      const leftoversMap = new Map<string, { material: string; leftover_format: string; leftovers_qty: number }>();
+      for (const line of leftoversLines) {
+        const cells = parseCsvLine(line);
+        const parsed = parseLeftoversRow(cells);
+        if (!parsed) continue;
+        const key = `${parsed.material}|${parsed.leftover_format}`;
+        leftoversMap.set(key, parsed);
+      }
+
+      const leftoversRows = [...leftoversMap.values()].map((x) => ({
+        order_id: `sync-leftovers:${x.material}:${x.leftover_format}`,
+        item: "manual sync",
+        material: x.material,
+        sheets_needed: 0,
+        leftover_format: x.leftover_format,
+        leftovers_qty: x.leftovers_qty,
+        created_at: new Date().toISOString(),
+      }));
+
+      const clearResp = await fetch(
+        `${supabaseUrl}/rest/v1/materials_leftovers?order_id=like.${encodeURIComponent("sync-leftovers:%")}`,
+        {
+          method: "DELETE",
+          headers: {
+            apikey: serviceRoleKey,
+            Authorization: `Bearer ${serviceRoleKey}`,
+            Prefer: "return=minimal",
+          },
+        },
+      );
+      if (!clearResp.ok) {
+        const clearErr = await clearResp.text().catch(() => "");
+        return new Response(JSON.stringify({ ok: false, error: "Failed to clear synced leftovers", details: clearErr }), {
+          status: 502,
+          headers: CORS_HEADERS,
+        });
+      }
+
+      if (leftoversRows.length > 0) {
+        const leftoversUpsertResp = await fetch(
+          `${supabaseUrl}/rest/v1/materials_leftovers?on_conflict=order_id,leftover_format`,
+          {
+            method: "POST",
+            headers: {
+              apikey: serviceRoleKey,
+              Authorization: `Bearer ${serviceRoleKey}`,
+              "Content-Type": "application/json",
+              Prefer: "resolution=merge-duplicates,return=minimal",
+            },
+            body: JSON.stringify(leftoversRows),
+          },
+        );
+        if (!leftoversUpsertResp.ok) {
+          const leftoversErr = await leftoversUpsertResp.text().catch(() => "");
+          return new Response(
+            JSON.stringify({ ok: false, error: "Failed to upsert leftovers", details: leftoversErr }),
+            { status: 502, headers: CORS_HEADERS },
+          );
+        }
+      }
+      leftoversSynced = leftoversRows.length;
+    }
+
+    return new Response(JSON.stringify({ ok: true, synced: rows.length, leftoversSynced }), {
       status: 200,
       headers: CORS_HEADERS,
     });

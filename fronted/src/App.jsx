@@ -1689,6 +1689,7 @@ export default function App() {
         body: JSON.stringify({
           sheetId: WAREHOUSE_SYNC_SHEET_ID,
           gid: WAREHOUSE_SYNC_GID,
+          leftoversGid: LEFTOVERS_SYNC_GID,
         }),
       });
       const payload = await resp.json().catch(() => ({}));
