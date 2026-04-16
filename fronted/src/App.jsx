@@ -259,6 +259,21 @@ function isGarbageShipmentItemName(text) {
   return false;
 }
 
+function hasArticleLikeCode(row) {
+  const raw = String(
+    row?.article_code ||
+      row?.articleCode ||
+      row?.article ||
+      row?.mapped_article_code ||
+      row?.mappedArticleCode ||
+      "",
+  ).trim();
+  if (!raw) return false;
+  const compact = raw.replace(/\s+/g, "");
+  // Typical article formats: GXodStabile135x65CO, PL-C541D8B3, 73B76C8C, etc.
+  return /^[A-Za-z0-9][A-Za-z0-9._-]{2,}$/.test(compact);
+}
+
 function parseColor(bg) {
   const raw = String(bg || "").toLowerCase().trim();
   let r = null, g = null, b = null;
@@ -2067,7 +2082,11 @@ export default function App() {
     return rows.filter((x) => {
       // Скрываем тех/мусорные позиции во вкладках заказов (Производство/Обзор/Статистика).
       const sectionName = String(x.section_name || x.sectionName || "").trim();
-      if ((isStorageLikeName(x.item) && !isObvyazkaSectionName(sectionName)) || isGarbageShipmentItemName(x.item)) return false;
+      const sourceRowId = String(x.source_row_id || x.sourceRowId || "").trim();
+      const storageLike = isStorageLikeName(x.item);
+      const allowStorageLike =
+        storageLike && (isObvyazkaSectionName(sectionName) || sourceRowId.startsWith("manual:") || hasArticleLikeCode(x));
+      if ((storageLike && !allowStorageLike) || isGarbageShipmentItemName(x.item)) return false;
       const byWeek = weekFilter === "all" || String(x.week || "") === weekFilter;
       const byQuery =
         !q ||
