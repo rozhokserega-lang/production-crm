@@ -1051,6 +1051,10 @@ export default function App() {
   );
   const [strapItems, setStrapItems] = useState([]);
   const [laborRows, setLaborRows] = useState([]);
+  const [laborImportedRows, setLaborImportedRows] = useState([]);
+  const [laborSaveSelected, setLaborSaveSelected] = useState({});
+  const [laborSavingByKey, setLaborSavingByKey] = useState({});
+  const [laborSavedByKey, setLaborSavedByKey] = useState({});
   const [stageAuditRows, setStageAuditRows] = useState([]);
   const [activeOrderIds, setActiveOrderIds] = useState([]);
   const [warehouseRows, setWarehouseRows] = useState([]);
@@ -1070,6 +1074,7 @@ export default function App() {
   const [furnitureSelectedProduct, setFurnitureSelectedProduct] = useState("");
   const [furnitureSelectedQty, setFurnitureSelectedQty] = useState("1");
   const importPlanFileRef = useRef(null);
+  const importLaborFileRef = useRef(null);
   const loadSeqRef = useRef(0);
   const loadInFlightRef = useRef(false);
   const canOperateProduction = crmRole === "operator" || crmRole === "manager" || crmRole === "admin";
@@ -2056,7 +2061,7 @@ export default function App() {
         .filter((s) => s.items.length > 0);
     }
     if (view === "labor") {
-      return laborRows.filter((x) => {
+      return [...laborRows, ...laborImportedRows].filter((x) => {
         const byWeek = weekFilter === "all" || String(x.week || "") === weekFilter;
         const byQuery =
           !q ||
@@ -2098,6 +2103,7 @@ export default function App() {
     shipmentBoard,
     shipmentOrderMaps,
     laborRows,
+    laborImportedRows,
     view,
     tab,
     query,
@@ -2528,6 +2534,8 @@ export default function App() {
       assemblyMin: toNum(x.assembly_min ?? x.assemblyMin),
       totalMin: toNum(x.total_min ?? x.totalMin),
       dateFinished: String(x.date_finished || x.dateFinished || ""),
+      importedLocal: Boolean(x.imported_local || x.importedLocal),
+      importKey: String(x.import_key || x.importKey || ""),
     }));
     list.sort((a, b) => {
       if (laborSort === "total_asc") return a.totalMin - b.totalMin;
@@ -3675,6 +3683,161 @@ export default function App() {
     }
   }
 
+  function exportLaborTotalToExcel() {
+    if (view !== "labor" || laborSubView !== "total") return;
+    if (!laborTableRows.length) {
+      setError("Нет данных для экспорта общей трудоемкости.");
+      return;
+    }
+
+    const header = [
+      "ID заказа",
+      "Изделие",
+      "План",
+      "Кол-во",
+      "Пилка (мин)",
+      "Кромка (мин)",
+      "Присадка (мин)",
+      "Итого (мин)",
+      "Дата завершения",
+    ];
+    const body = laborTableRows.map((r) => [
+      String(r.orderId || ""),
+      String(r.item || ""),
+      String(r.week || ""),
+      Number(r.qty || 0),
+      Number(r.pilkaMin || 0),
+      Number(r.kromkaMin || 0),
+      Number(r.prasMin || 0),
+      Number(r.totalMin || 0),
+      String(r.dateFinished || ""),
+    ]);
+    const ws = XLSX.utils.aoa_to_sheet([header, ...body]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Общая трудоемкость");
+    XLSX.writeFile(wb, `Трудоемкость_общая_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    setError("");
+  }
+
+  async function importLaborTotalFromExcelFile(file) {
+    if (!file) return;
+    setActionLoading("labor:import");
+    setError("");
+    try {
+      const toNum = (v) => {
+        const n = Number(String(v ?? "").replace(",", ".").trim());
+        return Number.isFinite(n) ? n : 0;
+      };
+      const normHead = (s) =>
+        String(s || "")
+          .toLowerCase()
+          .replace(/[ё]/g, "е")
+          .replace(/[^\p{L}\p{N}\s]/gu, " ")
+          .replace(/\s+/g, " ")
+          .trim();
+
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: "array" });
+      const firstSheet = String(wb?.SheetNames?.[0] || "");
+      if (!firstSheet) throw new Error("В файле не найден лист.");
+      const ws = wb.Sheets[firstSheet];
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: "" });
+      if (!rows.length) throw new Error("Файл пустой.");
+
+      const headers = Array.isArray(rows[0]) ? rows[0].map(normHead) : [];
+      const idx = {
+        orderId: headers.findIndex((h) => h === "id заказа" || h === "id"),
+        item: headers.findIndex((h) => h === "изделие" || h === "наименование"),
+        week: headers.findIndex((h) => h === "план" || h === "неделя"),
+        qty: headers.findIndex((h) => h.includes("кол") && h.includes("во")),
+        pilka: headers.findIndex((h) => h.includes("пилка")),
+        kromka: headers.findIndex((h) => h.includes("кромка")),
+        pras: headers.findIndex((h) => h.includes("присад")),
+        total: headers.findIndex((h) => h.includes("итого")),
+        date: headers.findIndex((h) => h.includes("дата")),
+      };
+      const hasHeader = idx.item >= 0 || idx.total >= 0 || idx.pilka >= 0 || idx.kromka >= 0 || idx.pras >= 0;
+      const dataRows = hasHeader ? rows.slice(1) : rows;
+
+      const imported = [];
+      const nowKey = Date.now();
+      dataRows.forEach((r, i) => {
+        const row = Array.isArray(r) ? r : [];
+        const item = String((idx.item >= 0 ? row[idx.item] : row[1]) || "").trim();
+        const orderId = String((idx.orderId >= 0 ? row[idx.orderId] : row[0]) || "").trim();
+        const week = String((idx.week >= 0 ? row[idx.week] : row[2]) || "").trim();
+        const qty = toNum(idx.qty >= 0 ? row[idx.qty] : row[3]);
+        const pilkaMin = toNum(idx.pilka >= 0 ? row[idx.pilka] : row[4]);
+        const kromkaMin = toNum(idx.kromka >= 0 ? row[idx.kromka] : row[5]);
+        const prasMin = toNum(idx.pras >= 0 ? row[idx.pras] : row[6]);
+        const totalRaw = toNum(idx.total >= 0 ? row[idx.total] : row[7]);
+        const totalMin = totalRaw > 0 ? totalRaw : pilkaMin + kromkaMin + prasMin;
+        const dateFinished = String((idx.date >= 0 ? row[idx.date] : row[8]) || "").trim();
+        if (!item && !orderId) return;
+        if (totalMin <= 0 && pilkaMin <= 0 && kromkaMin <= 0 && prasMin <= 0) return;
+
+        imported.push({
+          order_id: orderId || `IMPORT-${Date.now()}-${i + 1}`,
+          item: item || "Импортированная позиция",
+          week,
+          qty,
+          pilka_min: pilkaMin,
+          kromka_min: kromkaMin,
+          pras_min: prasMin,
+          total_min: totalMin,
+          date_finished: dateFinished,
+          imported_local: true,
+          import_key: `labor-import-${nowKey}-${i + 1}`,
+        });
+      });
+
+      if (!imported.length) {
+        throw new Error("Не найдено валидных строк. Используйте экспорт из раздела 'Трудоемкость -> Общая' как шаблон.");
+      }
+
+      setLaborImportedRows((prev) => [...prev, ...imported]);
+    } catch (e) {
+      setError(`Ошибка импорта трудоемкости: ${extractErrorMessage(e)}`);
+    } finally {
+      setActionLoading("");
+      if (importLaborFileRef.current) importLaborFileRef.current.value = "";
+    }
+  }
+
+  async function saveImportedLaborRowToDb(row) {
+    if (!canOperateProduction) {
+      denyActionByRole("Недостаточно прав для сохранения трудоемкости в БД.");
+      return;
+    }
+    const key = String(row?.importKey || "");
+    if (!key) return;
+    setLaborSavingByKey((prev) => ({ ...prev, [key]: true }));
+    setError("");
+    try {
+      await callBackend("webUpsertLaborFact", {
+        orderId: row.orderId,
+        item: row.item,
+        week: row.week,
+        qty: row.qty,
+        pilkaMin: row.pilkaMin,
+        kromkaMin: row.kromkaMin,
+        prasMin: row.prasMin,
+        assemblyMin: row.assemblyMin,
+        dateFinished: row.dateFinished || null,
+      });
+      setLaborSavedByKey((prev) => ({ ...prev, [key]: true }));
+      setLaborSaveSelected((prev) => ({ ...prev, [key]: false }));
+      setLaborImportedRows((prev) =>
+        prev.map((x) => (String(x.import_key || "") === key ? { ...x, imported_local: false, imported_saved: true } : x))
+      );
+      await load();
+    } catch (e) {
+      setError(`Не удалось сохранить строку трудоемкости: ${extractErrorMessage(e)}`);
+    } finally {
+      setLaborSavingByKey((prev) => ({ ...prev, [key]: false }));
+    }
+  }
+
   return (
     <div className="page">
       <header className="top">
@@ -3992,6 +4155,43 @@ export default function App() {
               <option value="week">Трудоемкость: по неделе</option>
               <option value="item">Трудоемкость: по изделию</option>
             </select>
+          )}
+          {view === "labor" && laborSubView === "total" && (
+            <div className="filters-right">
+              <button className="mini" onClick={exportLaborTotalToExcel} disabled={!laborTableRows.length}>
+                Экспорт Excel (общая)
+              </button>
+              <input
+                ref={importLaborFileRef}
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                style={{ display: "none" }}
+                onChange={(e) => {
+                  const f = e.target.files && e.target.files[0];
+                  importLaborTotalFromExcelFile(f);
+                }}
+              />
+              <button
+                className="mini"
+                disabled={actionLoading === "labor:import"}
+                onClick={() => importLaborFileRef.current?.click()}
+              >
+                {actionLoading === "labor:import" ? "Импорт..." : "Импорт Excel (общая)"}
+              </button>
+              <button
+                className="mini"
+                disabled={!laborImportedRows.length}
+                onClick={() => {
+                  setLaborImportedRows([]);
+                  setLaborSaveSelected({});
+                  setLaborSavingByKey({});
+                  setLaborSavedByKey({});
+                }}
+                title="Очистить только импортированные локальные строки"
+              >
+                Очистить импорт
+              </button>
+            </div>
           )}
           {view === "shipment" && (
             <div className="filters-right">
@@ -4683,11 +4883,12 @@ export default function App() {
                       <th>Присадка (мин)</th>
                       <th>Итого (мин)</th>
                       <th>Дата завершения</th>
+                      <th>Сохранить в БД</th>
                     </tr>
                   </thead>
                   <tbody>
                     {laborTableRows.map((r) => (
-                      <tr key={`${r.orderId}-${r.item}`}>
+                      <tr key={`${r.orderId}-${r.item}-${r.importKey || "db"}`}>
                         <td>{r.orderId || "-"}</td>
                         <td>{r.item}</td>
                         <td>{r.week || "-"}</td>
@@ -4697,6 +4898,31 @@ export default function App() {
                         <td>{r.prasMin}</td>
                         <td><b>{r.totalMin}</b></td>
                         <td>{r.dateFinished || "-"}</td>
+                        <td>
+                          {r.importedLocal && r.importKey ? (
+                            <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                              <input
+                                type="checkbox"
+                                checked={Boolean(laborSaveSelected[r.importKey])}
+                                disabled={Boolean(laborSavingByKey[r.importKey]) || Boolean(laborSavedByKey[r.importKey])}
+                                onChange={(e) => {
+                                  const checked = Boolean(e.target.checked);
+                                  setLaborSaveSelected((prev) => ({ ...prev, [r.importKey]: checked }));
+                                  if (checked) void saveImportedLaborRowToDb(r);
+                                }}
+                              />
+                              <span>
+                                {laborSavedByKey[r.importKey]
+                                  ? "Сохранено"
+                                  : laborSavingByKey[r.importKey]
+                                    ? "Сохраняю..."
+                                    : "Сохранить"}
+                              </span>
+                            </label>
+                          ) : (
+                            "—"
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>

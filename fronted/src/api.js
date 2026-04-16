@@ -280,6 +280,7 @@ const RPC_MAP = {
   webGetLeftovers: "web_get_leftovers",
   webGetSheetOrdersMirror: "web_get_sheet_orders_mirror",
   webGetLaborTable: "web_get_labor_table",
+  webUpsertLaborFact: "web_upsert_labor_fact",
   webGetOrderStats: "web_get_order_stats",
   webGetMyRole: "web_effective_crm_role",
   webGetCrmAuthStrict: "web_is_crm_auth_strict",
@@ -388,6 +389,19 @@ function buildRpcPayload(action, payload = {}) {
     return {
       p_item_name: String(payload.itemName || "").trim(),
       p_color_name: String(payload.colorName || "").trim(),
+    };
+  }
+  if (action === "webUpsertLaborFact") {
+    return {
+      p_order_id: String(payload.orderId || payload.p_order_id || "").trim(),
+      p_item: String(payload.item || payload.p_item || "").trim() || null,
+      p_week: String(payload.week || payload.p_week || "").trim() || null,
+      p_qty: Number(payload.qty || payload.p_qty || 0),
+      p_pilka_min: Number(payload.pilkaMin || payload.p_pilka_min || 0),
+      p_kromka_min: Number(payload.kromkaMin || payload.p_kromka_min || 0),
+      p_pras_min: Number(payload.prasMin || payload.p_pras_min || 0),
+      p_assembly_min: Number(payload.assemblyMin || payload.p_assembly_min || 0),
+      p_date_finished: String(payload.dateFinished || payload.p_date_finished || "").trim() || null,
     };
   }
   if (action === "webSetCrmAuthStrict") {
