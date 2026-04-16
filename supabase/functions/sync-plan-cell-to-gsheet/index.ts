@@ -21,7 +21,8 @@ function normalizeText(value: unknown): string {
   return String(value ?? "")
     .trim()
     .toLowerCase()
-    .replace(/ё/g, "е")
+    // Use unicode escapes to avoid encoding issues.
+    .replace(/\u0451/g, "\u0435")
     .replace(/\s+/g, " ");
 }
 
@@ -182,7 +183,7 @@ serve(async (req) => {
 
     // Find mapping sheet title by name hint.
     const mappingSheetMeta =
-      metaJson.sheets.find((s: any) => normalizeText(s?.properties?.title).includes("соответ")) ||
+      metaJson.sheets.find((s: any) => normalizeText(s?.properties?.title).includes("\u0441\u043e\u043e\u0432\u0435\u0442")) ||
       metaJson.sheets.find((s: any) => normalizeText(s?.properties?.title).includes("correspond")) ||
       null;
 
@@ -214,26 +215,18 @@ serve(async (req) => {
       throw new Error(`Week column not found in row 1 for week=${weekRaw} (parsed=${weekNum})`);
     }
 
-    // Determine row index: first try direct articleCode match.
+    // Map by correspondence sheet strictly:
+    // correspondence sheet columns: A=index 0 => "Название", C=index 2 => "Артикул"
+    // target sheet columns: F=index 5 => "Название"
     const normCell = (v: unknown) => normalizeText(String(v ?? ""));
-    let targetRowIdx = -1;
-    for (let r = 1; r < grid.length; r += 1) {
-      const row = grid[r] || [];
-      if (row.some((cell) => normCell(cell) === normArticle)) {
-        targetRowIdx = r;
-        break;
-      }
-    }
 
-    // Fallback: if article_code is not present in target grid, use correspondence sheet to map.
-    if (targetRowIdx < 0) {
-      if (!mappingSheetMeta?.properties?.title) {
-        throw new Error("Correspondence sheet not found (title should contain 'соответ'/'correspond')");
-      }
+    let mappingTitle: string | null = null;
+    let correspondenceName: string | null = null;
 
-      const mappingTitle = String(mappingSheetMeta.properties.title).trim();
+    // Fast path: if we managed to detect mapping sheet by title.
+    if (mappingSheetMeta?.properties?.title) {
+      mappingTitle = String(mappingSheetMeta.properties.title).trim();
       const mappingSheetA1 = quoteSheetNameForA1(mappingTitle);
-
       const mappingResp = await fetch(
         `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}/values/${encodeURIComponent(mappingSheetA1)}!A1:ZZ500?valueRenderOption=UNFORMATTED_VALUE`,
         { headers: authHeaders },
@@ -242,80 +235,87 @@ serve(async (req) => {
       const mappingGrid: unknown[][] = Array.isArray(mappingJson?.values) ? mappingJson.values : [];
       if (!mappingGrid.length) throw new Error("Correspondence sheet is empty");
 
-      let mappingRowIdx = -1;
-      let mappingRow: unknown[] = [];
       for (let r = 1; r < mappingGrid.length; r += 1) {
         const row = mappingGrid[r] || [];
-        if (row.some((cell) => normCell(cell) === normArticle)) {
-          mappingRowIdx = r;
-          mappingRow = row;
+        const cellArticle = row[2]; // column C
+        if (normCell(cellArticle) === normArticle) {
+          correspondenceName = String(row[0] ?? "").trim(); // column A
           break;
         }
       }
-      if (mappingRowIdx < 0) {
-        throw new Error(`Article not found in correspondence sheet: ${articleCode}`);
-      }
+    }
 
-      const normItem = normalizeText(item);
-      const normMaterial = normalizeText(material);
+    // Slow path: scan all sheets for a matching article_code in column C.
+    if (!correspondenceName) {
+      for (const s of metaJson.sheets || []) {
+        const title = String(s?.properties?.title || "").trim();
+        if (!title) continue;
 
-      // Build label candidates from the whole correspondence row.
-      // We don't know which exact column contains the target sheet "Название",
-      // so we try all non-empty values except the article_code itself.
-      const normArticleCode = normArticle;
-      const rawCandidates = (mappingRow || [])
-        .map((c) => (c == null ? "" : String(c)))
-        .map((s) => s.trim())
-        .filter((s) => s.length > 0)
-        .filter((s) => normalizeText(s) !== normArticleCode);
+        const sheetA1Scan = quoteSheetNameForA1(title);
+        const cResp = await fetch(
+          `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}/values/${encodeURIComponent(sheetA1Scan)}!C2:C500?valueRenderOption=UNFORMATTED_VALUE`,
+          { headers: authHeaders },
+        );
+        const cJson = await cResp.json().catch(() => ({}));
+        const cValues: unknown[][] = Array.isArray(cJson?.values) ? cJson.values : [];
 
-      const uniqueCandidates: string[] = [];
-      const seen = new Set<string>();
-      for (const c of rawCandidates) {
-        const key = normalizeText(c);
-        if (!key || seen.has(key)) continue;
-        seen.add(key);
-        uniqueCandidates.push(c);
-      }
-
-      const rankCandidate = (cand: string) => {
-        const n = normalizeText(cand);
-        if (n === normItem) return 100;
-        if (n === normMaterial) return 90;
-        // Prefer longer labels (more specific).
-        return Math.min(80, Math.max(10, cand.length));
-      };
-
-      const candidatesSorted = [...uniqueCandidates].sort((a, b) => rankCandidate(b) - rankCandidate(a));
-
-      const findRowByNormLabel = (normLabel: string) => {
-        // exact match
-        for (let r = 1; r < grid.length; r += 1) {
-          const row = grid[r] || [];
-          if (row.some((cell) => normCell(cell) === normLabel)) return r;
+        let foundIdx = -1;
+        for (let i = 0; i < cValues.length; i += 1) {
+          const v = cValues[i]?.[0];
+          if (normCell(v) === normArticle) {
+            foundIdx = i;
+            break;
+          }
         }
-        // includes match
-        if (normLabel.length < 3) return -1;
-        for (let r = 1; r < grid.length; r += 1) {
-          const row = grid[r] || [];
-          if (row.some((cell) => normCell(cell).includes(normLabel))) return r;
-        }
-        return -1;
-      };
+        if (foundIdx < 0) continue;
 
-      for (const cand of candidatesSorted) {
-        const normCand = normalizeText(cand);
-        if (!normCand) continue;
-        const rowIdx = findRowByNormLabel(normCand);
-        if (rowIdx >= 0) {
-          targetRowIdx = rowIdx;
+        const rowNumber = 2 + foundIdx; // because range starts at C2
+        const aCellResp = await fetch(
+          `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}/values/${encodeURIComponent(sheetA1Scan)}!A${rowNumber}:A${rowNumber}?valueRenderOption=UNFORMATTED_VALUE`,
+          { headers: authHeaders },
+        );
+        const aJson = await aCellResp.json().catch(() => ({}));
+        const aValues: unknown[][] = Array.isArray(aJson?.values) ? aJson.values : [];
+        const nameVal = aValues?.[0]?.[0];
+        const nameStr = String(nameVal ?? "").trim();
+        if (!nameStr) continue;
+
+        mappingTitle = title;
+        correspondenceName = nameStr;
+        break;
+      }
+    }
+
+    if (!correspondenceName) {
+      throw new Error(`Correspondence not found: article=${articleCode} (spreadsheet has no match in column C)`);
+    }
+    const normCorrespondenceName = normalizeText(correspondenceName);
+
+    // Find row in target sheet where column F equals correspondenceName.
+    let targetRowIdx = -1;
+    for (let r = 1; r < grid.length; r += 1) {
+      const row = grid[r] || [];
+      if (normCell(row[5]) === normCorrespondenceName) {
+        targetRowIdx = r;
+        break;
+      }
+    }
+    if (targetRowIdx < 0) {
+      // Soft fallback: includes match (helps with extra spaces/suffixes in "Название" cells).
+      for (let r = 1; r < grid.length; r += 1) {
+        const row = grid[r] || [];
+        const cell = String(row[5] ?? "");
+        const normCellF = normCell(cell);
+        if (normCellF && (normCellF.includes(normCorrespondenceName) || normCorrespondenceName.includes(normCellF))) {
+          targetRowIdx = r;
           break;
         }
       }
-
-      if (targetRowIdx < 0) {
-        throw new Error(`Row not found in target sheet for article=${articleCode} (section='${sectionName}')`);
-      }
+    }
+    if (targetRowIdx < 0) {
+      throw new Error(
+        `Target row not found by correspondenceName='${correspondenceName}' (column F) in sheet='${targetSheetTitle}'`,
+      );
     }
 
     const rowA1 = targetRowIdx + 1;
