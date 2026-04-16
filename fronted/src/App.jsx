@@ -2080,6 +2080,14 @@ export default function App() {
       });
     }
     return rows.filter((x) => {
+      if (view === "stats") {
+        const byWeek = weekFilter === "all" || String(x.week || "") === weekFilter;
+        const byQuery =
+          !q ||
+          String(x.item || "").toLowerCase().includes(q) ||
+          String(x.orderId || x.order_id || "").toLowerCase().includes(q);
+        return byWeek && byQuery;
+      }
       // Скрываем тех/мусорные позиции во вкладках заказов (Производство/Обзор/Статистика).
       const sectionName = String(x.section_name || x.sectionName || "").trim();
       const sourceRowId = String(x.source_row_id || x.sourceRowId || "").trim();
@@ -2087,8 +2095,11 @@ export default function App() {
       // In workshop view, keep storage-like items visible if they are already real orders in pipeline.
       // This is required for strap positions such as "1158_50" that should move through production stages.
       const allowInWorkshop = view === "workshop" && storageLike;
+      // Stats must reflect all real orders; do not hide storage-like item names there.
+      const allowInStats = view === "stats" && storageLike;
       const allowStorageLike =
         allowInWorkshop ||
+        allowInStats ||
         (storageLike && (isObvyazkaSectionName(sectionName) || sourceRowId.startsWith("manual:") || hasArticleLikeCode(x)));
       if ((storageLike && !allowStorageLike) || isGarbageShipmentItemName(x.item)) return false;
       const byWeek = weekFilter === "all" || String(x.week || "") === weekFilter;
