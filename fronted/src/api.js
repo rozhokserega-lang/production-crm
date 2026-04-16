@@ -271,6 +271,7 @@ const RPC_MAP = {
   webGetOrdersKromka: "web_get_orders_kromka",
   webGetOrdersPras: "web_get_orders_pras",
   webGetMaterialsStock: "web_get_materials_stock",
+  webGetConsumeHistory: "web_get_consume_history",
   webGetSectionCatalog: "web_get_section_catalog",
   webGetSectionArticles: "web_get_section_articles",
   webGetArticlesForImport: "web_get_articles_for_import",
@@ -349,6 +350,9 @@ function buildRpcPayload(action, payload = {}) {
   }
   if (action === "webGetConsumeOptions") {
     return { p_order_id: payload.orderId };
+  }
+  if (action === "webGetConsumeHistory") {
+    return { p_limit: Number(payload.limit || payload.p_limit || 300) };
   }
   if (action === "webPreviewPlanFromShipment") {
     return {

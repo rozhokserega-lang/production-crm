@@ -1007,6 +1007,7 @@ export default function App() {
   const [warehouseRows, setWarehouseRows] = useState([]);
   const [materialsStockRows, setMaterialsStockRows] = useState([]);
   const [leftoversRows, setLeftoversRows] = useState([]);
+  const [consumeHistoryRows, setConsumeHistoryRows] = useState([]);
   const [warehouseSubView, setWarehouseSubView] = useState("sheets");
   const [warehouseSyncLoading, setWarehouseSyncLoading] = useState(false);
   const [furnitureLoading, setFurnitureLoading] = useState(false);
@@ -1260,6 +1261,12 @@ export default function App() {
           setLeftoversRows(Array.isArray(leftoversData) ? leftoversData : []);
         } catch (_) {
           setLeftoversRows([]);
+        }
+        try {
+          const consumeHistoryData = await callBackend("webGetConsumeHistory", { limit: 500 });
+          setConsumeHistoryRows(Array.isArray(consumeHistoryData) ? consumeHistoryData : []);
+        } catch (_) {
+          setConsumeHistoryRows([]);
         }
       } else if (view === "labor") {
         data = await callBackend("webGetLaborTable");
@@ -2624,6 +2631,27 @@ export default function App() {
       })
       .sort((a, b) => a.item.localeCompare(b.item, "ru"));
   }, [leftoversRows, query, view]);
+  const consumeHistoryTableRows = useMemo(() => {
+    if (view !== "warehouse") return [];
+    const q = String(query || "").trim().toLowerCase();
+    return [...consumeHistoryRows]
+      .map((x) => ({
+        moveId: String(x.move_id || x.moveId || ""),
+        createdAt: String(x.created_at || x.createdAt || ""),
+        orderId: String(x.order_id || x.orderId || ""),
+        material: String(x.material || ""),
+        qtySheets: Number(x.qty_sheets ?? x.qtySheets ?? 0),
+        comment: String(x.comment || ""),
+      }))
+      .filter((x) => {
+        if (!q) return true;
+        return (
+          x.orderId.toLowerCase().includes(q) ||
+          x.material.toLowerCase().includes(q) ||
+          x.comment.toLowerCase().includes(q)
+        );
+      });
+  }, [consumeHistoryRows, query, view]);
 
   const selectedShipmentSummary = useMemo(() => {
     const items = selectedShipments.map((s) => {
@@ -3648,6 +3676,13 @@ export default function App() {
             </button>
             <button
               type="button"
+              className={warehouseSubView === "history" ? "tab active" : "tab"}
+              onClick={() => setWarehouseSubView("history")}
+            >
+              История списаний
+            </button>
+            <button
+              type="button"
               className="mini ok"
               disabled={warehouseSyncLoading || loading}
               onClick={syncWarehouseFromGoogleSheet}
@@ -3685,7 +3720,7 @@ export default function App() {
         <div className="filters">
           {view !== "furniture" && (
             <input
-              placeholder={view === "shipment" ? "Поиск отгрузки: название или ID" : view === "sheetMirror" ? "Поиск: артикул, изделие, материал или order code" : view === "warehouse" ? (warehouseSubView === "leftovers" ? "Поиск по цвету или размеру" : "Поиск материала") : "Поиск по названию или ID"}
+              placeholder={view === "shipment" ? "Поиск отгрузки: название или ID" : view === "sheetMirror" ? "Поиск: артикул, изделие, материал или order code" : view === "warehouse" ? (warehouseSubView === "leftovers" ? "Поиск по цвету или размеру" : warehouseSubView === "history" ? "Поиск: заказ, материал, комментарий" : "Поиск материала") : "Поиск по названию или ID"}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
@@ -4572,6 +4607,35 @@ export default function App() {
                         <td>{r.material || "-"}</td>
                         <td>{r.leftoverFormat || "-"}</td>
                         <td><b>{r.leftoversQty}</b></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {warehouseSubView === "history" && !consumeHistoryTableRows.length && !loading && (
+              <div className="empty">Нет данных по списаниям</div>
+            )}
+            {warehouseSubView === "history" && consumeHistoryTableRows.length > 0 && (
+              <div className="sheet-table-wrap">
+                <table className="sheet-table">
+                  <thead>
+                    <tr>
+                      <th>Когда</th>
+                      <th>Заказ</th>
+                      <th>Материал</th>
+                      <th>Списано (листов)</th>
+                      <th>Комментарий</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {consumeHistoryTableRows.map((r) => (
+                      <tr key={r.moveId || `${r.createdAt}-${r.orderId}-${r.material}`}>
+                        <td>{r.createdAt ? new Date(r.createdAt).toLocaleString("ru-RU", { timeZone: "Europe/Moscow" }) : "-"}</td>
+                        <td>{r.orderId || "-"}</td>
+                        <td>{r.material || "-"}</td>
+                        <td><b>{r.qtySheets}</b></td>
+                        <td>{r.comment || "-"}</td>
                       </tr>
                     ))}
                   </tbody>
