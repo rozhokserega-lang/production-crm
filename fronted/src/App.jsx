@@ -7,7 +7,7 @@ import {
   supabaseSignInWithPassword,
   supabaseSignOut,
 } from "./api";
-import { SUPABASE_ANON_KEY, SUPABASE_URL } from "./config";
+import { BACKEND_PROVIDER, SUPABASE_ANON_KEY, SUPABASE_URL } from "./config";
 import furnitureWorkbookUrl from "./assets/furniture.xlsx?url";
 import {
   getOrderStageDisplayLabel as getStageLabel,
@@ -142,6 +142,9 @@ const WAREHOUSE_SYNC_GID = "1501570173";
 const LEFTOVERS_SYNC_GID = "762227238";
 const CONSUME_LOG_SHEET_NAME = "расход апрель 2026";
 const SHEET_MIRROR_GID = "1772676601";
+// Google Sheet (вкладка "Отгрузка") для записи плана
+const PLAN_SYNC_SHEET_ID = "1gRMs2AVxIXwmQLLnB2WIoRW7mPkGc9usyaUrXZAHuIs";
+const PLAN_SYNC_GID = "1998084017";
 
 function statusClass(order) {
   const ps = resolvePipelineStage(order);
@@ -1773,6 +1776,47 @@ export default function App() {
     }
   }
 
+  async function syncPlanCellToGoogleSheet(meta = {}) {
+    // Best-effort: обновление Google Sheet не должно ломать сохранение плана в Supabase.
+    if (!["supabase", "shadow"].includes(String(BACKEND_PROVIDER || ""))) return;
+    const baseUrl = String(SUPABASE_URL || "").replace(/\/$/, "");
+    const token = String(SUPABASE_ANON_KEY || "").trim();
+    if (!baseUrl || !token) return;
+
+    const payload = {
+      sheetId: PLAN_SYNC_SHEET_ID,
+      gid: PLAN_SYNC_GID,
+      sectionName: String(meta.sectionName || "").trim(),
+      item: String(meta.item || "").trim(),
+      material: String(meta.material || "").trim(),
+      week: String(meta.week || "").trim(),
+      qty: Number(meta.qty || 0),
+    };
+    if (!payload.sectionName || !payload.item || !payload.material || !payload.week || !Number.isFinite(payload.qty) || payload.qty <= 0) {
+      return;
+    }
+
+    try {
+      const resp = await fetch(`${baseUrl}/functions/v1/sync-plan-cell-to-gsheet`, {
+        method: "POST",
+        headers: {
+          apikey: token,
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+      const payloadJson = await resp.json().catch(() => ({}));
+      if (!resp.ok || payloadJson?.ok === false) {
+        throw new Error(String(payloadJson?.error || `HTTP ${resp.status}`));
+      }
+    } catch (_) {
+      // Keep saving plan resilient; still log to console for troubleshooting.
+      // eslint-disable-next-line no-console
+      console.warn("[CRM] sync-plan-cell-to-gsheet failed (best-effort)", payload);
+    }
+  }
+
   async function runAction(action, orderId, payload = {}, meta = {}) {
     if (!canOperateProduction) {
       denyActionByRole("Недостаточно прав для изменения этапов производства.");
@@ -3324,6 +3368,7 @@ export default function App() {
         week,
         qty,
       });
+      void syncPlanCellToGoogleSheet({ sectionName: planSection, item, material, week, qty });
       setPlanDialogOpen(false);
       await load();
     } catch (e) {
@@ -3357,12 +3402,20 @@ export default function App() {
     try {
       for (const row of next) {
         const material = resolveStrapMaterialByProduct(row.productName || "");
+        const qty = Number(row.qty || 0);
         await callBackend("webCreateShipmentPlanCell", {
           sectionName: "Обвязка",
           item: strapNameToOrderItem(row.name),
           material,
           week,
-          qty: Number(row.qty || 0),
+          qty,
+        });
+        void syncPlanCellToGoogleSheet({
+          sectionName: "Обвязка",
+          item: strapNameToOrderItem(row.name),
+          material,
+          week,
+          qty,
         });
       }
       setStrapItems([]);
