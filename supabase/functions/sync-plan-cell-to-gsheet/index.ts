@@ -259,49 +259,62 @@ serve(async (req) => {
       const normItem = normalizeText(item);
       const normMaterial = normalizeText(material);
 
-      let label = "";
-      for (const cell of mappingRow) {
-        if (!cell) continue;
-        if (normCell(cell) === normItem) {
-          label = String(cell);
-          break;
-        }
-      }
-      if (!label) {
-        for (const cell of mappingRow) {
-          if (!cell) continue;
-          if (normCell(cell) === normMaterial) {
-            label = String(cell);
-            break;
-          }
-        }
-      }
-      if (!label) {
-        const firstNonEmpty = mappingRow.find((c) => String(c ?? "").trim() !== "");
-        label = firstNonEmpty ? String(firstNonEmpty) : "";
-      }
-      if (!label.trim()) throw new Error("Failed to derive target row label from correspondence sheet");
+      // Build label candidates from the whole correspondence row.
+      // We don't know which exact column contains the target sheet "Название",
+      // so we try all non-empty values except the article_code itself.
+      const normArticleCode = normArticle;
+      const rawCandidates = (mappingRow || [])
+        .map((c) => (c == null ? "" : String(c)))
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0)
+        .filter((s) => normalizeText(s) !== normArticleCode);
 
-      const normLabel = normalizeText(label);
-      // Search label in target grid (exact match, then includes match).
-      for (let r = 1; r < grid.length; r += 1) {
-        const row = grid[r] || [];
-        if (row.some((cell) => normCell(cell) === normLabel)) {
-          targetRowIdx = r;
-          break;
-        }
+      const uniqueCandidates: string[] = [];
+      const seen = new Set<string>();
+      for (const c of rawCandidates) {
+        const key = normalizeText(c);
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        uniqueCandidates.push(c);
       }
-      if (targetRowIdx < 0) {
+
+      const rankCandidate = (cand: string) => {
+        const n = normalizeText(cand);
+        if (n === normItem) return 100;
+        if (n === normMaterial) return 90;
+        // Prefer longer labels (more specific).
+        return Math.min(80, Math.max(10, cand.length));
+      };
+
+      const candidatesSorted = [...uniqueCandidates].sort((a, b) => rankCandidate(b) - rankCandidate(a));
+
+      const findRowByNormLabel = (normLabel: string) => {
+        // exact match
         for (let r = 1; r < grid.length; r += 1) {
           const row = grid[r] || [];
-          if (row.some((cell) => normCell(cell).includes(normLabel) && normLabel.length >= 3)) {
-            targetRowIdx = r;
-            break;
-          }
+          if (row.some((cell) => normCell(cell) === normLabel)) return r;
+        }
+        // includes match
+        if (normLabel.length < 3) return -1;
+        for (let r = 1; r < grid.length; r += 1) {
+          const row = grid[r] || [];
+          if (row.some((cell) => normCell(cell).includes(normLabel))) return r;
+        }
+        return -1;
+      };
+
+      for (const cand of candidatesSorted) {
+        const normCand = normalizeText(cand);
+        if (!normCand) continue;
+        const rowIdx = findRowByNormLabel(normCand);
+        if (rowIdx >= 0) {
+          targetRowIdx = rowIdx;
+          break;
         }
       }
+
       if (targetRowIdx < 0) {
-        throw new Error(`Row not found in target sheet for label='${label}' (article=${articleCode})`);
+        throw new Error(`Row not found in target sheet for article=${articleCode} (section='${sectionName}')`);
       }
     }
 
