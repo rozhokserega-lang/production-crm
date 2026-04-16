@@ -678,6 +678,68 @@ function mergeShipmentBoardWithTable(board, tableRows) {
   };
 }
 
+function mergeOrdersWithShipmentBackfill(orders, shipmentBoard) {
+  const baseOrders = Array.isArray(orders) ? orders : [];
+  const board = normalizeShipmentBoard(shipmentBoard);
+  if (!board.sections?.length) return baseOrders;
+
+  const byRowWeek = new Set();
+  const byItemWeek = new Set();
+  baseOrders.forEach((o) => {
+    const week = String(o?.week || "").trim();
+    if (!week) return;
+    const sourceRow = String(o?.source_row_id || o?.sourceRowId || "").trim();
+    const item = String(o?.item || "").trim();
+    if (sourceRow) byRowWeek.add(shipmentOrderKey(sourceRow, week));
+    if (item) byItemWeek.add(shipmentOrderItemWeekKey(item, week));
+  });
+
+  const backfill = [];
+  (board.sections || []).forEach((section) => {
+    (section.items || []).forEach((it) => {
+      const sourceRow = String(it?.sourceRowId || it?.row || "").trim();
+      (it.cells || []).forEach((c, idx) => {
+        const inWork = !!c?.inWork;
+        if (!inWork) return;
+        const week = String(c?.week || "").trim();
+        if (!week) return;
+        const item = String(it?.item || "").trim();
+        const rowKey = shipmentOrderKey(sourceRow, week);
+        const itemKey = shipmentOrderItemWeekKey(item, week);
+        if ((sourceRow && byRowWeek.has(rowKey)) || byItemWeek.has(itemKey)) return;
+
+        const sourceCol = String(c?.sourceColId || c?.col || "").trim();
+        backfill.push({
+          orderId: `AUTO-${sourceRow || "row"}-${sourceCol || idx + 1}-${week}`,
+          item,
+          week,
+          qty: Number(c?.qty || 0),
+          pilkaStatus: "▶ В работе",
+          kromkaStatus: "⏳ Ожидает",
+          prasStatus: "⏳ Ожидает",
+          assemblyStatus: "⏳ Ожидает",
+          overallStatus: "🟡 Отправлен на пилу",
+          sourceRowId: sourceRow,
+          sourceColId: sourceCol,
+          source_row_id: sourceRow,
+          source_col_id: sourceCol,
+          sectionName: String(section?.name || "").trim(),
+          section_name: String(section?.name || "").trim(),
+          createdAt: new Date(0).toISOString(),
+          updatedAt: new Date(0).toISOString(),
+          __backfillFromShipment: true,
+        });
+
+        if (sourceRow) byRowWeek.add(rowKey);
+        byItemWeek.add(itemKey);
+      });
+    });
+  });
+
+  if (!backfill.length) return baseOrders;
+  return [...baseOrders, ...backfill];
+}
+
 function parseStrapSize(name) {
   const m = String(name || "").match(/\((\d+)\s*[_xх]\s*(\d+)\)/i);
   if (!m) return null;
@@ -1310,17 +1372,23 @@ export default function App() {
         setLaborRows(Array.isArray(data) ? data : []);
       } else {
         const normalizedRows = Array.isArray(data) ? data.map(normalizeOrder) : [];
-        setRows(normalizedRows);
+        let boardSnapshot = shipmentBoard;
         if (view === "workshop" || view === "overview" || view === "stats") {
-          setShipmentOrders(normalizedRows);
-        }
-        if (view === "workshop") {
           try {
             const boardData = await callBackend("webGetShipmentBoard");
-            setShipmentBoard(normalizeShipmentBoard(boardData));
+            boardSnapshot = normalizeShipmentBoard(boardData);
+            setShipmentBoard(boardSnapshot);
           } catch (_) {
             // keep previous shipment board snapshot
           }
+        }
+        const withBackfill =
+          view === "workshop" || view === "overview" || view === "stats"
+            ? mergeOrdersWithShipmentBackfill(normalizedRows, boardSnapshot)
+            : normalizedRows;
+        setRows(withBackfill);
+        if (view === "workshop" || view === "overview" || view === "stats") {
+          setShipmentOrders(withBackfill);
         }
       }
     } catch (e) {

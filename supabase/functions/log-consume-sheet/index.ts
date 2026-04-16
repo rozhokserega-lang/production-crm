@@ -176,6 +176,18 @@ serve(async (req) => {
     const colA1 = toA1Column(dayColIdx + 1);
     const targetA1 = `${sheetName}!${colA1}${rowA1}`;
 
+    const metaResp = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}?fields=sheets(properties(sheetId,title))`,
+      { headers },
+    );
+    const metaJson = await metaResp.json().catch(() => ({}));
+    if (!metaResp.ok || !Array.isArray(metaJson?.sheets)) {
+      throw new Error(`Failed to load sheet metadata: ${JSON.stringify(metaJson)}`);
+    }
+    const sheetMeta = metaJson.sheets.find((s: any) => String(s?.properties?.title || "") === sheetName);
+    if (!sheetMeta?.properties?.sheetId) throw new Error(`Sheet not found by title: ${sheetName}`);
+    const numericSheetId = Number(sheetMeta.properties.sheetId);
+
     const updateValueResp = await fetch(
       `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}/values/${encodeURIComponent(targetA1)}?valueInputOption=USER_ENTERED`,
       {
@@ -193,25 +205,26 @@ serve(async (req) => {
       throw new Error(`Failed to update cell value: ${JSON.stringify(updateValueJson)}`);
     }
 
-    const metaResp = await fetch(
-      `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}?fields=sheets(properties(sheetId,title))`,
+    const existingNoteResp = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}?ranges=${encodeURIComponent(targetA1)}&includeGridData=true&fields=sheets(data(rowData(values(note))))`,
       { headers },
     );
-    const metaJson = await metaResp.json().catch(() => ({}));
-    if (!metaResp.ok || !Array.isArray(metaJson?.sheets)) {
-      throw new Error(`Failed to load sheet metadata: ${JSON.stringify(metaJson)}`);
+    const existingNoteJson = await existingNoteResp.json().catch(() => ({}));
+    if (!existingNoteResp.ok) {
+      throw new Error(`Failed to read existing note: ${JSON.stringify(existingNoteJson)}`);
     }
-    const sheetMeta = metaJson.sheets.find((s: any) => String(s?.properties?.title || "") === sheetName);
-    if (!sheetMeta?.properties?.sheetId) throw new Error(`Sheet not found by title: ${sheetName}`);
-    const numericSheetId = Number(sheetMeta.properties.sheetId);
+    const previousNote = String(
+      existingNoteJson?.sheets?.[0]?.data?.[0]?.rowData?.[0]?.values?.[0]?.note || "",
+    ).trim();
 
-    const note = [
+    const noteEntry = [
       `[${moscowTs()}] расход ${qty}`,
       `OrderID: ${orderId || "-"}`,
       `Изделие: ${item || "-"}`,
       `Материал: ${material}`,
       `Неделя: ${week || "-"}`,
     ].join("\n");
+    const note = previousNote ? `${previousNote}\n\n${noteEntry}` : noteEntry;
 
     const noteResp = await fetch(
       `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}:batchUpdate`,
