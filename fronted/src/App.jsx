@@ -98,6 +98,7 @@ const VIEWS = [
   { id: "sheetMirror", label: "Google Mirror" },
   { id: "overview", label: "Обзор заказов" },
   { id: "workshop", label: "Производство" },
+  { id: "stageTimeline", label: "Этапы (время)" },
   { id: "warehouse", label: "Склад" },
   { id: "labor", label: "Трудоемкость" },
   { id: "stats", label: "Статистика" },
@@ -434,6 +435,45 @@ function getMaterialLabel(item, material) {
     .filter(Boolean);
   const tail = String(parts[parts.length - 1] || "").trim();
   return tail || "Материал не указан";
+}
+
+function parseStageAuditRows(rows) {
+  const list = Array.isArray(rows) ? rows : [];
+  const out = [];
+  const stageKeys = ["pilka_status", "kromka_status", "pras_status", "assembly_status", "overall_status"];
+  list.forEach((row) => {
+    const details = row?.details && typeof row.details === "object" ? row.details : {};
+    const before = details?.before && typeof details.before === "object" ? details.before : {};
+    const after = details?.after && typeof details.after === "object" ? details.after : {};
+    const changed = [];
+    stageKeys.forEach((key) => {
+      const prev = String(before?.[key] ?? "").trim();
+      const next = String(after?.[key] ?? "").trim();
+      if (prev !== next) {
+        changed.push({ key, before: prev || "-", after: next || "-" });
+      }
+    });
+    const orderId = String(row?.entity_id || details?.order_id || "").trim();
+    if (!orderId && !changed.length) return;
+    out.push({
+      id: row?.id ?? `${row?.created_at || ""}-${orderId || "order"}`,
+      createdAt: String(row?.created_at || "").trim(),
+      orderId: orderId || "-",
+      actorRole: String(row?.actor_crm_role || row?.actor_db_role || "").trim(),
+      action: String(row?.action || "").trim(),
+      changed,
+    });
+  });
+  return out;
+}
+
+function stageFieldLabel(key) {
+  if (key === "pilka_status") return "Пила";
+  if (key === "kromka_status") return "Кромка";
+  if (key === "pras_status") return "Присадка";
+  if (key === "assembly_status") return "Сборка";
+  if (key === "overall_status") return "Общий";
+  return key;
 }
 
 function normalizeCatalogItemName(name) {
@@ -1341,6 +1381,8 @@ export default function App() {
         } catch (_) {
           data = await callBackend("webGetOrdersAll");
         }
+      } else if (view === "stageTimeline") {
+        data = await callBackend("webGetAuditLog", { limit: 1000, action: "set_stage" });
       } else if (view === "furniture") {
         data = [];
         try {
@@ -1370,6 +1412,8 @@ export default function App() {
         setWarehouseRows(Array.isArray(data) ? data : []);
       } else if (view === "labor") {
         setLaborRows(Array.isArray(data) ? data : []);
+      } else if (view === "stageTimeline") {
+        setRows(Array.isArray(data) ? data : []);
       } else {
         const normalizedRows = Array.isArray(data) ? data.map(normalizeOrder) : [];
         let boardSnapshot = shipmentBoard;
@@ -2053,6 +2097,19 @@ export default function App() {
         return byQuery;
       });
     }
+    if (view === "stageTimeline") {
+      return rows.filter((x) => {
+        const details = x?.details && typeof x.details === "object" ? x.details : {};
+        const detailsText = JSON.stringify(details || {}).toLowerCase();
+        const byQuery =
+          !q ||
+          String(x?.entity_id || "").toLowerCase().includes(q) ||
+          String(x?.actor_crm_role || "").toLowerCase().includes(q) ||
+          String(x?.action || "").toLowerCase().includes(q) ||
+          detailsText.includes(q);
+        return byQuery;
+      });
+    }
     return rows.filter((x) => {
       // Скрываем тех/мусорные позиции во вкладках заказов (Производство/Обзор/Статистика).
       const sectionName = String(x.section_name || x.sectionName || "").trim();
@@ -2480,6 +2537,14 @@ export default function App() {
   const visibleShipmentTableRows = useMemo(() => {
     return shipmentTableRowsWithStockStatus.filter((row) => !hiddenShipmentGroups[String(row.section || "Прочее")]);
   }, [shipmentTableRowsWithStockStatus, hiddenShipmentGroups]);
+  const stageTimelineRows = useMemo(() => {
+    if (view !== "stageTimeline") return [];
+    return parseStageAuditRows(filtered).sort((a, b) => {
+      const at = new Date(a.createdAt || 0).getTime();
+      const bt = new Date(b.createdAt || 0).getTime();
+      return bt - at;
+    });
+  }, [filtered, view]);
   const shipmentPlanDeficits = useMemo(() => {
     return [...shipmentMaterialBalance.values()]
       .map((x) => ({
@@ -3749,6 +3814,18 @@ export default function App() {
             <div className="kpi"><span>Статус done</span><b>{sheetMirrorKpi.done}</b></div>
             <div className="kpi"><span>Статус waiting</span><b>{sheetMirrorKpi.waiting}</b></div>
           </>
+        ) : view === "stageTimeline" ? (
+          <>
+            <div className="kpi"><span>Событий этапов</span><b>{stageTimelineRows.length}</b></div>
+            <div className="kpi">
+              <span>Заказов в логе</span>
+              <b>{new Set(stageTimelineRows.map((x) => x.orderId).filter((x) => x && x !== "-")).size}</b>
+            </div>
+            <div className="kpi">
+              <span>Последнее событие</span>
+              <b>{stageTimelineRows[0]?.createdAt ? new Date(stageTimelineRows[0].createdAt).toLocaleString("ru-RU", { timeZone: "Europe/Moscow" }) : "-"}</b>
+            </div>
+          </>
         ) : view === "workshop" ? (
           <>
             <div className="kpi"><span>Всего</span><b>{kpi.total}</b></div>
@@ -3872,12 +3949,12 @@ export default function App() {
         <div className="filters">
           {view !== "furniture" && (
             <input
-              placeholder={view === "shipment" ? "Поиск отгрузки: название или ID" : view === "sheetMirror" ? "Поиск: артикул, изделие, материал или order code" : view === "warehouse" ? (warehouseSubView === "leftovers" ? "Поиск по цвету или размеру" : warehouseSubView === "history" ? "Поиск: заказ, материал, комментарий" : "Поиск материала") : "Поиск по названию или ID"}
+              placeholder={view === "shipment" ? "Поиск отгрузки: название или ID" : view === "sheetMirror" ? "Поиск: артикул, изделие, материал или order code" : view === "stageTimeline" ? "Поиск: ID заказа, роль, этап, статус" : view === "warehouse" ? (warehouseSubView === "leftovers" ? "Поиск по цвету или размеру" : warehouseSubView === "history" ? "Поиск: заказ, материал, комментарий" : "Поиск материала") : "Поиск по названию или ID"}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
           )}
-          {view !== "warehouse" && view !== "furniture" && view !== "sheetMirror" && (
+          {view !== "warehouse" && view !== "furniture" && view !== "sheetMirror" && view !== "stageTimeline" && (
             <select value={weekFilter} onChange={(e) => setWeekFilter(e.target.value)}>
               <option value="all">Все недели</option>
               {weeks.map((w) => <option key={w} value={w}>Неделя {w}</option>)}
@@ -4843,6 +4920,43 @@ export default function App() {
                             X
                           </button>
                         </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
+        )}
+        {view === "stageTimeline" && (
+          <>
+            {!stageTimelineRows.length && !loading && (
+              <div className="empty">Нет данных по событиям этапов (нужны роли manager/admin)</div>
+            )}
+            {stageTimelineRows.length > 0 && (
+              <div className="sheet-table-wrap">
+                <table className="sheet-table">
+                  <thead>
+                    <tr>
+                      <th>Когда</th>
+                      <th>ID заказа</th>
+                      <th>Кто</th>
+                      <th>Изменения этапов</th>
+                      <th>Действие</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {stageTimelineRows.map((r) => (
+                      <tr key={`timeline-${r.id}`}>
+                        <td>{r.createdAt ? new Date(r.createdAt).toLocaleString("ru-RU", { timeZone: "Europe/Moscow" }) : "-"}</td>
+                        <td>{r.orderId || "-"}</td>
+                        <td>{r.actorRole || "-"}</td>
+                        <td>
+                          {r.changed?.length
+                            ? r.changed.map((x) => `${stageFieldLabel(x.key)}: ${x.before} -> ${x.after}`).join(" | ")
+                            : "-"}
+                        </td>
+                        <td>{r.action || "-"}</td>
                       </tr>
                     ))}
                   </tbody>
