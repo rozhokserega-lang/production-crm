@@ -2084,8 +2084,12 @@ export default function App() {
       const sectionName = String(x.section_name || x.sectionName || "").trim();
       const sourceRowId = String(x.source_row_id || x.sourceRowId || "").trim();
       const storageLike = isStorageLikeName(x.item);
+      // In workshop view, keep storage-like items visible if they are already real orders in pipeline.
+      // This is required for strap positions such as "1158_50" that should move through production stages.
+      const allowInWorkshop = view === "workshop" && storageLike;
       const allowStorageLike =
-        storageLike && (isObvyazkaSectionName(sectionName) || sourceRowId.startsWith("manual:") || hasArticleLikeCode(x));
+        allowInWorkshop ||
+        (storageLike && (isObvyazkaSectionName(sectionName) || sourceRowId.startsWith("manual:") || hasArticleLikeCode(x)));
       if ((storageLike && !allowStorageLike) || isGarbageShipmentItemName(x.item)) return false;
       const byWeek = weekFilter === "all" || String(x.week || "") === weekFilter;
       const byQuery =
