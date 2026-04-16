@@ -467,13 +467,22 @@ function parseStageAuditRows(rows) {
   return out;
 }
 
-function stageFieldLabel(key) {
-  if (key === "pilka_status") return "Пила";
-  if (key === "kromka_status") return "Кромка";
-  if (key === "pras_status") return "Присадка";
-  if (key === "assembly_status") return "Сборка";
-  if (key === "overall_status") return "Общий";
-  return key;
+function mapStageFieldToKey(field) {
+  if (field === "pilka_status") return "pilka";
+  if (field === "kromka_status") return "kromka";
+  if (field === "pras_status") return "pras";
+  return "";
+}
+
+function normalizeStageStatus(value) {
+  const raw = String(value || "").trim();
+  const lc = raw.toLowerCase();
+  if (!raw) return "-";
+  if (lc.includes("в работе")) return "В работе";
+  if (lc.includes("готов")) return "Готово";
+  if (lc.includes("ожида")) return "Ожидает";
+  if (lc.includes("пауза")) return "Пауза";
+  return raw;
 }
 
 function normalizeCatalogItemName(name) {
@@ -2545,6 +2554,59 @@ export default function App() {
       return bt - at;
     });
   }, [filtered, view]);
+  const stageTimelineMatrixRows = useMemo(() => {
+    if (view !== "stageTimeline") return [];
+    const events = [...stageTimelineRows].sort(
+      (a, b) => new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime(),
+    );
+    const byOrder = new Map();
+    const ensureOrder = (orderId) => {
+      if (!byOrder.has(orderId)) {
+        byOrder.set(orderId, {
+          orderId,
+          pilkaStatus: "-",
+          pilkaStart: "",
+          pilkaEnd: "",
+          kromkaStatus: "-",
+          kromkaStart: "",
+          kromkaEnd: "",
+          prasStatus: "-",
+          prasStart: "",
+          prasEnd: "",
+          lastEventAt: "",
+        });
+      }
+      return byOrder.get(orderId);
+    };
+    events.forEach((event) => {
+      const orderId = String(event.orderId || "").trim();
+      if (!orderId || orderId === "-") return;
+      const row = ensureOrder(orderId);
+      row.lastEventAt = event.createdAt || row.lastEventAt;
+      (event.changed || []).forEach((c) => {
+        const stage = mapStageFieldToKey(c.key);
+        if (!stage) return;
+        const nextStatus = normalizeStageStatus(c.after);
+        const prevStatus = normalizeStageStatus(c.before);
+        const ts = String(event.createdAt || "").trim();
+        row[`${stage}Status`] = nextStatus;
+        if (nextStatus === "В работе" && ts) {
+          row[`${stage}Start`] = ts;
+        }
+        if (nextStatus === "Готово" && ts) {
+          row[`${stage}End`] = ts;
+          if (!row[`${stage}Start`] && prevStatus === "В работе") {
+            row[`${stage}Start`] = ts;
+          }
+        }
+      });
+    });
+    return [...byOrder.values()].sort((a, b) => {
+      const at = new Date(a.lastEventAt || 0).getTime();
+      const bt = new Date(b.lastEventAt || 0).getTime();
+      return bt - at;
+    });
+  }, [stageTimelineRows, view]);
   const shipmentPlanDeficits = useMemo(() => {
     return [...shipmentMaterialBalance.values()]
       .map((x) => ({
@@ -3818,8 +3880,8 @@ export default function App() {
           <>
             <div className="kpi"><span>Событий этапов</span><b>{stageTimelineRows.length}</b></div>
             <div className="kpi">
-              <span>Заказов в логе</span>
-              <b>{new Set(stageTimelineRows.map((x) => x.orderId).filter((x) => x && x !== "-")).size}</b>
+              <span>Заказов</span>
+              <b>{stageTimelineMatrixRows.length}</b>
             </div>
             <div className="kpi">
               <span>Последнее событие</span>
@@ -4930,33 +4992,41 @@ export default function App() {
         )}
         {view === "stageTimeline" && (
           <>
-            {!stageTimelineRows.length && !loading && (
+            {!stageTimelineMatrixRows.length && !loading && (
               <div className="empty">Нет данных по событиям этапов (нужны роли manager/admin)</div>
             )}
-            {stageTimelineRows.length > 0 && (
+            {stageTimelineMatrixRows.length > 0 && (
               <div className="sheet-table-wrap">
                 <table className="sheet-table">
                   <thead>
                     <tr>
-                      <th>Когда</th>
                       <th>ID заказа</th>
-                      <th>Кто</th>
-                      <th>Изменения этапов</th>
-                      <th>Действие</th>
+                      <th>Пила: статус</th>
+                      <th>Пила: начало</th>
+                      <th>Пила: конец</th>
+                      <th>Кромка: статус</th>
+                      <th>Кромка: начало</th>
+                      <th>Кромка: конец</th>
+                      <th>Присадка: статус</th>
+                      <th>Присадка: начало</th>
+                      <th>Присадка: конец</th>
+                      <th>Обновлено</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {stageTimelineRows.map((r) => (
-                      <tr key={`timeline-${r.id}`}>
-                        <td>{r.createdAt ? new Date(r.createdAt).toLocaleString("ru-RU", { timeZone: "Europe/Moscow" }) : "-"}</td>
+                    {stageTimelineMatrixRows.map((r) => (
+                      <tr key={`timeline-order-${r.orderId}`}>
                         <td>{r.orderId || "-"}</td>
-                        <td>{r.actorRole || "-"}</td>
-                        <td>
-                          {r.changed?.length
-                            ? r.changed.map((x) => `${stageFieldLabel(x.key)}: ${x.before} -> ${x.after}`).join(" | ")
-                            : "-"}
-                        </td>
-                        <td>{r.action || "-"}</td>
+                        <td>{r.pilkaStatus || "-"}</td>
+                        <td>{r.pilkaStart ? new Date(r.pilkaStart).toLocaleString("ru-RU", { timeZone: "Europe/Moscow" }) : "-"}</td>
+                        <td>{r.pilkaEnd ? new Date(r.pilkaEnd).toLocaleString("ru-RU", { timeZone: "Europe/Moscow" }) : "-"}</td>
+                        <td>{r.kromkaStatus || "-"}</td>
+                        <td>{r.kromkaStart ? new Date(r.kromkaStart).toLocaleString("ru-RU", { timeZone: "Europe/Moscow" }) : "-"}</td>
+                        <td>{r.kromkaEnd ? new Date(r.kromkaEnd).toLocaleString("ru-RU", { timeZone: "Europe/Moscow" }) : "-"}</td>
+                        <td>{r.prasStatus || "-"}</td>
+                        <td>{r.prasStart ? new Date(r.prasStart).toLocaleString("ru-RU", { timeZone: "Europe/Moscow" }) : "-"}</td>
+                        <td>{r.prasEnd ? new Date(r.prasEnd).toLocaleString("ru-RU", { timeZone: "Europe/Moscow" }) : "-"}</td>
+                        <td>{r.lastEventAt ? new Date(r.lastEventAt).toLocaleString("ru-RU", { timeZone: "Europe/Moscow" }) : "-"}</td>
                       </tr>
                     ))}
                   </tbody>
