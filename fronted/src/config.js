@@ -13,3 +13,21 @@ export const BACKEND_PROVIDER = String(
 
 export const SUPABASE_URL = supabaseUrl;
 export const SUPABASE_ANON_KEY = supabaseAnon;
+
+const defaultHybridActions = [
+  "webSetPilkaDone",
+  "webSetKromkaDone",
+  "webSetPrasDone",
+  "webSetAssemblyDone",
+  "webSetShippingDone",
+  "webSendShipmentToWork",
+];
+
+const hybridActionsRaw = String(import.meta.env.VITE_HYBRID_DUPLICATE_ACTIONS || "").trim();
+
+export const HYBRID_DUPLICATE_ACTIONS = hybridActionsRaw
+  ? hybridActionsRaw
+      .split(",")
+      .map((x) => x.trim())
+      .filter(Boolean)
+  : defaultHybridActions;

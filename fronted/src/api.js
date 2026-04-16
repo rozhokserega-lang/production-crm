@@ -1,4 +1,10 @@
-import { BACKEND_PROVIDER, GAS_WEBAPP_URL, SUPABASE_ANON_KEY, SUPABASE_URL } from "./config";
+import {
+  BACKEND_PROVIDER,
+  GAS_WEBAPP_URL,
+  HYBRID_DUPLICATE_ACTIONS,
+  SUPABASE_ANON_KEY,
+  SUPABASE_URL,
+} from "./config";
 
 const SUPABASE_AUTH_STORAGE_KEY = "crm_supabase_auth_session";
 
@@ -143,7 +149,11 @@ export async function callBackend(action, payload = {}) {
     if (!RPC_MAP[action]) {
       throw new Error(`Supabase RPC не настроен для action: ${action}`);
     }
-    return supabaseCall(action, payload);
+    const requestId = createRequestId();
+    const payloadHash = hashPayload(payload);
+    const result = await supabaseCall(action, payload);
+    maybeDuplicateToGas(action, payload, { requestId, payloadHash });
+    return result;
   }
   if (provider === "shadow") {
     // Shadow mode: read from GAS, duplicate writes to Supabase best-effort.
@@ -158,6 +168,70 @@ export async function callBackend(action, payload = {}) {
     return gasCall(action, payload);
   }
   return gasCall(action, payload);
+}
+
+function createRequestId() {
+  return `req_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function stableJson(value) {
+  if (Array.isArray(value)) return value.map(stableJson);
+  if (value && typeof value === "object") {
+    return Object.keys(value)
+      .sort()
+      .reduce((acc, key) => {
+        acc[key] = stableJson(value[key]);
+        return acc;
+      }, {});
+  }
+  return value;
+}
+
+function hashPayload(payload) {
+  const raw = JSON.stringify(stableJson(payload || {}));
+  let hash = 0;
+  for (let i = 0; i < raw.length; i += 1) {
+    hash = (hash * 31 + raw.charCodeAt(i)) >>> 0;
+  }
+  return hash.toString(16).padStart(8, "0");
+}
+
+function reportHybridEvent(event) {
+  const enriched = {
+    ts: new Date().toISOString(),
+    ...event,
+  };
+  if (typeof window !== "undefined") {
+    window.__CRM_HYBRID_LOGS__ = window.__CRM_HYBRID_LOGS__ || [];
+    window.__CRM_HYBRID_LOGS__.push(enriched);
+  }
+  const printer = enriched.status === "error" ? console.error : console.info;
+  printer("[CRM Hybrid]", enriched);
+}
+
+function maybeDuplicateToGas(action, payload, ctx) {
+  const shouldDuplicate = HYBRID_DUPLICATE_ACTIONS.includes(action);
+  if (!shouldDuplicate) return;
+  gasCall(action, payload)
+    .then(() => {
+      reportHybridEvent({
+        status: "ok",
+        mode: "supabase_primary_gas_duplicate",
+        action,
+        requestId: ctx.requestId,
+        payloadHash: ctx.payloadHash,
+      });
+    })
+    .catch((error) => {
+      reportHybridEvent({
+        status: "error",
+        mode: "supabase_primary_gas_duplicate",
+        action,
+        requestId: ctx.requestId,
+        payloadHash: ctx.payloadHash,
+        error: String(error?.message || error),
+      });
+    });
 }
 
 const RPC_MAP = {
