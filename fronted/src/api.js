@@ -145,29 +145,41 @@ export async function gasCall(action, payload = {}) {
 
 export async function callBackend(action, payload = {}) {
   const provider = String(BACKEND_PROVIDER || "gas").toLowerCase();
-  if (provider === "supabase") {
-    if (!RPC_MAP[action]) {
-      throw new Error(`Supabase RPC не настроен для action: ${action}`);
+  const requestId = createRequestId();
+  const payloadHash = hashPayload(payload);
+  try {
+    if (provider === "supabase") {
+      if (!RPC_MAP[action]) {
+        throw new Error(`Supabase RPC не настроен для action: ${action}`);
+      }
+      const result = await supabaseCall(action, payload);
+      maybeDuplicateToGas(action, payload, { requestId, payloadHash });
+      return result;
     }
-    const requestId = createRequestId();
-    const payloadHash = hashPayload(payload);
-    const result = await supabaseCall(action, payload);
-    maybeDuplicateToGas(action, payload, { requestId, payloadHash });
-    return result;
-  }
-  if (provider === "shadow") {
-    // Shadow mode: read from GAS, duplicate writes to Supabase best-effort.
-    const isWrite = /^webSet/.test(action) || [
-      "webSendShipmentToWork",
-      "webSendPlanksToWork",
-      "webConsumeSheetsByOrderId",
-    ].includes(action);
-    if (isWrite) {
-      supabaseCall(action, payload).catch(() => {});
+    if (provider === "shadow") {
+      // Shadow mode: read from GAS, duplicate writes to Supabase best-effort.
+      const isWrite = /^webSet/.test(action) || [
+        "webSendShipmentToWork",
+        "webSendPlanksToWork",
+        "webConsumeSheetsByOrderId",
+      ].includes(action);
+      if (isWrite) {
+        supabaseCall(action, payload).catch(() => {});
+      }
+      return gasCall(action, payload);
     }
     return gasCall(action, payload);
+  } catch (error) {
+    reportRpcEvent({
+      status: "error",
+      provider,
+      action,
+      requestId,
+      payloadHash,
+      error: String(error?.message || error),
+    });
+    throw error;
   }
-  return gasCall(action, payload);
 }
 
 function createRequestId() {
@@ -197,16 +209,33 @@ function hashPayload(payload) {
 }
 
 function reportHybridEvent(event) {
+  reportRpcEvent({
+    stream: "hybrid",
+    ...event,
+  });
+}
+
+function reportRpcEvent(event) {
   const enriched = {
     ts: new Date().toISOString(),
     ...event,
   };
   if (typeof window !== "undefined") {
-    window.__CRM_HYBRID_LOGS__ = window.__CRM_HYBRID_LOGS__ || [];
-    window.__CRM_HYBRID_LOGS__.push(enriched);
+    window.__CRM_RPC_EVENTS__ = window.__CRM_RPC_EVENTS__ || [];
+    window.__CRM_RPC_EVENTS__.push(enriched);
+    if (enriched.stream === "hybrid") {
+      window.__CRM_HYBRID_LOGS__ = window.__CRM_HYBRID_LOGS__ || [];
+      window.__CRM_HYBRID_LOGS__.push(enriched);
+    }
   }
-  const printer = enriched.status === "error" ? console.error : console.info;
-  printer("[CRM Hybrid]", enriched);
+  const label = enriched.stream === "hybrid" ? "[CRM Hybrid]" : "[CRM RPC]";
+  const printer =
+    enriched.status === "error"
+      ? console.error
+      : enriched.status === "warn"
+        ? console.warn
+        : console.info;
+  printer(label, enriched);
 }
 
 function maybeDuplicateToGas(action, payload, ctx) {
@@ -257,6 +286,7 @@ const RPC_MAP = {
   webListCrmUserRoles: "web_list_crm_user_roles",
   webSetCrmUserRole: "web_set_crm_user_role",
   webRemoveCrmUserRole: "web_remove_crm_user_role",
+  webGetAuditLog: "web_get_audit_log",
   webUpsertItemColorMap: "web_upsert_item_color_map",
   webGetConsumeOptions: "web_get_consume_options",
   webPreviewPlanFromShipment: "web_preview_plan_from_shipment",
@@ -371,6 +401,13 @@ function buildRpcPayload(action, payload = {}) {
   if (action === "webRemoveCrmUserRole") {
     return {
       p_user_id: String(payload.userId || payload.p_user_id || "").trim(),
+    };
+  }
+  if (action === "webGetAuditLog") {
+    return {
+      p_limit: Number(payload.limit || payload.p_limit || 200),
+      p_offset: Number(payload.offset || payload.p_offset || 0),
+      p_action: String(payload.action || payload.p_action || "").trim() || null,
     };
   }
   return payload || {};
