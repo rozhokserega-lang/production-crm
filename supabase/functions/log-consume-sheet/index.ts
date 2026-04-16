@@ -21,6 +21,7 @@ function normalizeName(raw: unknown): string {
   return String(raw ?? "")
     .toLowerCase()
     .replace(/ё/g, "е")
+    .replace(/[\/\\._-]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -56,6 +57,19 @@ function moscowTs(): string {
     second: "2-digit",
     hour12: false,
   }).format(new Date());
+}
+
+function quoteSheetNameForA1(name: string): string {
+  const safe = String(name || "").replace(/'/g, "''");
+  return `'${safe}'`;
+}
+
+function normalizeSheetTitle(value: unknown): string {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/ё/g, "е")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 async function getGoogleAccessToken(): Promise<string> {
@@ -120,6 +134,7 @@ serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const sheetId = String(body?.sheetId || "").trim();
     const sheetName = String(body?.sheetName || "").trim();
+    const sheetGid = Number(body?.gid || 0);
     const orderId = String(body?.orderId || "").trim();
     const item = String(body?.item || "").trim();
     const material = String(body?.material || "").trim();
@@ -135,8 +150,31 @@ serve(async (req) => {
     const token = await getGoogleAccessToken();
     const headers = { Authorization: `Bearer ${token}` };
 
+    const metaResp = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}?fields=sheets(properties(sheetId,title))`,
+      { headers },
+    );
+    const metaJson = await metaResp.json().catch(() => ({}));
+    if (!metaResp.ok || !Array.isArray(metaJson?.sheets)) {
+      throw new Error(`Failed to load sheet metadata: ${JSON.stringify(metaJson)}`);
+    }
+    const normalizedInputTitle = normalizeSheetTitle(sheetName);
+    const sheetMeta =
+      (Number.isFinite(sheetGid) && sheetGid > 0
+        ? metaJson.sheets.find((s: any) => Number(s?.properties?.sheetId || 0) === sheetGid)
+        : null) ||
+      metaJson.sheets.find(
+        (s: any) => normalizeSheetTitle(String(s?.properties?.title || "")) === normalizedInputTitle,
+      );
+    if (!sheetMeta?.properties?.sheetId) {
+      throw new Error(`Sheet not found by title/gid: title='${sheetName}', gid='${sheetGid || ""}'`);
+    }
+    const numericSheetId = Number(sheetMeta.properties.sheetId);
+    const resolvedSheetTitle = String(sheetMeta.properties.title || sheetName).trim();
+
+    const sheetA1 = quoteSheetNameForA1(resolvedSheetTitle);
     const valuesResp = await fetch(
-      `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}/values/${encodeURIComponent(sheetName)}!A1:ZZ250?valueRenderOption=UNFORMATTED_VALUE`,
+      `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}/values/${encodeURIComponent(sheetA1)}!A1:ZZ250?valueRenderOption=UNFORMATTED_VALUE`,
       { headers },
     );
     const valuesJson = await valuesResp.json().catch(() => ({}));
@@ -158,10 +196,17 @@ serve(async (req) => {
     if (dayColIdx < 0) throw new Error(`Day column ${day} not found in row 1`);
 
     const normMaterial = normalizeName(material);
+    const wantsBardolino = normMaterial.includes("бардолино");
     let materialRowIdx = -1;
     for (let r = 1; r < grid.length; r += 1) {
       const cellB = grid[r]?.[1];
-      if (normalizeName(cellB) === normMaterial) {
+      const normCell = normalizeName(cellB);
+      if (normCell === normMaterial) {
+        materialRowIdx = r;
+        break;
+      }
+      // Fallback for legacy sheet rows where Sonoma/Bardolino is stored as plain "Бардолино".
+      if (wantsBardolino && normCell === "бардолино") {
         materialRowIdx = r;
         break;
       }
@@ -174,19 +219,7 @@ serve(async (req) => {
 
     const rowA1 = materialRowIdx + 1;
     const colA1 = toA1Column(dayColIdx + 1);
-    const targetA1 = `${sheetName}!${colA1}${rowA1}`;
-
-    const metaResp = await fetch(
-      `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}?fields=sheets(properties(sheetId,title))`,
-      { headers },
-    );
-    const metaJson = await metaResp.json().catch(() => ({}));
-    if (!metaResp.ok || !Array.isArray(metaJson?.sheets)) {
-      throw new Error(`Failed to load sheet metadata: ${JSON.stringify(metaJson)}`);
-    }
-    const sheetMeta = metaJson.sheets.find((s: any) => String(s?.properties?.title || "") === sheetName);
-    if (!sheetMeta?.properties?.sheetId) throw new Error(`Sheet not found by title: ${sheetName}`);
-    const numericSheetId = Number(sheetMeta.properties.sheetId);
+    const targetA1 = `${sheetA1}!${colA1}${rowA1}`;
 
     const updateValueResp = await fetch(
       `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}/values/${encodeURIComponent(targetA1)}?valueInputOption=USER_ENTERED`,
