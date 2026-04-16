@@ -435,6 +435,50 @@ function getMaterialLabel(item, material) {
   return tail || "Материал не указан";
 }
 
+function parseStageAuditRows(rows) {
+  const list = Array.isArray(rows) ? rows : [];
+  const out = [];
+  const stageKeys = ["pilka_status", "kromka_status", "pras_status", "assembly_status", "overall_status"];
+  list.forEach((row) => {
+    const details = row?.details && typeof row.details === "object" ? row.details : {};
+    const before = details?.before && typeof details.before === "object" ? details.before : {};
+    const after = details?.after && typeof details.after === "object" ? details.after : {};
+    const changed = [];
+    stageKeys.forEach((key) => {
+      const prev = String(before?.[key] ?? "").trim();
+      const next = String(after?.[key] ?? "").trim();
+      if (prev !== next) changed.push({ key, before: prev || "-", after: next || "-" });
+    });
+    const orderId = String(row?.entity_id || details?.order_id || "").trim();
+    if (!orderId && !changed.length) return;
+    out.push({
+      id: row?.id ?? `${row?.created_at || ""}-${orderId || "order"}`,
+      createdAt: String(row?.created_at || "").trim(),
+      orderId: orderId || "-",
+      changed,
+    });
+  });
+  return out;
+}
+
+function mapStageFieldToKey(field) {
+  if (field === "pilka_status") return "pilka";
+  if (field === "kromka_status") return "kromka";
+  if (field === "pras_status") return "pras";
+  return "";
+}
+
+function normalizeStageStatus(value) {
+  const raw = String(value || "").trim();
+  const lc = raw.toLowerCase();
+  if (!raw) return "-";
+  if (lc.includes("в работе")) return "В работе";
+  if (lc.includes("готов")) return "Готово";
+  if (lc.includes("ожида")) return "Ожидает";
+  if (lc.includes("пауза")) return "Пауза";
+  return raw;
+}
+
 function normalizeCatalogItemName(name) {
   return String(name || "")
     .replace(/^стол\s+письменный\s+/i, "")
@@ -1004,6 +1048,7 @@ export default function App() {
   );
   const [strapItems, setStrapItems] = useState([]);
   const [laborRows, setLaborRows] = useState([]);
+  const [stageAuditRows, setStageAuditRows] = useState([]);
   const [warehouseRows, setWarehouseRows] = useState([]);
   const [materialsStockRows, setMaterialsStockRows] = useState([]);
   const [leftoversRows, setLeftoversRows] = useState([]);
@@ -1271,6 +1316,12 @@ export default function App() {
         }
       } else if (view === "labor") {
         data = await callBackend("webGetLaborTable");
+        try {
+          const auditData = await callBackend("webGetAuditLog", { limit: 1000, action: "set_stage" });
+          setStageAuditRows(Array.isArray(auditData) ? auditData : []);
+        } catch (_) {
+          setStageAuditRows([]);
+        }
       } else if (view === "stats") {
         try {
           data = await callBackend("webGetOrderStats");
@@ -2522,6 +2573,54 @@ export default function App() {
         return a.group.localeCompare(b.group, "ru");
       });
   }, [laborTableRows, view]);
+  const laborStageTimelineRows = useMemo(() => {
+    if (view !== "labor" || laborSubView !== "stages") return [];
+    const q = query.trim().toLowerCase();
+    const events = parseStageAuditRows(stageAuditRows).sort(
+      (a, b) => new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime(),
+    );
+    const byOrder = new Map();
+    const ensureOrder = (orderId) => {
+      if (!byOrder.has(orderId)) {
+        byOrder.set(orderId, {
+          orderId,
+          pilkaStatus: "-",
+          pilkaStart: "",
+          pilkaEnd: "",
+          kromkaStatus: "-",
+          kromkaStart: "",
+          kromkaEnd: "",
+          prasStatus: "-",
+          prasStart: "",
+          prasEnd: "",
+          lastEventAt: "",
+        });
+      }
+      return byOrder.get(orderId);
+    };
+    events.forEach((event) => {
+      const orderId = String(event.orderId || "").trim();
+      if (!orderId || orderId === "-") return;
+      const row = ensureOrder(orderId);
+      row.lastEventAt = event.createdAt || row.lastEventAt;
+      (event.changed || []).forEach((c) => {
+        const stage = mapStageFieldToKey(c.key);
+        if (!stage) return;
+        const nextStatus = normalizeStageStatus(c.after);
+        const prevStatus = normalizeStageStatus(c.before);
+        const ts = String(event.createdAt || "").trim();
+        row[`${stage}Status`] = nextStatus;
+        if (nextStatus === "В работе" && ts) row[`${stage}Start`] = ts;
+        if (nextStatus === "Готово" && ts) {
+          row[`${stage}End`] = ts;
+          if (!row[`${stage}Start`] && prevStatus === "В работе") row[`${stage}Start`] = ts;
+        }
+      });
+    });
+    return [...byOrder.values()]
+      .filter((r) => !q || String(r.orderId || "").toLowerCase().includes(q))
+      .sort((a, b) => new Date(b.lastEventAt || 0).getTime() - new Date(a.lastEventAt || 0).getTime());
+  }, [view, laborSubView, stageAuditRows, query]);
   const laborPlannerRows = useMemo(() => {
     if (view !== "labor") return [];
     return laborOrdersRows
@@ -3774,6 +3873,13 @@ export default function App() {
             >
               Планировщик
             </button>
+            <button
+              type="button"
+              className={laborSubView === "stages" ? "tab active" : "tab"}
+              onClick={() => setLaborSubView("stages")}
+            >
+              Этапы
+            </button>
           </div>
         )}
         <div className="filters">
@@ -3784,7 +3890,7 @@ export default function App() {
               onChange={(e) => setQuery(e.target.value)}
             />
           )}
-          {view !== "warehouse" && view !== "furniture" && view !== "sheetMirror" && (
+          {view !== "warehouse" && view !== "furniture" && view !== "sheetMirror" && !(view === "labor" && laborSubView === "stages") && (
             <select value={weekFilter} onChange={(e) => setWeekFilter(e.target.value)}>
               <option value="all">Все недели</option>
               {weeks.map((w) => <option key={w} value={w}>Неделя {w}</option>)}
@@ -4614,6 +4720,47 @@ export default function App() {
                         </td>
                         <td>{Math.round(r.totalMin)}</td>
                         <td><b>{r.hhmm}</b></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {laborSubView === "stages" && !laborStageTimelineRows.length && !loading && (
+              <div className="empty">Нет данных по этапам (нужны роли manager/admin)</div>
+            )}
+            {laborSubView === "stages" && laborStageTimelineRows.length > 0 && (
+              <div className="sheet-table-wrap">
+                <table className="sheet-table">
+                  <thead>
+                    <tr>
+                      <th>ID заказа</th>
+                      <th>Пила: статус</th>
+                      <th>Пила: начало</th>
+                      <th>Пила: конец</th>
+                      <th>Кромка: статус</th>
+                      <th>Кромка: начало</th>
+                      <th>Кромка: конец</th>
+                      <th>Присадка: статус</th>
+                      <th>Присадка: начало</th>
+                      <th>Присадка: конец</th>
+                      <th>Обновлено</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {laborStageTimelineRows.map((r) => (
+                      <tr key={`labor-stage-${r.orderId}`}>
+                        <td>{r.orderId || "-"}</td>
+                        <td>{r.pilkaStatus || "-"}</td>
+                        <td>{r.pilkaStart ? new Date(r.pilkaStart).toLocaleString("ru-RU", { timeZone: "Europe/Moscow" }) : "-"}</td>
+                        <td>{r.pilkaEnd ? new Date(r.pilkaEnd).toLocaleString("ru-RU", { timeZone: "Europe/Moscow" }) : "-"}</td>
+                        <td>{r.kromkaStatus || "-"}</td>
+                        <td>{r.kromkaStart ? new Date(r.kromkaStart).toLocaleString("ru-RU", { timeZone: "Europe/Moscow" }) : "-"}</td>
+                        <td>{r.kromkaEnd ? new Date(r.kromkaEnd).toLocaleString("ru-RU", { timeZone: "Europe/Moscow" }) : "-"}</td>
+                        <td>{r.prasStatus || "-"}</td>
+                        <td>{r.prasStart ? new Date(r.prasStart).toLocaleString("ru-RU", { timeZone: "Europe/Moscow" }) : "-"}</td>
+                        <td>{r.prasEnd ? new Date(r.prasEnd).toLocaleString("ru-RU", { timeZone: "Europe/Moscow" }) : "-"}</td>
+                        <td>{r.lastEventAt ? new Date(r.lastEventAt).toLocaleString("ru-RU", { timeZone: "Europe/Moscow" }) : "-"}</td>
                       </tr>
                     ))}
                   </tbody>
