@@ -427,24 +427,48 @@ export async function supabaseCall(action, payload = {}) {
   }
   const url = `${SUPABASE_URL.replace(/\/$/, "")}/rest/v1/rpc/${rpcName}`;
   const body = buildRpcPayload(action, payload);
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      apikey: SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${getSupabaseAccessToken() || SUPABASE_ANON_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
-  const text = await res.text();
-  let json = null;
-  try {
-    json = text ? JSON.parse(text) : null;
-  } catch (_) {
-    json = text;
+  const callWithToken = async (bearerToken) => {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${bearerToken || SUPABASE_ANON_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+    const text = await res.text();
+    let json = null;
+    try {
+      json = text ? JSON.parse(text) : null;
+    } catch (_) {
+      json = text;
+    }
+    return { res, json };
+  };
+
+  const currentToken = getSupabaseAccessToken();
+  let { res, json } = await callWithToken(currentToken);
+  if (!res.ok && currentToken && isJwtExpiredError(json)) {
+    // Stored session can silently expire; fall back to anon flow and keep UI alive.
+    persistSupabaseSession(null);
+    ({ res, json } = await callWithToken(""));
   }
   if (!res.ok) {
     throw new Error(typeof json === "string" ? json : JSON.stringify(json));
   }
   return json;
+}
+
+function isJwtExpiredError(payload) {
+  if (payload == null) return false;
+  if (typeof payload === "string") return payload.toLowerCase().includes("jwt expired");
+  const message = String(
+    payload?.message ||
+      payload?.error_description ||
+      payload?.error ||
+      payload?.msg ||
+      "",
+  ).toLowerCase();
+  return message.includes("jwt expired");
 }
