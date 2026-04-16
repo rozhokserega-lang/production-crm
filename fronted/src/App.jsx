@@ -140,6 +140,7 @@ const STRAP_SHEET_WIDTH = 2800;
 const STRAP_SHEET_HEIGHT = 2070;
 const WAREHOUSE_SYNC_SHEET_ID = "1SyFYOpXyHHMP31qYV5-XL8fINVUUDCrXIrewaZqkYkA";
 const WAREHOUSE_SYNC_GID = "1501570173";
+const LEFTOVERS_SYNC_GID = "762227238";
 const SHEET_MIRROR_GID = "1772676601";
 
 function statusClass(order) {
@@ -1010,6 +1011,7 @@ export default function App() {
   const [consumeHistoryRows, setConsumeHistoryRows] = useState([]);
   const [warehouseSubView, setWarehouseSubView] = useState("sheets");
   const [warehouseSyncLoading, setWarehouseSyncLoading] = useState(false);
+  const [leftoversSyncLoading, setLeftoversSyncLoading] = useState(false);
   const [furnitureLoading, setFurnitureLoading] = useState(false);
   const [furnitureError, setFurnitureError] = useState("");
   const [furnitureWorkbook, setFurnitureWorkbook] = useState(null);
@@ -1552,6 +1554,7 @@ export default function App() {
       });
       closeConsumeDialog();
       await load();
+      syncLeftoversToGoogleSheet({ silent: true });
     } catch (e) {
       setConsumeError(String(e.message || e));
     } finally {
@@ -1644,6 +1647,43 @@ export default function App() {
       setError(`Не удалось синхронизировать склад: ${extractErrorMessage(e)}`);
     } finally {
       setWarehouseSyncLoading(false);
+    }
+  }
+
+  async function syncLeftoversToGoogleSheet(options = {}) {
+    const silent = Boolean(options.silent);
+    const baseUrl = String(SUPABASE_URL || "").replace(/\/$/, "");
+    const token = String(SUPABASE_ANON_KEY || "").trim();
+    if (!baseUrl || !token) {
+      if (!silent) setError("Не настроен доступ к Supabase (URL/ANON key).");
+      return;
+    }
+    if (!silent) setLeftoversSyncLoading(true);
+    if (!silent) setError("");
+    try {
+      const resp = await fetch(`${baseUrl}/functions/v1/sync-leftovers-sheet`, {
+        method: "POST",
+        headers: {
+          apikey: token,
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          sheetId: WAREHOUSE_SYNC_SHEET_ID,
+          gid: LEFTOVERS_SYNC_GID,
+        }),
+      });
+      const payload = await resp.json().catch(() => ({}));
+      if (!resp.ok || payload?.ok === false) {
+        const reason = String(payload?.error || `HTTP ${resp.status}`);
+        throw new Error(reason);
+      }
+    } catch (e) {
+      if (!silent) {
+        setError(`Не удалось выгрузить остатки в Google Sheet: ${extractErrorMessage(e)}`);
+      }
+    } finally {
+      if (!silent) setLeftoversSyncLoading(false);
     }
   }
 
@@ -3685,6 +3725,15 @@ export default function App() {
               title="Синхронизировать материалы из основной Google-таблицы склада"
             >
               {warehouseSyncLoading ? "Синхронизация..." : "Синхр. склад"}
+            </button>
+            <button
+              type="button"
+              className="mini ok"
+              disabled={leftoversSyncLoading || loading}
+              onClick={() => syncLeftoversToGoogleSheet()}
+              title="Выгрузить остатки в лист 'Остатки' Google-таблицы"
+            >
+              {leftoversSyncLoading ? "Выгрузка..." : "Выгрузить остатки"}
             </button>
           </div>
         )}
