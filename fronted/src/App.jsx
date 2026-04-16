@@ -141,6 +141,7 @@ const STRAP_SHEET_HEIGHT = 2070;
 const WAREHOUSE_SYNC_SHEET_ID = "1SyFYOpXyHHMP31qYV5-XL8fINVUUDCrXIrewaZqkYkA";
 const WAREHOUSE_SYNC_GID = "1501570173";
 const LEFTOVERS_SYNC_GID = "762227238";
+const CONSUME_LOG_SHEET_NAME = "расход апрель 2026";
 const SHEET_MIRROR_GID = "1772676601";
 
 function statusClass(order) {
@@ -1552,6 +1553,13 @@ export default function App() {
         material,
         qty,
       });
+      logConsumeToGoogleSheet({
+        orderId: consumeDialogData.orderId,
+        item: String(consumeDialogData.item || ""),
+        material,
+        week: String(consumeDialogData.week || ""),
+        qty,
+      });
       closeConsumeDialog();
       await load();
       syncLeftoversToGoogleSheet({ silent: true });
@@ -1684,6 +1692,37 @@ export default function App() {
       }
     } finally {
       if (!silent) setLeftoversSyncLoading(false);
+    }
+  }
+
+  async function logConsumeToGoogleSheet(meta = {}) {
+    const baseUrl = String(SUPABASE_URL || "").replace(/\/$/, "");
+    const token = String(SUPABASE_ANON_KEY || "").trim();
+    if (!baseUrl || !token) return;
+    try {
+      const resp = await fetch(`${baseUrl}/functions/v1/log-consume-sheet`, {
+        method: "POST",
+        headers: {
+          apikey: token,
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          sheetId: WAREHOUSE_SYNC_SHEET_ID,
+          sheetName: CONSUME_LOG_SHEET_NAME,
+          orderId: String(meta.orderId || "").trim(),
+          item: String(meta.item || "").trim(),
+          material: String(meta.material || "").trim(),
+          week: String(meta.week || "").trim(),
+          qty: Number(meta.qty || 0),
+        }),
+      });
+      const payload = await resp.json().catch(() => ({}));
+      if (!resp.ok || payload?.ok === false) {
+        throw new Error(String(payload?.error || `HTTP ${resp.status}`));
+      }
+    } catch (_) {
+      // Best-effort sync to sheet should not block core consumption flow.
     }
   }
 

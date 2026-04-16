@@ -21,6 +21,7 @@ const defaultHybridActions = [
   "webSetAssemblyDone",
   "webSetShippingDone",
   "webSendShipmentToWork",
+  "webConsumeSheetsByOrderId",
 ];
 
 const hybridActionsRaw = String(import.meta.env.VITE_HYBRID_DUPLICATE_ACTIONS || "").trim();
