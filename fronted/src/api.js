@@ -278,7 +278,6 @@ const RPC_MAP = {
   webGetFurnitureProductArticles: "web_get_furniture_product_articles",
   webGetFurnitureDetailArticles: "web_get_furniture_detail_articles",
   webGetLeftovers: "web_get_leftovers",
-  webGetSheetOrdersMirror: "web_get_sheet_orders_mirror",
   webGetLaborTable: "web_get_labor_table",
   webUpsertLaborFact: "web_upsert_labor_fact",
   webGetOrderStats: "web_get_order_stats",
