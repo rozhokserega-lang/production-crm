@@ -299,8 +299,28 @@ function getPlanPreviewArticleCode(planPreview) {
   return "";
 }
 
-function buildPlanPreviewQrPayload(planPreview) {
-  const article = getPlanPreviewArticleCode(planPreview) || "-";
+function resolvePlanPreviewArticleByName(planPreview, articleLookupByItemKey) {
+  if (!(articleLookupByItemKey instanceof Map) || articleLookupByItemKey.size === 0) return "";
+  const candidates = [
+    String(planPreview?.firstName || "").trim(),
+    String(planPreview?.detailedName || "").trim(),
+  ];
+  const rows = Array.isArray(planPreview?.rows) ? planPreview.rows : [];
+  rows.forEach((row) => {
+    candidates.push(String(row?.part || row?.name || row?.item_name || row?.itemName || "").trim());
+  });
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    const key = normalizeFurnitureKey(candidate);
+    if (!key) continue;
+    const article = String(articleLookupByItemKey.get(key) || "").trim();
+    if (article) return article;
+  }
+  return "";
+}
+
+function buildPlanPreviewQrPayload(planPreview, fallbackArticle = "") {
+  const article = getPlanPreviewArticleCode(planPreview) || String(fallbackArticle || "").trim() || "-";
   const planNumber = String(planPreview?.planNumber || "-").trim() || "-";
   const qtyRaw = Number(planPreview?.qty || 0);
   const qty = Number.isFinite(qtyRaw) ? qtyRaw : 0;
@@ -4453,11 +4473,16 @@ export default function App() {
                       <div className="num">{planPreview.planNumber || "-"}</div>
                     </div>
                     <div className="plan-qr-box">
+                      {(() => {
+                        const fallbackArticle = resolvePlanPreviewArticleByName(planPreview, articleLookupByItemKey);
+                        return (
                       <img
                         className="plan-qr-image"
-                        src={buildQrCodeUrl(buildPlanPreviewQrPayload(planPreview))}
+                        src={buildQrCodeUrl(buildPlanPreviewQrPayload(planPreview, fallbackArticle))}
                         alt="QR изделия/плана/количества"
                       />
+                        );
+                      })()}
                       <div className="plan-qr-caption">Артикул / план / количество</div>
                     </div>
                   </div>
