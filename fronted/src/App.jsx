@@ -2976,8 +2976,7 @@ export default function App() {
       const productRaw = String(r.product_name || r.productName || "").trim();
       const productName = canonicalStrapProductName(productRaw);
       const pattern = String(r.detail_name_pattern || r.detailNamePattern || "").trim();
-      const patternLc = pattern.toLowerCase();
-      if (!productName || (!patternLc.includes("обвяз") && !patternLc.includes("планк"))) return;
+      if (!productName) return;
       const optionName = detailPatternToStrapName(pattern);
       if (!optionName) return;
       const key = normalizeStrapProductKey(productName);
@@ -3009,8 +3008,7 @@ export default function App() {
       const productRaw = String(r.product_name || r.productName || "").trim();
       const productName = canonicalStrapProductName(productRaw);
       const pattern = String(r.detail_name_pattern || r.detailNamePattern || "").trim();
-      const patternLc = pattern.toLowerCase();
-      if (!productName || (!patternLc.includes("обвяз") && !patternLc.includes("планк"))) return;
+      if (!productName) return;
       const token = extractDetailSizeToken(pattern);
       if (!token) return;
       const key = normalizeStrapProductKey(token);
