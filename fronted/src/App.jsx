@@ -143,6 +143,19 @@ const CONSUME_LOG_SHEET_NAME = "расход апрель 2026";
 // Google Sheet (вкладка "Отгрузка") для записи плана
 const PLAN_SYNC_SHEET_ID = "1gRMs2AVxIXwmQLLnB2WIoRW7mPkGc9usyaUrXZAHuIs";
 const PLAN_SYNC_GID = "1998084017";
+const STAGE_SYNC_META = {
+  webSetPilkaInWork: { code: "pilka_in_work", label: "Пила: в работе" },
+  webSetPilkaDone: { code: "pilka_done", label: "Пила: готово" },
+  webSetPilkaPause: { code: "pilka_pause", label: "Пила: пауза" },
+  webSetKromkaInWork: { code: "kromka_in_work", label: "Кромка: в работе" },
+  webSetKromkaDone: { code: "kromka_done", label: "Кромка: готово" },
+  webSetKromkaPause: { code: "kromka_pause", label: "Кромка: пауза" },
+  webSetPrasInWork: { code: "pras_in_work", label: "Присадка: в работе" },
+  webSetPrasDone: { code: "pras_done", label: "Присадка: готово" },
+  webSetPrasPause: { code: "pras_pause", label: "Присадка: пауза" },
+  webSetAssemblyDone: { code: "assembly_done", label: "Сборка: готово" },
+  webSetShippingDone: { code: "shipping_done", label: "Отгрузка: готово" },
+};
 
 function statusClass(order) {
   const ps = resolvePipelineStage(order);
@@ -1898,6 +1911,30 @@ export default function App() {
     setError("");
     try {
       const data = await callBackend(action, { orderId, ...payload });
+      const stageSync = STAGE_SYNC_META[action];
+      if (stageSync) {
+        const sourceOrder = orderIndexById.get(String(orderId)) || {};
+        const syncItem = String(meta.item || sourceOrder.item || "").trim();
+        const syncMaterial = String(
+          meta.material || getMaterialLabel(syncItem, sourceOrder.material || sourceOrder.colorName || ""),
+        ).trim();
+        const syncWeek = String(meta.week || sourceOrder.week || "").trim();
+        const syncQty = Number(meta.qty ?? sourceOrder.qty ?? 0);
+        const syncSection = String(meta.sectionName || resolveSectionNameForOrder(sourceOrder) || "").trim();
+        if (syncSection && syncItem && syncMaterial && syncWeek && Number.isFinite(syncQty) && syncQty > 0) {
+          void syncPlanCellToGoogleSheet({
+            sectionName: syncSection,
+            item: syncItem,
+            material: syncMaterial,
+            week: syncWeek,
+            qty: syncQty,
+            stage: stageSync.label,
+            stageCode: stageSync.code,
+            stageComment: `${stageSync.label}; Заказ: ${orderId}`,
+            orderId: String(orderId),
+          });
+        }
+      }
       if (action === "webSetPrasDone" && meta.notifyOnAssembly) {
         notifyAssemblyReadyTelegram({
           orderId,
@@ -2090,6 +2127,41 @@ export default function App() {
     });
     return { byRowWeek, byItemWeek };
   }, [shipmentOrders]);
+
+  const orderIndexById = useMemo(() => {
+    const map = new Map();
+    const add = (x) => {
+      const id = String(x?.orderId || x?.order_id || "").trim();
+      if (!id || map.has(id)) return;
+      map.set(id, x);
+    };
+    (rows || []).forEach(add);
+    (shipmentOrders || []).forEach(add);
+    return map;
+  }, [rows, shipmentOrders]);
+
+  function resolveSectionNameForOrder(order) {
+    const week = String(order?.week || "").trim();
+    const sourceRowId = String(order?.sourceRowId || order?.source_row_id || "").trim();
+    const itemName = String(order?.item || "").trim();
+    if (!week) return "";
+    const sections = Array.isArray(shipmentBoard?.sections) ? shipmentBoard.sections : [];
+    for (const section of sections) {
+      const sectionName = String(section?.name || "").trim();
+      const items = Array.isArray(section?.items) ? section.items : [];
+      for (const it of items) {
+        const rowId = String(it?.sourceRowId || it?.source_row_id || it?.row || "").trim();
+        const cells = Array.isArray(it?.cells) ? it.cells : [];
+        for (const c of cells) {
+          const cellWeek = String(c?.week || "").trim();
+          if (!cellWeek || cellWeek !== week) continue;
+          if (sourceRowId && rowId && rowId === sourceRowId) return sectionName;
+          if (!sourceRowId && itemName && String(it?.item || "").trim() === itemName) return sectionName;
+        }
+      }
+    }
+    return "";
+  }
 
   function passesShipmentStageFilter(stageKey) {
     if (stageKey === "awaiting") return showAwaiting;

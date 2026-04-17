@@ -49,6 +49,34 @@ function parseWeekToNumber(weekRaw: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+type StageVisual = {
+  color: { red: number; green: number; blue: number };
+  label: string;
+};
+
+function resolveStageVisual(stageCodeRaw: string, stageLabelRaw: string): StageVisual {
+  const stageCode = String(stageCodeRaw || "").trim().toLowerCase();
+  const stageLabel = String(stageLabelRaw || "").trim();
+  const map: Record<string, StageVisual> = {
+    pilka_in_work: { label: "Пила: в работе", color: { red: 1, green: 0.95, blue: 0.5 } },
+    pilka_done: { label: "Пила: готово", color: { red: 0.84, green: 0.95, blue: 0.8 } },
+    pilka_pause: { label: "Пила: пауза", color: { red: 1, green: 0.85, blue: 0.85 } },
+    kromka_in_work: { label: "Кромка: в работе", color: { red: 0.82, green: 0.91, blue: 1 } },
+    kromka_done: { label: "Кромка: готово", color: { red: 0.84, green: 0.95, blue: 0.8 } },
+    kromka_pause: { label: "Кромка: пауза", color: { red: 1, green: 0.85, blue: 0.85 } },
+    pras_in_work: { label: "Присадка: в работе", color: { red: 0.91, green: 0.86, blue: 1 } },
+    pras_done: { label: "Присадка: готово", color: { red: 0.84, green: 0.95, blue: 0.8 } },
+    pras_pause: { label: "Присадка: пауза", color: { red: 1, green: 0.85, blue: 0.85 } },
+    assembly_done: { label: "Сборка: готово", color: { red: 0.78, green: 0.92, blue: 0.83 } },
+    shipping_done: { label: "Отгрузка: готово", color: { red: 0.88, green: 0.9, blue: 0.93 } },
+  };
+  if (stageCode && map[stageCode]) return map[stageCode];
+  return {
+    label: stageLabel || "Этап обновлен",
+    color: { red: 0.95, green: 0.95, blue: 0.95 },
+  };
+}
+
 async function getGoogleAccessToken(): Promise<string> {
   const clientEmail = String(Deno.env.get("GOOGLE_SERVICE_ACCOUNT_EMAIL") || "").trim();
   const privateKeyRaw = String(Deno.env.get("GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY") || "").trim();
@@ -144,6 +172,10 @@ serve(async (req) => {
     const material = String(body?.material || "").trim();
     const weekRaw = String(body?.week || "").trim();
     const qty = Number(body?.qty || 0);
+    const stageCode = String(body?.stageCode || "").trim();
+    const stage = String(body?.stage || "").trim();
+    const stageComment = String(body?.stageComment || "").trim();
+    const orderId = String(body?.orderId || "").trim();
 
     if (!sheetId || !Number.isFinite(sheetGid) || sheetGid <= 0) {
       return new Response(JSON.stringify({ ok: false, error: "sheetId and numeric gid are required" }), { status: 400, headers: CORS_HEADERS });
@@ -339,7 +371,62 @@ serve(async (req) => {
       throw new Error(`Failed to update cell: ${JSON.stringify(updateJson)}`);
     }
 
-    return new Response(JSON.stringify({ ok: true, updatedAt: new Date().toISOString(), targetCell, qty, week: weekRaw, articleCode }), {
+    if (stageCode || stage || stageComment || orderId) {
+      const visual = resolveStageVisual(stageCode, stage);
+      const noteLines = [
+        visual.label,
+        stageComment || "",
+        orderId ? `Заказ: ${orderId}` : "",
+        `Обновлено: ${new Date().toISOString()}`,
+      ].filter(Boolean);
+      const formatResp = await fetch(
+        `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}:batchUpdate`,
+        {
+          method: "POST",
+          headers: {
+            ...authHeaders,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            requests: [
+              {
+                repeatCell: {
+                  range: {
+                    sheetId: sheetGid,
+                    startRowIndex: targetRowIdx,
+                    endRowIndex: targetRowIdx + 1,
+                    startColumnIndex: weekColIdx,
+                    endColumnIndex: weekColIdx + 1,
+                  },
+                  cell: {
+                    userEnteredFormat: {
+                      backgroundColor: visual.color,
+                    },
+                    note: noteLines.join("\n"),
+                  },
+                  fields: "userEnteredFormat.backgroundColor,note",
+                },
+              },
+            ],
+          }),
+        },
+      );
+      const formatJson = await formatResp.json().catch(() => ({}));
+      if (!formatResp.ok) {
+        throw new Error(`Failed to update cell format/note: ${JSON.stringify(formatJson)}`);
+      }
+    }
+
+    return new Response(JSON.stringify({
+      ok: true,
+      updatedAt: new Date().toISOString(),
+      targetCell,
+      qty,
+      week: weekRaw,
+      articleCode,
+      stageCode: stageCode || null,
+      stage: stage || null,
+    }), {
       status: 200,
       headers: CORS_HEADERS,
     });
