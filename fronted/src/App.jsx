@@ -274,6 +274,43 @@ function hasArticleLikeCode(row) {
   return /^[A-Za-z0-9][A-Za-z0-9._-]{2,}$/.test(compact);
 }
 
+function getPlanPreviewArticleCode(planPreview) {
+  const direct = String(
+    planPreview?.article_code ||
+      planPreview?.articleCode ||
+      planPreview?.article ||
+      planPreview?.mapped_article_code ||
+      planPreview?.mappedArticleCode ||
+      "",
+  ).trim();
+  if (direct) return direct;
+  const rows = Array.isArray(planPreview?.rows) ? planPreview.rows : [];
+  for (const row of rows) {
+    const fromRow = String(
+      row?.article_code ||
+        row?.articleCode ||
+        row?.article ||
+        row?.mapped_article_code ||
+        row?.mappedArticleCode ||
+        "",
+    ).trim();
+    if (fromRow) return fromRow;
+  }
+  return "";
+}
+
+function buildPlanPreviewQrPayload(planPreview) {
+  const article = getPlanPreviewArticleCode(planPreview) || "-";
+  const planNumber = String(planPreview?.planNumber || "-").trim() || "-";
+  const qtyRaw = Number(planPreview?.qty || 0);
+  const qty = Number.isFinite(qtyRaw) ? qtyRaw : 0;
+  return `ARTICLE:${article};PLAN:${planNumber};QTY:${qty}`;
+}
+
+function buildQrCodeUrl(payload, size = 160) {
+  return `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${encodeURIComponent(payload)}`;
+}
+
 function parseColor(bg) {
   const raw = String(bg || "").toLowerCase().trim();
   let r = null, g = null, b = null;
@@ -4410,9 +4447,19 @@ export default function App() {
                     <div className="name">{planPreview.firstName || planPreview.detailedName || "-"}</div>
                     <div className="color">{planPreview.colorName || "-"}</div>
                   </div>
-                  <div className="plan-number-box">
-                    <div>ПЛАН</div>
-                    <div className="num">{planPreview.planNumber || "-"}</div>
+                  <div className="plan-right-meta">
+                    <div className="plan-number-box">
+                      <div>ПЛАН</div>
+                      <div className="num">{planPreview.planNumber || "-"}</div>
+                    </div>
+                    <div className="plan-qr-box">
+                      <img
+                        className="plan-qr-image"
+                        src={buildQrCodeUrl(buildPlanPreviewQrPayload(planPreview))}
+                        alt="QR изделия/плана/количества"
+                      />
+                      <div className="plan-qr-caption">Артикул / план / количество</div>
+                    </div>
                   </div>
                 </div>
                 <table className="plan-table">

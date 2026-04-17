@@ -1292,6 +1292,12 @@ button:disabled {
   margin-bottom: 10px;
 }
 
+.plan-right-meta {
+  display: grid;
+  grid-template-rows: auto auto;
+  gap: 8px;
+}
+
 .plan-yellow {
   background: #e2b61c;
   border: 2px solid #2b2b2b;
@@ -1324,6 +1330,29 @@ button:disabled {
 
 .plan-number-box .num {
   font-size: 42px;
+}
+
+.plan-qr-box {
+  border: 2px solid #2b2b2b;
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  padding: 6px;
+  gap: 4px;
+  background: #fff;
+}
+
+.plan-qr-image {
+  width: 108px;
+  height: 108px;
+  object-fit: contain;
+}
+
+.plan-qr-caption {
+  font-size: 10px;
+  line-height: 1.2;
+  text-align: center;
+  color: #111827;
 }
 
 .plan-table {
@@ -1427,6 +1456,10 @@ button:disabled {
     margin-bottom: 6px;
   }
 
+  .plan-right-meta {
+    gap: 6px;
+  }
+
   .plan-yellow {
     min-height: 64px;
     border-width: 1px;
@@ -1446,6 +1479,21 @@ button:disabled {
 
   .plan-number-box .num {
     font-size: 30px;
+  }
+
+  .plan-qr-box {
+    border-width: 1px;
+    padding: 3px;
+    gap: 2px;
+  }
+
+  .plan-qr-image {
+    width: 72px;
+    height: 72px;
+  }
+
+  .plan-qr-caption {
+    font-size: 7px;
   }
 
   .plan-table {
