@@ -2,10 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import {
   callBackend,
-  getSupabaseAuthUser,
   supabaseCall,
-  supabaseSignInWithPassword,
-  supabaseSignOut,
 } from "./api";
 import { BACKEND_PROVIDER, SUPABASE_ANON_KEY, SUPABASE_URL } from "./config";
 import furnitureWorkbookUrl from "./assets/furniture.xlsx?url";
@@ -18,6 +15,69 @@ import {
   PipelineStage,
   resolvePipelineStage,
 } from "./orderPipeline";
+import {
+  getReadableTextColor,
+  isBlueCell,
+  isRedCell,
+  isYellowCell,
+  parseColor,
+  passesBlueYellowFilter,
+} from "./utils/colorUtils";
+import {
+  getShipmentCellStatus,
+  getShipmentCellStatusShort,
+  getShipmentStageKey,
+  mapPipelineStageToShipmentKey,
+  isGarbageShipmentItemName,
+  isObvyazkaSectionName,
+  isStorageLikeName,
+  normText,
+  sectionSortKey,
+  shipmentOrderItemWeekKey,
+} from "./utils/shipmentUtils";
+import {
+  buildFurnitureTemplates,
+  canonicalStrapProductName,
+  detailPatternToStrapName,
+  extractDetailSizeToken,
+  furnitureProductLabel,
+  isStrapVirtualRowId,
+  normalizeDetailPatternKey,
+  normalizeFurnitureKey,
+  normalizeStrapProductKey,
+  parseFurnitureSheet,
+  resolveFurnitureTemplateForPreview,
+  resolveStrapMaterialByProduct,
+  strapNameToOrderItem,
+  toNum,
+} from "./utils/furnitureUtils";
+import {
+  useBaseOrderFilter,
+  isOrdersDomainView,
+  useLaborFilter,
+  loadFurnitureDomainData,
+  loadShipmentDomainData,
+  loadWarehouseDomainData,
+  loadOrdersDomainData,
+  useOrders,
+  useSheetMirrorFilter,
+  useShipmentFilter,
+  useWorkshopRows,
+} from "./hooks/useOrders";
+import { useDataLoader } from "./hooks/useDataLoader";
+import { useCrmRole } from "./hooks/useCrmRole";
+import { ConsumeDialog } from "./components/ConsumeDialog";
+import { PlanDialog } from "./components/PlanDialog";
+import { StrapDialog } from "./components/StrapDialog";
+import { AdminView } from "./views/AdminView";
+import { WorkshopView } from "./views/WorkshopView";
+import { ShipmentView } from "./views/ShipmentView";
+import { OverviewView } from "./views/OverviewView";
+import { LaborView } from "./views/LaborView";
+import { WarehouseView } from "./views/WarehouseView";
+import { StatsView } from "./views/StatsView";
+import { SheetMirrorView } from "./views/SheetMirrorView";
+import { FurnitureView } from "./views/FurnitureView";
 
 /** Для KPI «Статистика»: собрано, готово к отправке клиенту, отгружено. */
 const TERMINAL_PIPELINE_STAGES = new Set([
@@ -33,58 +93,6 @@ const CRM_ROLE_LABELS = {
   manager: "Менеджер",
   admin: "Админ",
 };
-
-function normalizeCrmRole(rawRole) {
-  const role = String(rawRole || "").trim().toLowerCase();
-  return CRM_ROLES.includes(role) ? role : "viewer";
-}
-
-function parseCrmRoleResponse(payload) {
-  if (typeof payload === "string") return payload;
-  if (Array.isArray(payload) && payload.length > 0) {
-    const first = payload[0];
-    if (typeof first === "string") return first;
-    if (first && typeof first === "object") {
-      return first.web_effective_crm_role || first.role || first.crm_role || Object.values(first)[0];
-    }
-  }
-  if (payload && typeof payload === "object") {
-    return payload.web_effective_crm_role || payload.role || payload.crm_role || "";
-  }
-  return "";
-}
-
-function parseStrictModeResponse(payload) {
-  if (typeof payload === "boolean") return payload;
-  if (typeof payload === "string") return payload.trim().toLowerCase() === "true";
-  if (Array.isArray(payload) && payload.length > 0) {
-    const first = payload[0];
-    if (typeof first === "boolean") return first;
-    if (first && typeof first === "object") {
-      if (typeof first.enabled === "boolean") return first.enabled;
-      if (typeof first.web_is_crm_auth_strict === "boolean") return first.web_is_crm_auth_strict;
-      if (typeof first.value === "boolean") return first.value;
-    }
-  }
-  if (payload && typeof payload === "object") {
-    if (typeof payload.enabled === "boolean") return payload.enabled;
-    if (typeof payload.web_is_crm_auth_strict === "boolean") return payload.web_is_crm_auth_strict;
-    if (typeof payload.value === "boolean") return payload.value;
-  }
-  return false;
-}
-
-function normalizeCrmUsers(payload) {
-  const list = Array.isArray(payload) ? payload : [];
-  return list.map((x) => ({
-    userId: String(x?.user_id || x?.userId || "").trim(),
-    email: String(x?.email || "").trim(),
-    role: normalizeCrmRole(x?.role),
-    note: String(x?.note || "").trim(),
-    assignedBy: String(x?.assigned_by || x?.assignedBy || "").trim(),
-    updatedAt: String(x?.updated_at || x?.updatedAt || "").trim(),
-  })).filter((x) => x.userId);
-}
 
 const TABS = [
   { id: "pilka", label: "Пила" },
@@ -179,97 +187,75 @@ function statusClass(order) {
   return "wait";
 }
 
-function getReadableTextColor(bg) {
-  const hex = String(bg || "").toLowerCase().trim();
-  const m = hex.match(/^#([0-9a-f]{6})$/i);
-  if (!m) return "#111827";
-  const n = m[1];
-  const r = parseInt(n.slice(0, 2), 16);
-  const g = parseInt(n.slice(2, 4), 16);
-  const b = parseInt(n.slice(4, 6), 16);
-  const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-  return luminance < 150 ? "#f9fafb" : "#111827";
+function shipmentOrderKey(sourceRow, week) {
+  return `${String(sourceRow || "").trim()}|${String(week || "").trim()}`;
 }
 
-function normText(v) {
-  return String(v || "").trim().toLowerCase();
+function orderUpdatedTs(o) {
+  return new Date(o?.updatedAt || o?.updated_at || o?.createdAt || o?.created_at || 0).getTime();
 }
 
-function isRedCell(bg) {
-  const raw = String(bg || "").toLowerCase().trim();
-  let r = null, g = null, b = null;
-
-  const hex6 = raw.match(/^#([0-9a-f]{6})$/i);
-  const hex3 = raw.match(/^#([0-9a-f]{3})$/i);
-  const rgb = raw.match(/^rgb\((\d{1,3}),\s*(\d{1,3}),\s*(\d{1,3})\)$/i);
-
-  if (hex6) {
-    const n = hex6[1];
-    r = parseInt(n.slice(0, 2), 16);
-    g = parseInt(n.slice(2, 4), 16);
-    b = parseInt(n.slice(4, 6), 16);
-  } else if (hex3) {
-    const n = hex3[1];
-    r = parseInt(n[0] + n[0], 16);
-    g = parseInt(n[1] + n[1], 16);
-    b = parseInt(n[2] + n[2], 16);
-  } else if (rgb) {
-    r = Number(rgb[1]);
-    g = Number(rgb[2]);
-    b = Number(rgb[3]);
-  } else {
-    return false;
-  }
-
-  // Устойчивое определение "красного" для разных оттенков таблицы.
-  return r > 120 && r > g * 1.2 && r > b * 1.2 && (r - g) > 35 && (r - b) > 35;
+function mergeOrderPreferNewer(map, key, o) {
+  if (!key || !o) return;
+  const prev = map.get(key);
+  if (!prev || orderUpdatedTs(o) >= orderUpdatedTs(prev)) map.set(key, o);
 }
 
-function isBlueCell(bg) {
-  const { r, g, b } = parseColor(bg);
-  if (r == null) return false;
-  return b > 120 && b > r * 1.15 && b > g * 1.05;
+function stageLabel(stageKey) {
+  if (stageKey === "awaiting") return "Ожидаю заказ";
+  if (stageKey === "on_pilka_wait") return "На пиле (ожидает запуск)";
+  if (stageKey === "on_pilka_work") return "На пиле";
+  if (stageKey === "on_kromka_wait") return "Ожидает кромку";
+  if (stageKey === "on_kromka_work") return "На кромке";
+  if (stageKey === "on_pras_wait") return "Ожидает присадку";
+  if (stageKey === "on_pras_work") return "На присадке";
+  if (stageKey === "ready_assembly") return "Готово к сборке";
+  if (stageKey === "assembled_wait_ship") return "Собран, ждет отправку";
+  if (stageKey === "shipped") return "Отправлен";
+  return "Статус неизвестен";
 }
 
-function isYellowCell(bg) {
-  const { r, g, b } = parseColor(bg);
-  if (r == null) return false;
-  return r > 170 && g > 130 && b < 170;
+function stageBg(stageKey, rawBg = "#ffffff") {
+  if (stageKey === "awaiting") return "#ffffff";
+  if (stageKey === "on_pilka_wait") return "#fff7cc";
+  if (stageKey === "on_pilka_work") return "#ffe066";
+  if (stageKey === "on_kromka_wait") return "#dbeafe";
+  if (stageKey === "on_kromka_work") return "#3b82f6";
+  if (stageKey === "on_pras_wait") return "#ffddb5";
+  if (stageKey === "on_pras_work") return "#8b5a2b";
+  if (stageKey === "ready_assembly") return "#f59e0b";
+  if (stageKey === "assembled_wait_ship") return "#22c55e";
+  if (stageKey === "shipped") return "#d31d1d";
+  return rawBg || "#ffffff";
 }
 
-function passesBlueYellowFilter(bg, showBlueCells, showYellowCells) {
-  const hasBlueYellowFilter = showBlueCells || showYellowCells;
-  if (!hasBlueYellowFilter) return true;
-  const blue = isBlueCell(bg);
-  const yellow = isYellowCell(bg);
-  return (showBlueCells && blue) || (showYellowCells && yellow);
+function getOverallStatusDisplay(order) {
+  const raw = String(order?.overallStatus || order?.overall || "").trim();
+  const stageKey = mapPipelineStageToShipmentKey(order);
+  const computed = stageLabel(stageKey);
+  if (!raw) return computed;
+
+  // If legacy overall_status is stale (e.g. still "Отправлен на пилу"),
+  // trust the current pipeline-derived status for UI consistency.
+  const rawLc = raw.toLowerCase();
+  const isLegacyPilka = rawLc.includes("на пилу");
+  const isPilkaStage = stageKey === "on_pilka_wait" || stageKey === "on_pilka_work";
+  if (isLegacyPilka && !isPilkaStage) return computed;
+
+  return raw;
 }
 
-function sectionSortKey(name) {
-  const n = normText(name);
-  const idx = SHIPMENT_SECTION_ORDER.findIndex((x) => normText(x) === n);
-  return idx === -1 ? 999 : idx;
-}
-
-function isStorageLikeName(text) {
-  const t = normText(text);
-  if (!t) return false;
-  if (t.includes("система хранения")) return true;
-  // Частые имена тех-позиций хранения: "387_330 Вотан", "587_330 Сонома" и т.п.
-  if (/^\d{2,4}\s*[_xх]\s*\d{2,4}\b/.test(t)) return true;
-  return false;
-}
-
-function isObvyazkaSectionName(name) {
-  return normText(name).includes("обвяз");
-}
-
-function isGarbageShipmentItemName(text) {
-  const t = normText(text);
-  if (!t) return false;
-  if (t === "123" || t === "ава") return true;
-  if (t.includes("[obv-")) return true;
-  return false;
+function getMaterialLabel(item, material) {
+  const direct = String(material || "").trim();
+  if (direct) return direct;
+  const name = String(item || "").trim();
+  if (!name) return "Материал не указан";
+  const parts = name
+    .split(".")
+    .map((x) => String(x || "").trim())
+    .filter(Boolean);
+  const tail = String(parts[parts.length - 1] || "").trim();
+  return tail || "Материал не указан";
 }
 
 function hasArticleLikeCode(row) {
@@ -283,7 +269,6 @@ function hasArticleLikeCode(row) {
   ).trim();
   if (!raw) return false;
   const compact = raw.replace(/\s+/g, "");
-  // Typical article formats: GXodStabile135x65CO, PL-C541D8B3, 73B76C8C, etc.
   return /^[A-Za-z0-9][A-Za-z0-9._-]{2,}$/.test(compact);
 }
 
@@ -342,199 +327,6 @@ function buildPlanPreviewQrPayload(planPreview, fallbackArticle = "") {
 
 function buildQrCodeUrl(payload, size = 160) {
   return `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${encodeURIComponent(payload)}`;
-}
-
-function parseColor(bg) {
-  const raw = String(bg || "").toLowerCase().trim();
-  let r = null, g = null, b = null;
-  const hex6 = raw.match(/^#([0-9a-f]{6})$/i);
-  const hex3 = raw.match(/^#([0-9a-f]{3})$/i);
-  const rgb = raw.match(/^rgb\((\d{1,3}),\s*(\d{1,3}),\s*(\d{1,3})\)$/i);
-
-  if (hex6) {
-    const n = hex6[1];
-    r = parseInt(n.slice(0, 2), 16);
-    g = parseInt(n.slice(2, 4), 16);
-    b = parseInt(n.slice(4, 6), 16);
-  } else if (hex3) {
-    const n = hex3[1];
-    r = parseInt(n[0] + n[0], 16);
-    g = parseInt(n[1] + n[1], 16);
-    b = parseInt(n[2] + n[2], 16);
-  } else if (rgb) {
-    r = Number(rgb[1]);
-    g = Number(rgb[2]);
-    b = Number(rgb[3]);
-  }
-  return { r, g, b };
-}
-
-function isWhiteCell(bg) {
-  const raw = String(bg || "").toLowerCase().trim();
-  if (raw === "#fff" || raw === "#ffffff" || raw === "white") return true;
-  const { r, g, b } = parseColor(bg);
-  if (r == null) return false;
-  return r >= 245 && g >= 245 && b >= 245;
-}
-
-function shipmentOrderKey(sourceRow, week) {
-  return `${String(sourceRow || "").trim()}|${String(week || "").trim()}`;
-}
-
-/** Резервная привязка заказа к ячейке, если в API нет source_row_id (типично для Supabase orders). */
-function shipmentOrderItemWeekKey(itemName, week) {
-  return `${normText(itemName)}|${String(week || "").trim()}`;
-}
-
-function orderUpdatedTs(o) {
-  return new Date(o?.updatedAt || o?.updated_at || o?.createdAt || o?.created_at || 0).getTime();
-}
-
-function mergeOrderPreferNewer(map, key, o) {
-  if (!key || !o) return;
-  const prev = map.get(key);
-  if (!prev || orderUpdatedTs(o) >= orderUpdatedTs(prev)) map.set(key, o);
-}
-
-/** Согласование этапа отгрузки с pipeline заказа (Производство ↔ Отгрузка). */
-function mapPipelineStageToShipmentKey(order) {
-  const ps = resolvePipelineStage(order);
-  const pilka = String(order?.pilkaStatus || "").toLowerCase();
-  const kromka = String(order?.kromkaStatus || "").toLowerCase();
-  const pras = String(order?.prasStatus || "").toLowerCase();
-  switch (ps) {
-    case PipelineStage.SHIPPED:
-      return "shipped";
-    case PipelineStage.READY_TO_SHIP:
-    case PipelineStage.ASSEMBLED:
-      return "assembled_wait_ship";
-    case PipelineStage.WORKSHOP_COMPLETE:
-      return "ready_assembly";
-    case PipelineStage.PRAS:
-      if (pras.includes("в работе")) return "on_pras_work";
-      return "on_pras_wait";
-    case PipelineStage.KROMKA:
-      if (kromka.includes("в работе") || kromka.includes("пауза")) return "on_kromka_work";
-      return "on_kromka_wait";
-    case PipelineStage.PILKA:
-    default:
-      if (pilka.includes("в работе") || pilka.includes("пауза")) return "on_pilka_work";
-      return "on_pilka_wait";
-  }
-}
-
-function stageLabel(stageKey) {
-  if (stageKey === "awaiting") return "Ожидаю заказ";
-  if (stageKey === "on_pilka_wait") return "На пиле (ожидает запуск)";
-  if (stageKey === "on_pilka_work") return "На пиле";
-  if (stageKey === "on_kromka_wait") return "Ожидает кромку";
-  if (stageKey === "on_kromka_work") return "На кромке";
-  if (stageKey === "on_pras_wait") return "Ожидает присадку";
-  if (stageKey === "on_pras_work") return "На присадке";
-  if (stageKey === "ready_assembly") return "Готово к сборке";
-  if (stageKey === "assembled_wait_ship") return "Собран, ждет отправку";
-  if (stageKey === "shipped") return "Отправлен";
-  return "Статус неизвестен";
-}
-
-function stageBg(stageKey, rawBg = "#ffffff") {
-  if (stageKey === "awaiting") return "#ffffff";
-  if (stageKey === "on_pilka_wait") return "#fff7cc";
-  if (stageKey === "on_pilka_work") return "#ffe066";
-  if (stageKey === "on_kromka_wait") return "#dbeafe";
-  if (stageKey === "on_kromka_work") return "#3b82f6";
-  if (stageKey === "on_pras_wait") return "#ffddb5";
-  if (stageKey === "on_pras_work") return "#8b5a2b";
-  if (stageKey === "ready_assembly") return "#f59e0b";
-  if (stageKey === "assembled_wait_ship") return "#22c55e";
-  if (stageKey === "shipped") return "#d31d1d";
-  return rawBg || "#ffffff";
-}
-
-function getShipmentCellStatus(c) {
-  if (!c) return "Статус неизвестен";
-  const materialInfoText =
-    Number(c.sheetsNeeded || 0) > 0
-      ? `\n📦 Доступно листов (E): ${Number(c.availableSheets || 0)}\n${
-          c.materialEnoughForOrder ? "✅ На этот заказ материала хватает" : "❌ На этот заказ материала не хватает"
-        }`
-      : "";
-  const calcText =
-    Number(c.sheetsNeeded || 0) > 0
-      ? `\n📐 На заказ: ${c.sheetsNeeded} лист(ов) (B=${Number(c.outputPerSheet || 0)} изд/лист)`
-      : "";
-  // Материал показываем только для стартовых (белых) карточек, которые можно отправить в работу.
-  const extraText = c.canSendToWork ? calcText + materialInfoText : "";
-  if (String(c.note || "").trim()) return String(c.note).trim() + extraText;
-  if (c.canSendToWork) return "Готово к отправке в работу" + extraText;
-  if (c.inWork) return "Уже отправлено в работу";
-  const { r, g, b } = parseColor(c.bg);
-  if (r == null) return "Статус неизвестен";
-  if (r > 180 && g < 100 && b < 100) return "Отправлено (красная ячейка)";
-  if (g > 150 && r < 140 && b < 140) return "Собрано";
-  if (r > 200 && g > 150 && b < 120) return "Пауза / ожидание";
-  if (b > 140 && r < 140) return "Этап выполнен";
-  if (r > 180 && g > 120 && b < 80) return "Присадка готова";
-  return "Статус по цвету";
-}
-
-function getShipmentCellStatusShort(c) {
-  if (!c) return "Статус";
-  if (c.canSendToWork) return "Не начато";
-  if (c.inWork) return "В работе";
-  if (isRedCell(c.bg)) return "Выполнено";
-  if (isYellowCell(c.bg)) return "Пауза";
-  if (isBlueCell(c.bg)) return "Этап";
-  return "Статус";
-}
-
-function getOverallStatusDisplay(order) {
-  const raw = String(order?.overallStatus || order?.overall || "").trim();
-  const stageKey = mapPipelineStageToShipmentKey(order);
-  const computed = stageLabel(stageKey);
-  if (!raw) return computed;
-
-  // If legacy overall_status is stale (e.g. still "Отправлен на пилу"),
-  // trust the current pipeline-derived status for UI consistency.
-  const rawLc = raw.toLowerCase();
-  const isLegacyPilka = rawLc.includes("на пилу");
-  const isPilkaStage = stageKey === "on_pilka_wait" || stageKey === "on_pilka_work";
-  if (isLegacyPilka && !isPilkaStage) return computed;
-
-  return raw;
-}
-
-function getShipmentStageKey(c, sourceRow, orderMaps, itemName) {
-  if (!c) return "awaiting";
-  if (c.canSendToWork && !c.inWork) return "awaiting";
-  const rowKey = shipmentOrderKey(sourceRow, c.week);
-  let order = orderMaps?.byRowWeek?.get(rowKey);
-  if (!order && itemName && orderMaps?.byItemWeek) {
-    order = orderMaps.byItemWeek.get(shipmentOrderItemWeekKey(itemName, c.week));
-  }
-  if (order) {
-    return mapPipelineStageToShipmentKey(order);
-  }
-  // Fallback for cells without bound order: if already in work,
-  // show active pilka stage instead of "waiting launch".
-  if (c.inWork) return "on_pilka_work";
-  if (isRedCell(c.bg)) return "shipped";
-  if (isBlueCell(c.bg)) return "on_kromka_work";
-  if (isYellowCell(c.bg)) return "on_pilka_work";
-  return "awaiting";
-}
-
-function getMaterialLabel(item, material) {
-  const direct = String(material || "").trim();
-  if (direct) return direct;
-  const name = String(item || "").trim();
-  if (!name) return "Материал не указан";
-  const parts = name
-    .split(".")
-    .map((x) => String(x || "").trim())
-    .filter(Boolean);
-  const tail = String(parts[parts.length - 1] || "").trim();
-  return tail || "Материал не указан";
 }
 
 function parseStageAuditRows(rows) {
@@ -842,225 +634,6 @@ function formatDateTimeForPrint(date) {
   });
 }
 
-function parseFurnitureSheet(workbook, sheetName) {
-  const ws = workbook?.Sheets?.[sheetName];
-  if (!ws) return { headers: [], rows: [] };
-  const ref = String(ws["!ref"] || "A1:A1");
-  const range = XLSX.utils.decode_range(ref);
-  const allRows = [];
-  for (let r = range.s.r; r <= range.e.r; r++) {
-    const row = [];
-    for (let c = range.s.c; c <= range.e.c; c++) {
-      const addr = XLSX.utils.encode_cell({ r, c });
-      const cell = ws[addr];
-      const value = cell?.w ?? cell?.v ?? "";
-      row.push({
-        value: String(value ?? ""),
-        formula: cell?.f ? `=${cell.f}` : "",
-      });
-    }
-    allRows.push(row);
-  }
-  const headers = (allRows[0] || []).map((x, i) => x.value || `Колонка ${i + 1}`);
-  return { headers, rows: allRows.slice(1) };
-}
-
-function toNum(v) {
-  const n = Number(String(v ?? "").replace(",", ".").trim());
-  return Number.isFinite(n) ? n : 0;
-}
-
-function buildFurnitureTemplates(workbook, sheetName) {
-  const ws = workbook?.Sheets?.[sheetName];
-  if (!ws) return [];
-  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: "" });
-  const blocks = [];
-  let current = null;
-  for (let i = 0; i < rows.length; i++) {
-    const r = rows[i] || [];
-    const productName = furnitureProductLabel(String(r[1] || "").trim());
-    const productColor = String(r[2] || "").trim();
-    const baseQtyRaw = toNum(r[3]);
-    const detailColor = String(r[4] || "").trim();
-    const detailName = String(r[5] || "").trim();
-    const detailQtyRaw = toNum(r[6]);
-    if (productName) {
-      if (current && current.details.length) blocks.push(current);
-      current = {
-        productName,
-        productColor,
-        baseQty: baseQtyRaw > 0 ? baseQtyRaw : 1,
-        details: [],
-      };
-    }
-    if (current && detailName && detailQtyRaw > 0) {
-      const perUnit = current.baseQty > 0 ? detailQtyRaw / current.baseQty : detailQtyRaw;
-      current.details.push({
-        color: detailColor,
-        detailName,
-        sampleQty: detailQtyRaw,
-        perUnit,
-      });
-    }
-  }
-  if (current && current.details.length) blocks.push(current);
-  const byProduct = new Map();
-  blocks.forEach((b) => {
-    if (!byProduct.has(b.productName)) byProduct.set(b.productName, []);
-    byProduct.get(b.productName).push(b);
-  });
-
-  const result = [];
-  byProduct.forEach((arr, productName) => {
-    const variants = [...arr].sort((a, b) => b.details.length - a.details.length);
-    const main = variants[0];
-    if (main) result.push(main);
-  });
-
-  const uniqueByName = new Map();
-  result.forEach((r) => {
-    const key = normalizeFurnitureKey(r.productName);
-    if (!uniqueByName.has(key)) uniqueByName.set(key, r);
-  });
-  return [...uniqueByName.values()].sort((a, b) => a.productName.localeCompare(b.productName, "ru"));
-}
-
-function furnitureProductLabel(name) {
-  return String(name || "")
-    .replace(/^Авела Лайт\b/i, "Авелла Лайт")
-    .replace(/^Авела\b/i, "Авелла")
-    .trim();
-}
-
-function normalizeFurnitureKey(v) {
-  return String(v || "")
-    .toLowerCase()
-    .replace(/[ё]/g, "е")
-    .replace(/[^\p{L}\p{N}\s]/gu, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function normalizeStrapProductKey(v) {
-  const key = normalizeFurnitureKey(v);
-  if (key === "авела") return "авелла";
-  if (key === "авела лайт") return "авелла лайт";
-  const hasDonini = key.includes("донини") || key.includes("donini");
-  const hasWhite = key.includes("бел") || key.includes("white");
-  const isR = key.includes("донини r") || key.includes("donini r");
-  const isGrande = key.includes("донини гранде") || key.includes("donini grande");
-  if (hasDonini && hasWhite && !isR && !isGrande) return "донини белый";
-  return key;
-}
-
-function normalizeDetailPatternKey(v) {
-  return normalizeFurnitureKey(v)
-    .replace(/[xх_]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function extractDetailSizeToken(v) {
-  const raw = String(v || "").trim();
-  if (!raw) return "";
-  const m = raw.match(/(\d{2,4})\s*[_xх]\s*(\d{2,4})/i);
-  if (!m) return "";
-  return `${m[1]}_${m[2]}`;
-}
-
-function resolveFurnitureAliasKey(candidates) {
-  const text = candidates.join(" ");
-  const checks = [
-    { has: ["donini grande"], key: "донини гранде" },
-    { has: ["donini r"], key: "донини r" },
-    { has: ["donini"], key: "донини" },
-    { has: ["avella lite", "авелла лайт", "авела лайт"], key: "авелла лайт" },
-    { has: ["avella", "авелла", "авела"], key: "авелла" },
-    { has: ["cremona", "кремона"], key: "кремона" },
-    { has: ["stabile", "стабиле"], key: "стабиле" },
-    { has: ["premier", "премьер", "примьера"], key: "примьера" },
-    { has: ["classico", "классико"], key: "классико" },
-    { has: ["solito2"], key: "solito2" },
-    { has: ["solito", "солито"], key: "солито 1350" },
-    { has: ["siena"], key: "siena" },
-    { has: ["тумба под тв лофт 150", "тв лофт 150", "tv loft 150"], key: "тв тумба 1500" },
-    { has: ["тумба под тв лофт", "тв лофт", "tv loft"], key: "тв тумба" },
-  ];
-  if ((text.includes("solito") || text.includes("солито")) && text.includes("1150")) return "солито 1150";
-  if ((text.includes("solito") || text.includes("солито")) && text.includes("1350")) return "солито 1350";
-  for (const rule of checks) {
-    if (rule.has.some((needle) => text.includes(needle))) return rule.key;
-  }
-  return "";
-}
-
-function detailPatternToStrapName(pattern) {
-  const raw = String(pattern || "").trim();
-  if (!raw) return "";
-  const sizeMatch = raw.match(/(\d{3,4}_\d{2,3})/);
-  if (sizeMatch) return `Обвязка (${sizeMatch[1]})`;
-  if (raw.toLowerCase().includes("обвязк")) return "Обвязка";
-  return "";
-}
-
-function strapNameToOrderItem(name) {
-  const raw = String(name || "").trim();
-  if (!raw) return "";
-  const sizeMatch = raw.match(/(\d{3,4}_\d{2,3})/);
-  if (sizeMatch) return sizeMatch[1];
-  return raw.replace(/^обвязка\s*/i, "").replace(/[()]/g, "").trim() || raw;
-}
-
-function isStrapVirtualRowId(rowId) {
-  return String(rowId || "").startsWith("strap-order:");
-}
-
-function canonicalStrapProductName(name) {
-  const label = furnitureProductLabel(name);
-  const key = normalizeStrapProductKey(label);
-  if (key === "авела лайт" || key === "авелла лайт") return "Авелла Лайт";
-  if (key === "донини белый") return "Донини Белый";
-  if (key === "донини гранде") return "Донини Гранде";
-  if (key === "донини") return "Донини";
-  return label;
-}
-
-function resolveStrapMaterialByProduct(productName) {
-  const key = normalizeStrapProductKey(productName);
-  if (key.includes("бел")) return "Белый";
-  return "Черный";
-}
-
-function resolveFurnitureTemplateForPreview(preview, templates) {
-  const list = Array.isArray(templates) ? templates : [];
-  if (!list.length) return null;
-  const candidates = [
-    String(preview?.firstName || ""),
-    String(preview?.detailedName || ""),
-  ]
-    .map(normalizeFurnitureKey)
-    .filter(Boolean);
-  if (!candidates.length) return null;
-
-  const aliasKey = resolveFurnitureAliasKey(candidates);
-  if (aliasKey) {
-    const byAlias = list.find((t) => normalizeFurnitureKey(t?.productName || "") === aliasKey);
-    if (byAlias) return byAlias;
-  }
-
-  const byExact = list.find((t) => {
-    const key = normalizeFurnitureKey(t?.productName || "");
-    return key && candidates.some((c) => c === key);
-  });
-  if (byExact) return byExact;
-
-  const byContains = list.find((t) => {
-    const key = normalizeFurnitureKey(t?.productName || "");
-    return key && candidates.some((c) => c.includes(key) || key.includes(c));
-  });
-  return byContains || null;
-}
-
 function buildPreviewRowsFromFurnitureTemplate(template, orderQty) {
   const qtyNum = Number(orderQty || 0);
   const baseQty = Number(template?.baseQty || 0) > 0 ? Number(template.baseQty) : 1;
@@ -1081,10 +654,18 @@ function buildPreviewRowsFromFurnitureTemplate(template, orderQty) {
 
 export default function App() {
   const [view, setView] = useState("shipment");
-  const [tab, setTab] = useState("all");
+  const {
+    tab,
+    setTab,
+    rows,
+    setRows,
+    query,
+    setQuery,
+    loading,
+    setLoading,
+  } = useOrders();
   /** Подраздел внутри «Обзор заказов»: канбан или список отгруженных (вкладка в конце блока). */
   const [overviewSubView, setOverviewSubView] = useState("kanban");
-  const [rows, setRows] = useState([]);
   const [shipmentBoard, setShipmentBoard] = useState({ sections: [] });
   const [planCatalogRows, setPlanCatalogRows] = useState([]);
   const [sectionCatalogRows, setSectionCatalogRows] = useState([]);
@@ -1093,7 +674,6 @@ export default function App() {
   const [selectedShipments, setSelectedShipments] = useState([]);
   const [planPreviews, setPlanPreviews] = useState([]);
   const [hoverTip, setHoverTip] = useState({ visible: false, text: "", x: 0, y: 0 });
-  const [query, setQuery] = useState("");
   const [weekFilter, setWeekFilter] = useState("all");
   const [showAwaiting, setShowAwaiting] = useState(true);
   const [showOnPilka, setShowOnPilka] = useState(true);
@@ -1110,22 +690,8 @@ export default function App() {
   const [laborSubView, setLaborSubView] = useState("total");
   const [laborPlannerQtyByGroup, setLaborPlannerQtyByGroup] = useState({});
   const [collapsedSections, setCollapsedSections] = useState({});
-  const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState("");
   const [error, setError] = useState("");
-  const [crmRole, setCrmRole] = useState("admin");
-  const [crmAuthStrict, setCrmAuthStrict] = useState(false);
-  const [crmAuthStrictSaving, setCrmAuthStrictSaving] = useState(false);
-  const [crmUsers, setCrmUsers] = useState([]);
-  const [crmUsersLoading, setCrmUsersLoading] = useState(false);
-  const [crmUsersSaving, setCrmUsersSaving] = useState("");
-  const [newCrmUserId, setNewCrmUserId] = useState("");
-  const [newCrmUserRole, setNewCrmUserRole] = useState("viewer");
-  const [newCrmUserNote, setNewCrmUserNote] = useState("");
-  const [authEmail, setAuthEmail] = useState("");
-  const [authPassword, setAuthPassword] = useState("");
-  const [authSaving, setAuthSaving] = useState(false);
-  const [authUser, setAuthUser] = useState(() => getSupabaseAuthUser());
   const [executorByOrder, setExecutorByOrder] = useState({});
   const [consumeDialogOpen, setConsumeDialogOpen] = useState(false);
   const [consumeEditMode, setConsumeEditMode] = useState(false);
@@ -1174,341 +740,81 @@ export default function App() {
   const [furnitureSelectedQty, setFurnitureSelectedQty] = useState("1");
   const importPlanFileRef = useRef(null);
   const importLaborFileRef = useRef(null);
-  const loadSeqRef = useRef(0);
-  const loadInFlightRef = useRef(false);
-  const canOperateProduction = crmRole === "operator" || crmRole === "manager" || crmRole === "admin";
-  const canManageOrders = crmRole === "manager" || crmRole === "admin";
-  const canAdminSettings = crmRole === "admin";
-  const crmRoleLabel = CRM_ROLE_LABELS[crmRole] || CRM_ROLE_LABELS.viewer;
   const authEnabled = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
-  const authUserLabel = String(authUser?.email || authUser?.phone || authUser?.id || "").trim();
 
   function denyActionByRole(message) {
     setError(message);
     return false;
   }
 
-  useEffect(() => {
-    let cancelled = false;
-    async function loadCrmRole() {
-      try {
-        const [rolePayload, strictPayload] = await Promise.all([
-          callBackend("webGetMyRole"),
-          callBackend("webGetCrmAuthStrict").catch(() => false),
-        ]);
-        const role = normalizeCrmRole(parseCrmRoleResponse(rolePayload));
-        if (!cancelled) setCrmRole(role);
-        if (!cancelled) setCrmAuthStrict(parseStrictModeResponse(strictPayload));
-      } catch (_) {
-        // Keep backward-compatible default role for environments without role RPC.
-      }
-    }
-    loadCrmRole();
-    return () => {
-      cancelled = true;
-    };
-  }, [authUser?.id]);
-
-  useEffect(() => {
-    if (view !== "admin" || !canAdminSettings) return;
-    loadCrmUsers();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, canAdminSettings]);
-
-  async function toggleCrmAuthStrict() {
-    if (!canAdminSettings || crmAuthStrictSaving) return;
-    const next = !crmAuthStrict;
-    const ok = window.confirm(
-      next
-        ? "Включить строгий режим авторизации? Без входа пользователя роль anon станет viewer."
-        : "Выключить строгий режим авторизации и вернуть совместимый режим?"
-    );
-    if (!ok) return;
-    setCrmAuthStrictSaving(true);
-    setError("");
-    try {
-      const result = await callBackend("webSetCrmAuthStrict", { enabled: next });
-      setCrmAuthStrict(parseStrictModeResponse(result));
-      const rolePayload = await callBackend("webGetMyRole").catch(() => null);
-      if (rolePayload != null) setCrmRole(normalizeCrmRole(parseCrmRoleResponse(rolePayload)));
-    } catch (e) {
-      setError(toUserError(e));
-    } finally {
-      setCrmAuthStrictSaving(false);
-    }
-  }
-
-  async function loadCrmUsers() {
-    if (!canAdminSettings) return;
-    setCrmUsersLoading(true);
-    try {
-      const payload = await callBackend("webListCrmUserRoles");
-      setCrmUsers(normalizeCrmUsers(payload));
-    } catch (e) {
-      setError(toUserError(e));
-    } finally {
-      setCrmUsersLoading(false);
-    }
-  }
-
-  async function updateCrmUserRole(userId, role) {
-    if (!canAdminSettings || !userId || !role) return;
-    setCrmUsersSaving(userId);
-    setError("");
-    try {
-      await callBackend("webSetCrmUserRole", { userId, role });
-      await loadCrmUsers();
-    } catch (e) {
-      setError(toUserError(e));
-    } finally {
-      setCrmUsersSaving("");
-    }
-  }
-
-  async function removeCrmUserRole(userId) {
-    if (!canAdminSettings || !userId) return;
-    const ok = window.confirm("Удалить роль пользователя? Он получит роль viewer по умолчанию.");
-    if (!ok) return;
-    setCrmUsersSaving(userId);
-    setError("");
-    try {
-      await callBackend("webRemoveCrmUserRole", { userId });
-      await loadCrmUsers();
-    } catch (e) {
-      setError(toUserError(e));
-    } finally {
-      setCrmUsersSaving("");
-    }
-  }
-
-  async function createCrmUserRole() {
-    const userId = String(newCrmUserId || "").trim();
-    if (!canAdminSettings) return;
-    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(userId)) {
-      setError("Укажите корректный user_id (UUID).");
-      return;
-    }
-    setCrmUsersSaving(userId);
-    setError("");
-    try {
-      await callBackend("webSetCrmUserRole", {
-        userId,
-        role: newCrmUserRole,
-        note: newCrmUserNote,
-      });
-      setNewCrmUserId("");
-      setNewCrmUserRole("viewer");
-      setNewCrmUserNote("");
-      await loadCrmUsers();
-    } catch (e) {
-      setError(toUserError(e));
-    } finally {
-      setCrmUsersSaving("");
-    }
-  }
-
-  async function signInWithSupabase() {
-    if (!authEnabled || authSaving) return;
-    const email = String(authEmail || "").trim();
-    if (!email || !authPassword) {
-      setError("Введите email и пароль.");
-      return;
-    }
-    setAuthSaving(true);
-    setError("");
-    try {
-      const session = await supabaseSignInWithPassword(email, authPassword);
-      setAuthUser(session?.user || null);
-      setAuthPassword("");
-      await load();
-    } catch (e) {
-      setError(toUserError(e));
-    } finally {
-      setAuthSaving(false);
-    }
-  }
-
-  async function signOutSupabaseUser() {
-    if (!authEnabled || authSaving) return;
-    setAuthSaving(true);
-    setError("");
-    try {
-      await supabaseSignOut();
-      setAuthUser(null);
-      setCrmUsers([]);
-      await load();
-    } catch (e) {
-      setError(toUserError(e));
-    } finally {
-      setAuthSaving(false);
-    }
-  }
-
-  async function load() {
-    // Не выходим при «занято»: иначе при смене вкладки во время запроса новый load не стартует,
-    // старый ответ отбрасывается по seq — и список заказов может остаться пустым (Обзор/Производство).
-    loadInFlightRef.current = true;
-    const seq = ++loadSeqRef.current;
-    setLoading(true);
-    setError("");
-    try {
-      let data;
-      if (view === "shipment") {
-        let boardData;
-        try {
-          boardData = await callBackend("webGetShipmentBoard");
-        } catch (_) {
-          boardData = await callBackend("webGetShipmentTable");
-        }
-        data = normalizeShipmentBoard(boardData);
-        try {
-          const tableData = await callBackend("webGetShipmentTable");
-          data = mergeShipmentBoardWithTable(data, tableData);
-        } catch (_) {
-          // keep shipment board data if table snapshot is unavailable
-        }
-        try {
-          const catalogData = await callBackend("webGetPlanCatalog");
-          setPlanCatalogRows(Array.isArray(catalogData) ? catalogData : []);
-        } catch (_) {
-          setPlanCatalogRows([]);
-        }
-        try {
-          const sectionsData = await callBackend("webGetSectionCatalog");
-          setSectionCatalogRows(Array.isArray(sectionsData) ? sectionsData : []);
-        } catch (_) {
-          setSectionCatalogRows([]);
-        }
-        try {
-          const articlesData = await callBackend("webGetSectionArticles");
-          setSectionArticleRows(Array.isArray(articlesData) ? articlesData : []);
-        } catch (_) {
-          setSectionArticleRows([]);
-        }
-        try {
-          const shipmentOrdersData = await callBackend("webGetOrdersAll");
-          setShipmentOrders(Array.isArray(shipmentOrdersData) ? shipmentOrdersData.map(normalizeOrder) : []);
-        } catch (_) {
-          setShipmentOrders([]);
-        }
-        try {
-          const detailArticles = await callBackend("webGetFurnitureDetailArticles");
-          setFurnitureDetailArticleRows(Array.isArray(detailArticles) ? detailArticles : []);
-        } catch (_) {
-          setFurnitureDetailArticleRows([]);
-        }
-        try {
-          const stockData = await callBackend("webGetMaterialsStock");
-          setMaterialsStockRows(Array.isArray(stockData) ? stockData : []);
-        } catch (_) {
-          setMaterialsStockRows([]);
-        }
-      } else if (view === "overview") {
-        data = await callBackend("webGetOrdersAll");
-      } else if (view === "warehouse") {
-        data = await callBackend("webGetMaterialsStock");
-        setMaterialsStockRows(Array.isArray(data) ? data : []);
-        try {
-          const leftoversData = await callBackend("webGetLeftovers");
-          setLeftoversRows(Array.isArray(leftoversData) ? leftoversData : []);
-        } catch (_) {
-          setLeftoversRows([]);
-        }
-        try {
-          const consumeHistoryData = await callBackend("webGetConsumeHistory", { limit: 500 });
-          setConsumeHistoryRows(Array.isArray(consumeHistoryData) ? consumeHistoryData : []);
-        } catch (_) {
-          setConsumeHistoryRows([]);
-        }
-      } else if (view === "labor") {
-        data = await callBackend("webGetLaborTable");
-        try {
-          const auditData = await callBackend("webGetAuditLog", { limit: 1000, action: "set_stage" });
-          setStageAuditRows(Array.isArray(auditData) ? auditData : []);
-        } catch (_) {
-          setStageAuditRows([]);
-        }
-        try {
-          const allOrdersData = await callBackend("webGetOrdersAll");
-          const ids = Array.isArray(allOrdersData)
-            ? allOrdersData
-                .map((x) => String(x?.order_id || x?.orderId || "").trim())
-                .filter(Boolean)
-            : [];
-          setActiveOrderIds([...new Set(ids)]);
-        } catch (_) {
-          setActiveOrderIds([]);
-        }
-      } else if (view === "stats") {
-        try {
-          data = await callBackend("webGetOrderStats");
-        } catch (_) {
-          data = await callBackend("webGetOrdersAll");
-        }
-      } else if (view === "furniture") {
-        data = [];
-        try {
-          const mappingData = await callBackend("webGetFurnitureProductArticles");
-          setFurnitureArticleRows(Array.isArray(mappingData) ? mappingData : []);
-        } catch (_) {
-          setFurnitureArticleRows([]);
-        }
-        try {
-          const detailArticles = await callBackend("webGetFurnitureDetailArticles");
-          setFurnitureDetailArticleRows(Array.isArray(detailArticles) ? detailArticles : []);
-        } catch (_) {
-          setFurnitureDetailArticleRows([]);
-        }
-      } else {
-        // Для согласованности с "Обзор заказов" всегда берем полный список
-        // и уже на фронте раскладываем по табам этапов.
-        data = await callBackend("webGetOrdersAll");
-      }
-      // Игнорируем запоздавшие ответы, чтобы старая вкладка не перетирала новую.
-      if (seq !== loadSeqRef.current) return;
-      if (view === "shipment") {
-        setShipmentBoard(normalizeShipmentBoard(data));
-      } else if (view === "warehouse") {
-        setWarehouseRows(Array.isArray(data) ? data : []);
-      } else if (view === "labor") {
-        setLaborRows(Array.isArray(data) ? data : []);
-      } else {
-        const normalizedRows = Array.isArray(data) ? data.map(normalizeOrder) : [];
-        if (view === "workshop" || view === "overview" || view === "stats") {
-          try {
-            const boardData = await callBackend("webGetShipmentBoard");
-            setShipmentBoard(normalizeShipmentBoard(boardData));
-          } catch (_) {
-            // keep previous shipment board snapshot
-          }
-        }
-        setRows(normalizedRows);
-        if (view === "workshop" || view === "overview" || view === "stats") {
-          setShipmentOrders(normalizedRows);
-        }
-      }
-    } catch (e) {
-      if (seq !== loadSeqRef.current) return;
-      setError(toUserError(e));
-    } finally {
-      loadInFlightRef.current = false;
-      if (seq !== loadSeqRef.current) return;
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    if (view === "workshop") setRows([]);
-    if (view === "shipment") setShipmentBoard({ sections: [] });
-    if (view === "warehouse") {
-      setWarehouseRows([]);
-      setLeftoversRows([]);
-    }
-    if (view === "labor") setLaborRows([]);
-    load();
-    const id = setInterval(load, 15000);
-    return () => clearInterval(id);
-  }, [tab, view]);
+  const { load } = useDataLoader({
+    view,
+    tab,
+    callBackend,
+    SHEET_MIRROR_GID,
+    setLoading,
+    setError,
+    setRows,
+    setShipmentBoard,
+    setPlanCatalogRows,
+    setSectionCatalogRows,
+    setSectionArticleRows,
+    setShipmentOrders,
+    setFurnitureDetailArticleRows,
+    setMaterialsStockRows,
+    setLeftoversRows,
+    setWarehouseRows,
+    setLaborRows,
+    setFurnitureArticleRows,
+    normalizeShipmentBoard,
+    mergeShipmentBoardWithTable,
+    normalizeOrder,
+    isOrdersDomainView,
+    loadOrdersDomainData,
+    loadShipmentDomainData,
+    loadWarehouseDomainData,
+    loadFurnitureDomainData,
+    toUserError,
+  });
+  const {
+    crmRole,
+    crmAuthStrict,
+    crmAuthStrictSaving,
+    crmUsers,
+    crmUsersLoading,
+    crmUsersSaving,
+    newCrmUserId,
+    newCrmUserRole,
+    newCrmUserNote,
+    authEmail,
+    authPassword,
+    authSaving,
+    authUser,
+    setNewCrmUserId,
+    setNewCrmUserRole,
+    setNewCrmUserNote,
+    setAuthEmail,
+    setAuthPassword,
+    toggleCrmAuthStrict,
+    loadCrmUsers,
+    updateCrmUserRole,
+    removeCrmUserRole,
+    createCrmUserRole,
+    signInWithSupabase,
+    signOutSupabaseUser,
+  } = useCrmRole({
+    view,
+    callBackend,
+    toUserError,
+    authEnabled,
+    load,
+    setError,
+  });
+  const canOperateProduction = crmRole === "operator" || crmRole === "manager" || crmRole === "admin";
+  const canManageOrders = crmRole === "manager" || crmRole === "admin";
+  const canAdminSettings = crmRole === "admin";
+  const crmRoleLabel = CRM_ROLE_LABELS[crmRole] || CRM_ROLE_LABELS.viewer;
+  const authUserLabel = String(authUser?.email || authUser?.phone || authUser?.id || "").trim();
 
   useEffect(() => {
     if (view !== "overview") setOverviewSubView("kanban");
@@ -2118,6 +1424,24 @@ export default function App() {
   const selectedArticleRow = useMemo(() => {
     return sectionArticles.find((x) => x.itemName === planArticle) || null;
   }, [sectionArticles, planArticle]);
+  function handlePlanSectionChange(nextSection) {
+    setPlanSection(nextSection);
+    const firstArticle = (sectionArticleRows || [])
+      .map((x) => ({
+        sectionName: String(x.section_name || x.sectionName || "").trim(),
+        article: String(x.article || "").trim(),
+        itemName: String(x.item_name || x.itemName || "").trim(),
+        material: String(x.material || "").trim(),
+      }))
+      .find((x) => x.sectionName === nextSection && x.article);
+    setPlanArticle(firstArticle?.itemName || "");
+    setPlanMaterial(resolvePlanMaterial(firstArticle));
+  }
+  function handlePlanArticleChange(nextArticle) {
+    setPlanArticle(nextArticle);
+    const matched = sectionArticles.find((x) => x.itemName === nextArticle);
+    setPlanMaterial(resolvePlanMaterial(matched));
+  }
   const articleLookupByItemKey = useMemo(() => {
     const map = new Map();
     (sectionArticleRows || []).forEach((x) => {
@@ -2147,6 +1471,26 @@ export default function App() {
     });
     return { byRowWeek, byItemWeek };
   }, [shipmentOrders]);
+  const baseOrderFiltered = useBaseOrderFilter({
+    rows,
+    view,
+    tab,
+    query,
+    weekFilter,
+    getOverviewLaneId,
+    isStorageLikeName,
+    isObvyazkaSectionName,
+    isGarbageShipmentItemName,
+  });
+  const laborFiltered = useLaborFilter({
+    laborRows,
+    query,
+    weekFilter,
+  });
+  const sheetMirrorFiltered = useSheetMirrorFilter({
+    rows,
+    query,
+  });
 
   const orderIndexById = useMemo(() => {
     const map = new Map();
@@ -2193,95 +1537,29 @@ export default function App() {
     if (stageKey === "shipped") return showShipped;
     return true;
   }
-
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (view === "shipment") {
-      return (shipmentBoard.sections || [])
-        .filter((s) => !isStorageLikeName(s.name))
-        .map((s) => ({
-          ...s,
-          items: (s.items || []).filter((it) => {
-            if (isStorageLikeName(it.item) && !isObvyazkaSectionName(s.name)) return false;
-            if (isGarbageShipmentItemName(it.item)) return false;
-            const sourceRow = it.sourceRowId != null ? String(it.sourceRowId) : String(it.row);
-            const visibleCells = (it.cells || []).filter((c) => {
-              const qtyOk = (Number(c.qty) || 0) > 0;
-              if (!qtyOk) return false;
-              const stageKey = getShipmentStageKey(c, sourceRow, shipmentOrderMaps, it.item);
-              return passesShipmentStageFilter(stageKey);
-            });
-            const byWeek = weekFilter === "all" || visibleCells.some((c) => String(c.week || "") === weekFilter);
-            const byQuery = !q || String(it.item || "").toLowerCase().includes(q);
-            return byWeek && byQuery && visibleCells.length > 0;
-          }),
-        }))
-        .filter((s) => s.items.length > 0);
-    }
-    if (view === "labor") {
-      return [...laborRows, ...laborImportedRows].filter((x) => {
-        const byWeek = weekFilter === "all" || String(x.week || "") === weekFilter;
-        const byQuery =
-          !q ||
-          String(x.item || "").toLowerCase().includes(q) ||
-          String(x.order_id || x.orderId || "").toLowerCase().includes(q);
-        return byWeek && byQuery;
-      });
-    }
-    return rows.filter((x) => {
-      if (view === "stats") {
-        const byWeek = weekFilter === "all" || String(x.week || "") === weekFilter;
-        const byQuery =
-          !q ||
-          String(x.item || "").toLowerCase().includes(q) ||
-          String(x.orderId || x.order_id || "").toLowerCase().includes(q);
-        return byWeek && byQuery;
-      }
-      // Скрываем тех/мусорные позиции во вкладках заказов (Производство/Обзор/Статистика).
-      const sectionName = String(x.section_name || x.sectionName || "").trim();
-      const sourceRowId = String(x.source_row_id || x.sourceRowId || "").trim();
-      const storageLike = isStorageLikeName(x.item);
-      // In workshop view, keep storage-like items visible if they are already real orders in pipeline.
-      // This is required for strap positions such as "1158_50" that should move through production stages.
-      const allowInWorkshop = view === "workshop" && storageLike;
-      // Stats must reflect all real orders; do not hide storage-like item names there.
-      const allowInStats = view === "stats" && storageLike;
-      const allowStorageLike =
-        allowInWorkshop ||
-        allowInStats ||
-        (storageLike && (isObvyazkaSectionName(sectionName) || sourceRowId.startsWith("manual:") || hasArticleLikeCode(x)));
-      if ((storageLike && !allowStorageLike) || isGarbageShipmentItemName(x.item)) return false;
-      const byWeek = weekFilter === "all" || String(x.week || "") === weekFilter;
-      const byQuery =
-        !q ||
-        String(x.item || "").toLowerCase().includes(q) ||
-        String(x.orderId || x.order_id || "").toLowerCase().includes(q);
-      if (!byWeek || !byQuery) return false;
-      if (view === "stats" || view === "overview") return true;
-      // Производство: те же «дорожки», что и в «Обзор заказов» (pipeline), иначе вкладки и канбан расходятся.
-      if (tab === "pilka") return getOverviewLaneId(x) === "pilka";
-      if (tab === "kromka") return getOverviewLaneId(x) === "kromka";
-      if (tab === "pras") return getOverviewLaneId(x) === "pras";
-      return true;
-    });
-  }, [
-    rows,
+  const shipmentFiltered = useShipmentFilter({
     shipmentBoard,
     shipmentOrderMaps,
-    laborRows,
-    laborImportedRows,
-    view,
-    tab,
     query,
     weekFilter,
-    shipmentSort,
-    showAwaiting,
-    showOnPilka,
-    showOnKromka,
-    showOnPras,
-    showReadyAssembly,
-    showAwaitShipment,
-    showShipped,
+    isStorageLikeName,
+    isObvyazkaSectionName,
+    isGarbageShipmentItemName,
+    getShipmentStageKey,
+    passesShipmentStageFilter,
+  });
+
+  const filtered = useMemo(() => {
+    if (view === "shipment") return shipmentFiltered;
+    if (view === "labor") return laborFiltered;
+    if (view === "sheetMirror") return sheetMirrorFiltered;
+    return baseOrderFiltered;
+  }, [
+    baseOrderFiltered,
+    laborFiltered,
+    sheetMirrorFiltered,
+    shipmentFiltered,
+    view,
   ]);
 
   const overviewShippedOnly = useMemo(() => {
@@ -2354,8 +1632,8 @@ export default function App() {
     if (shipmentSort === "name") {
       baseSections = [...filtered]
         .sort((a, b) => {
-          const ka = sectionSortKey(a.name);
-          const kb = sectionSortKey(b.name);
+          const ka = sectionSortKey(a.name, SHIPMENT_SECTION_ORDER);
+          const kb = sectionSortKey(b.name, SHIPMENT_SECTION_ORDER);
           if (ka !== kb) return ka - kb;
           return String(a.name || "").localeCompare(String(b.name || ""), "ru");
         })
@@ -2521,44 +1799,15 @@ export default function App() {
     });
     return arr;
   }, [filtered, view, statsSort]);
-  const workshopRows = useMemo(() => {
-    if (view !== "workshop" || tab === "stats") return [];
-    const arr = [...filtered].filter((o) => {
-      const pilkaStatus = String(o.pilkaStatus || o.pilka || "");
-      const kromkaStatus = String(o.kromkaStatus || o.kromka || "");
-      const prasStatus = String(o.prasStatus || o.pras || "");
-      const assemblyStatus = String(o.assemblyStatus || "");
-      const overallStatus = String(o.overallStatus || o.overall || "");
-      const pilkaDone = isDone(pilkaStatus);
-      const kromkaDone = isDone(kromkaStatus);
-      const prasDone = isDone(prasStatus);
-      const assemblyDone = isDone(assemblyStatus);
-      const shipped = isOrderCustomerShipped(o);
-      const onPackaging = /упаков/i.test(overallStatus);
-      const lane = getOverviewLaneId(o);
-      if (tab === "pilka") return lane === "pilka";
-      if (tab === "kromka") return lane === "kromka";
-      if (tab === "pras") return lane === "pras";
-      if (tab === "assembly") return pilkaDone && kromkaDone && prasDone && !assemblyDone && !shipped;
-      if (tab === "done") return assemblyDone && !onPackaging && !shipped;
-      return true;
-    });
-    const isRowInWork = (o) => {
-      if (tab === "pilka") return isInWork(o.pilkaStatus);
-      if (tab === "kromka") return isInWork(o.kromkaStatus);
-      if (tab === "pras") return isInWork(o.prasStatus);
-      if (tab === "assembly") return isInWork(o.assemblyStatus);
-      if (tab === "done") return false;
-      return isInWork(o.pilkaStatus) || isInWork(o.kromkaStatus) || isInWork(o.prasStatus);
-    };
-    arr.sort((a, b) => {
-      const aw = isRowInWork(a) ? 1 : 0;
-      const bw = isRowInWork(b) ? 1 : 0;
-      if (aw !== bw) return bw - aw; // "В работе" вверху
-      return String(a.item || "").localeCompare(String(b.item || ""), "ru");
-    });
-    return arr;
-  }, [filtered, view, tab]);
+  const workshopRows = useWorkshopRows({
+    filtered,
+    view,
+    tab,
+    isDone,
+    isInWork,
+    getOverviewLaneId,
+    isOrderCustomerShipped,
+  });
   const overviewColumns = useMemo(() => {
     if (view !== "overview") return [];
     const defs = [
@@ -4442,1296 +3691,164 @@ export default function App() {
 
       <section className="cards">
         {view === "shipment" && (
-          <div className="shipment-layout">
-            <aside className="selection-summary-pane">
-              {selectedShipments.length > 0 || strapItems.length > 0 ? (
-                <div className="selection-summary">
-                  <div className="selection-summary-title">Расчет для выделенных ячеек:</div>
-                  {selectedShipmentSummary.items.map((x, idx) => (
-                    <div key={`${x.row}-${x.col}-${idx}`} className="selection-summary-item">
-                      <div>{x.item}</div>
-                      <div>
-                        {x.qty} шт. → {x.sheetsNeeded} лист(ов) {x.material}
-                        {!x.sheetsExact && x.outputPerSheet > 0 ? " (оценка)" : ""}
-                        {!x.sheetsExact && x.outputPerSheet <= 0 ? " (нет данных по раскрою)" : ""}
-                      </div>
-                    </div>
-                  ))}
-                  <div className="selection-summary-title" style={{ marginTop: 10 }}>Общее количество:</div>
-                  {selectedShipmentSummary.materials.map((m) => (
-                    <div key={m.material}>• {m.material}: {m.sheets} лист(ов)</div>
-                  ))}
-                  {selectedShipmentStockCheck.deficits.length > 0 && (
-                    <>
-                      <div className="selection-summary-title" style={{ marginTop: 10, color: "#be123c" }}>
-                        Нехватка материала по выбранным заказам:
-                      </div>
-                      {selectedShipmentStockCheck.deficits.map((d) => (
-                        <div key={`deficit-${d.material}`} style={{ color: "#be123c" }}>
-                          • {d.material}: нужно {d.needed}, доступно {d.available}, не хватает {d.deficit} лист(ов)
-                        </div>
-                      ))}
-                    </>
-                  )}
-                  <div style={{ marginTop: 10 }}>Обработано ячеек: {selectedShipmentSummary.selectedCount}</div>
-                  <div>Всего листов: {selectedShipmentSummary.totalSheets}</div>
-                  {strapItems.length > 0 && (
-                    <>
-                      <div className="selection-summary-title" style={{ marginTop: 10 }}>Добавленная обвязка:</div>
-                      {strapItems.map((x) => (
-                        <div key={x.name}>• {x.name}: {x.qty} шт.</div>
-                      ))}
-                      {strapCalculation.lines.length > 0 && (
-                        <>
-                          <div className="selection-summary-title" style={{ marginTop: 10 }}>Расчет обвязки (черный):</div>
-                          {strapCalculation.lines.map((x) => (
-                            <div key={`calc-${x.name}`}>
-                              • {x.name.replace(/[()]/g, "").replace("_", "×")}: {x.qty} шт → {x.invalid ? "не помещается" : `${x.sheets} листов (по ${x.perSheet} шт/лист)`}
-                            </div>
-                          ))}
-                          <div>• Итого по обвязке: <b>{strapCalculation.totalSheets}</b> листов</div>
-                        </>
-                      )}
-                    </>
-                  )}
-                </div>
-              ) : (
-                <div className="selection-summary placeholder">
-                  Выделите ячейки в блоках отгрузки или добавьте обвязку, чтобы увидеть расчет листов.
-                  {shipmentPlanDeficits.length > 0 && (
-                    <>
-                      <div className="selection-summary-title" style={{ marginTop: 10, color: "#be123c" }}>
-                        Нехватка по всему плану:
-                      </div>
-                      {shipmentPlanDeficits.map((d) => (
-                        <div key={`plan-deficit-${d.material}`} style={{ color: "#be123c" }}>
-                          • {d.material}: нужно {d.needed}, доступно {d.available}, не хватает {d.deficit} лист(ов)
-                        </div>
-                      ))}
-                    </>
-                  )}
-                </div>
-              )}
-            </aside>
-            <div className="shipment-main">
-            {planPreviews.length > 0 && (
-              <div className="print-area">
-                {planPreviews.map((planPreview, idx) => (
-              <div key={planPreview._key || idx} className="plan-preview print-plan-page">
-                {planPreview.isStrapPlan ? (
-                  <>
-                    <div className="strap-print-title">ЗАДАНИЕ В РАБОТУ: ПЛАНКИ ОБВЯЗКИ</div>
-                    <div className="strap-print-meta">Дата: {planPreview.generatedAt}</div>
-                    {Array.isArray(planPreview.products) && planPreview.products.length > 0 && (
-                      <div className="strap-print-meta">
-                        Изделие: {planPreview.products.join(", ")}
-                      </div>
-                    )}
-                    <table className="plan-table strap-plan-table">
-                      <thead>
-                        <tr>
-                          <th className="w-qty">№</th>
-                          <th>Наименование</th>
-                          <th className="w-qty">Кол-во</th>
-                          <th className="w-model">Отметка</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {(planPreview.rows || []).map((r, rowIdx) => (
-                          <tr key={`${r.part}-${rowIdx}`}>
-                            <td>{rowIdx + 1}</td>
-                            <td>{r.part}</td>
-                            <td>{r.qty}</td>
-                            <td></td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </>
-                ) : (
-                  <>
-                <div className="plan-top-meta">
-                  <span>{planPreview.generatedAt || ""}</span>
-                  <span>Отгрузки CRM</span>
-                </div>
-                <div className="plan-head-grid">
-                  <div className="plan-yellow">
-                    <div className="name">{planPreview.firstName || planPreview.detailedName || "-"}</div>
-                    <div className="color">{planPreview.colorName || "-"}</div>
-                  </div>
-                  <div className="plan-right-meta">
-                    <div className="plan-number-box">
-                      <div>ПЛАН</div>
-                      <div className="num">{planPreview.planNumber || "-"}</div>
-                    </div>
-                    <div className="plan-qr-box">
-                      {(() => {
-                        const fallbackArticle = resolvePlanPreviewArticleByName(planPreview, articleLookupByItemKey);
-                        return (
-                      <img
-                        className="plan-qr-image"
-                        src={buildQrCodeUrl(buildPlanPreviewQrPayload(planPreview, fallbackArticle))}
-                        alt="QR изделия/плана/количества"
-                      />
-                        );
-                      })()}
-                      <div className="plan-qr-caption">Артикул / план / количество</div>
-                    </div>
-                  </div>
-                </div>
-                <table className="plan-table">
-                  <thead>
-                    <tr>
-                      <th className="w-model"></th>
-                      <th className="w-qty">{planPreview.qty || 0}</th>
-                      <th>Деталь</th>
-                      <th>Кол-во</th>
-                      <th>Пила</th>
-                      <th>Кромка</th>
-                      <th>При 1</th>
-                      <th>При 2</th>
-                      <th>Упаковка</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(planPreview.rows || []).map((r, idx) => (
-                      <tr key={`${r.part}-${idx}`}>
-                        <td>{idx === 0 ? (planPreview.firstName || "") : ""}</td>
-                        <td></td>
-                        <td>{r.part}</td>
-                        <td>{r.qty}</td>
-                        <td></td>
-                        <td></td>
-                        <td></td>
-                        <td></td>
-                        <td></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                  </>
-                )}
-                <div className="actions">
-                  <button className="mini" onClick={() => window.print()}>Печать</button>
-                  <button className="mini" onClick={() => setPlanPreviews([])}>Закрыть</button>
-                </div>
-              </div>
-                ))}
-              </div>
-            )}
-            {!filtered.length && !loading && <div className="empty">Нет позиций в отгрузке</div>}
-            {shipmentViewMode === "table" && (
-              <div>
-                <div className="shipment-group-filters">
-                  <span className="shipment-group-filters__label">Группы:</span>
-                  {shipmentTableGroupNames.map((groupName) => {
-                    const hidden = !!hiddenShipmentGroups[groupName];
-                    return (
-                      <button
-                        type="button"
-                        key={groupName}
-                        className={hidden ? "mini shipment-group-chip hidden" : "mini shipment-group-chip"}
-                        onClick={() =>
-                          setHiddenShipmentGroups((prev) => ({ ...prev, [groupName]: !prev[groupName] }))
-                        }
-                        title={hidden ? "Показать группу" : "Скрыть группу"}
-                      >
-                        {groupName}
-                      </button>
-                    );
-                  })}
-                  {shipmentTableGroupNames.length > 0 && (
-                    <button
-                      type="button"
-                      className="mini shipment-group-reset"
-                      onClick={() =>
-                        setHiddenShipmentGroups(
-                          Object.fromEntries(shipmentTableGroupNames.map((name) => [name, true]))
-                        )
-                      }
-                    >
-                      Скрыть все
-                    </button>
-                  )}
-                  {Object.values(hiddenShipmentGroups).some(Boolean) && (
-                    <button
-                      type="button"
-                      className="mini shipment-group-reset"
-                      onClick={() => setHiddenShipmentGroups({})}
-                    >
-                      Показать все
-                    </button>
-                  )}
-                </div>
-                <div className="sheet-table-wrap">
-                  <table className="sheet-table shipment-plan-table">
-                    <thead>
-                      <tr>
-                        <th>Изделие</th>
-                        <th>Материал</th>
-                        <th>План</th>
-                        <th>Кол-во</th>
-                        <th>Листов</th>
-                        <th>Доступно</th>
-                        <th>Статус</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {shipmentTableGroupNames.flatMap((groupName) => {
-                        const hidden = !!hiddenShipmentGroups[groupName];
-                        const groupRows = shipmentTableRowsWithStockStatus.filter(
-                          (row) => String(row.section || "Прочее") === groupName
-                        );
-                        const rows = [
-                          <tr key={`section-${groupName}`} className="shipment-plan-group-row">
-                            <td colSpan={7}>
-                              <button
-                                type="button"
-                                className="shipment-plan-group-toggle"
-                                onClick={() =>
-                                  setHiddenShipmentGroups((prev) => ({ ...prev, [groupName]: !prev[groupName] }))
-                                }
-                                title={hidden ? "Показать группу" : "Скрыть группу"}
-                              >
-                                <span className="shipment-plan-group-marker">{hidden ? "▸" : "▾"}</span>
-                                <span className="shipment-plan-group-title">{groupName}</span>
-                              </button>
-                            </td>
-                          </tr>,
-                        ];
-                        if (hidden) return rows;
-                        groupRows.forEach((row) => {
-                          const isSelected = selectedShipments.some((s) => s.row === row.sourceRow && s.col === row.sourceCol);
-                          const isDeficitSelected = selectedShipmentStockCheck.deficitSourceKeys.has(
-                            `${String(row.sourceRow || "").trim()}|${String(row.sourceCol || "").trim()}`
-                          );
-                          const showDeficitHighlight = !!row.canSendToWork && !row.inWork && row.materialHasDeficit;
-                          const rowBg = showDeficitHighlight
-                            ? "#fbcfe8"
-                            : (isDeficitSelected && isSelected ? "#fbcfe8" : (row.bg || "#ffffff"));
-                          rows.push(
-                            <tr
-                              key={row.key}
-                              className={isSelected ? "selected-row" : ""}
-                              style={{ backgroundColor: rowBg, color: getReadableTextColor(rowBg) }}
-                              onClick={() => {
-                                const payload = {
-                                  row: row.sourceRow,
-                                  col: row.sourceCol,
-                                  rawRow: row.sourceRow,
-                                  rawCol: row.sourceCol,
-                                  section: row.section,
-                                  item: row.item,
-                                  strapProduct: row.strapProduct,
-                                  week: row.week,
-                                  weekCol: row.week,
-                                  qty: row.qty,
-                                  material: getMaterialLabel(row.item, row.material),
-                                  sheetsNeeded: row.sheets,
-                                  availableSheets: row.availableSheets,
-                                  outputPerSheet: row.outputPerSheet,
-                                  canSendToWork: !!row.canSendToWork,
-                                };
-                                toggleShipmentSelection(payload);
-                              }}
-                            >
-                              <td>{row.item}</td>
-                              <td>{row.material || "-"}</td>
-                              <td>{row.week}</td>
-                              <td>{row.qty}</td>
-                              <td>{row.sheets}</td>
-                              <td>{row.availableSheets}</td>
-                              <td>
-                                {row.status}
-                                {!!row.canSendToWork && !row.inWork &&
-                                  (row.materialHasDeficit
-                                    ? ` • ❌ Не хватает: ${row.materialDeficit}`
-                                    : " • ✅ Хватает")}
-                              </td>
-                            </tr>
-                          );
-                        });
-                        return rows;
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-            {shipmentViewMode !== "table" && shipmentRenderSections.map((section) => (
-              <div key={section.name} className="shipment-section">
-                <button
-                  type="button"
-                  className="section-toggle"
-                  onClick={() => toggleSectionCollapsed(section.name)}
-                >
-                  <span>{isSectionCollapsed(section.name) ? "▸" : "▾"}</span>
-                  <span>{section.name}</span>
-                  <span className="section-count">Q {(section.items || []).length}</span>
-                </button>
-                {!isSectionCollapsed(section.name) && (
-                  <div className="shipment-items-grid">
-                    {sortItemsForShipment(section.items || []).map((it) => {
-                      const itemCells = visibleCellsForItem(it);
-                      const sheetsE = itemCells.length ? (Number(itemCells[0].availableSheets || 0) || 0) : 0;
-                      const pendingCells = itemCells.filter((c) => c.canSendToWork);
-                      const materialTotals = shipmentMaterialBalance.get(normalizeFurnitureKey(it.material || "")) || { needed: 0, available: 0 };
-                      const hasPendingShortage =
-                        pendingCells.length > 0 &&
-                        Number(materialTotals.needed || 0) > Number(materialTotals.available || 0);
-                      const materialLabel = getMaterialLabel(it.item, it.material);
-                      return (
-                        <article
-                          key={`${section.name}-${it.row}`}
-                          className={`shipment-item-card ${hasPendingShortage ? "shortage-row" : ""}`}
-                        >
-                          <div className="shipment-item-card__head">
-                            <span className="shipment-item-card__title" title={it.item}>
-                              {materialLabel}
-                            </span>
-                            {sheetsE > 0 && (
-                              <span className="shipment-item-card__meta-pill" title="Доступно листов (E)">
-                                {sheetsE} л
-                              </span>
-                            )}
-                          </div>
-                          {hasPendingShortage && (
-                            <div className="shipment-item-card__warn">
-                              <span>⚠️ Для не начатых заказов материала не хватает</span>
-                            </div>
-                          )}
-                          <div className="shipment-item-card__cells">
-                            {itemCells.map((c) => {
-                              const sourceRow = it.sourceRowId != null ? String(it.sourceRowId) : String(it.row);
-                              const sourceCol = c.sourceColId != null ? String(c.sourceColId) : String(c.col);
-                              const isSelected = selectedShipments.some((s) => s.row === sourceRow && s.col === sourceCol);
-                              const isDeficitSelected = selectedShipmentStockCheck.deficitSourceKeys.has(
-                                `${String(sourceRow || "").trim()}|${String(sourceCol || "").trim()}`
-                              );
-                              const cls = c.canSendToWork
-                                ? "ship-cell-lg selectable"
-                                : c.inWork
-                                  ? "ship-cell-lg inwork"
-                                  : "ship-cell-lg blocked";
-                              const stageKey = getShipmentStageKey(c, sourceRow, shipmentOrderMaps, it.item);
-                              const displayBg = stageBg(stageKey, c.bg || "#ffffff");
-                              const sheetsN = Number(c.sheetsNeeded || 0);
-                              const bottomPill =
-                                sheetsN > 0
-                                  ? `${sheetsN} ${sheetsN === 1 ? "лист" : sheetsN < 5 ? "листа" : "листов"}`
-                                  : stageLabel(stageKey);
-                              return (
-                                <button
-                                  key={`${sourceRow}-${sourceCol}`}
-                                  type="button"
-                                  className={`${cls} ${isSelected ? "selected" : ""}`}
-                                  onMouseEnter={(e) =>
-                                    setHoverTip({
-                                      visible: true,
-                                      text: stageLabel(stageKey),
-                                      x: e.clientX + 12,
-                                      y: e.clientY + 12,
-                                    })
-                                  }
-                                  onMouseMove={(e) =>
-                                    setHoverTip((prev) => ({
-                                      ...prev,
-                                      x: e.clientX + 12,
-                                      y: e.clientY + 12,
-                                    }))
-                                  }
-                                  onMouseLeave={() => setHoverTip({ visible: false, text: "", x: 0, y: 0 })}
-                                  style={{
-                                    background: hasPendingShortage ? "#fbcfe8" : (isDeficitSelected && isSelected ? "#fbcfe8" : displayBg),
-                                    backgroundImage: "none",
-                                    color: getReadableTextColor(hasPendingShortage ? "#fbcfe8" : (isDeficitSelected && isSelected ? "#fbcfe8" : displayBg)),
-                                  }}
-                                  onClick={() => {
-                                    const payload = {
-                                      row: sourceRow,
-                                      col: sourceCol,
-                                      rawRow: String(it.row),
-                                      rawCol: String(c.col),
-                                      section: section.name,
-                                      item: it.item,
-                                      strapProduct: String(it.strapProduct || ""),
-                                      week: c.week,
-                                      weekCol: c.week,
-                                      qty: c.qty,
-                                      material: materialLabel,
-                                      sheetsNeeded: sheetsN,
-                                      availableSheets: Number(c.availableSheets || 0),
-                                      outputPerSheet: Number(c.outputPerSheet || 0),
-                                      canSendToWork: !!c.canSendToWork,
-                                    };
-                                    toggleShipmentSelection(payload);
-                                  }}
-                                >
-                                  {isSelected && <span className="selected-mark">✓</span>}
-                                  <span className="ship-cell-lg__week">Нед {c.week || "-"}</span>
-                                  <span className="ship-cell-lg__qty">{c.qty}</span>
-                                  <span className="ship-cell-lg__badge">{bottomPill}</span>
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </article>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            ))}
-            </div>
-            <aside className="shipment-actions-pane">
-              {selectedShipments.length > 0 && (
-                <div className="shipment-toolbar shipment-toolbar--side">
-                  <div className="shipment-toolbar__summary">
-                    <>Выбрано ячеек: <b>{selectedShipments.length}</b> | Готово к отправке: <b>{sendableSelectedCount}</b></>
-                    {strapItems.length > 0 && (
-                      <> | Обвязка: <b>{strapItems.reduce((sum, x) => sum + Number(x.qty || 0), 0)} шт.</b></>
-                    )}
-                    {selectedShipments.length === 1 && (
-                      <>
-                        {" "} | <b>{selectedShipments[0].item}</b> | Неделя <b>{selectedShipments[0].week || "-"}</b> | Кол-во <b>{selectedShipments[0].qty}</b>
-                      </>
-                    )}
-                  </div>
-                  <div className="actions shipment-toolbar__actions">
-                    <button
-                      className="mini"
-                      disabled={
-                        actionLoading === "preview:batch" ||
-                        selectedShipments.length === 0
-                      }
-                      onClick={previewSelectedShipmentPlan}
-                    >
-                      Предпросмотр плана
-                      {selectedShipments.length > 1 ? ` (${selectedShipments.length})` : ""}
-                    </button>
-                    <button
-                      className="mini"
-                      disabled={
-                        actionLoading === "shipment:bulk" ||
-                        sendableSelectedCount === 0 ||
-                        !canOperateProduction
-                      }
-                      onClick={sendSelectedShipmentToWork}
-                    >
-                      Отправить в работу ({sendableSelectedCount})
-                    </button>
-                    <button
-                      className="mini warn"
-                      disabled={
-                        actionLoading === "shipment:delete" ||
-                        selectedShipments.filter((s) => !!s.canSendToWork).length === 0 ||
-                        !canManageOrders
-                      }
-                      onClick={deleteSelectedShipmentPlan}
-                    >
-                      Удалить из плана
-                    </button>
-                    <button
-                      className="mini"
-                      onClick={() => setSelectedShipments([])}
-                    >
-                      Сбросить выбор
-                    </button>
-                  </div>
-                </div>
-              )}
-            </aside>
-          </div>
+          <ShipmentView
+            selectedShipments={selectedShipments}
+            strapItems={strapItems}
+            selectedShipmentSummary={selectedShipmentSummary}
+            selectedShipmentStockCheck={selectedShipmentStockCheck}
+            strapCalculation={strapCalculation}
+            shipmentPlanDeficits={shipmentPlanDeficits}
+            articleLookupByItemKey={articleLookupByItemKey}
+            resolvePlanPreviewArticleByName={resolvePlanPreviewArticleByName}
+            buildPlanPreviewQrPayload={buildPlanPreviewQrPayload}
+            buildQrCodeUrl={buildQrCodeUrl}
+            planPreviews={planPreviews}
+            setPlanPreviews={setPlanPreviews}
+            filtered={filtered}
+            loading={loading}
+            shipmentViewMode={shipmentViewMode}
+            shipmentTableGroupNames={shipmentTableGroupNames}
+            hiddenShipmentGroups={hiddenShipmentGroups}
+            setHiddenShipmentGroups={setHiddenShipmentGroups}
+            shipmentTableRowsWithStockStatus={shipmentTableRowsWithStockStatus}
+            getReadableTextColor={getReadableTextColor}
+            getMaterialLabel={getMaterialLabel}
+            toggleShipmentSelection={toggleShipmentSelection}
+            shipmentRenderSections={shipmentRenderSections}
+            toggleSectionCollapsed={toggleSectionCollapsed}
+            isSectionCollapsed={isSectionCollapsed}
+            sortItemsForShipment={sortItemsForShipment}
+            visibleCellsForItem={visibleCellsForItem}
+            shipmentMaterialBalance={shipmentMaterialBalance}
+            normalizeFurnitureKey={normalizeFurnitureKey}
+            getShipmentStageKey={getShipmentStageKey}
+            shipmentOrderMaps={shipmentOrderMaps}
+            stageBg={stageBg}
+            stageLabel={stageLabel}
+            setHoverTip={setHoverTip}
+            sendableSelectedCount={sendableSelectedCount}
+            actionLoading={actionLoading}
+            previewSelectedShipmentPlan={previewSelectedShipmentPlan}
+            canOperateProduction={canOperateProduction}
+            sendSelectedShipmentToWork={sendSelectedShipmentToWork}
+            canManageOrders={canManageOrders}
+            deleteSelectedShipmentPlan={deleteSelectedShipmentPlan}
+            setSelectedShipments={setSelectedShipments}
+          />
         )}
-        {view === "overview" && overviewSubView === "kanban" && (
-          <>
-            {!filtered.length && !loading && <div className="empty">Нет заказов для обзора</div>}
-            {overviewColumns.some((c) => c.items.length) && (
-              <div className="overview-board">
-                {overviewColumns.map((col) => (
-                  <div key={col.id} className="overview-column">
-                    <div className="overview-column__head">
-                      <span>{col.title}</span>
-                      <span className="section-count">{col.items.length}</span>
-                    </div>
-                    <div className="overview-column__list">
-                      {col.items.map((o) => {
-                        const orderId = String(o.orderId || o.order_id || "");
-                        return (
-                          <article key={`${col.id}-${orderId || o.item}`} className={`overview-card lane-${col.id}`}>
-                            <div className="overview-card__id">Заказ #{orderId || "-"}</div>
-                            <div className="overview-card__item">{o.item}</div>
-                            <div className="overview-card__meta">
-                              <span>План: {o.week || "-"}</span>
-                              <span>Кол-во: {Number(o.qty || 0)}</span>
-                            </div>
-                            <div className={`overview-card__stage lane-${col.id}`}>{getStageLabel(o)}</div>
-                          </article>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </>
-        )}
-        {view === "overview" && overviewSubView === "shipped" && (
-          <>
-            {!overviewShippedOnly.length && !loading && <div className="empty">Нет отгруженных заказов</div>}
-            {overviewShippedOnly.length > 0 && (
-              <div className="sheet-table-wrap">
-                <table className="sheet-table">
-                  <thead>
-                    <tr>
-                      <th>ID заказа</th>
-                      <th>Изделие</th>
-                      <th>План</th>
-                      <th>Кол-во</th>
-                      <th>Дата отгрузки</th>
-                      <th>Статус</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {[...overviewShippedOnly]
-                      .sort((a, b) => {
-                        const at = new Date(
-                          a.shippingDoneAt || a.shipping_done_at || a.updatedAt || a.updated_at || a.createdAt || a.created_at || 0
-                        ).getTime();
-                        const bt = new Date(
-                          b.shippingDoneAt || b.shipping_done_at || b.updatedAt || b.updated_at || b.createdAt || b.created_at || 0
-                        ).getTime();
-                        return bt - at || String(a.item || "").localeCompare(String(b.item || ""), "ru");
-                      })
-                      .map((o) => {
-                        const orderId = String(o.orderId || o.order_id || "");
-                        const shippedAt =
-                          o.shippingDoneAt ||
-                          o.shipping_done_at ||
-                          o.updatedAt ||
-                          o.updated_at ||
-                          o.createdAt ||
-                          o.created_at ||
-                          "";
-                        return (
-                          <tr key={`shipped-${orderId || o.item}`}>
-                            <td>{orderId || "-"}</td>
-                            <td>{o.item || "-"}</td>
-                            <td>{o.week || "-"}</td>
-                            <td>{Number(o.qty || 0)}</td>
-                            <td>{formatDateTimeRu(shippedAt)}</td>
-                            <td>{getStageLabel(o)}</td>
-                          </tr>
-                        );
-                      })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </>
+        {view === "overview" && (
+          <OverviewView
+            overviewSubView={overviewSubView}
+            filtered={filtered}
+            loading={loading}
+            overviewColumns={overviewColumns}
+            getStageLabel={getStageLabel}
+            overviewShippedOnly={overviewShippedOnly}
+            formatDateTimeRu={formatDateTimeRu}
+          />
         )}
         {view === "labor" && (
-          <>
-            {laborSubView === "total" && !laborTableRows.length && !loading && <div className="empty">Нет данных по трудоемкости</div>}
-            {laborSubView === "total" && laborTableRows.length > 0 && (
-              <div className="sheet-table-wrap">
-                <table className="sheet-table">
-                  <thead>
-                    <tr>
-                      <th>ID заказа</th>
-                      <th>Изделие</th>
-                      <th>План</th>
-                      <th>Кол-во</th>
-                      <th>Пилка (мин)</th>
-                      <th>Кромка (мин)</th>
-                      <th>Присадка (мин)</th>
-                      <th>Итого (мин)</th>
-                      <th>Дата завершения</th>
-                      <th>Сохранить в БД</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {laborTableRows.map((r) => (
-                      <tr key={`${r.orderId}-${r.item}-${r.importKey || "db"}`}>
-                        <td>{r.orderId || "-"}</td>
-                        <td>{r.item}</td>
-                        <td>{r.week || "-"}</td>
-                        <td>{r.qty}</td>
-                        <td>{r.pilkaMin}</td>
-                        <td>{r.kromkaMin}</td>
-                        <td>{r.prasMin}</td>
-                        <td><b>{r.totalMin}</b></td>
-                        <td>{r.dateFinished || "-"}</td>
-                        <td>
-                          {r.importedLocal && r.importKey ? (
-                            <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                              <input
-                                type="checkbox"
-                                checked={Boolean(laborSaveSelected[r.importKey])}
-                                disabled={Boolean(laborSavingByKey[r.importKey]) || Boolean(laborSavedByKey[r.importKey])}
-                                onChange={(e) => {
-                                  const checked = Boolean(e.target.checked);
-                                  setLaborSaveSelected((prev) => ({ ...prev, [r.importKey]: checked }));
-                                  if (checked) void saveImportedLaborRowToDb(r);
-                                }}
-                              />
-                              <span>
-                                {laborSavedByKey[r.importKey]
-                                  ? "Сохранено"
-                                  : laborSavingByKey[r.importKey]
-                                    ? "Сохраняю..."
-                                    : "Сохранить"}
-                              </span>
-                            </label>
-                          ) : (
-                            "—"
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-            {laborSubView === "orders" && !laborOrdersRows.length && !loading && (
-              <div className="empty">Нет завершенных заказов для сводной трудоемкости</div>
-            )}
-            {laborSubView === "orders" && laborOrdersRows.length > 0 && (
-              <div className="sheet-table-wrap">
-                <table className="sheet-table">
-                  <thead>
-                    <tr>
-                      <th>Группа изделия</th>
-                      <th>Заказов</th>
-                      <th>Кол-во (шт)</th>
-                      <th>Пилка (мин)</th>
-                      <th>Кромка (мин)</th>
-                      <th>Присадка (мин)</th>
-                      <th>Итого (мин)</th>
-                      <th>Трудоемкость (ч/заказ)</th>
-                      <th>Трудоемкость (мин/шт)</th>
-                      <th>Трудоемкость (ч/шт)</th>
-                      <th>Доля пилки</th>
-                      <th>Доля кромки</th>
-                      <th>Доля присадки</th>
-                      <th>Последнее обновление</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {laborOrdersRows.map((r) => (
-                      <tr key={r.group}>
-                        <td>{r.group}</td>
-                        <td>{r.orders}</td>
-                        <td>{r.qty}</td>
-                        <td>{Math.round(r.pilkaMin)}</td>
-                        <td>{Math.round(r.kromkaMin)}</td>
-                        <td>{Math.round(r.prasMin)}</td>
-                        <td><b>{Math.round(r.totalMin)}</b></td>
-                        <td>{r.laborPerOrderHour.toFixed(2)}</td>
-                        <td>{r.laborPerQtyMin.toFixed(2)}</td>
-                        <td>{r.laborPerQtyHour.toFixed(2)}</td>
-                        <td>{r.pilkaShare.toFixed(1)}%</td>
-                        <td>{r.kromkaShare.toFixed(1)}%</td>
-                        <td>{r.prasShare.toFixed(1)}%</td>
-                        <td>{r.lastDate || "-"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-            {laborSubView === "planner" && !laborPlannerRows.length && !loading && (
-              <div className="empty">Нет данных для планировщика</div>
-            )}
-            {laborSubView === "planner" && laborPlannerRows.length > 0 && (
-              <div className="sheet-table-wrap">
-                <table className="sheet-table">
-                  <thead>
-                    <tr>
-                      <th>Группа изделия</th>
-                      <th>Норма (мин/комплект)</th>
-                      <th>План (комплектов)</th>
-                      <th>Время (мин)</th>
-                      <th>Время (ч:мм)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {laborPlannerRows.map((r) => (
-                      <tr key={`planner-${r.group}`}>
-                        <td>{r.group}</td>
-                        <td>{r.laborPerQtyMin.toFixed(2)}</td>
-                        <td>
-                          <input
-                            type="number"
-                            min="0"
-                            step="1"
-                            value={laborPlannerQtyByGroup[r.group] ?? ""}
-                            onChange={(e) =>
-                              setLaborPlannerQtyByGroup((prev) => ({
-                                ...prev,
-                                [r.group]: e.target.value,
-                              }))
-                            }
-                            style={{ width: 120 }}
-                            placeholder="0"
-                          />
-                        </td>
-                        <td>{Math.round(r.totalMin)}</td>
-                        <td><b>{r.hhmm}</b></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-            {laborSubView === "stages" && !laborStageTimelineRows.length && !loading && (
-              <div className="empty">Нет данных по этапам (нужны роли manager/admin)</div>
-            )}
-            {laborSubView === "stages" && laborStageTimelineRows.length > 0 && (
-              <div className="sheet-table-wrap">
-                <table className="sheet-table">
-                  <thead>
-                    <tr>
-                      <th>ID заказа</th>
-                      <th>Пила: статус</th>
-                      <th>Пила: начало</th>
-                      <th>Пила: конец</th>
-                      <th>Кромка: статус</th>
-                      <th>Кромка: начало</th>
-                      <th>Кромка: конец</th>
-                      <th>Присадка: статус</th>
-                      <th>Присадка: начало</th>
-                      <th>Присадка: конец</th>
-                      <th>Обновлено</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {laborStageTimelineRows.map((r) => (
-                      <tr key={`labor-stage-${r.orderId}`}>
-                        <td>{r.orderId || "-"}</td>
-                        <td>{r.pilkaStatus || "-"}</td>
-                        <td>{r.pilkaStart ? new Date(r.pilkaStart).toLocaleString("ru-RU", { timeZone: "Europe/Moscow" }) : "-"}</td>
-                        <td>{r.pilkaEnd ? new Date(r.pilkaEnd).toLocaleString("ru-RU", { timeZone: "Europe/Moscow" }) : "-"}</td>
-                        <td>{r.kromkaStatus || "-"}</td>
-                        <td>{r.kromkaStart ? new Date(r.kromkaStart).toLocaleString("ru-RU", { timeZone: "Europe/Moscow" }) : "-"}</td>
-                        <td>{r.kromkaEnd ? new Date(r.kromkaEnd).toLocaleString("ru-RU", { timeZone: "Europe/Moscow" }) : "-"}</td>
-                        <td>{r.prasStatus || "-"}</td>
-                        <td>{r.prasStart ? new Date(r.prasStart).toLocaleString("ru-RU", { timeZone: "Europe/Moscow" }) : "-"}</td>
-                        <td>{r.prasEnd ? new Date(r.prasEnd).toLocaleString("ru-RU", { timeZone: "Europe/Moscow" }) : "-"}</td>
-                        <td>{r.lastEventAt ? new Date(r.lastEventAt).toLocaleString("ru-RU", { timeZone: "Europe/Moscow" }) : "-"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </>
+          <LaborView
+            laborSubView={laborSubView}
+            laborTableRows={laborTableRows}
+            laborOrdersRows={laborOrdersRows}
+            laborPlannerRows={laborPlannerRows}
+            laborPlannerQtyByGroup={laborPlannerQtyByGroup}
+            setLaborPlannerQtyByGroup={setLaborPlannerQtyByGroup}
+            laborStageTimelineRows={laborStageTimelineRows}
+            laborSaveSelected={laborSaveSelected}
+            setLaborSaveSelected={setLaborSaveSelected}
+            laborSavingByKey={laborSavingByKey}
+            laborSavedByKey={laborSavedByKey}
+            saveImportedLaborRowToDb={saveImportedLaborRowToDb}
+            loading={loading}
+          />
         )}
         {view === "warehouse" && (
-          <>
-            {warehouseSubView === "sheets" && !warehouseTableRows.length && !loading && <div className="empty">Нет данных по складу</div>}
-            {warehouseSubView === "sheets" && warehouseTableRows.length > 0 && (
-              <div className="sheet-table-wrap">
-                <table className="sheet-table">
-                  <thead>
-                    <tr>
-                      <th>Материал</th>
-                      <th>Листов в наличии</th>
-                      <th>Размер</th>
-                      <th>Обновлено</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {warehouseTableRows.map((r) => (
-                      <tr key={`${r.material}-${r.sizeLabel}`}>
-                        <td>{r.material || "-"}</td>
-                        <td><b>{r.qtySheets}</b></td>
-                        <td>{r.sizeLabel || "-"}</td>
-                        <td>{r.updatedAt ? new Date(r.updatedAt).toLocaleString("ru-RU", { timeZone: "Europe/Moscow" }) : "-"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-            {warehouseSubView === "leftovers" && !leftoversTableRows.length && !loading && <div className="empty">Нет данных по остаткам</div>}
-            {warehouseSubView === "leftovers" && leftoversTableRows.length > 0 && (
-              <div className="sheet-table-wrap">
-                <table className="sheet-table">
-                  <thead>
-                    <tr>
-                      <th>Цвет</th>
-                      <th>Размер</th>
-                      <th>Количество</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {leftoversTableRows.map((r, idx) => (
-                      <tr key={`${r.material}-${r.leftoverFormat}-${idx}`}>
-                        <td>{r.material || "-"}</td>
-                        <td>{r.leftoverFormat || "-"}</td>
-                        <td><b>{r.leftoversQty}</b></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-            {warehouseSubView === "history" && !consumeHistoryTableRows.length && !loading && (
-              <div className="empty">Нет данных по списаниям</div>
-            )}
-            {warehouseSubView === "history" && consumeHistoryTableRows.length > 0 && (
-              <div className="sheet-table-wrap">
-                <table className="sheet-table">
-                  <thead>
-                    <tr>
-                      <th>Когда</th>
-                      <th>Заказ</th>
-                      <th>Материал</th>
-                      <th>Списано (листов)</th>
-                      <th>Комментарий</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {consumeHistoryTableRows.map((r) => (
-                      <tr key={r.moveId || `${r.createdAt}-${r.orderId}-${r.material}`}>
-                        <td>{r.createdAt ? new Date(r.createdAt).toLocaleString("ru-RU", { timeZone: "Europe/Moscow" }) : "-"}</td>
-                        <td>{r.orderId || "-"}</td>
-                        <td>{r.material || "-"}</td>
-                        <td><b>{r.qtySheets}</b></td>
-                        <td>{r.comment || "-"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </>
+          <WarehouseView
+            warehouseSubView={warehouseSubView}
+            warehouseTableRows={warehouseTableRows}
+            leftoversTableRows={leftoversTableRows}
+            consumeHistoryTableRows={consumeHistoryTableRows}
+            loading={loading}
+          />
         )}
         {view === "stats" && (
-          <>
-            {!statsList.length && !loading && <div className="empty">Нет данных для статистики</div>}
-            {statsList.length > 0 && (
-              <div className="sheet-table-wrap">
-                <table className="sheet-table">
-                  <thead>
-                    <tr>
-                      <th>ID заказа</th>
-                      <th>Этап</th>
-                      <th>Изделие</th>
-                      <th>План</th>
-                      <th>Кол-во</th>
-                      <th>Пила</th>
-                      <th>Кромка</th>
-                      <th>Присадка</th>
-                      <th>Сборка</th>
-                      <th>Общий статус</th>
-                      <th>Удалить</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {statsList.map((o) => (
-                      <tr key={`stats-${o.orderId || o.row}`}>
-                        <td>{o.orderId || "-"}</td>
-                        <td>{getStageLabel(o)}</td>
-                        <td>{o.item}</td>
-                        <td>{o.week || "-"}</td>
-                        <td>{o.qty || 0}</td>
-                        <td>{o.pilkaStatus || "-"}</td>
-                        <td>{o.kromkaStatus || "-"}</td>
-                        <td>{o.prasStatus || "-"}</td>
-                        <td>{o.assemblyStatus || "-"}</td>
-                        <td>{getOverallStatusDisplay(o)}</td>
-                        <td>
-                          <button
-                            type="button"
-                            className="mini warn stats-delete-btn"
-                            title="Удалить заказ"
-                            disabled={
-                              actionLoading === getStatsDeleteActionKey(o) || !canManageOrders
-                            }
-                            onClick={() => deleteStatsOrder(o)}
-                          >
-                            X
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </>
+          <StatsView
+            statsList={statsList}
+            loading={loading}
+            getStageLabel={getStageLabel}
+            getOverallStatusDisplay={getOverallStatusDisplay}
+            actionLoading={actionLoading}
+            getStatsDeleteActionKey={getStatsDeleteActionKey}
+            canManageOrders={canManageOrders}
+            deleteStatsOrder={deleteStatsOrder}
+          />
+        )}
+        {view === "sheetMirror" && (
+          <SheetMirrorView
+            filtered={filtered}
+            loading={loading}
+            formatDateTimeRu={formatDateTimeRu}
+          />
         )}
         {view === "furniture" && (
-          <>
-            {furnitureLoading && <div className="empty">Загружаю таблицу Мебель.xlsx...</div>}
-            {!furnitureLoading && furnitureError && <div className="error">{furnitureError}</div>}
-            {!furnitureLoading && !furnitureError && furnitureSheetData.headers.length === 0 && (
-              <div className="empty">В файле нет данных для отображения.</div>
-            )}
-            {!furnitureLoading && !furnitureError && furnitureSheetData.headers.length > 0 && (
-              <div style={{ display: "grid", gap: 12 }}>
-                <div className="sheet-table-wrap">
-                  <div style={{ display: "flex", gap: 8, alignItems: "end", marginBottom: 10, flexWrap: "wrap" }}>
-                    <div style={{ minWidth: 220 }}>
-                      <div style={{ fontSize: 12, color: "#475569", marginBottom: 4 }}>Изделие</div>
-                      <select
-                        value={furnitureSelectedProduct}
-                        onChange={(e) => setFurnitureSelectedProduct(e.target.value)}
-                      >
-                        {furnitureTemplates.map((t) => (
-                          <option key={t.productName} value={t.productName}>{furnitureProductLabel(t.productName)}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div style={{ width: 140 }}>
-                      <div style={{ fontSize: 12, color: "#475569", marginBottom: 4 }}>Количество</div>
-                      <input
-                        inputMode="decimal"
-                        value={furnitureSelectedQty}
-                        onChange={(e) => setFurnitureSelectedQty(e.target.value.replace(/[^0-9.,]/g, ""))}
-                        placeholder="1"
-                      />
-                    </div>
-                  </div>
-                  <table className="sheet-table">
-                    <thead>
-                      <tr>
-                        <th>Изделие</th>
-                        <th>Кол-во</th>
-                        <th>Деталь</th>
-                        <th>Кол-во</th>
-                        <th>Артикулы (из БД)</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {furnitureGeneratedDetails.map((d, idx) => (
-                        <tr key={`fg-${idx}`}>
-                          <td>{idx === 0 ? furnitureProductLabel(furnitureSelectedTemplate?.productName || "—") : ""}</td>
-                          <td>{idx === 0 ? furnitureQtyNumber : ""}</td>
-                          <td>{d.detailName}</td>
-                          <td>{Number.isInteger(d.qty) ? d.qty : d.qty.toFixed(3)}</td>
-                          <td>{(d.linkedArticles || []).join(", ") || "-"}</td>
-                        </tr>
-                      ))}
-                      {furnitureGeneratedDetails.length === 0 && (
-                        <tr>
-                          <td colSpan={5}>Выберите изделие и укажите количество.</td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-          </>
+          <FurnitureView
+            furnitureLoading={furnitureLoading}
+            furnitureError={furnitureError}
+            furnitureSheetData={furnitureSheetData}
+            furnitureSelectedProduct={furnitureSelectedProduct}
+            setFurnitureSelectedProduct={setFurnitureSelectedProduct}
+            furnitureTemplates={furnitureTemplates}
+            furnitureProductLabel={furnitureProductLabel}
+            furnitureSelectedQty={furnitureSelectedQty}
+            setFurnitureSelectedQty={setFurnitureSelectedQty}
+            furnitureGeneratedDetails={furnitureGeneratedDetails}
+            furnitureSelectedTemplate={furnitureSelectedTemplate}
+            furnitureQtyNumber={furnitureQtyNumber}
+          />
         )}
-        {view === "admin" && canAdminSettings && (
-          <>
-            <div className="admin-panel">
-              <div className="admin-panel__head">
-                <div className="admin-panel__title">Управление ролями пользователей</div>
-                <button
-                  className="mini"
-                  disabled={crmUsersLoading || crmUsersSaving !== ""}
-                  onClick={loadCrmUsers}
-                >
-                  {crmUsersLoading ? "Обновляю..." : "Обновить"}
-                </button>
-              </div>
-              <div className="admin-panel__create">
-                <input
-                  placeholder="user_id (UUID)"
-                  value={newCrmUserId}
-                  onChange={(e) => setNewCrmUserId(e.target.value)}
-                />
-                <select
-                  value={newCrmUserRole}
-                  onChange={(e) => setNewCrmUserRole(e.target.value)}
-                >
-                  {CRM_ROLES.map((r) => (
-                    <option key={`new-role-${r}`} value={r}>{CRM_ROLE_LABELS[r]}</option>
-                  ))}
-                </select>
-                <input
-                  placeholder="Комментарий (опционально)"
-                  value={newCrmUserNote}
-                  onChange={(e) => setNewCrmUserNote(e.target.value)}
-                />
-                <button
-                  className="mini ok"
-                  disabled={crmUsersSaving !== ""}
-                  onClick={createCrmUserRole}
-                >
-                  Назначить роль
-                </button>
-              </div>
-              {!crmUsersLoading && crmUsers.length === 0 && (
-                <div className="empty">Назначенных ролей пока нет.</div>
-              )}
-              {crmUsers.length > 0 && (
-                <div className="sheet-table-wrap">
-                  <table className="sheet-table">
-                    <thead>
-                      <tr>
-                        <th>Email</th>
-                        <th>Роль</th>
-                        <th>Комментарий</th>
-                        <th>Обновлено</th>
-                        <th>Действия</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {crmUsers.map((u) => (
-                        <tr key={u.userId}>
-                          <td>{u.email || u.userId}</td>
-                          <td>
-                            <select
-                              value={u.role}
-                              disabled={crmUsersSaving === u.userId}
-                              onChange={(e) => updateCrmUserRole(u.userId, e.target.value)}
-                            >
-                              {CRM_ROLES.map((r) => (
-                                <option key={r} value={r}>{CRM_ROLE_LABELS[r]}</option>
-                              ))}
-                            </select>
-                          </td>
-                          <td>{u.note || "-"}</td>
-                          <td>{u.updatedAt ? formatDateTimeRu(u.updatedAt) : "-"}</td>
-                          <td>
-                            <button
-                              className="mini warn"
-                              disabled={crmUsersSaving === u.userId}
-                              onClick={() => removeCrmUserRole(u.userId)}
-                            >
-                              Удалить роль
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          </>
+        {view === "admin" && (
+          <AdminView
+            canAdminSettings={canAdminSettings}
+            crmUsersLoading={crmUsersLoading}
+            crmUsersSaving={crmUsersSaving}
+            loadCrmUsers={loadCrmUsers}
+            newCrmUserId={newCrmUserId}
+            setNewCrmUserId={setNewCrmUserId}
+            newCrmUserRole={newCrmUserRole}
+            setNewCrmUserRole={setNewCrmUserRole}
+            newCrmUserNote={newCrmUserNote}
+            setNewCrmUserNote={setNewCrmUserNote}
+            createCrmUserRole={createCrmUserRole}
+            crmUsers={crmUsers}
+            updateCrmUserRole={updateCrmUserRole}
+            removeCrmUserRole={removeCrmUserRole}
+            formatDateTimeRu={formatDateTimeRu}
+            roleOptions={CRM_ROLES}
+            roleLabels={CRM_ROLE_LABELS}
+          />
         )}
         {view === "workshop" && (
-          <>
-        {!workshopRows.length && !loading && <div className="empty">Нет заказов</div>}
-        {workshopRows.map((o) => (
-          (() => {
-            const orderId = String(o.orderId || o.order_id || "");
-            const displaySheetsNeeded =
-              resolveDefaultConsumeSheets(o, shipmentOrders) || resolveDefaultConsumeSheetsFromBoard(o, shipmentBoard);
-            const displayMaterial = String(o.material || o.colorName || "").trim() || "Материал не указан";
-            return (
-          <article key={orderId || `${o.item}-${o.row}`} className={`card ${statusClass(o)}`}>
-            <div className="line1">
-              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                <strong>{o.item}</strong>
-                <span className="badge meta-inline">План: {o.week || "-"}</span>
-                <span className="badge meta-inline">Кол-во: {o.qty || 0}</span>
-              </div>
-            </div>
-            <div className="line2">
-              <span>ID: {orderId || "-"}</span>
-              <span>Листов нужно: {Number(displaySheetsNeeded || 0)}</span>
-              <span>
-                Листы: {displayMaterial} ({Number(displaySheetsNeeded || 0)} шт)
-              </span>
-            </div>
-            {view === "workshop" && tab !== "all" && <div className="actions">
-              {(() => {
-                const pilkaDone = isDone(o.pilkaStatus);
-                const pilkaInWork = isInWork(o.pilkaStatus);
-                const kromkaDone = isDone(o.kromkaStatus);
-                const kromkaInWork = isInWork(o.kromkaStatus);
-                const prasDone = isDone(o.prasStatus);
-                const prasInWork = isInWork(o.prasStatus);
-                const currentKromkaExec =
-                  String(o.kromkaStatus || "").includes("Сережа") ? "Сережа" :
-                  String(o.kromkaStatus || "").includes("Слава") ? "Слава" : "";
-                const currentPrasExec =
-                  String(o.prasStatus || "").includes("Виталик") ? "Виталик" :
-                  String(o.prasStatus || "").includes("Леха") || String(o.prasStatus || "").includes("Лёха") ? "Леха" :
-                  "";
-                const kromkaExecValue = executorByOrder[orderId] || currentKromkaExec || "Слава";
-                const prasExecValue = executorByOrder[`${orderId}:pras`] || currentPrasExec || "Леха";
-                const showPilka = tab === "all" || tab === "pilka";
-                const showKromka = tab === "all" || tab === "kromka";
-                const showPras = tab === "all" || tab === "pras";
-                const showAssembly = tab === "all" || tab === "assembly";
-                const showDone = tab === "all" || tab === "done";
-                const assemblyDone = isDone(o.assemblyStatus);
-                const packagingDone = isOrderCustomerShipped(o);
-                return (
-                  <>
-              {showPilka && (
-                <>
-              <button
-                type="button"
-                className={pilkaInWork ? "mini" : "mini ghost"}
-                disabled={actionLoading === `webSetPilkaInWork:${orderId}` || pilkaDone || pilkaInWork || !canOperateProduction}
-                onClick={() => runAction("webSetPilkaInWork", orderId, {})}
-              >
-                {tab === "pilka" ? "Начать" : "Пила: Начать"}
-              </button>
-              <button
-                className="mini ok"
-                disabled={actionLoading === `webSetPilkaDone:${orderId}` || pilkaDone || !pilkaInWork || !canOperateProduction}
-                onClick={() =>
-                  runAction("webSetPilkaDone", orderId, {}, {
-                    defaultSheets: displaySheetsNeeded,
-                    item: o.item,
-                    material: displayMaterial,
-                    isPlankOrder: String(o.item || "").includes("Планки обвязки"),
-                  })
-                }
-              >
-                {tab === "pilka" ? "Готово" : "Пила: Готово"}
-              </button>
-              <button
-                className="mini warn"
-                disabled={actionLoading === `webSetPilkaPause:${orderId}` || pilkaDone || !pilkaInWork || !canOperateProduction}
-                onClick={() => runAction("webSetPilkaPause", orderId)}
-              >
-                {tab === "pilka" ? "Пауза" : "Пила: Пауза"}
-              </button>
-                </>
-              )}
-
-              {showKromka && (
-                <>
-              {!kromkaInWork && (
-                <select
-                  value={kromkaExecValue}
-                  disabled={!canOperateProduction}
-                  onChange={(e) => setExecutorByOrder((prev) => ({ ...prev, [orderId]: e.target.value }))}
-                >
-                  <option>Слава</option>
-                  <option>Сережа</option>
-                </select>
-              )}
-              <button
-                type="button"
-                className={kromkaInWork ? "mini" : "mini ghost"}
-                disabled={actionLoading === `webSetKromkaInWork:${orderId}` || kromkaDone || kromkaInWork || !canOperateProduction}
-                onClick={() =>
-                  runAction("webSetKromkaInWork", orderId, {
-                    executor: kromkaExecValue,
-                  })
-                }
-              >
-                {tab === "kromka" ? "Начать" : "Кромка: Начать"}
-              </button>
-              <button
-                className="mini ok"
-                disabled={actionLoading === `webSetKromkaDone:${orderId}` || kromkaDone || !kromkaInWork || !canOperateProduction}
-                onClick={() => runAction("webSetKromkaDone", orderId)}
-              >
-                {tab === "kromka" ? "Готово" : "Кромка: Готово"}
-              </button>
-              <button
-                className="mini warn"
-                disabled={actionLoading === `webSetKromkaPause:${orderId}` || kromkaDone || !kromkaInWork || !canOperateProduction}
-                onClick={() => runAction("webSetKromkaPause", orderId)}
-              >
-                {tab === "kromka" ? "Пауза" : "Кромка: Пауза"}
-              </button>
-                </>
-              )}
-
-              {showPras && (
-                <>
-              {!prasInWork && (
-                <select
-                  value={prasExecValue}
-                  disabled={!canOperateProduction}
-                  onChange={(e) => setExecutorByOrder((prev) => ({ ...prev, [`${orderId}:pras`]: e.target.value }))}
-                >
-                  <option>Леха</option>
-                  <option>Виталик</option>
-                </select>
-              )}
-              <button
-                type="button"
-                className={prasInWork ? "mini" : "mini ghost"}
-                disabled={actionLoading === `webSetPrasInWork:${orderId}` || prasDone || prasInWork || !canOperateProduction}
-                onClick={() =>
-                  runAction("webSetPrasInWork", orderId, {
-                    executor: prasExecValue,
-                  })
-                }
-              >
-                {tab === "pras" ? "Начать" : "Присадка: Начать"}
-              </button>
-              <button
-                className="mini ok"
-                disabled={actionLoading === `webSetPrasDone:${orderId}` || prasDone || !prasInWork || !canOperateProduction}
-                onClick={() =>
-                  runAction("webSetPrasDone", orderId, {}, {
-                    notifyOnAssembly: pilkaDone && kromkaDone && !assemblyDone,
-                    item: o.item,
-                    material: getMaterialLabel(o.item, o.material || o.colorName || ""),
-                    week: o.week,
-                    qty: o.qty,
-                    executor: executorByOrder[orderId] || o.prasExecutor || "",
-                  })
-                }
-              >
-                {tab === "pras" ? "Готово" : "Присадка: Готово"}
-              </button>
-              <button
-                className="mini warn"
-                disabled={actionLoading === `webSetPrasPause:${orderId}` || prasDone || !prasInWork || !canOperateProduction}
-                onClick={() => runAction("webSetPrasPause", orderId)}
-              >
-                {tab === "pras" ? "Пауза" : "Присадка: Пауза"}
-              </button>
-                </>
-              )}
-              {showAssembly && (
-                <>
-              <button
-                className="mini ok"
-                disabled={actionLoading === `webSetAssemblyDone:${orderId}` || assemblyDone || !canOperateProduction}
-                onClick={() => runAction("webSetAssemblyDone", orderId)}
-              >
-                {tab === "assembly" ? "Готово" : "Сборка: Готово"}
-              </button>
-                </>
-              )}
-              {showDone && (
-                <>
-              <button
-                className="mini ok"
-                disabled={actionLoading === `webSetShippingDone:${orderId}` || packagingDone || !canOperateProduction}
-                onClick={() =>
-                  runAction("webSetShippingDone", orderId, {}, {
-                    notifyOnFinalStage: true,
-                    item: o.item,
-                    material: getMaterialLabel(o.item, o.material || o.colorName || ""),
-                    week: o.week,
-                    qty: o.qty,
-                    executor: executorByOrder[orderId] || o.prasExecutor || "",
-                  })
-                }
-              >
-                {tab === "done" ? "Готово" : "Готово к отправке: Готово"}
-              </button>
-                </>
-              )}
-                  </>
-                );
-              })()}
-            </div>}
-          </article>
-            );
-          })()
-        ))}
-          </>
+          <WorkshopView
+            workshopRows={workshopRows}
+            loading={loading}
+            tab={tab}
+            shipmentOrders={shipmentOrders}
+            shipmentBoard={shipmentBoard}
+            statusClass={statusClass}
+            resolveDefaultConsumeSheets={resolveDefaultConsumeSheets}
+            resolveDefaultConsumeSheetsFromBoard={resolveDefaultConsumeSheetsFromBoard}
+            isDone={isDone}
+            isInWork={isInWork}
+            isOrderCustomerShipped={isOrderCustomerShipped}
+            actionLoading={actionLoading}
+            canOperateProduction={canOperateProduction}
+            runAction={runAction}
+            executorByOrder={executorByOrder}
+            setExecutorByOrder={setExecutorByOrder}
+            getMaterialLabel={getMaterialLabel}
+          />
         )}
       </section>
       {hoverTip.visible && (
@@ -5742,237 +3859,62 @@ export default function App() {
           {hoverTip.text}
         </div>
       )}
-      {consumeDialogOpen && (
-        <div className="dialog-backdrop">
-          <div className="dialog-card">
-            <h3 style={{ marginTop: 0 }}>Списание листов после пилки</h3>
-            <div className="line2" style={{ marginBottom: 8 }}>
-              <span>{consumeDialogData?.item || "Заказ"}</span>
-              <span>ID: {consumeDialogData?.orderId || "-"}</span>
-            </div>
-            {consumeLoading && <div className="line2" style={{ marginBottom: 8 }}>Загружаю подсказки по материалу...</div>}
-            {!consumeEditMode ? (
-              <>
-                <div className="line2">
-                  <span>Списать количество листов материала:</span>
-                  <b>{consumeMaterial || "—"}</b>
-                </div>
-                <div className="line2">
-                  <span>Количество:</span>
-                  <b>{consumeQty || "—"}</b>
-                </div>
-                <div className="actions">
-                  <button
-                    className="mini ok"
-                    disabled={consumeSaving}
-                    onClick={() => submitConsume(consumeMaterial, consumeQty)}
-                  >
-                    {consumeSaving ? "Списываю..." : "Подтвердить"}
-                  </button>
-                  <button
-                    className="mini"
-                    disabled={consumeSaving}
-                    onClick={() => setConsumeEditMode(true)}
-                  >
-                    Изменить
-                  </button>
-                  <button className="mini warn" disabled={consumeSaving} onClick={closeConsumeDialog}>
-                    Нет
-                  </button>
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="actions" style={{ display: "grid", gridTemplateColumns: "1fr 140px", gap: 8 }}>
-                  <input
-                    list="consumeMaterialsList"
-                    value={consumeMaterial}
-                    onChange={(e) => setConsumeMaterial(e.target.value)}
-                    placeholder="Материал"
-                  />
-                  <input
-                    value={consumeQty}
-                    onChange={(e) => setConsumeQty(e.target.value)}
-                    placeholder="Листов"
-                  />
-                </div>
-                <datalist id="consumeMaterialsList">
-                  {(consumeDialogData?.materials || []).map((m) => (
-                    <option key={m} value={m} />
-                  ))}
-                </datalist>
-                <div className="actions">
-                  <button
-                    className="mini ok"
-                    disabled={consumeSaving}
-                    onClick={() => submitConsume(consumeMaterial, consumeQty)}
-                  >
-                    {consumeSaving ? "Списываю..." : "Сохранить и списать"}
-                  </button>
-                  <button className="mini" disabled={consumeSaving} onClick={() => setConsumeEditMode(false)}>
-                    Назад
-                  </button>
-                  <button className="mini warn" disabled={consumeSaving} onClick={closeConsumeDialog}>
-                    Нет
-                  </button>
-                </div>
-              </>
-            )}
-            {consumeError && <div className="error" style={{ marginTop: 8 }}>{consumeError}</div>}
-          </div>
-        </div>
-      )}
-      {strapDialogOpen && (
-        <div className="dialog-backdrop">
-          <div className="dialog-card strap-dialog-card">
-            <h3 style={{ marginTop: 0 }}>Конструктор планок (обвязка)</h3>
-            <div className="line2" style={{ marginBottom: 10 }}>
-              Укажите количество для нужных позиций. Пусто или 0 — не добавлять.
-            </div>
-            <div className="strap-row strap-row--product" style={{ marginBottom: 10 }}>
-              <label>Изделие</label>
-              <select
-                value={strapTargetProduct}
-                onChange={(e) => setStrapTargetProduct(e.target.value)}
-              >
-                {strapProductNames.map((name) => (
-                  <option key={name} value={name}>{name}</option>
-                ))}
-              </select>
-            </div>
-            <div className="strap-row" style={{ marginBottom: 10 }}>
-              <label>Неделя плана</label>
-              <input
-                value={strapPlanWeek}
-                onChange={(e) => setStrapPlanWeek(e.target.value.replace(/[^\d-]/g, ""))}
-                placeholder="Например: 71"
-              />
-            </div>
-            <div className="strap-grid">
-              {strapOptionsForSelectedProduct.map((name) => (
-                <div key={name} className="strap-row">
-                  <label>{name}</label>
-                  <input
-                    inputMode="numeric"
-                    value={strapDraft[name]}
-                    onChange={(e) =>
-                      setStrapDraft((prev) => ({
-                        ...prev,
-                        [name]: e.target.value.replace(/[^0-9.,]/g, ""),
-                      }))
-                    }
-                    placeholder="0"
-                  />
-                </div>
-              ))}
-            </div>
-            <div className="actions" style={{ marginTop: 10 }}>
-              <button className="mini ok" disabled={actionLoading === "shipment:strapsave"} onClick={saveStrapDialog}>
-                {actionLoading === "shipment:strapsave" ? "Сохраняю..." : "Готово"}
-              </button>
-              <button className="mini" disabled={actionLoading === "shipment:strapsave"} onClick={() => setStrapDialogOpen(false)}>
-                Отмена
-              </button>
-              <button
-                className="mini warn"
-                disabled={actionLoading === "shipment:strapsave"}
-                onClick={() => {
-                  setStrapItems([]);
-                  setStrapDraft(strapOptionsForSelectedProduct.reduce((acc, name) => ({ ...acc, [name]: "" }), {}));
-                  setStrapDialogOpen(false);
-                }}
-              >
-                Очистить
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-      {planDialogOpen && (
-        <div className="dialog-backdrop">
-          <div className="dialog-card">
-            <h3 style={{ marginTop: 0 }}>Добавить новый план</h3>
-            <div className="line2" style={{ marginBottom: 10 }}>
-              Создаёт или обновляет позицию плана в отгрузке по неделе и изделию.
-            </div>
-            <div className="strap-grid">
-              <div className="strap-row" style={{ gridTemplateColumns: "170px 1fr" }}>
-                <label>Секция</label>
-                <select
-                  value={planSection}
-                  onChange={(e) => {
-                    const nextSection = e.target.value;
-                    setPlanSection(nextSection);
-                    const firstArticle = (sectionArticleRows || [])
-                      .map((x) => ({
-                        sectionName: String(x.section_name || x.sectionName || "").trim(),
-                        article: String(x.article || "").trim(),
-                        itemName: String(x.item_name || x.itemName || "").trim(),
-                        material: String(x.material || "").trim(),
-                      }))
-                      .find((x) => x.sectionName === nextSection && x.article);
-                    setPlanArticle(firstArticle?.itemName || "");
-                    setPlanMaterial(resolvePlanMaterial(firstArticle));
-                  }}
-                >
-                  {sectionOptions.map((name) => (
-                    <option key={name} value={name}>{name}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="strap-row" style={{ gridTemplateColumns: "170px 1fr" }}>
-                <label>Артикул</label>
-                <select
-                  value={planArticle}
-                  onChange={(e) => {
-                    const nextArticle = e.target.value;
-                    setPlanArticle(nextArticle);
-                    const matched = sectionArticles.find((x) => x.itemName === nextArticle);
-                    setPlanMaterial(resolvePlanMaterial(matched));
-                  }}
-                >
-                  {sectionArticles.length === 0 ? (
-                    <option value="">Нет артикулов для секции</option>
-                  ) : (
-                    sectionArticles.map((x) => (
-                      <option key={`${x.article}::${x.itemName}`} value={x.itemName}>{x.itemName}</option>
-                    ))
-                  )}
-                </select>
-              </div>
-              <div className="strap-row" style={{ gridTemplateColumns: "170px 1fr" }}>
-                <label>Материал</label>
-                <input value={planMaterial} readOnly placeholder="Материал подставляется из артикула" />
-              </div>
-              <div className="strap-row" style={{ gridTemplateColumns: "170px 1fr" }}>
-                <label>Неделя</label>
-                <input
-                  value={planWeek}
-                  onChange={(e) => setPlanWeek(e.target.value.replace(/[^\d-]/g, ""))}
-                  placeholder="Например: 70"
-                />
-              </div>
-              <div className="strap-row" style={{ gridTemplateColumns: "170px 1fr" }}>
-                <label>Количество</label>
-                <input
-                  inputMode="decimal"
-                  value={planQty}
-                  onChange={(e) => setPlanQty(e.target.value.replace(/[^0-9.,]/g, ""))}
-                  placeholder="Например: 36"
-                />
-              </div>
-            </div>
-            <div className="actions" style={{ marginTop: 10 }}>
-              <button className="mini ok" disabled={planSaving} onClick={saveCreatePlanDialog}>
-                {planSaving ? "Сохраняю..." : "Сохранить план"}
-              </button>
-              <button className="mini" disabled={planSaving} onClick={closeCreatePlanDialog}>
-                Отмена
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConsumeDialog
+        isOpen={consumeDialogOpen}
+        consumeDialogData={consumeDialogData}
+        consumeLoading={consumeLoading}
+        consumeEditMode={consumeEditMode}
+        consumeMaterial={consumeMaterial}
+        consumeQty={consumeQty}
+        consumeSaving={consumeSaving}
+        consumeError={consumeError}
+        onSubmit={submitConsume}
+        onSetEditMode={setConsumeEditMode}
+        onClose={closeConsumeDialog}
+        onMaterialChange={setConsumeMaterial}
+        onQtyChange={setConsumeQty}
+      />
+      <StrapDialog
+        isOpen={strapDialogOpen}
+        strapTargetProduct={strapTargetProduct}
+        strapProductNames={strapProductNames}
+        strapPlanWeek={strapPlanWeek}
+        strapOptionsForSelectedProduct={strapOptionsForSelectedProduct}
+        strapDraft={strapDraft}
+        isSaving={actionLoading === "shipment:strapsave"}
+        onTargetProductChange={setStrapTargetProduct}
+        onPlanWeekChange={(value) => setStrapPlanWeek(value.replace(/[^\d-]/g, ""))}
+        onDraftValueChange={(name, value) =>
+          setStrapDraft((prev) => ({
+            ...prev,
+            [name]: value.replace(/[^0-9.,]/g, ""),
+          }))
+        }
+        onSave={saveStrapDialog}
+        onClose={() => setStrapDialogOpen(false)}
+        onClear={() => {
+          setStrapItems([]);
+          setStrapDraft(strapOptionsForSelectedProduct.reduce((acc, name) => ({ ...acc, [name]: "" }), {}));
+          setStrapDialogOpen(false);
+        }}
+      />
+      <PlanDialog
+        isOpen={planDialogOpen}
+        planSection={planSection}
+        sectionOptions={sectionOptions}
+        planArticle={planArticle}
+        sectionArticles={sectionArticles}
+        planMaterial={planMaterial}
+        planWeek={planWeek}
+        planQty={planQty}
+        planSaving={planSaving}
+        onSectionChange={handlePlanSectionChange}
+        onArticleChange={handlePlanArticleChange}
+        onPlanWeekChange={(value) => setPlanWeek(value.replace(/[^\d-]/g, ""))}
+        onPlanQtyChange={(value) => setPlanQty(value.replace(/[^0-9.,]/g, ""))}
+        onSave={saveCreatePlanDialog}
+        onClose={closeCreatePlanDialog}
+      />
     </div>
   );
 }
