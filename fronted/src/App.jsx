@@ -151,6 +151,8 @@ const CONSUME_LOG_SHEET_NAME = "расход апрель 2026";
 // Google Sheet (вкладка "Отгрузка") для записи плана
 const PLAN_SYNC_SHEET_ID = "1gRMs2AVxIXwmQLLnB2WIoRW7mPkGc9usyaUrXZAHuIs";
 const PLAN_SYNC_GID = "1998084017";
+/** GID листа для вкладки «Google Mirror» (`webGetSheetOrdersMirror`). Переопределение: `VITE_SHEET_MIRROR_GID`. */
+const SHEET_MIRROR_GID = String(import.meta.env.VITE_SHEET_MIRROR_GID || "1772676601").trim();
 const STAGE_SYNC_META = {
   webSetPilkaInWork: { code: "pilka_in_work", label: "Пила: в работе" },
   webSetPilkaDone: { code: "pilka_done", label: "Пила: готово" },
