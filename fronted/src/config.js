@@ -22,21 +22,33 @@ function resolveBackendProvider() {
   return inferred;
 }
 
-/** gas | supabase | shadow — в production режим задается только явно через VITE_BACKEND_PROVIDER. */
-export const BACKEND_PROVIDER = resolveBackendProvider();
+/** gas | supabase | shadow */
+let backendProvider = resolveBackendProvider();
+
+if (!["gas", "supabase", "shadow"].includes(backendProvider)) {
+  throw new Error(`Неподдерживаемый VITE_BACKEND_PROVIDER: ${backendProvider}`);
+}
+
+if ((backendProvider === "supabase" || backendProvider === "shadow") && !hasSupabaseEnv) {
+  if (backendProvider === "supabase" && explicitProviderRaw === "supabase") {
+    if (typeof console !== "undefined" && console.error) {
+      console.error(
+        "[config] VITE_BACKEND_PROVIDER=supabase, но VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY пусты или неверны. " +
+          "Временно используется режим gas (проверьте fronted/.env.production и пересоберите npm run build)."
+      );
+    }
+    backendProvider = "gas";
+  } else {
+    throw new Error(
+      "Для VITE_BACKEND_PROVIDER=supabase|shadow требуются VITE_SUPABASE_URL и VITE_SUPABASE_ANON_KEY."
+    );
+  }
+}
+
+export const BACKEND_PROVIDER = backendProvider;
 
 export const SUPABASE_URL = supabaseUrl;
 export const SUPABASE_ANON_KEY = supabaseAnon;
-
-if (!["gas", "supabase", "shadow"].includes(BACKEND_PROVIDER)) {
-  throw new Error(`Неподдерживаемый VITE_BACKEND_PROVIDER: ${BACKEND_PROVIDER}`);
-}
-
-if ((BACKEND_PROVIDER === "supabase" || BACKEND_PROVIDER === "shadow") && !hasSupabaseEnv) {
-  throw new Error(
-    "Для VITE_BACKEND_PROVIDER=supabase|shadow требуются VITE_SUPABASE_URL и VITE_SUPABASE_ANON_KEY."
-  );
-}
 
 if ((BACKEND_PROVIDER === "gas" || BACKEND_PROVIDER === "shadow") && !String(GAS_WEBAPP_URL || "").trim()) {
   throw new Error("Для VITE_BACKEND_PROVIDER=gas|shadow требуется VITE_GAS_WEBAPP_URL.");

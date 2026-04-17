@@ -7,6 +7,39 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      (function () {
+        function showBootError(msg) {
+          var el = document.getElementById("root");
+          if (!el || el.getAttribute("data-boot-error")) return;
+          el.setAttribute("data-boot-error", "1");
+          el.innerHTML = "";
+          var box = document.createElement("div");
+          box.style.cssText =
+            "padding:16px;font:14px/1.45 system-ui,Segoe UI,sans-serif;max-width:42rem;margin:2rem auto;background:#fee;border:1px solid #c33;border-radius:8px;color:#111";
+          var title = document.createElement("strong");
+          title.textContent = "Ошибка при запуске приложения";
+          var pre = document.createElement("pre");
+          pre.style.cssText = "white-space:pre-wrap;margin:12px 0 0;font:13px ui-monospace,monospace";
+          pre.textContent = String(msg);
+          var hint = document.createElement("p");
+          hint.style.cssText = "margin:12px 0 0;color:#333;font-size:13px";
+          hint.innerHTML =
+            "Часто на VPS: неполный <code>fronted/.env.production</code> (после правок обязательно <code>npm run build</code>), либо nginx отдаёт не ту папку / 404 на <code>assets/*.js</code> (вкладка Network в браузере).";
+          box.appendChild(title);
+          box.appendChild(pre);
+          box.appendChild(hint);
+          el.appendChild(box);
+        }
+        window.addEventListener("error", function (e) {
+          if (e && e.message) showBootError(e.message);
+        });
+        window.addEventListener("unhandledrejection", function (e) {
+          var r = e && e.reason;
+          showBootError(r && r.message ? r.message : r || "Необработанное отклонение Promise");
+        });
+      })();
+    </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
   </html>
