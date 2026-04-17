@@ -488,6 +488,22 @@ function getShipmentCellStatusShort(c) {
   return "Статус";
 }
 
+function getOverallStatusDisplay(order) {
+  const raw = String(order?.overallStatus || order?.overall || "").trim();
+  const stageKey = mapPipelineStageToShipmentKey(order);
+  const computed = stageLabel(stageKey);
+  if (!raw) return computed;
+
+  // If legacy overall_status is stale (e.g. still "Отправлен на пилу"),
+  // trust the current pipeline-derived status for UI consistency.
+  const rawLc = raw.toLowerCase();
+  const isLegacyPilka = rawLc.includes("на пилу");
+  const isPilkaStage = stageKey === "on_pilka_wait" || stageKey === "on_pilka_work";
+  if (isLegacyPilka && !isPilkaStage) return computed;
+
+  return raw;
+}
+
 function getShipmentStageKey(c, sourceRow, orderMaps, itemName) {
   if (!c) return "awaiting";
   if (c.canSendToWork && !c.inWork) return "awaiting";
@@ -5325,7 +5341,7 @@ export default function App() {
                         <td>{o.kromkaStatus || "-"}</td>
                         <td>{o.prasStatus || "-"}</td>
                         <td>{o.assemblyStatus || "-"}</td>
-                        <td>{o.overallStatus || "-"}</td>
+                        <td>{getOverallStatusDisplay(o)}</td>
                         <td>
                           <button
                             type="button"
