@@ -71,6 +71,12 @@ server {
     root /var/www/crm-test;
     index index.html;
 
+    # Важно: без этого запрос к несуществующему /assets/*.js получает index.html с кодом 200 —
+    # браузер «склеивает» HTML как JS → белый экран. Для /assets/ только реальные файлы.
+    location ^~ /assets/ {
+        try_files $uri =404;
+    }
+
     location / {
         try_files $uri $uri/ /index.html;
     }
@@ -103,6 +109,11 @@ systemctl reload nginx
 
 ## Quick Troubleshooting
 
+- Белый экран, в консоли `Unexpected token '<'`:
+  - Часто nginx отдаёт `index.html` вместо бандла для битого URL в `/assets/…` (при старом `try_files` это даже **HTTP 200**). Возьмите путь из `index.html` и проверьте файл и заголовки:
+    - `grep 'src="/assets/' /var/www/crm-test/index.html`
+    - `JS=$(grep -o 'src="/assets/[^"]*"' /var/www/crm-test/index.html | head -1 | cut -d'"' -f2)` и затем `ls -la "/var/www/crm-test$JS"` и `curl -sI "http://127.0.0.1$JS" | head -8` — для JS ожидайте `Content-Type` с **javascript**, не `text/html`.
+  - Обновите блок `server` в nginx как выше (отдельный `location ^~ /assets/`), затем `nginx -t` и `systemctl reload nginx`.
 - `Invalid API key`:
   - Ensure `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are from the same Supabase project.
 - Frontend loads but data empty:
