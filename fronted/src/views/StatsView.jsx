@@ -2,6 +2,7 @@ export function StatsView({
   statsList,
   loading,
   getStageLabel,
+  getOverallStatusDisplay,
   actionLoading,
   getStatsDeleteActionKey,
   canManageOrders,
@@ -40,7 +41,7 @@ export function StatsView({
                   <td>{o.kromkaStatus || "-"}</td>
                   <td>{o.prasStatus || "-"}</td>
                   <td>{o.assemblyStatus || "-"}</td>
-                  <td>{o.overallStatus || "-"}</td>
+                  <td>{getOverallStatusDisplay(o)}</td>
                   <td>
                     <button
                       type="button"

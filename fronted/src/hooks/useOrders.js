@@ -81,10 +81,40 @@ export function useBaseOrderFilter({
 } = {}) {
   return useMemo(() => {
     const q = String(query || "").trim().toLowerCase();
+    function hasArticleLikeCode(row) {
+      const raw = String(
+        row?.article_code ||
+          row?.articleCode ||
+          row?.article ||
+          row?.mapped_article_code ||
+          row?.mappedArticleCode ||
+          "",
+      ).trim();
+      if (!raw) return false;
+      const compact = raw.replace(/\s+/g, "");
+      return /^[A-Za-z0-9][A-Za-z0-9._-]{2,}$/.test(compact);
+    }
     return rows.filter((x) => {
+      if (view === "stats") {
+        const byWeek = weekFilter === "all" || String(x.week || "") === weekFilter;
+        const byQuery =
+          !q ||
+          String(x.item || "").toLowerCase().includes(q) ||
+          String(x.orderId || x.order_id || "").toLowerCase().includes(q);
+        return byWeek && byQuery;
+      }
       // Скрываем тех/мусорные позиции во вкладках заказов (Производство/Обзор/Статистика).
       const sectionName = String(x.section_name || x.sectionName || "").trim();
-      if ((isStorageLikeName(x.item) && !isObvyazkaSectionName(sectionName)) || isGarbageShipmentItemName(x.item)) return false;
+      const sourceRowId = String(x.source_row_id || x.sourceRowId || "").trim();
+      const storageLike = isStorageLikeName(x.item);
+      const allowInWorkshop = view === "workshop" && storageLike;
+      const allowInStats = view === "stats" && storageLike;
+      const allowStorageLike =
+        allowInWorkshop ||
+        allowInStats ||
+        (storageLike &&
+          (isObvyazkaSectionName(sectionName) || sourceRowId.startsWith("manual:") || hasArticleLikeCode(x)));
+      if ((storageLike && !allowStorageLike) || isGarbageShipmentItemName(x.item)) return false;
       const byWeek = weekFilter === "all" || String(x.week || "") === weekFilter;
       const byQuery =
         !q ||

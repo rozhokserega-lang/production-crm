@@ -5,6 +5,12 @@ export function LaborView({
   laborPlannerRows,
   laborPlannerQtyByGroup,
   setLaborPlannerQtyByGroup,
+  laborStageTimelineRows,
+  laborSaveSelected,
+  setLaborSaveSelected,
+  laborSavingByKey,
+  laborSavedByKey,
+  saveImportedLaborRowToDb,
   loading,
 }) {
   return (
@@ -24,11 +30,12 @@ export function LaborView({
                 <th>Присадка (мин)</th>
                 <th>Итого (мин)</th>
                 <th>Дата завершения</th>
+                <th>Сохранить в БД</th>
               </tr>
             </thead>
             <tbody>
               {laborTableRows.map((r) => (
-                <tr key={`${r.orderId}-${r.item}`}>
+                <tr key={`${r.orderId}-${r.item}-${r.importKey || "db"}`}>
                   <td>{r.orderId || "-"}</td>
                   <td>{r.item}</td>
                   <td>{r.week || "-"}</td>
@@ -38,6 +45,31 @@ export function LaborView({
                   <td>{r.prasMin}</td>
                   <td><b>{r.totalMin}</b></td>
                   <td>{r.dateFinished || "-"}</td>
+                  <td>
+                    {r.importedLocal && r.importKey ? (
+                      <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                        <input
+                          type="checkbox"
+                          checked={Boolean(laborSaveSelected[r.importKey])}
+                          disabled={Boolean(laborSavingByKey[r.importKey]) || Boolean(laborSavedByKey[r.importKey])}
+                          onChange={(e) => {
+                            const checked = Boolean(e.target.checked);
+                            setLaborSaveSelected((prev) => ({ ...prev, [r.importKey]: checked }));
+                            if (checked) void saveImportedLaborRowToDb(r);
+                          }}
+                        />
+                        <span>
+                          {laborSavedByKey[r.importKey]
+                            ? "Сохранено"
+                            : laborSavingByKey[r.importKey]
+                              ? "Сохраняю..."
+                              : "Сохранить"}
+                        </span>
+                      </label>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -129,6 +161,47 @@ export function LaborView({
                   </td>
                   <td>{Math.round(r.totalMin)}</td>
                   <td><b>{r.hhmm}</b></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {laborSubView === "stages" && !laborStageTimelineRows.length && !loading && (
+        <div className="empty">Нет данных по этапам (нужны роли manager/admin)</div>
+      )}
+      {laborSubView === "stages" && laborStageTimelineRows.length > 0 && (
+        <div className="sheet-table-wrap">
+          <table className="sheet-table">
+            <thead>
+              <tr>
+                <th>ID заказа</th>
+                <th>Пила: статус</th>
+                <th>Пила: начало</th>
+                <th>Пила: конец</th>
+                <th>Кромка: статус</th>
+                <th>Кромка: начало</th>
+                <th>Кромка: конец</th>
+                <th>Присадка: статус</th>
+                <th>Присадка: начало</th>
+                <th>Присадка: конец</th>
+                <th>Обновлено</th>
+              </tr>
+            </thead>
+            <tbody>
+              {laborStageTimelineRows.map((r) => (
+                <tr key={`labor-stage-${r.orderId}`}>
+                  <td>{r.orderId || "-"}</td>
+                  <td>{r.pilkaStatus || "-"}</td>
+                  <td>{r.pilkaStart ? new Date(r.pilkaStart).toLocaleString("ru-RU", { timeZone: "Europe/Moscow" }) : "-"}</td>
+                  <td>{r.pilkaEnd ? new Date(r.pilkaEnd).toLocaleString("ru-RU", { timeZone: "Europe/Moscow" }) : "-"}</td>
+                  <td>{r.kromkaStatus || "-"}</td>
+                  <td>{r.kromkaStart ? new Date(r.kromkaStart).toLocaleString("ru-RU", { timeZone: "Europe/Moscow" }) : "-"}</td>
+                  <td>{r.kromkaEnd ? new Date(r.kromkaEnd).toLocaleString("ru-RU", { timeZone: "Europe/Moscow" }) : "-"}</td>
+                  <td>{r.prasStatus || "-"}</td>
+                  <td>{r.prasStart ? new Date(r.prasStart).toLocaleString("ru-RU", { timeZone: "Europe/Moscow" }) : "-"}</td>
+                  <td>{r.prasEnd ? new Date(r.prasEnd).toLocaleString("ru-RU", { timeZone: "Europe/Moscow" }) : "-"}</td>
+                  <td>{r.lastEventAt ? new Date(r.lastEventAt).toLocaleString("ru-RU", { timeZone: "Europe/Moscow" }) : "-"}</td>
                 </tr>
               ))}
             </tbody>

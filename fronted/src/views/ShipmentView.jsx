@@ -5,6 +5,10 @@ export function ShipmentView({
   selectedShipmentStockCheck,
   strapCalculation,
   shipmentPlanDeficits,
+  articleLookupByItemKey,
+  resolvePlanPreviewArticleByName,
+  buildPlanPreviewQrPayload,
+  buildQrCodeUrl,
   planPreviews,
   setPlanPreviews,
   filtered,
@@ -156,9 +160,24 @@ export function ShipmentView({
                         <div className="name">{planPreview.firstName || planPreview.detailedName || "-"}</div>
                         <div className="color">{planPreview.colorName || "-"}</div>
                       </div>
-                      <div className="plan-number-box">
-                        <div>ПЛАН</div>
-                        <div className="num">{planPreview.planNumber || "-"}</div>
+                      <div className="plan-right-meta">
+                        <div className="plan-number-box">
+                          <div>ПЛАН</div>
+                          <div className="num">{planPreview.planNumber || "-"}</div>
+                        </div>
+                        <div className="plan-qr-box">
+                          {(() => {
+                            const fallbackArticle = resolvePlanPreviewArticleByName(planPreview, articleLookupByItemKey);
+                            return (
+                              <img
+                                className="plan-qr-image"
+                                src={buildQrCodeUrl(buildPlanPreviewQrPayload(planPreview, fallbackArticle))}
+                                alt="QR изделия/плана/количества"
+                              />
+                            );
+                          })()}
+                          <div className="plan-qr-caption">Артикул / план / количество</div>
+                        </div>
                       </div>
                     </div>
                     <table className="plan-table">

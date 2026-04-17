@@ -4,7 +4,7 @@ import {
   callBackend,
   supabaseCall,
 } from "./api";
-import { SUPABASE_ANON_KEY, SUPABASE_URL } from "./config";
+import { BACKEND_PROVIDER, SUPABASE_ANON_KEY, SUPABASE_URL } from "./config";
 import furnitureWorkbookUrl from "./assets/furniture.xlsx?url";
 import {
   getOrderStageDisplayLabel as getStageLabel,
@@ -27,6 +27,7 @@ import {
   getShipmentCellStatus,
   getShipmentCellStatusShort,
   getShipmentStageKey,
+  mapPipelineStageToShipmentKey,
   isGarbageShipmentItemName,
   isObvyazkaSectionName,
   isStorageLikeName,
@@ -102,7 +103,6 @@ const TABS = [
 ];
 const VIEWS = [
   { id: "shipment", label: "Отгрузка" },
-  { id: "sheetMirror", label: "Google Mirror" },
   { id: "overview", label: "Обзор заказов" },
   { id: "workshop", label: "Производство" },
   { id: "warehouse", label: "Склад" },
@@ -124,7 +124,6 @@ const DEFAULT_SHIPMENT_PREFS = {
   showShipped: true,
   collapsedSections: {},
 };
-const UI_SCALE_STORAGE_KEY = "crmUiScale";
 const SHIPMENT_SECTION_ORDER = [];
 const STRAP_OPTIONS = [
   "Бока (316_167)",
@@ -147,7 +146,24 @@ const STRAP_SHEET_WIDTH = 2800;
 const STRAP_SHEET_HEIGHT = 2070;
 const WAREHOUSE_SYNC_SHEET_ID = "1SyFYOpXyHHMP31qYV5-XL8fINVUUDCrXIrewaZqkYkA";
 const WAREHOUSE_SYNC_GID = "1501570173";
-const SHEET_MIRROR_GID = "1772676601";
+const LEFTOVERS_SYNC_GID = "762227238";
+const CONSUME_LOG_SHEET_NAME = "расход апрель 2026";
+// Google Sheet (вкладка "Отгрузка") для записи плана
+const PLAN_SYNC_SHEET_ID = "1gRMs2AVxIXwmQLLnB2WIoRW7mPkGc9usyaUrXZAHuIs";
+const PLAN_SYNC_GID = "1998084017";
+const STAGE_SYNC_META = {
+  webSetPilkaInWork: { code: "pilka_in_work", label: "Пила: в работе" },
+  webSetPilkaDone: { code: "pilka_done", label: "Пила: готово" },
+  webSetPilkaPause: { code: "pilka_pause", label: "Пила: пауза" },
+  webSetKromkaInWork: { code: "kromka_in_work", label: "Кромка: в работе" },
+  webSetKromkaDone: { code: "kromka_done", label: "Кромка: готово" },
+  webSetKromkaPause: { code: "kromka_pause", label: "Кромка: пауза" },
+  webSetPrasInWork: { code: "pras_in_work", label: "Присадка: в работе" },
+  webSetPrasDone: { code: "pras_done", label: "Присадка: готово" },
+  webSetPrasPause: { code: "pras_pause", label: "Присадка: пауза" },
+  webSetAssemblyDone: { code: "assembly_done", label: "Сборка: готово" },
+  webSetShippingDone: { code: "shipping_done", label: "Отгрузка: готово" },
+};
 
 function statusClass(order) {
   const ps = resolvePipelineStage(order);
@@ -213,6 +229,22 @@ function stageBg(stageKey, rawBg = "#ffffff") {
   return rawBg || "#ffffff";
 }
 
+function getOverallStatusDisplay(order) {
+  const raw = String(order?.overallStatus || order?.overall || "").trim();
+  const stageKey = mapPipelineStageToShipmentKey(order);
+  const computed = stageLabel(stageKey);
+  if (!raw) return computed;
+
+  // If legacy overall_status is stale (e.g. still "Отправлен на пилу"),
+  // trust the current pipeline-derived status for UI consistency.
+  const rawLc = raw.toLowerCase();
+  const isLegacyPilka = rawLc.includes("на пилу");
+  const isPilkaStage = stageKey === "on_pilka_wait" || stageKey === "on_pilka_work";
+  if (isLegacyPilka && !isPilkaStage) return computed;
+
+  return raw;
+}
+
 function getMaterialLabel(item, material) {
   const direct = String(material || "").trim();
   if (direct) return direct;
@@ -224,6 +256,121 @@ function getMaterialLabel(item, material) {
     .filter(Boolean);
   const tail = String(parts[parts.length - 1] || "").trim();
   return tail || "Материал не указан";
+}
+
+function hasArticleLikeCode(row) {
+  const raw = String(
+    row?.article_code ||
+      row?.articleCode ||
+      row?.article ||
+      row?.mapped_article_code ||
+      row?.mappedArticleCode ||
+      "",
+  ).trim();
+  if (!raw) return false;
+  const compact = raw.replace(/\s+/g, "");
+  return /^[A-Za-z0-9][A-Za-z0-9._-]{2,}$/.test(compact);
+}
+
+function getPlanPreviewArticleCode(planPreview) {
+  const direct = String(
+    planPreview?.article_code ||
+      planPreview?.articleCode ||
+      planPreview?.article ||
+      planPreview?.mapped_article_code ||
+      planPreview?.mappedArticleCode ||
+      "",
+  ).trim();
+  if (direct) return direct;
+  const rows = Array.isArray(planPreview?.rows) ? planPreview.rows : [];
+  for (const row of rows) {
+    const fromRow = String(
+      row?.article_code ||
+        row?.articleCode ||
+        row?.article ||
+        row?.mapped_article_code ||
+        row?.mappedArticleCode ||
+        "",
+    ).trim();
+    if (fromRow) return fromRow;
+  }
+  return "";
+}
+
+function resolvePlanPreviewArticleByName(planPreview, articleLookupByItemKey) {
+  if (!(articleLookupByItemKey instanceof Map) || articleLookupByItemKey.size === 0) return "";
+  const candidates = [
+    String(planPreview?.firstName || "").trim(),
+    String(planPreview?.detailedName || "").trim(),
+  ];
+  const rows = Array.isArray(planPreview?.rows) ? planPreview.rows : [];
+  rows.forEach((row) => {
+    candidates.push(String(row?.part || row?.name || row?.item_name || row?.itemName || "").trim());
+  });
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    const key = normalizeFurnitureKey(candidate);
+    if (!key) continue;
+    const article = String(articleLookupByItemKey.get(key) || "").trim();
+    if (article) return article;
+  }
+  return "";
+}
+
+function buildPlanPreviewQrPayload(planPreview, fallbackArticle = "") {
+  const article = getPlanPreviewArticleCode(planPreview) || String(fallbackArticle || "").trim() || "-";
+  const planNumber = String(planPreview?.planNumber || "-").trim() || "-";
+  const qtyRaw = Number(planPreview?.qty || 0);
+  const qty = Number.isFinite(qtyRaw) ? qtyRaw : 0;
+  return `ARTICLE:${article};PLAN:${planNumber};QTY:${qty}`;
+}
+
+function buildQrCodeUrl(payload, size = 160) {
+  return `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${encodeURIComponent(payload)}`;
+}
+
+function parseStageAuditRows(rows) {
+  const list = Array.isArray(rows) ? rows : [];
+  const out = [];
+  const stageKeys = ["pilka_status", "kromka_status", "pras_status", "assembly_status", "overall_status"];
+  list.forEach((row) => {
+    const details = row?.details && typeof row.details === "object" ? row.details : {};
+    const before = details?.before && typeof details.before === "object" ? details.before : {};
+    const after = details?.after && typeof details.after === "object" ? details.after : {};
+    const changed = [];
+    stageKeys.forEach((key) => {
+      const prev = String(before?.[key] ?? "").trim();
+      const next = String(after?.[key] ?? "").trim();
+      if (prev !== next) changed.push({ key, before: prev || "-", after: next || "-" });
+    });
+    const orderId = String(row?.entity_id || details?.order_id || "").trim();
+    if (!orderId && !changed.length) return;
+    out.push({
+      id: row?.id ?? `${row?.created_at || ""}-${orderId || "order"}`,
+      createdAt: String(row?.created_at || "").trim(),
+      orderId: orderId || "-",
+      changed,
+    });
+  });
+  return out;
+}
+
+function mapStageFieldToKey(field) {
+  if (field === "pilka_status") return "pilka";
+  if (field === "kromka_status") return "kromka";
+  if (field === "pras_status") return "pras";
+  return "";
+}
+
+function normalizeStageStatus(value) {
+  const raw = String(value || "").trim();
+  const lc = raw.toLowerCase();
+  if (!raw) return "-";
+  if (lc.includes("в работе")) return "В работе";
+  if (lc.includes("готов")) return "Готово";
+  if (lc.includes("ожида")) return "Ожидает";
+  if (lc.includes("пауза")) return "Пауза";
+  return raw;
 }
 
 function normalizeCatalogItemName(name) {
@@ -542,7 +689,6 @@ export default function App() {
   const [laborSort, setLaborSort] = useState("total_desc");
   const [laborSubView, setLaborSubView] = useState("total");
   const [laborPlannerQtyByGroup, setLaborPlannerQtyByGroup] = useState({});
-  const [uiScale, setUiScale] = useState("large");
   const [collapsedSections, setCollapsedSections] = useState({});
   const [actionLoading, setActionLoading] = useState("");
   const [error, setError] = useState("");
@@ -570,11 +716,19 @@ export default function App() {
   );
   const [strapItems, setStrapItems] = useState([]);
   const [laborRows, setLaborRows] = useState([]);
+  const [laborImportedRows, setLaborImportedRows] = useState([]);
+  const [laborSaveSelected, setLaborSaveSelected] = useState({});
+  const [laborSavingByKey, setLaborSavingByKey] = useState({});
+  const [laborSavedByKey, setLaborSavedByKey] = useState({});
+  const [stageAuditRows, setStageAuditRows] = useState([]);
+  const [activeOrderIds, setActiveOrderIds] = useState([]);
   const [warehouseRows, setWarehouseRows] = useState([]);
   const [materialsStockRows, setMaterialsStockRows] = useState([]);
   const [leftoversRows, setLeftoversRows] = useState([]);
+  const [consumeHistoryRows, setConsumeHistoryRows] = useState([]);
   const [warehouseSubView, setWarehouseSubView] = useState("sheets");
   const [warehouseSyncLoading, setWarehouseSyncLoading] = useState(false);
+  const [leftoversSyncLoading, setLeftoversSyncLoading] = useState(false);
   const [furnitureLoading, setFurnitureLoading] = useState(false);
   const [furnitureError, setFurnitureError] = useState("");
   const [furnitureWorkbook, setFurnitureWorkbook] = useState(null);
@@ -585,6 +739,7 @@ export default function App() {
   const [furnitureSelectedProduct, setFurnitureSelectedProduct] = useState("");
   const [furnitureSelectedQty, setFurnitureSelectedQty] = useState("1");
   const importPlanFileRef = useRef(null);
+  const importLaborFileRef = useRef(null);
   const authEnabled = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
 
   function denyActionByRole(message) {
@@ -725,15 +880,6 @@ export default function App() {
     } catch (_) {}
   }, []);
 
-  useEffect(() => {
-    try {
-      const savedScale = localStorage.getItem(UI_SCALE_STORAGE_KEY);
-      if (savedScale === "standard" || savedScale === "large") {
-        setUiScale(savedScale);
-      }
-    } catch (_) {}
-  }, []);
-
   function resetShipmentFilters() {
     setWeekFilter(DEFAULT_SHIPMENT_PREFS.weekFilter);
     setShipmentSort(DEFAULT_SHIPMENT_PREFS.shipmentSort);
@@ -778,12 +924,6 @@ export default function App() {
     showShipped,
     collapsedSections,
   ]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(UI_SCALE_STORAGE_KEY, uiScale);
-    } catch (_) {}
-  }, [uiScale]);
 
   function sectionCollapseKey(name) {
     return `${shipmentSort}:${String(name || "")}`;
@@ -868,8 +1008,16 @@ export default function App() {
         material,
         qty,
       });
+      logConsumeToGoogleSheet({
+        orderId: consumeDialogData.orderId,
+        item: String(consumeDialogData.item || ""),
+        material,
+        week: String(consumeDialogData.week || ""),
+        qty,
+      });
       closeConsumeDialog();
       await load();
+      syncLeftoversToGoogleSheet({ silent: true });
     } catch (e) {
       setConsumeError(String(e.message || e));
     } finally {
@@ -950,6 +1098,7 @@ export default function App() {
         body: JSON.stringify({
           sheetId: WAREHOUSE_SYNC_SHEET_ID,
           gid: WAREHOUSE_SYNC_GID,
+          leftoversGid: LEFTOVERS_SYNC_GID,
         }),
       });
       const payload = await resp.json().catch(() => ({}));
@@ -965,6 +1114,119 @@ export default function App() {
     }
   }
 
+  async function syncLeftoversToGoogleSheet(options = {}) {
+    const silent = Boolean(options.silent);
+    const baseUrl = String(SUPABASE_URL || "").replace(/\/$/, "");
+    const token = String(SUPABASE_ANON_KEY || "").trim();
+    if (!baseUrl || !token) {
+      if (!silent) setError("Не настроен доступ к Supabase (URL/ANON key).");
+      return;
+    }
+    if (!silent) setLeftoversSyncLoading(true);
+    if (!silent) setError("");
+    try {
+      const resp = await fetch(`${baseUrl}/functions/v1/sync-leftovers-sheet`, {
+        method: "POST",
+        headers: {
+          apikey: token,
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          sheetId: WAREHOUSE_SYNC_SHEET_ID,
+          gid: LEFTOVERS_SYNC_GID,
+        }),
+      });
+      const payload = await resp.json().catch(() => ({}));
+      if (!resp.ok || payload?.ok === false) {
+        const reason = String(payload?.error || `HTTP ${resp.status}`);
+        throw new Error(reason);
+      }
+    } catch (e) {
+      if (!silent) {
+        setError(`Не удалось выгрузить остатки в Google Sheet: ${extractErrorMessage(e)}`);
+      }
+    } finally {
+      if (!silent) setLeftoversSyncLoading(false);
+    }
+  }
+
+  async function logConsumeToGoogleSheet(meta = {}) {
+    const baseUrl = String(SUPABASE_URL || "").replace(/\/$/, "");
+    const token = String(SUPABASE_ANON_KEY || "").trim();
+    if (!baseUrl || !token) return;
+    try {
+      const resp = await fetch(`${baseUrl}/functions/v1/log-consume-sheet`, {
+        method: "POST",
+        headers: {
+          apikey: token,
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          sheetId: WAREHOUSE_SYNC_SHEET_ID,
+          sheetName: CONSUME_LOG_SHEET_NAME,
+          orderId: String(meta.orderId || "").trim(),
+          item: String(meta.item || "").trim(),
+          material: String(meta.material || "").trim(),
+          week: String(meta.week || "").trim(),
+          qty: Number(meta.qty || 0),
+        }),
+      });
+      const payload = await resp.json().catch(() => ({}));
+      if (!resp.ok || payload?.ok === false) {
+        throw new Error(String(payload?.error || `HTTP ${resp.status}`));
+      }
+    } catch (_) {
+      // Best-effort sync to sheet should not block core consumption flow.
+    }
+  }
+
+  async function syncPlanCellToGoogleSheet(meta = {}) {
+    // Best-effort: обновление Google Sheet не должно ломать сохранение плана в Supabase.
+    if (!["supabase", "shadow"].includes(String(BACKEND_PROVIDER || ""))) return;
+    const baseUrl = String(SUPABASE_URL || "").replace(/\/$/, "");
+    const token = String(SUPABASE_ANON_KEY || "").trim();
+    if (!baseUrl || !token) return;
+
+    const payload = {
+      sheetId: PLAN_SYNC_SHEET_ID,
+      gid: PLAN_SYNC_GID,
+      sectionName: String(meta.sectionName || "").trim(),
+      item: String(meta.item || "").trim(),
+      material: String(meta.material || "").trim(),
+      week: String(meta.week || "").trim(),
+      qty: Number(meta.qty || 0),
+      stageCode: String(meta.stageCode || "").trim(),
+      stage: String(meta.stage || "").trim(),
+      stageComment: String(meta.stageComment || "").trim(),
+      orderId: String(meta.orderId || "").trim(),
+    };
+    if (!payload.sectionName || !payload.item || !payload.material || !payload.week || !Number.isFinite(payload.qty) || payload.qty <= 0) {
+      return;
+    }
+
+    try {
+      const resp = await fetch(`${baseUrl}/functions/v1/sync-plan-cell-to-gsheet`, {
+        method: "POST",
+        headers: {
+          apikey: token,
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+      const payloadJson = await resp.json().catch(() => ({}));
+      if (!resp.ok || payloadJson?.ok === false) {
+        throw new Error(String(payloadJson?.error || `HTTP ${resp.status}`));
+      }
+    } catch (_) {
+      // Keep saving plan resilient; still log to console for troubleshooting.
+      // eslint-disable-next-line no-console
+      console.warn("[CRM] sync-plan-cell-to-gsheet failed (best-effort)", payload);
+    }
+  }
+
   async function runAction(action, orderId, payload = {}, meta = {}) {
     if (!canOperateProduction) {
       denyActionByRole("Недостаточно прав для изменения этапов производства.");
@@ -975,6 +1237,30 @@ export default function App() {
     setError("");
     try {
       const data = await callBackend(action, { orderId, ...payload });
+      const stageSync = STAGE_SYNC_META[action];
+      if (stageSync) {
+        const sourceOrder = orderIndexById.get(String(orderId)) || {};
+        const syncItem = String(meta.item || sourceOrder.item || "").trim();
+        const syncMaterial = String(
+          meta.material || getMaterialLabel(syncItem, sourceOrder.material || sourceOrder.colorName || ""),
+        ).trim();
+        const syncWeek = String(meta.week || sourceOrder.week || "").trim();
+        const syncQty = Number(meta.qty ?? sourceOrder.qty ?? 0);
+        const syncSection = String(meta.sectionName || resolveSectionNameForOrder(sourceOrder) || "").trim();
+        if (syncSection && syncItem && syncMaterial && syncWeek && Number.isFinite(syncQty) && syncQty > 0) {
+          void syncPlanCellToGoogleSheet({
+            sectionName: syncSection,
+            item: syncItem,
+            material: syncMaterial,
+            week: syncWeek,
+            qty: syncQty,
+            stage: stageSync.label,
+            stageCode: stageSync.code,
+            stageComment: `${stageSync.label}; Заказ: ${orderId}`,
+            orderId: String(orderId),
+          });
+        }
+      }
       if (action === "webSetPrasDone" && meta.notifyOnAssembly) {
         notifyAssemblyReadyTelegram({
           orderId,
@@ -1006,10 +1292,6 @@ export default function App() {
         setConsumeError("");
         setConsumeLoading(true);
         setConsumeDialogOpen(true);
-        if (view === "workshop" && tab === "pilka") {
-          setTab("kromka");
-        }
-
         // Не блокируем UI ожиданием подсказок.
         callBackend("webGetConsumeOptions", { orderId })
           .then((options) => {
@@ -1209,6 +1491,41 @@ export default function App() {
     rows,
     query,
   });
+
+  const orderIndexById = useMemo(() => {
+    const map = new Map();
+    const add = (x) => {
+      const id = String(x?.orderId || x?.order_id || "").trim();
+      if (!id || map.has(id)) return;
+      map.set(id, x);
+    };
+    (rows || []).forEach(add);
+    (shipmentOrders || []).forEach(add);
+    return map;
+  }, [rows, shipmentOrders]);
+
+  function resolveSectionNameForOrder(order) {
+    const week = String(order?.week || "").trim();
+    const sourceRowId = String(order?.sourceRowId || order?.source_row_id || "").trim();
+    const itemName = String(order?.item || "").trim();
+    if (!week) return "";
+    const sections = Array.isArray(shipmentBoard?.sections) ? shipmentBoard.sections : [];
+    for (const section of sections) {
+      const sectionName = String(section?.name || "").trim();
+      const items = Array.isArray(section?.items) ? section.items : [];
+      for (const it of items) {
+        const rowId = String(it?.sourceRowId || it?.source_row_id || it?.row || "").trim();
+        const cells = Array.isArray(it?.cells) ? it.cells : [];
+        for (const c of cells) {
+          const cellWeek = String(c?.week || "").trim();
+          if (!cellWeek || cellWeek !== week) continue;
+          if (sourceRowId && rowId && rowId === sourceRowId) return sectionName;
+          if (!sourceRowId && itemName && String(it?.item || "").trim() === itemName) return sectionName;
+        }
+      }
+    }
+    return "";
+  }
 
   function passesShipmentStageFilter(stageKey) {
     if (stageKey === "awaiting") return showAwaiting;
@@ -1530,14 +1847,6 @@ export default function App() {
     });
     return { totalOrders, totalQty, readyAssembly, assembled };
   }, [filtered, view]);
-  const sheetMirrorKpi = useMemo(() => {
-    if (view !== "sheetMirror") return { total: 0, shipped: 0, done: 0, waiting: 0 };
-    const total = filtered.length;
-    const shipped = filtered.filter((x) => String(x.shipped_raw || x.shippedRaw || "").toUpperCase() === "TRUE").length;
-    const done = filtered.filter((x) => String(x.overall_status || x.overallStatus || "").toLowerCase() === "done").length;
-    const waiting = filtered.filter((x) => String(x.overall_status || x.overallStatus || "").toLowerCase() === "waiting").length;
-    return { total, shipped, done, waiting };
-  }, [filtered, view]);
   const shipmentTableRows = useMemo(() => {
     if (view !== "shipment") return [];
     const rowsFlat = [];
@@ -1632,6 +1941,8 @@ export default function App() {
       assemblyMin: toNum(x.assembly_min ?? x.assemblyMin),
       totalMin: toNum(x.total_min ?? x.totalMin),
       dateFinished: String(x.date_finished || x.dateFinished || ""),
+      importedLocal: Boolean(x.imported_local || x.importedLocal),
+      importKey: String(x.import_key || x.importKey || ""),
     }));
     list.sort((a, b) => {
       if (laborSort === "total_asc") return a.totalMin - b.totalMin;
@@ -1734,6 +2045,56 @@ export default function App() {
         return a.group.localeCompare(b.group, "ru");
       });
   }, [laborTableRows, view]);
+  const laborStageTimelineRows = useMemo(() => {
+    if (view !== "labor" || laborSubView !== "stages") return [];
+    const q = query.trim().toLowerCase();
+    const activeSet = new Set((activeOrderIds || []).map((x) => String(x || "").trim()).filter(Boolean));
+    const events = parseStageAuditRows(stageAuditRows).sort(
+      (a, b) => new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime(),
+    );
+    const byOrder = new Map();
+    const ensureOrder = (orderId) => {
+      if (!byOrder.has(orderId)) {
+        byOrder.set(orderId, {
+          orderId,
+          pilkaStatus: "-",
+          pilkaStart: "",
+          pilkaEnd: "",
+          kromkaStatus: "-",
+          kromkaStart: "",
+          kromkaEnd: "",
+          prasStatus: "-",
+          prasStart: "",
+          prasEnd: "",
+          lastEventAt: "",
+        });
+      }
+      return byOrder.get(orderId);
+    };
+    events.forEach((event) => {
+      const orderId = String(event.orderId || "").trim();
+      if (!orderId || orderId === "-") return;
+      const row = ensureOrder(orderId);
+      row.lastEventAt = event.createdAt || row.lastEventAt;
+      (event.changed || []).forEach((c) => {
+        const stage = mapStageFieldToKey(c.key);
+        if (!stage) return;
+        const nextStatus = normalizeStageStatus(c.after);
+        const prevStatus = normalizeStageStatus(c.before);
+        const ts = String(event.createdAt || "").trim();
+        row[`${stage}Status`] = nextStatus;
+        if (nextStatus === "В работе" && ts) row[`${stage}Start`] = ts;
+        if (nextStatus === "Готово" && ts) {
+          row[`${stage}End`] = ts;
+          if (!row[`${stage}Start`] && prevStatus === "В работе") row[`${stage}Start`] = ts;
+        }
+      });
+    });
+    return [...byOrder.values()]
+      .filter((r) => activeSet.size === 0 || activeSet.has(String(r.orderId || "").trim()))
+      .filter((r) => !q || String(r.orderId || "").toLowerCase().includes(q))
+      .sort((a, b) => new Date(b.lastEventAt || 0).getTime() - new Date(a.lastEventAt || 0).getTime());
+  }, [view, laborSubView, stageAuditRows, query, activeOrderIds]);
   const laborPlannerRows = useMemo(() => {
     if (view !== "labor") return [];
     return laborOrdersRows
@@ -1901,6 +2262,27 @@ export default function App() {
       })
       .sort((a, b) => a.item.localeCompare(b.item, "ru"));
   }, [leftoversRows, query, view]);
+  const consumeHistoryTableRows = useMemo(() => {
+    if (view !== "warehouse") return [];
+    const q = String(query || "").trim().toLowerCase();
+    return [...consumeHistoryRows]
+      .map((x) => ({
+        moveId: String(x.move_id || x.moveId || ""),
+        createdAt: String(x.created_at || x.createdAt || ""),
+        orderId: String(x.order_id || x.orderId || ""),
+        material: String(x.material || ""),
+        qtySheets: Number(x.qty_sheets ?? x.qtySheets ?? 0),
+        comment: String(x.comment || ""),
+      }))
+      .filter((x) => {
+        if (!q) return true;
+        return (
+          x.orderId.toLowerCase().includes(q) ||
+          x.material.toLowerCase().includes(q) ||
+          x.comment.toLowerCase().includes(q)
+        );
+      });
+  }, [consumeHistoryRows, query, view]);
 
   const selectedShipmentSummary = useMemo(() => {
     const items = selectedShipments.map((s) => {
@@ -1992,8 +2374,7 @@ export default function App() {
       const productRaw = String(r.product_name || r.productName || "").trim();
       const productName = canonicalStrapProductName(productRaw);
       const pattern = String(r.detail_name_pattern || r.detailNamePattern || "").trim();
-      const patternLc = pattern.toLowerCase();
-      if (!productName || (!patternLc.includes("обвяз") && !patternLc.includes("планк"))) return;
+      if (!productName) return;
       const optionName = detailPatternToStrapName(pattern);
       if (!optionName) return;
       const key = normalizeStrapProductKey(productName);
@@ -2025,8 +2406,7 @@ export default function App() {
       const productRaw = String(r.product_name || r.productName || "").trim();
       const productName = canonicalStrapProductName(productRaw);
       const pattern = String(r.detail_name_pattern || r.detailNamePattern || "").trim();
-      const patternLc = pattern.toLowerCase();
-      if (!productName || (!patternLc.includes("обвяз") && !patternLc.includes("планк"))) return;
+      if (!productName) return;
       const token = extractDetailSizeToken(pattern);
       if (!token) return;
       const key = normalizeStrapProductKey(token);
@@ -2401,6 +2781,7 @@ export default function App() {
         week,
         qty,
       });
+      void syncPlanCellToGoogleSheet({ sectionName: planSection, item, material, week, qty });
       setPlanDialogOpen(false);
       await load();
     } catch (e) {
@@ -2434,12 +2815,20 @@ export default function App() {
     try {
       for (const row of next) {
         const material = resolveStrapMaterialByProduct(row.productName || "");
+        const qty = Number(row.qty || 0);
         await callBackend("webCreateShipmentPlanCell", {
           sectionName: "Обвязка",
           item: strapNameToOrderItem(row.name),
           material,
           week,
-          qty: Number(row.qty || 0),
+          qty,
+        });
+        void syncPlanCellToGoogleSheet({
+          sectionName: "Обвязка",
+          item: strapNameToOrderItem(row.name),
+          material,
+          week,
+          qty,
         });
       }
       setStrapItems([]);
@@ -2699,8 +3088,163 @@ export default function App() {
     }
   }
 
+  function exportLaborTotalToExcel() {
+    if (view !== "labor" || laborSubView !== "total") return;
+    if (!laborTableRows.length) {
+      setError("Нет данных для экспорта общей трудоемкости.");
+      return;
+    }
+
+    const header = [
+      "ID заказа",
+      "Изделие",
+      "План",
+      "Кол-во",
+      "Пилка (мин)",
+      "Кромка (мин)",
+      "Присадка (мин)",
+      "Итого (мин)",
+      "Дата завершения",
+    ];
+    const body = laborTableRows.map((r) => [
+      String(r.orderId || ""),
+      String(r.item || ""),
+      String(r.week || ""),
+      Number(r.qty || 0),
+      Number(r.pilkaMin || 0),
+      Number(r.kromkaMin || 0),
+      Number(r.prasMin || 0),
+      Number(r.totalMin || 0),
+      String(r.dateFinished || ""),
+    ]);
+    const ws = XLSX.utils.aoa_to_sheet([header, ...body]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Общая трудоемкость");
+    XLSX.writeFile(wb, `Трудоемкость_общая_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    setError("");
+  }
+
+  async function importLaborTotalFromExcelFile(file) {
+    if (!file) return;
+    setActionLoading("labor:import");
+    setError("");
+    try {
+      const toNum = (v) => {
+        const n = Number(String(v ?? "").replace(",", ".").trim());
+        return Number.isFinite(n) ? n : 0;
+      };
+      const normHead = (s) =>
+        String(s || "")
+          .toLowerCase()
+          .replace(/[ё]/g, "е")
+          .replace(/[^\p{L}\p{N}\s]/gu, " ")
+          .replace(/\s+/g, " ")
+          .trim();
+
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: "array" });
+      const firstSheet = String(wb?.SheetNames?.[0] || "");
+      if (!firstSheet) throw new Error("В файле не найден лист.");
+      const ws = wb.Sheets[firstSheet];
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: "" });
+      if (!rows.length) throw new Error("Файл пустой.");
+
+      const headers = Array.isArray(rows[0]) ? rows[0].map(normHead) : [];
+      const idx = {
+        orderId: headers.findIndex((h) => h === "id заказа" || h === "id"),
+        item: headers.findIndex((h) => h === "изделие" || h === "наименование"),
+        week: headers.findIndex((h) => h === "план" || h === "неделя"),
+        qty: headers.findIndex((h) => h.includes("кол") && h.includes("во")),
+        pilka: headers.findIndex((h) => h.includes("пилка")),
+        kromka: headers.findIndex((h) => h.includes("кромка")),
+        pras: headers.findIndex((h) => h.includes("присад")),
+        total: headers.findIndex((h) => h.includes("итого")),
+        date: headers.findIndex((h) => h.includes("дата")),
+      };
+      const hasHeader = idx.item >= 0 || idx.total >= 0 || idx.pilka >= 0 || idx.kromka >= 0 || idx.pras >= 0;
+      const dataRows = hasHeader ? rows.slice(1) : rows;
+
+      const imported = [];
+      const nowKey = Date.now();
+      dataRows.forEach((r, i) => {
+        const row = Array.isArray(r) ? r : [];
+        const item = String((idx.item >= 0 ? row[idx.item] : row[1]) || "").trim();
+        const orderId = String((idx.orderId >= 0 ? row[idx.orderId] : row[0]) || "").trim();
+        const week = String((idx.week >= 0 ? row[idx.week] : row[2]) || "").trim();
+        const qty = toNum(idx.qty >= 0 ? row[idx.qty] : row[3]);
+        const pilkaMin = toNum(idx.pilka >= 0 ? row[idx.pilka] : row[4]);
+        const kromkaMin = toNum(idx.kromka >= 0 ? row[idx.kromka] : row[5]);
+        const prasMin = toNum(idx.pras >= 0 ? row[idx.pras] : row[6]);
+        const totalRaw = toNum(idx.total >= 0 ? row[idx.total] : row[7]);
+        const totalMin = totalRaw > 0 ? totalRaw : pilkaMin + kromkaMin + prasMin;
+        const dateFinished = String((idx.date >= 0 ? row[idx.date] : row[8]) || "").trim();
+        if (!item && !orderId) return;
+        if (totalMin <= 0 && pilkaMin <= 0 && kromkaMin <= 0 && prasMin <= 0) return;
+
+        imported.push({
+          order_id: orderId || `IMPORT-${Date.now()}-${i + 1}`,
+          item: item || "Импортированная позиция",
+          week,
+          qty,
+          pilka_min: pilkaMin,
+          kromka_min: kromkaMin,
+          pras_min: prasMin,
+          total_min: totalMin,
+          date_finished: dateFinished,
+          imported_local: true,
+          import_key: `labor-import-${nowKey}-${i + 1}`,
+        });
+      });
+
+      if (!imported.length) {
+        throw new Error("Не найдено валидных строк. Используйте экспорт из раздела 'Трудоемкость -> Общая' как шаблон.");
+      }
+
+      setLaborImportedRows((prev) => [...prev, ...imported]);
+    } catch (e) {
+      setError(`Ошибка импорта трудоемкости: ${extractErrorMessage(e)}`);
+    } finally {
+      setActionLoading("");
+      if (importLaborFileRef.current) importLaborFileRef.current.value = "";
+    }
+  }
+
+  async function saveImportedLaborRowToDb(row) {
+    if (!canOperateProduction) {
+      denyActionByRole("Недостаточно прав для сохранения трудоемкости в БД.");
+      return;
+    }
+    const key = String(row?.importKey || "");
+    if (!key) return;
+    setLaborSavingByKey((prev) => ({ ...prev, [key]: true }));
+    setError("");
+    try {
+      await callBackend("webUpsertLaborFact", {
+        orderId: row.orderId,
+        item: row.item,
+        week: row.week,
+        qty: row.qty,
+        pilkaMin: row.pilkaMin,
+        kromkaMin: row.kromkaMin,
+        prasMin: row.prasMin,
+        assemblyMin: row.assemblyMin,
+        dateFinished: row.dateFinished || null,
+      });
+      setLaborSavedByKey((prev) => ({ ...prev, [key]: true }));
+      setLaborSaveSelected((prev) => ({ ...prev, [key]: false }));
+      setLaborImportedRows((prev) =>
+        prev.map((x) => (String(x.import_key || "") === key ? { ...x, imported_local: false, imported_saved: true } : x))
+      );
+      await load();
+    } catch (e) {
+      setError(`Не удалось сохранить строку трудоемкости: ${extractErrorMessage(e)}`);
+    } finally {
+      setLaborSavingByKey((prev) => ({ ...prev, [key]: false }));
+    }
+  }
+
   return (
-    <div className={`page ${uiScale === "large" ? "scale-large" : "scale-standard"}`}>
+    <div className="page">
       <header className="top">
         <h1>Управление производственными заказами</h1>
         <div className="top-actions">
@@ -2771,14 +3315,6 @@ export default function App() {
                 : `Strict mode: ${crmAuthStrict ? "ON" : "OFF"}`}
             </button>
           )}
-          <button
-            type="button"
-            className="scale-toggle"
-            onClick={() => setUiScale((prev) => (prev === "large" ? "standard" : "large"))}
-            title="Переключить масштаб интерфейса"
-          >
-            Масштаб: {uiScale === "large" ? "Крупный" : "Стандарт"}
-          </button>
         </div>
       </header>
 
@@ -2847,13 +3383,6 @@ export default function App() {
             <div className="kpi"><span>Общее время (мин)</span><b>{Math.round(laborKpi.totalMinutes)}</b></div>
             <div className="kpi"><span>Всего изделий</span><b>{Math.round(laborKpi.totalQty)}</b></div>
             <div className="kpi"><span>Среднее / заказ (мин)</span><b>{Math.round(laborKpi.avgPerOrder)}</b></div>
-          </>
-        ) : view === "sheetMirror" ? (
-          <>
-            <div className="kpi"><span>Строк в зеркале</span><b>{sheetMirrorKpi.total}</b></div>
-            <div className="kpi"><span>С меткой отправки</span><b>{sheetMirrorKpi.shipped}</b></div>
-            <div className="kpi"><span>Статус done</span><b>{sheetMirrorKpi.done}</b></div>
-            <div className="kpi"><span>Статус waiting</span><b>{sheetMirrorKpi.waiting}</b></div>
           </>
         ) : view === "workshop" ? (
           <>
@@ -2925,12 +3454,28 @@ export default function App() {
             </button>
             <button
               type="button"
+              className={warehouseSubView === "history" ? "tab active" : "tab"}
+              onClick={() => setWarehouseSubView("history")}
+            >
+              История списаний
+            </button>
+            <button
+              type="button"
               className="mini ok"
               disabled={warehouseSyncLoading || loading}
               onClick={syncWarehouseFromGoogleSheet}
               title="Синхронизировать материалы из основной Google-таблицы склада"
             >
               {warehouseSyncLoading ? "Синхронизация..." : "Синхр. склад"}
+            </button>
+            <button
+              type="button"
+              className="mini ok"
+              disabled={leftoversSyncLoading || loading}
+              onClick={() => syncLeftoversToGoogleSheet()}
+              title="Выгрузить остатки в лист 'Остатки' Google-таблицы"
+            >
+              {leftoversSyncLoading ? "Выгрузка..." : "Выгрузить остатки"}
             </button>
           </div>
         )}
@@ -2957,17 +3502,24 @@ export default function App() {
             >
               Планировщик
             </button>
+            <button
+              type="button"
+              className={laborSubView === "stages" ? "tab active" : "tab"}
+              onClick={() => setLaborSubView("stages")}
+            >
+              Этапы
+            </button>
           </div>
         )}
         <div className="filters">
           {view !== "furniture" && (
             <input
-              placeholder={view === "shipment" ? "Поиск отгрузки: название или ID" : view === "sheetMirror" ? "Поиск: артикул, изделие, материал или order code" : view === "warehouse" ? (warehouseSubView === "leftovers" ? "Поиск по цвету или размеру" : "Поиск материала") : "Поиск по названию или ID"}
+              placeholder={view === "shipment" ? "Поиск отгрузки: название или ID" : view === "warehouse" ? (warehouseSubView === "leftovers" ? "Поиск по цвету или размеру" : warehouseSubView === "history" ? "Поиск: заказ, материал, комментарий" : "Поиск материала") : "Поиск по названию или ID"}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
           )}
-          {view !== "warehouse" && view !== "furniture" && view !== "sheetMirror" && (
+          {view !== "warehouse" && view !== "furniture" && !(view === "labor" && laborSubView === "stages") && (
             <select value={weekFilter} onChange={(e) => setWeekFilter(e.target.value)}>
               <option value="all">Все недели</option>
               {weeks.map((w) => <option key={w} value={w}>Неделя {w}</option>)}
@@ -3001,6 +3553,43 @@ export default function App() {
               <option value="week">Трудоемкость: по неделе</option>
               <option value="item">Трудоемкость: по изделию</option>
             </select>
+          )}
+          {view === "labor" && laborSubView === "total" && (
+            <div className="filters-right">
+              <button className="mini" onClick={exportLaborTotalToExcel} disabled={!laborTableRows.length}>
+                Экспорт Excel (общая)
+              </button>
+              <input
+                ref={importLaborFileRef}
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                style={{ display: "none" }}
+                onChange={(e) => {
+                  const f = e.target.files && e.target.files[0];
+                  importLaborTotalFromExcelFile(f);
+                }}
+              />
+              <button
+                className="mini"
+                disabled={actionLoading === "labor:import"}
+                onClick={() => importLaborFileRef.current?.click()}
+              >
+                {actionLoading === "labor:import" ? "Импорт..." : "Импорт Excel (общая)"}
+              </button>
+              <button
+                className="mini"
+                disabled={!laborImportedRows.length}
+                onClick={() => {
+                  setLaborImportedRows([]);
+                  setLaborSaveSelected({});
+                  setLaborSavingByKey({});
+                  setLaborSavedByKey({});
+                }}
+                title="Очистить только импортированные локальные строки"
+              >
+                Очистить импорт
+              </button>
+            </div>
           )}
           {view === "shipment" && (
             <div className="filters-right">
@@ -3109,6 +3698,10 @@ export default function App() {
             selectedShipmentStockCheck={selectedShipmentStockCheck}
             strapCalculation={strapCalculation}
             shipmentPlanDeficits={shipmentPlanDeficits}
+            articleLookupByItemKey={articleLookupByItemKey}
+            resolvePlanPreviewArticleByName={resolvePlanPreviewArticleByName}
+            buildPlanPreviewQrPayload={buildPlanPreviewQrPayload}
+            buildQrCodeUrl={buildQrCodeUrl}
             planPreviews={planPreviews}
             setPlanPreviews={setPlanPreviews}
             filtered={filtered}
@@ -3162,6 +3755,12 @@ export default function App() {
             laborPlannerRows={laborPlannerRows}
             laborPlannerQtyByGroup={laborPlannerQtyByGroup}
             setLaborPlannerQtyByGroup={setLaborPlannerQtyByGroup}
+            laborStageTimelineRows={laborStageTimelineRows}
+            laborSaveSelected={laborSaveSelected}
+            setLaborSaveSelected={setLaborSaveSelected}
+            laborSavingByKey={laborSavingByKey}
+            laborSavedByKey={laborSavedByKey}
+            saveImportedLaborRowToDb={saveImportedLaborRowToDb}
             loading={loading}
           />
         )}
@@ -3170,6 +3769,7 @@ export default function App() {
             warehouseSubView={warehouseSubView}
             warehouseTableRows={warehouseTableRows}
             leftoversTableRows={leftoversTableRows}
+            consumeHistoryTableRows={consumeHistoryTableRows}
             loading={loading}
           />
         )}
@@ -3178,6 +3778,7 @@ export default function App() {
             statsList={statsList}
             loading={loading}
             getStageLabel={getStageLabel}
+            getOverallStatusDisplay={getOverallStatusDisplay}
             actionLoading={actionLoading}
             getStatsDeleteActionKey={getStatsDeleteActionKey}
             canManageOrders={canManageOrders}

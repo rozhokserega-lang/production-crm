@@ -37,7 +37,7 @@ export function shipmentOrderItemWeekKey(itemName, week) {
 }
 
 /** Согласование этапа отгрузки с pipeline заказа (Производство ↔ Отгрузка). */
-function mapPipelineStageToShipmentKey(order) {
+export function mapPipelineStageToShipmentKey(order) {
   const ps = resolvePipelineStage(order);
   const pilka = String(order?.pilkaStatus || "").toLowerCase();
   const kromka = String(order?.kromkaStatus || "").toLowerCase();
