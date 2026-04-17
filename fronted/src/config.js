@@ -12,12 +12,14 @@ function resolveBackendProvider() {
   if (explicitProviderRaw) {
     return explicitProviderRaw;
   }
-  if (isProd) {
-    throw new Error(
-      "VITE_BACKEND_PROVIDER обязателен для production-сборки (допустимо: gas|supabase|shadow)."
+  const inferred = hasSupabaseEnv ? "supabase" : "gas";
+  if (isProd && typeof console !== "undefined" && console.warn) {
+    console.warn(
+      "[config] VITE_BACKEND_PROVIDER не задан; для production лучше задать явно (gas|supabase|shadow). " +
+        `Сейчас используется вывод по окружению: "${inferred}".`
     );
   }
-  return hasSupabaseEnv ? "supabase" : "gas";
+  return inferred;
 }
 
 /** gas | supabase | shadow — в production режим задается только явно через VITE_BACKEND_PROVIDER. */
