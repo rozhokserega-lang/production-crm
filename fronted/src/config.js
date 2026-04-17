@@ -72,3 +72,6 @@ export const HYBRID_DUPLICATE_ACTIONS = hybridActionsRaw
       .map((x) => x.trim())
       .filter(Boolean)
   : defaultHybridActions;
+
+/** GID листа Google Sheet для вкладки «Google Mirror» (`webGetSheetOrdersMirror`). */
+export const SHEET_MIRROR_GID = String(import.meta.env.VITE_SHEET_MIRROR_GID || "1772676601").trim();
