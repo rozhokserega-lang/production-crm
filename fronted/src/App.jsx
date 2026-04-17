@@ -1875,6 +1875,10 @@ export default function App() {
       material: String(meta.material || "").trim(),
       week: String(meta.week || "").trim(),
       qty: Number(meta.qty || 0),
+      stageCode: String(meta.stageCode || "").trim(),
+      stage: String(meta.stage || "").trim(),
+      stageComment: String(meta.stageComment || "").trim(),
+      orderId: String(meta.orderId || "").trim(),
     };
     if (!payload.sectionName || !payload.item || !payload.material || !payload.week || !Number.isFinite(payload.qty) || payload.qty <= 0) {
       return;
