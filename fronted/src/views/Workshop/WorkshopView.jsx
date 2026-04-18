@@ -1,6 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import { OrderService } from '../../services/orderService';
-import { useOrders, useWorkshopRows } from '../../hooks/useOrders';
+import { useOrders } from '../../hooks/useOrders';
+import { useWorkshopRows } from '../../hooks/useOrders';
 import { TABS } from '../../constants/views';
 import { WorkshopTabs } from './WorkshopTabs';
 import { OrderCard } from './OrderCard';
