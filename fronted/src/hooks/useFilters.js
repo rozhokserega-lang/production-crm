@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 
 export function useFilters(initialFilters = {}) {
   const [filters, setFilters] = useState({

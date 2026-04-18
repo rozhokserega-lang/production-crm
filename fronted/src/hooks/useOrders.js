@@ -1,11 +1,50 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useCallback, useEffect } from "react";
+import { OrderService } from "../services/orderService";
 
 export function useOrders({
+  autoLoad = true
 } = {}) {
   const [tab, setTab] = useState("all");
   const [rows, setRows] = useState([]);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const loadOrders = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const data = await OrderService.getAllOrders();
+      setRows(data || []);
+    } catch (err) {
+      setError(err.message);
+      console.error('Failed to load orders:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const loadOrdersByStage = useCallback(async (stage) => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const data = await OrderService.getOrdersByStage(stage);
+      setRows(data || []);
+    } catch (err) {
+      setError(err.message);
+      console.error(`Failed to load orders for stage ${stage}:`, err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (autoLoad) {
+      loadOrders();
+    }
+  }, [autoLoad, loadOrders]);
 
   return {
     tab,
@@ -16,6 +55,10 @@ export function useOrders({
     setQuery,
     loading,
     setLoading,
+    error,
+    loadOrders,
+    loadOrdersByStage,
+    refetch: loadOrders
   };
 }
 

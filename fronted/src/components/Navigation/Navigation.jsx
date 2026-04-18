@@ -1,23 +1,5 @@
 import React from 'react';
-
-const VIEWS = [
-  { id: "shipment", label: "Отгрузка" },
-  { id: "overview", label: "Обзор заказов" },
-  { id: "workshop", label: "Производство" },
-  { id: "warehouse", label: "Склад" },
-  { id: "labor", label: "Трудоемкость" },
-  { id: "stats", label: "Статистика" },
-  { id: "furniture", label: "Мебель" },
-  { id: "admin", label: "Админ" },
-];
-
-const TABS = [
-  { id: "pilka", label: "Пила" },
-  { id: "kromka", label: "Кромка" },
-  { id: "pras", label: "Присадка" },
-  { id: "assembly", label: "Сборка" },
-  { id: "done", label: "Финал" },
-];
+import { VIEWS, TABS } from '../../constants/views';
 
 export function Navigation({ currentView, currentTab, onViewChange, onTabChange, showTabs = false }) {
   return (
