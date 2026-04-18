@@ -16,10 +16,13 @@ export function useOrders({
     
     try {
       const data = await OrderService.getAllOrders();
-      setRows(data || []);
+      // Ensure data is an array
+      const ordersData = Array.isArray(data) ? data : [];
+      setRows(ordersData);
     } catch (err) {
       setError(err.message);
       console.error('Failed to load orders:', err);
+      setRows([]); // Set empty array on error
     } finally {
       setLoading(false);
     }
@@ -31,10 +34,13 @@ export function useOrders({
     
     try {
       const data = await OrderService.getOrdersByStage(stage);
-      setRows(data || []);
+      // Ensure data is an array
+      const ordersData = Array.isArray(data) ? data : [];
+      setRows(ordersData);
     } catch (err) {
       setError(err.message);
       console.error(`Failed to load orders for stage ${stage}:`, err);
+      setRows([]); // Set empty array on error
     } finally {
       setLoading(false);
     }
