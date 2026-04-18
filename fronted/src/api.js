@@ -104,7 +104,7 @@ export async function supabaseSignOut() {
 
 export async function gasCall(action, payload = {}) {
   if (!GAS_WEBAPP_URL || GAS_WEBAPP_URL.includes("PASTE_YOUR_WEBAPP_URL_HERE")) {
-    throw new Error("Заполните GAS_WEBAPP_URL в src/config.js");
+    throw new Error("Задайте VITE_GAS_WEBAPP_URL (нужен для VITE_BACKEND_PROVIDER=gas|shadow или для гибридного дубля в Supabase).");
   }
 
   const gasUrl = new URL(GAS_WEBAPP_URL);
@@ -144,7 +144,7 @@ export async function gasCall(action, payload = {}) {
 }
 
 export async function callBackend(action, payload = {}) {
-  const provider = String(BACKEND_PROVIDER || "gas").toLowerCase();
+  const provider = String(BACKEND_PROVIDER || "supabase").toLowerCase();
   const requestId = createRequestId();
   const payloadHash = hashPayload(payload);
   try {
@@ -241,6 +241,7 @@ function reportRpcEvent(event) {
 function maybeDuplicateToGas(action, payload, ctx) {
   const shouldDuplicate = HYBRID_DUPLICATE_ACTIONS.includes(action);
   if (!shouldDuplicate) return;
+  if (!String(GAS_WEBAPP_URL || "").trim()) return;
   gasCall(action, payload)
     .then(() => {
       reportHybridEvent({

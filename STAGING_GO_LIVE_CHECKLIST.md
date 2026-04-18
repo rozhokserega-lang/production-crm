@@ -1,4 +1,4 @@
-# Staging Go-Live Gate (Supabase Primary + GAS Duplicate)
+# Staging Go-Live Gate (Supabase)
 
 ## 1) Environment and deploy config
 
@@ -7,8 +7,7 @@
   - `VITE_BACKEND_PROVIDER=supabase`
   - `VITE_SUPABASE_URL=...`
   - `VITE_SUPABASE_ANON_KEY=...`
-  - `VITE_GAS_WEBAPP_URL=...`
-  - `VITE_HYBRID_DUPLICATE_ACTIONS=webSetPilkaDone,webSetKromkaDone,webSetPrasDone,webSetAssemblyDone,webSetShippingDone,webSendShipmentToWork`
+- Optional (legacy only): `VITE_GAS_WEBAPP_URL` + `VITE_HYBRID_DUPLICATE_ACTIONS` if you still duplicate writes into Google Apps Script.
 
 ## 2) DB security gate
 
@@ -16,6 +15,7 @@ Run Supabase advisors:
 
 - `security`: no `ERROR`
 - `performance`: no blockers (only non-critical INFO is acceptable)
+- Supabase Auth -> Password security -> leaked password protection: `enabled`
 
 ## 3) SQL smoke checks (read-only)
 
@@ -49,7 +49,8 @@ order by 1, 2;
 2. Move test order through stages: `pilka -> kromka -> pras -> assembly -> shipping`.
 3. Trigger shipment action (`webSendShipmentToWork` path in UI).
 4. Verify materials/leftovers screens load without RPC errors.
-5. In browser console, filter logs by `[CRM Hybrid]` and confirm duplicate status is `ok`.
+5. In browser console, filter logs by `[CRM RPC]` and confirm reads return without errors.
+6. Save screenshots/log snippets as release artifacts.
 
 ## 5) Daily health-check procedure
 
@@ -59,3 +60,4 @@ order by 1, 2;
   3. one read API check from frontend endpoint.
 - Persist outputs into a log artifact/date-stamped file.
 - If an advisor adds new `ERROR`, block release until fixed.
+- If leaked password protection is disabled, block release until enabled.

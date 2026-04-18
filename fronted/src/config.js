@@ -1,6 +1,5 @@
-export const GAS_WEBAPP_URL =
-  import.meta.env.VITE_GAS_WEBAPP_URL ||
-  "https://script.google.com/macros/s/AKfycbyJLC4u8eVOmhwcP-XbKa_IH608u-jaXtgjwkrgEP9IXUi9ckzcRkN7KJguUsQmIYZfkA/exec";
+/** Только из env. Раньше здесь был захардкоженный URL Web App — убран, чтобы не слать данные в чужой скрипт. */
+export const GAS_WEBAPP_URL = String(import.meta.env.VITE_GAS_WEBAPP_URL || "").trim();
 
 const supabaseUrl = String(import.meta.env.VITE_SUPABASE_URL || "").trim();
 const supabaseAnon = String(import.meta.env.VITE_SUPABASE_ANON_KEY || "").trim();
@@ -22,7 +21,10 @@ function resolveBackendProvider() {
   return inferred;
 }
 
-/** gas | supabase | shadow */
+/**
+ * gas | supabase | shadow.
+ * Целевой режим: supabase; gas/shadow — совместимость и аварийный fallback ниже.
+ */
 let backendProvider = resolveBackendProvider();
 
 if (!["gas", "supabase", "shadow"].includes(backendProvider)) {
@@ -34,10 +36,12 @@ if ((backendProvider === "supabase" || backendProvider === "shadow") && !hasSupa
     if (typeof console !== "undefined" && console.error) {
       console.error(
         "[config] VITE_BACKEND_PROVIDER=supabase, но VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY пусты или неверны. " +
-          "Временно используется режим gas (проверьте fronted/.env.production и пересоберите npm run build)."
+          "Исправьте fronted/.env.production и пересоберите npm run build."
       );
     }
-    backendProvider = "gas";
+    if (String(GAS_WEBAPP_URL || "").trim()) {
+      backendProvider = "gas";
+    }
   } else {
     throw new Error(
       "Для VITE_BACKEND_PROVIDER=supabase|shadow требуются VITE_SUPABASE_URL и VITE_SUPABASE_ANON_KEY."
@@ -54,16 +58,11 @@ if ((BACKEND_PROVIDER === "gas" || BACKEND_PROVIDER === "shadow") && !String(GAS
   throw new Error("Для VITE_BACKEND_PROVIDER=gas|shadow требуется VITE_GAS_WEBAPP_URL.");
 }
 
-const defaultHybridActions = [
-  "webSetPilkaDone",
-  "webSetKromkaDone",
-  "webSetPrasDone",
-  "webSetAssemblyDone",
-  "webSetShippingDone",
-  "webSendShipmentToWork",
-  "webConsumeSheetsByOrderId",
-];
-
+/**
+ * Дублирование части RPC в Google Apps Script (legacy).
+ * По умолчанию выключено: только Supabase. Чтобы снова включить дубли, задайте
+ * VITE_HYBRID_DUPLICATE_ACTIONS=webSetPilkaDone,... и VITE_GAS_WEBAPP_URL.
+ */
 const hybridActionsRaw = String(import.meta.env.VITE_HYBRID_DUPLICATE_ACTIONS || "").trim();
 
 export const HYBRID_DUPLICATE_ACTIONS = hybridActionsRaw
@@ -71,7 +70,7 @@ export const HYBRID_DUPLICATE_ACTIONS = hybridActionsRaw
       .split(",")
       .map((x) => x.trim())
       .filter(Boolean)
-  : defaultHybridActions;
+  : [];
 
 /** GID листа Google Sheet для вкладки «Google Mirror» (`webGetSheetOrdersMirror`). */
 export const SHEET_MIRROR_GID = String(import.meta.env.VITE_SHEET_MIRROR_GID || "1772676601").trim();

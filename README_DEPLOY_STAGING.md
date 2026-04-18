@@ -39,8 +39,6 @@ cat > /opt/apps/production-crm/fronted/.env.production << 'EOF'
 VITE_BACKEND_PROVIDER=supabase
 VITE_SUPABASE_URL=https://nsdwypcbhmfseotclkrm.supabase.co
 VITE_SUPABASE_ANON_KEY=REPLACE_WITH_REAL_PUBLISHABLE_KEY
-VITE_GAS_WEBAPP_URL=https://script.google.com/macros/s/REPLACE_WITH_REAL_WEBAPP_ID/exec
-VITE_HYBRID_DUPLICATE_ACTIONS=webSetPilkaDone,webSetKromkaDone,webSetPrasDone,webSetAssemblyDone,webSetShippingDone,webSendShipmentToWork
 EOF
 ```
 
@@ -118,9 +116,8 @@ systemctl reload nginx
   - Ensure `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are from the same Supabase project.
 - Frontend loads but data empty:
   - Re-check `.env.production`, rebuild, copy `dist`, reload nginx.
-- Hybrid duplicate checks:
-  - Open browser console and filter by `[CRM Hybrid]`.
-  - Ensure critical actions log `status: "ok"` for Supabase->GAS duplicate.
+- RPC errors after deploy:
+  - Open browser console and filter by `[CRM RPC]` / `[CRM Hybrid]` (hybrid only if legacy GAS duplicate is enabled).
 - Nginx issues:
   - `nginx -t`
   - `systemctl status nginx --no-pager -l`

@@ -20,11 +20,11 @@
 
 1. Откройте вкладку `Actions` в GitHub, дождитесь зеленого статуса.
 2. Откройте сайт Netlify и убедитесь, что новая версия доступна.
-3. Проверьте, что `frontend/src/config.js` содержит рабочий `GAS_WEBAPP_URL`.
+3. Проверьте переменные окружения Netlify: `VITE_BACKEND_PROVIDER=supabase`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` (см. `fronted/.env.staging.example`).
 
 ## 4) Если деплой упал
 
 - `Missing NETLIFY_AUTH_TOKEN / NETLIFY_SITE_ID` -> секреты не добавлены или с ошибкой.
 - Ошибка `npm ci` -> проверьте `frontend/package-lock.json`.
-- Ошибка API на проде -> проверьте доступ Web App в Google Apps Script (`Anyone` или `Anyone with the link`).
+- Ошибка API на проде -> проверьте Supabase URL/ключ и сеть до `*.supabase.co` (при блокировке провайдером может понадобиться VPN или свой прокси).
 Test deploy from dev branch
