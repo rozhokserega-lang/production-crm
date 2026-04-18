@@ -69,7 +69,7 @@ export function useCrmRole({
   load,
   setError,
 }) {
-  const [crmRole, setCrmRole] = useState("admin");
+  const [crmRole, setCrmRole] = useState("viewer");
   const [crmAuthStrict, setCrmAuthStrict] = useState(false);
   const [crmAuthStrictSaving, setCrmAuthStrictSaving] = useState(false);
   const [crmUsers, setCrmUsers] = useState([]);
@@ -89,15 +89,17 @@ export function useCrmRole({
     let cancelled = false;
     async function loadCrmRole() {
       try {
-        const [rolePayload, strictPayload] = await Promise.all([
-          callBackend("webGetMyRole"),
-          callBackend("webGetCrmAuthStrict").catch(() => false),
-        ]);
-        const role = normalizeCrmRole(parseCrmRoleResponse(rolePayload));
-        if (!cancelled) setCrmRole(role);
+        const strictPayload = await callBackend("webGetCrmAuthStrict");
         if (!cancelled) setCrmAuthStrict(parseStrictModeResponse(strictPayload));
       } catch (_) {
-        // Keep backward-compatible default role for environments without role RPC.
+        if (!cancelled) setCrmAuthStrict(false);
+      }
+      try {
+        const rolePayload = await callBackend("webGetMyRole");
+        const role = normalizeCrmRole(parseCrmRoleResponse(rolePayload));
+        if (!cancelled) setCrmRole(role);
+      } catch (_) {
+        if (!cancelled) setCrmRole("viewer");
       }
     }
     loadCrmRole();

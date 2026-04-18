@@ -1,8 +1,49 @@
-const SUPABASE_URL = String(process.env.SUPABASE_URL || "").trim().replace(/\/$/, "");
-const SUPABASE_ANON_KEY = String(process.env.SUPABASE_ANON_KEY || "").trim();
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const frontedRoot = path.resolve(__dirname, "..");
+
+function loadDotEnvFile(relPath) {
+  const full = path.join(frontedRoot, relPath);
+  if (!fs.existsSync(full)) return;
+  const text = fs.readFileSync(full, "utf8");
+  for (const line of text.split(/\r?\n/)) {
+    const t = line.trim();
+    if (!t || t.startsWith("#")) continue;
+    const eq = t.indexOf("=");
+    if (eq === -1) continue;
+    const key = t.slice(0, eq).trim();
+    let val = t.slice(eq + 1).trim();
+    if (
+      (val.startsWith('"') && val.endsWith('"')) ||
+      (val.startsWith("'") && val.endsWith("'"))
+    ) {
+      val = val.slice(1, -1);
+    }
+    if (key && process.env[key] === undefined) process.env[key] = val;
+  }
+}
+
+loadDotEnvFile(".env.local");
+loadDotEnvFile(".env");
+
+const SUPABASE_URL = String(
+  process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || ""
+)
+  .trim()
+  .replace(/\/$/, "");
+const SUPABASE_ANON_KEY = String(
+  process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || ""
+).trim();
 
 if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-  console.error("SUPABASE_URL and SUPABASE_ANON_KEY are required for RPC smoke.");
+  console.error(
+    "Для smoke нужны URL и anon key. Задайте в окружении или в fronted/.env.local:\n" +
+      "  SUPABASE_URL + SUPABASE_ANON_KEY\n" +
+      "  или VITE_SUPABASE_URL + VITE_SUPABASE_ANON_KEY (как у Vite)."
+  );
   process.exit(1);
 }
 

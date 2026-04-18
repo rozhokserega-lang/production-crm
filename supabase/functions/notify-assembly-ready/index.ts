@@ -1,9 +1,5 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 
-// Test fallback values requested by user.
-const FALLBACK_TELEGRAM_BOT_TOKEN = "8763758655:AAHZvbDA17n8pD0C6CieEZdaZK_c3n6NKFE";
-const FALLBACK_TELEGRAM_CHAT_ID = "475990787";
-
 type Payload = {
   stage?: string;
   orderId?: string;
@@ -52,10 +48,17 @@ serve(async (req) => {
     return new Response(JSON.stringify({ ok: false, error: "Method not allowed" }), { status: 405, headers: corsHeaders });
   }
 
-  const token = Deno.env.get("TELEGRAM_BOT_TOKEN") || FALLBACK_TELEGRAM_BOT_TOKEN;
-  const chatId = Deno.env.get("TELEGRAM_CHAT_ID") || FALLBACK_TELEGRAM_CHAT_ID;
+  const token = String(Deno.env.get("TELEGRAM_BOT_TOKEN") || "").trim();
+  const chatId = String(Deno.env.get("TELEGRAM_CHAT_ID") || "").trim();
   if (!token || !chatId) {
-    return new Response(JSON.stringify({ ok: false, error: "Telegram env not configured" }), { status: 500, headers: corsHeaders });
+    return new Response(
+      JSON.stringify({
+        ok: false,
+        error:
+          "Telegram not configured: set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID for this Edge Function (Dashboard → Edge Functions → Secrets).",
+      }),
+      { status: 500, headers: corsHeaders },
+    );
   }
 
   let payload: Payload = {};
