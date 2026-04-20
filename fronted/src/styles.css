@@ -808,6 +808,32 @@ button:disabled {
   box-shadow: 0 8px 16px rgba(15, 23, 42, 0.07);
 }
 
+.stats-charts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 12px;
+  margin: 0 0 12px;
+}
+
+.stats-chart-card {
+  background: #ffffff;
+  border: 1px solid #dbe5f3;
+  border-radius: 12px;
+  box-shadow: 0 8px 16px rgba(15, 23, 42, 0.07);
+  padding: 12px;
+}
+
+.stats-chart-card h3 {
+  margin: 0 0 8px;
+  font-size: 14px;
+  color: #1e293b;
+}
+
+.stats-chart-box {
+  width: 100%;
+  min-height: 280px;
+}
+
 .shipment-group-filters {
   display: flex;
   flex-wrap: wrap;
