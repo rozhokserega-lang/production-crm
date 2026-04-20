@@ -674,6 +674,46 @@ export default function App() {
   }, [view]);
 
   useEffect(() => {
+    if (view !== "labor" || laborSubView !== "stages") {
+      setStageAuditRows([]);
+      setActiveOrderIds([]);
+      return;
+    }
+    if (!canManageOrders) {
+      setStageAuditRows([]);
+      setActiveOrderIds([]);
+      return;
+    }
+
+    let cancelled = false;
+    const ids = (filtered || [])
+      .map((x) => String(x?.orderId || x?.order_id || "").trim())
+      .filter(Boolean);
+    setActiveOrderIds(Array.from(new Set(ids)));
+
+    async function loadLaborStageTimeline() {
+      try {
+        const payload = await callBackend("webGetAuditLog", {
+          limit: 1000,
+          offset: 0,
+          action: null,
+        });
+        if (cancelled) return;
+        setStageAuditRows(Array.isArray(payload) ? payload : []);
+      } catch (e) {
+        if (cancelled) return;
+        setStageAuditRows([]);
+        setError(toUserError(e));
+      }
+    }
+
+    loadLaborStageTimeline();
+    return () => {
+      cancelled = true;
+    };
+  }, [view, laborSubView, canManageOrders, filtered, setError]);
+
+  useEffect(() => {
     try {
       const raw = localStorage.getItem("shipmentUiPrefs");
       if (!raw) return;
