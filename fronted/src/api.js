@@ -1,3 +1,4 @@
+import { createClient } from "@supabase/supabase-js";
 import {
   BACKEND_PROVIDER,
   GAS_WEBAPP_URL,
@@ -56,9 +57,13 @@ function readStoredSupabaseSession() {
 }
 
 let supabaseAuthSession = readStoredSupabaseSession();
+let supabaseRealtimeClient = null;
 
 function persistSupabaseSession(session) {
   supabaseAuthSession = session && session.access_token ? session : null;
+  if (supabaseRealtimeClient && supabaseAuthSession?.access_token) {
+    supabaseRealtimeClient.realtime.setAuth(supabaseAuthSession.access_token);
+  }
   if (typeof window === "undefined") return;
   try {
     if (supabaseAuthSession) {
@@ -85,6 +90,23 @@ export function getSupabaseAuthSession() {
 
 export function getSupabaseAuthUser() {
   return supabaseAuthSession?.user || null;
+}
+
+export function getSupabaseRealtimeClient() {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return null;
+  if (!supabaseRealtimeClient) {
+    supabaseRealtimeClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+      },
+    });
+  }
+  if (supabaseAuthSession?.access_token) {
+    supabaseRealtimeClient.realtime.setAuth(supabaseAuthSession.access_token);
+  }
+  return supabaseRealtimeClient;
 }
 
 async function supabaseAuthFetch(path, body, bearerToken = "") {

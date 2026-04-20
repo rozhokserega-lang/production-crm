@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import {
   callBackend,
+  getSupabaseRealtimeClient,
   isLikelyNetworkError,
   supabaseCall,
 } from "./api";
@@ -606,6 +607,38 @@ export default function App() {
       window.removeEventListener("offline", onOffline);
     };
   }, []);
+
+  useEffect(() => {
+    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return undefined;
+    const client = getSupabaseRealtimeClient();
+    if (!client) return undefined;
+    let disposed = false;
+    let reloadTimer = null;
+
+    const scheduleReload = () => {
+      if (disposed) return;
+      if (reloadTimer) window.clearTimeout(reloadTimer);
+      reloadTimer = window.setTimeout(() => {
+        reloadTimer = null;
+        load().catch(() => {});
+      }, 300);
+    };
+
+    const channel = client
+      .channel("crm-orders-realtime")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "orders" },
+        scheduleReload,
+      )
+      .subscribe();
+
+    return () => {
+      disposed = true;
+      if (reloadTimer) window.clearTimeout(reloadTimer);
+      client.removeChannel(channel).catch(() => {});
+    };
+  }, [load]);
 
   useEffect(() => {
     let cancelled = false;
