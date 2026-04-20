@@ -16,6 +16,14 @@ export function AdminView({
   formatDateTimeRu,
   roleOptions,
   roleLabels,
+  auditLog,
+  auditLoading,
+  auditError,
+  auditAction,
+  auditLimit,
+  auditOffset,
+  setAuditAction,
+  loadAuditLog,
 }) {
   if (!canAdminSettings) return null;
 
@@ -92,6 +100,102 @@ export function AdminView({
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+      <div className="admin-panel__head">
+        <div className="admin-panel__title">Журнал действий (Audit Log)</div>
+        <button
+          className="mini"
+          disabled={auditLoading}
+          onClick={() => loadAuditLog({ action: auditAction, limit: auditLimit, offset: auditOffset })}
+        >
+          {auditLoading ? "Обновляю..." : "Обновить журнал"}
+        </button>
+      </div>
+      <div className="admin-panel__audit-controls">
+        <input
+          placeholder="Фильтр action (например, set_stage_done)"
+          value={auditAction}
+          onChange={(e) => setAuditAction(e.target.value)}
+        />
+        <select
+          value={String(auditLimit)}
+          onChange={(e) => loadAuditLog({ limit: Number(e.target.value || 50), offset: 0 })}
+        >
+          <option value="25">25 строк</option>
+          <option value="50">50 строк</option>
+          <option value="100">100 строк</option>
+          <option value="200">200 строк</option>
+        </select>
+        <button
+          className="mini"
+          disabled={auditLoading}
+          onClick={() => loadAuditLog({ action: auditAction, offset: 0 })}
+        >
+          Применить фильтр
+        </button>
+      </div>
+      {auditError && <div className="error">{auditError}</div>}
+      {!auditLoading && auditLog.length === 0 && (
+        <div className="empty">Записей аудита не найдено.</div>
+      )}
+      {auditLog.length > 0 && (
+        <div className="sheet-table-wrap">
+          <table className="sheet-table">
+            <thead>
+              <tr>
+                <th>Когда</th>
+                <th>Кто</th>
+                <th>Роль</th>
+                <th>Action</th>
+                <th>Сущность</th>
+                <th>ID</th>
+                <th>Детали</th>
+              </tr>
+            </thead>
+            <tbody>
+              {auditLog.map((row) => (
+                <tr key={`audit-${row.id}`}>
+                  <td>{row.createdAt ? formatDateTimeRu(row.createdAt) : "-"}</td>
+                  <td>{row.actorUserId || row.actorDbRole || "-"}</td>
+                  <td>{roleLabels[row.actorCrmRole] || row.actorCrmRole || "-"}</td>
+                  <td>{row.action || "-"}</td>
+                  <td>{row.entity || "-"}</td>
+                  <td>{row.entityId || "-"}</td>
+                  <td className="admin-panel__audit-details">
+                    {row.details ? JSON.stringify(row.details) : "-"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="admin-panel__audit-pager">
+            <button
+              className="mini"
+              disabled={auditLoading || auditOffset <= 0}
+              onClick={() =>
+                loadAuditLog({
+                  action: auditAction,
+                  limit: auditLimit,
+                  offset: Math.max(0, auditOffset - auditLimit),
+                })}
+            >
+              Назад
+            </button>
+            <span>Смещение: {auditOffset}</span>
+            <button
+              className="mini"
+              disabled={auditLoading || auditLog.length < auditLimit}
+              onClick={() =>
+                loadAuditLog({
+                  action: auditAction,
+                  limit: auditLimit,
+                  offset: auditOffset + auditLimit,
+                })}
+            >
+              Вперед
+            </button>
+          </div>
         </div>
       )}
     </div>

@@ -8,6 +8,39 @@ import {
 
 const SUPABASE_AUTH_STORAGE_KEY = "crm_supabase_auth_session";
 
+const NETWORK_ERROR_HINTS = [
+  "failed to fetch",
+  "networkerror",
+  "network request failed",
+  "load failed",
+  "the internet connection appears to be offline",
+  "connection reset",
+  "connection refused",
+  "timeout",
+  "timed out",
+  "aborterror",
+];
+
+export function isLikelyNetworkError(error) {
+  if (!error) return false;
+  if (error?.isNetworkError === true) return true;
+  const name = String(error?.name || "").toLowerCase();
+  if (name === "aborterror") return true;
+  const message = String(error?.message || error || "").toLowerCase();
+  return NETWORK_ERROR_HINTS.some((hint) => message.includes(hint));
+}
+
+function normalizeApiError(error) {
+  if (isLikelyNetworkError(error)) {
+    const wrapped = new Error("NETWORK_UNAVAILABLE");
+    wrapped.isNetworkError = true;
+    wrapped.cause = error;
+    return wrapped;
+  }
+  if (error instanceof Error) return error;
+  return new Error(String(error || "Ошибка API"));
+}
+
 function readStoredSupabaseSession() {
   if (typeof window === "undefined") return null;
   try {
@@ -140,7 +173,7 @@ export async function gasCall(action, payload = {}) {
       break;
     }
   }
-  throw lastError || new Error("Ошибка API");
+  throw normalizeApiError(lastError || new Error("Ошибка API"));
 }
 
 export async function callBackend(action, payload = {}) {
@@ -170,15 +203,16 @@ export async function callBackend(action, payload = {}) {
     }
     return gasCall(action, payload);
   } catch (error) {
+    const normalized = normalizeApiError(error);
     reportRpcEvent({
       status: "error",
       provider,
       action,
       requestId,
       payloadHash,
-      error: String(error?.message || error),
+      error: String(normalized?.message || normalized),
     });
-    throw error;
+    throw normalized;
   }
 }
 
@@ -462,11 +496,21 @@ export async function supabaseCall(action, payload = {}) {
   };
 
   const currentToken = getSupabaseAccessToken();
-  let { res, json } = await callWithToken(currentToken);
+  let res;
+  let json;
+  try {
+    ({ res, json } = await callWithToken(currentToken));
+  } catch (error) {
+    throw normalizeApiError(error);
+  }
   if (!res.ok && currentToken && isJwtExpiredError(json)) {
     // Stored session can silently expire; fall back to anon flow and keep UI alive.
     persistSupabaseSession(null);
-    ({ res, json } = await callWithToken(""));
+    try {
+      ({ res, json } = await callWithToken(""));
+    } catch (error) {
+      throw normalizeApiError(error);
+    }
   }
   if (!res.ok) {
     throw new Error(typeof json === "string" ? json : JSON.stringify(json));

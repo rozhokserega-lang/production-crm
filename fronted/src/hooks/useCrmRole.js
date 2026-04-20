@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   getSupabaseAuthUser,
   supabaseSignInWithPassword,
@@ -61,6 +61,21 @@ function normalizeCrmUsers(payload) {
     .filter((x) => x.userId);
 }
 
+function normalizeAuditLog(payload) {
+  const list = Array.isArray(payload) ? payload : [];
+  return list.map((x) => ({
+    id: Number(x?.id || 0),
+    createdAt: String(x?.created_at || x?.createdAt || "").trim(),
+    actorUserId: String(x?.actor_user_id || x?.actorUserId || "").trim(),
+    actorDbRole: String(x?.actor_db_role || x?.actorDbRole || "").trim(),
+    actorCrmRole: normalizeCrmRole(x?.actor_crm_role || x?.actorCrmRole || ""),
+    action: String(x?.action || "").trim(),
+    entity: String(x?.entity || "").trim(),
+    entityId: String(x?.entity_id || x?.entityId || "").trim(),
+    details: x?.details && typeof x.details === "object" ? x.details : null,
+  }));
+}
+
 export function useCrmRole({
   view,
   callBackend,
@@ -75,6 +90,12 @@ export function useCrmRole({
   const [crmUsers, setCrmUsers] = useState([]);
   const [crmUsersLoading, setCrmUsersLoading] = useState(false);
   const [crmUsersSaving, setCrmUsersSaving] = useState("");
+  const [auditLog, setAuditLog] = useState([]);
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [auditError, setAuditError] = useState("");
+  const [auditAction, setAuditAction] = useState("");
+  const [auditLimit, setAuditLimit] = useState(50);
+  const [auditOffset, setAuditOffset] = useState(0);
   const [newCrmUserId, setNewCrmUserId] = useState("");
   const [newCrmUserRole, setNewCrmUserRole] = useState("viewer");
   const [newCrmUserNote, setNewCrmUserNote] = useState("");
@@ -108,7 +129,7 @@ export function useCrmRole({
     };
   }, [authUser?.id, callBackend]);
 
-  async function loadCrmUsers() {
+  const loadCrmUsers = useCallback(async () => {
     if (!canAdminSettings) return;
     setCrmUsersLoading(true);
     try {
@@ -119,13 +140,37 @@ export function useCrmRole({
     } finally {
       setCrmUsersLoading(false);
     }
-  }
+  }, [callBackend, canAdminSettings, setError, toUserError]);
+
+  const loadAuditLog = useCallback(async (next = {}) => {
+    if (!canAdminSettings) return;
+    const requestedAction = String(next.action ?? "").trim();
+    const requestedLimit = Math.max(1, Math.min(1000, Number(next.limit ?? 50) || 50));
+    const requestedOffset = Math.max(0, Number(next.offset ?? 0) || 0);
+    setAuditLoading(true);
+    setAuditError("");
+    try {
+      const payload = await callBackend("webGetAuditLog", {
+        action: requestedAction || null,
+        limit: requestedLimit,
+        offset: requestedOffset,
+      });
+      setAuditLog(normalizeAuditLog(payload));
+      setAuditAction(requestedAction);
+      setAuditLimit(requestedLimit);
+      setAuditOffset(requestedOffset);
+    } catch (e) {
+      setAuditError(toUserError(e));
+    } finally {
+      setAuditLoading(false);
+    }
+  }, [callBackend, canAdminSettings, toUserError]);
 
   useEffect(() => {
     if (view !== "admin" || !canAdminSettings) return;
     loadCrmUsers();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, canAdminSettings]);
+    loadAuditLog({ offset: 0 });
+  }, [view, canAdminSettings, loadCrmUsers, loadAuditLog]);
 
   async function toggleCrmAuthStrict() {
     if (!canAdminSettings || crmAuthStrictSaving) return;
@@ -235,6 +280,7 @@ export function useCrmRole({
       await supabaseSignOut();
       setAuthUser(null);
       setCrmUsers([]);
+      setAuditLog([]);
       await load();
     } catch (e) {
       setError(toUserError(e));
@@ -250,6 +296,12 @@ export function useCrmRole({
     crmUsers,
     crmUsersLoading,
     crmUsersSaving,
+    auditLog,
+    auditLoading,
+    auditError,
+    auditAction,
+    auditLimit,
+    auditOffset,
     newCrmUserId,
     newCrmUserRole,
     newCrmUserNote,
@@ -260,10 +312,12 @@ export function useCrmRole({
     setNewCrmUserId,
     setNewCrmUserRole,
     setNewCrmUserNote,
+    setAuditAction,
     setAuthEmail,
     setAuthPassword,
     toggleCrmAuthStrict,
     loadCrmUsers,
+    loadAuditLog,
     updateCrmUserRole,
     removeCrmUserRole,
     createCrmUserRole,

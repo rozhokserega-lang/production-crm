@@ -139,6 +139,27 @@ body {
   gap: 8px;
 }
 
+.admin-panel__audit-controls {
+  display: grid;
+  grid-template-columns: 1.8fr 160px auto;
+  gap: 8px;
+}
+
+.admin-panel__audit-details {
+  max-width: 380px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.admin-panel__audit-pager {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
 h1 {
   font-size: var(--title-size);
   font-weight: 800;
@@ -690,6 +711,15 @@ button:disabled {
   margin-bottom: 10px;
 }
 
+.network-banner {
+  margin-bottom: 10px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid #f59e0b;
+  background: #fffbeb;
+  color: #92400e;
+  font-weight: 600;
+}
 .load-hint {
   margin: 0 0 10px;
   padding: 8px 14px;
@@ -770,7 +800,6 @@ button:disabled {
   max-width: 1200px;
   margin: 0 auto;
 }
-
 .sheet-table-wrap {
   background: #ffffff;
   border: 1px solid #dbe5f3;
@@ -1340,7 +1369,6 @@ button:disabled {
   font-weight: 700;
   line-height: 1.2;
 }
-
 .plan-number-box {
   border: 2px solid #2b2b2b;
   display: grid;

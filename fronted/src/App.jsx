@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import {
   callBackend,
+  isLikelyNetworkError,
   supabaseCall,
 } from "./api";
 import {
@@ -215,6 +216,317 @@ const CONSUME_LOG_SHEET_NAME = "расход апрель 2026";
 // Google Sheet (вкладка "Отгрузка") для записи плана
 const PLAN_SYNC_SHEET_ID = "1gRMs2AVxIXwmQLLnB2WIoRW7mPkGc9usyaUrXZAHuIs";
 const PLAN_SYNC_GID = "1998084017";
+const STAGE_SYNC_META = {
+  webSetPilkaInWork: { code: "pilka_in_work", label: "Пила: в работе" },
+  webSetPilkaDone: { code: "pilka_done", label: "Пила: готово" },
+  webSetPilkaPause: { code: "pilka_pause", label: "Пила: пауза" },
+  webSetKromkaInWork: { code: "kromka_in_work", label: "Кромка: в работе" },
+  webSetKromkaDone: { code: "kromka_done", label: "Кромка: готово" },
+  webSetKromkaPause: { code: "kromka_pause", label: "Кромка: пауза" },
+  webSetPrasInWork: { code: "pras_in_work", label: "Присадка: в работе" },
+  webSetPrasDone: { code: "pras_done", label: "Присадка: готово" },
+  webSetPrasPause: { code: "pras_pause", label: "Присадка: пауза" },
+  webSetAssemblyDone: { code: "assembly_done", label: "Сборка: готово" },
+  webSetShippingDone: { code: "shipping_done", label: "Отгрузка: готово" },
+};
+
+function statusClass(order) {
+  const ps = resolvePipelineStage(order);
+  if (ps === PipelineStage.SHIPPED || ps === PipelineStage.READY_TO_SHIP || ps === PipelineStage.ASSEMBLED) {
+    return "done";
+  }
+  const a = String(order?.assemblyStatus || "");
+  if (a.includes("СОБРАНО") || a.toLowerCase().includes("собрано")) return "done";
+  const pilka = String(order?.pilkaStatus || order?.pilka || "");
+  const kromka = String(order?.kromkaStatus || order?.kromka || "");
+  const pras = String(order?.prasStatus || order?.pras || "");
+  const lc = (s) => String(s || "").toLowerCase();
+  const inWork = (s) => lc(s).includes("в работе");
+  const onPause = (s) => lc(s).includes("пауза");
+  if (ps === PipelineStage.PILKA && onPause(pilka)) return "pause";
+  if (ps === PipelineStage.KROMKA && onPause(kromka)) return "pause";
+  if (ps === PipelineStage.PRAS && onPause(pras)) return "pause";
+  if (ps === PipelineStage.PILKA && inWork(pilka)) return "work";
+  if (ps === PipelineStage.KROMKA && inWork(kromka)) return "work";
+  if (ps === PipelineStage.PRAS && inWork(pras)) return "work";
+  return "wait";
+}
+
+function shipmentOrderKey(sourceRow, week) {
+  return `${String(sourceRow || "").trim()}|${String(week || "").trim()}`;
+}
+
+function orderUpdatedTs(o) {
+  return new Date(o?.updatedAt || o?.updated_at || o?.createdAt || o?.created_at || 0).getTime();
+}
+
+function mergeOrderPreferNewer(map, key, o) {
+  if (!key || !o) return;
+  const prev = map.get(key);
+  if (!prev || orderUpdatedTs(o) >= orderUpdatedTs(prev)) map.set(key, o);
+}
+
+function stageLabel(stageKey) {
+  if (stageKey === "awaiting") return "Ожидаю заказ";
+  if (stageKey === "on_pilka_wait") return "На пиле (ожидает запуск)";
+  if (stageKey === "on_pilka_work") return "На пиле";
+  if (stageKey === "on_kromka_wait") return "Ожидает кромку";
+  if (stageKey === "on_kromka_work") return "На кромке";
+  if (stageKey === "on_pras_wait") return "Ожидает присадку";
+  if (stageKey === "on_pras_work") return "На присадке";
+  if (stageKey === "ready_assembly") return "Готово к сборке";
+  if (stageKey === "assembled_wait_ship") return "Собран, ждет отправку";
+  if (stageKey === "shipped") return "Отправлен";
+  return "Статус неизвестен";
+}
+
+function stageBg(stageKey, rawBg = "#ffffff") {
+  if (stageKey === "awaiting") return "#ffffff";
+  if (stageKey === "on_pilka_wait") return "#fff7cc";
+  if (stageKey === "on_pilka_work") return "#ffe066";
+  if (stageKey === "on_kromka_wait") return "#dbeafe";
+  if (stageKey === "on_kromka_work") return "#3b82f6";
+  if (stageKey === "on_pras_wait") return "#ffddb5";
+  if (stageKey === "on_pras_work") return "#8b5a2b";
+  if (stageKey === "ready_assembly") return "#f59e0b";
+  if (stageKey === "assembled_wait_ship") return "#22c55e";
+  if (stageKey === "shipped") return "#d31d1d";
+  return rawBg || "#ffffff";
+}
+
+function getOverallStatusDisplay(order) {
+  const raw = String(order?.overallStatus || order?.overall || "").trim();
+  const stageKey = mapPipelineStageToShipmentKey(order);
+  const computed = stageLabel(stageKey);
+  if (!raw) return computed;
+
+  // If legacy overall_status is stale (e.g. still "Отправлен на пилу"),
+  // trust the current pipeline-derived status for UI consistency.
+  const rawLc = raw.toLowerCase();
+  const isLegacyPilka = rawLc.includes("на пилу");
+  const isPilkaStage = stageKey === "on_pilka_wait" || stageKey === "on_pilka_work";
+  if (isLegacyPilka && !isPilkaStage) return computed;
+
+  return raw;
+}
+
+function getMaterialLabel(item, material) {
+  const direct = String(material || "").trim();
+  if (direct) return direct;
+  const name = String(item || "").trim();
+  if (!name) return "Материал не указан";
+  const parts = name
+    .split(".")
+    .map((x) => String(x || "").trim())
+    .filter(Boolean);
+  const tail = String(parts[parts.length - 1] || "").trim();
+  return tail || "Материал не указан";
+}
+
+function hasArticleLikeCode(row) {
+  const raw = String(
+    row?.article_code ||
+      row?.articleCode ||
+      row?.article ||
+      row?.mapped_article_code ||
+      row?.mappedArticleCode ||
+      "",
+  ).trim();
+  if (!raw) return false;
+  const compact = raw.replace(/\s+/g, "");
+  return /^[A-Za-z0-9][A-Za-z0-9._-]{2,}$/.test(compact);
+}
+
+function getPlanPreviewArticleCode(planPreview) {
+  const direct = String(
+    planPreview?.article_code ||
+      planPreview?.articleCode ||
+      planPreview?.article ||
+      planPreview?.mapped_article_code ||
+      planPreview?.mappedArticleCode ||
+      "",
+  ).trim();
+  if (direct) return direct;
+  const rows = Array.isArray(planPreview?.rows) ? planPreview.rows : [];
+  for (const row of rows) {
+    const fromRow = String(
+      row?.article_code ||
+        row?.articleCode ||
+        row?.article ||
+        row?.mapped_article_code ||
+        row?.mappedArticleCode ||
+        "",
+    ).trim();
+    if (fromRow) return fromRow;
+  }
+  return "";
+}
+
+function resolvePlanPreviewArticleByName(planPreview, articleLookupByItemKey) {
+  if (!(articleLookupByItemKey instanceof Map) || articleLookupByItemKey.size === 0) return "";
+  const candidates = [
+    String(planPreview?.firstName || "").trim(),
+    String(planPreview?.detailedName || "").trim(),
+  ];
+  const rows = Array.isArray(planPreview?.rows) ? planPreview.rows : [];
+  rows.forEach((row) => {
+    candidates.push(String(row?.part || row?.name || row?.item_name || row?.itemName || "").trim());
+  });
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    const key = normalizeFurnitureKey(candidate);
+    if (!key) continue;
+    const article = String(articleLookupByItemKey.get(key) || "").trim();
+    if (article) return article;
+  }
+  return "";
+}
+
+function buildPlanPreviewQrPayload(planPreview, fallbackArticle = "") {
+  const article = getPlanPreviewArticleCode(planPreview) || String(fallbackArticle || "").trim() || "-";
+  const planNumber = String(planPreview?.planNumber || "-").trim() || "-";
+  const qtyRaw = Number(planPreview?.qty || 0);
+  const qty = Number.isFinite(qtyRaw) ? qtyRaw : 0;
+  return `ARTICLE:${article};PLAN:${planNumber};QTY:${qty}`;
+}
+
+function buildQrCodeUrl(payload, size = 160) {
+  return `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${encodeURIComponent(payload)}`;
+}
+
+function parseStageAuditRows(rows) {
+  const list = Array.isArray(rows) ? rows : [];
+  const out = [];
+  const stageKeys = ["pilka_status", "kromka_status", "pras_status", "assembly_status", "overall_status"];
+  list.forEach((row) => {
+    const details = row?.details && typeof row.details === "object" ? row.details : {};
+    const before = details?.before && typeof details.before === "object" ? details.before : {};
+    const after = details?.after && typeof details.after === "object" ? details.after : {};
+    const changed = [];
+    stageKeys.forEach((key) => {
+      const prev = String(before?.[key] ?? "").trim();
+      const next = String(after?.[key] ?? "").trim();
+      if (prev !== next) changed.push({ key, before: prev || "-", after: next || "-" });
+    });
+    const orderId = String(row?.entity_id || details?.order_id || "").trim();
+    if (!orderId && !changed.length) return;
+    out.push({
+      id: row?.id ?? `${row?.created_at || ""}-${orderId || "order"}`,
+      createdAt: String(row?.created_at || "").trim(),
+      orderId: orderId || "-",
+      changed,
+    });
+  });
+  return out;
+}
+
+function mapStageFieldToKey(field) {
+  if (field === "pilka_status") return "pilka";
+  if (field === "kromka_status") return "kromka";
+  if (field === "pras_status") return "pras";
+  return "";
+}
+
+function normalizeStageStatus(value) {
+  const raw = String(value || "").trim();
+  const lc = raw.toLowerCase();
+  if (!raw) return "-";
+  if (lc.includes("в работе")) return "В работе";
+  if (lc.includes("готов")) return "Готово";
+  if (lc.includes("ожида")) return "Ожидает";
+  if (lc.includes("пауза")) return "Пауза";
+  return raw;
+}
+
+function normalizeCatalogItemName(name) {
+  return String(name || "")
+    .replace(/^стол\s+письменный\s+/i, "")
+    .trim();
+}
+
+function normalizeCatalogDedupKey(name) {
+  return normalizeCatalogItemName(name)
+    .toLowerCase()
+    .replaceAll("х", "x")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function extractErrorMessage(e) {
+  const raw = String(e?.message || e || "").trim();
+  if (!raw) return "Неизвестная ошибка";
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object") {
+      const preferred = [
+        parsed.message,
+        parsed.error,
+        parsed.details,
+        parsed.hint,
+        parsed.error_description,
+      ]
+        .map((x) => String(x || "").trim())
+        .find(Boolean);
+      return preferred || raw;
+    }
+  } catch (_) {
+    // Raw value is not JSON, keep original string.
+  }
+  return raw;
+}
+
+function toUserError(e) {
+  const msg = extractErrorMessage(e);
+  if (msg.includes("Система занята")) return "Система занята, повторите через 1-2 секунды.";
+  if (isLikelyNetworkError(e)) return "Нет связи с сервером. Проверьте интернет и повторите.";
+  return msg || "Неизвестная ошибка";
+}
+
+function isShipmentCellMissingError(e) {
+  let raw = "";
+  try {
+    raw = JSON.stringify(e);
+  } catch {
+    raw = "";
+  }
+  const text = [
+    e?.message,
+    e?.details,
+    e?.hint,
+    e?.error_description,
+    raw,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  return /shipment cell not found|not\s*found|не найден|not\s*exists/.test(text);
+}
+
+function normalizeOrder(row) {
+  if (!row || typeof row !== "object") return row;
+  const out = {
+    ...row,
+    orderId: row.orderId ?? row.order_id ?? "",
+    pilkaStatus: row.pilkaStatus ?? row.pilka_status ?? row.pilka ?? "",
+    kromkaStatus: row.kromkaStatus ?? row.kromka_status ?? row.kromka ?? "",
+    prasStatus: row.prasStatus ?? row.pras_status ?? row.pras ?? "",
+    assemblyStatus: row.assemblyStatus ?? row.assembly_status ?? "",
+    overallStatus: row.overallStatus ?? row.overall_status ?? row.overall ?? "",
+    colorName: row.colorName ?? row.color_name ?? "",
+    createdAt: row.createdAt ?? row.created_at ?? "",
+    sheetsNeeded: row.sheetsNeeded ?? row.sheets_needed ?? 0,
+  };
+  out.pipelineStage = row.pipeline_stage ?? row.pipelineStage ?? null;
+  out.pipelineStage = resolvePipelineStage(out);
+  return out;
+}
+
+function formatDateTimeRu(value) {
+  if (!value) return "-";
+  const dt = new Date(value);
+  if (Number.isNaN(dt.getTime())) return String(value);
+  return dt.toLocaleString("ru-RU", { timeZone: "Europe/Moscow" });
+}
 
 function resolveDefaultConsumeSheets(order, shipmentOrders) {
   const direct = Number(order?.sheetsNeeded ?? order?.sheets_needed ?? 0);
@@ -445,6 +757,9 @@ export default function App() {
   const [collapsedSections, setCollapsedSections] = useState({});
   const [actionLoading, setActionLoading] = useState("");
   const [error, setError] = useState("");
+  const [isOnline, setIsOnline] = useState(
+    typeof navigator === "undefined" ? true : navigator.onLine,
+  );
   const [executorByOrder, setExecutorByOrder] = useState({});
   const [consumeDialogOpen, setConsumeDialogOpen] = useState(false);
   const [consumeEditMode, setConsumeEditMode] = useState(false);
@@ -536,6 +851,12 @@ export default function App() {
     crmUsers,
     crmUsersLoading,
     crmUsersSaving,
+    auditLog,
+    auditLoading,
+    auditError,
+    auditAction,
+    auditLimit,
+    auditOffset,
     newCrmUserId,
     newCrmUserRole,
     newCrmUserNote,
@@ -546,10 +867,12 @@ export default function App() {
     setNewCrmUserId,
     setNewCrmUserRole,
     setNewCrmUserNote,
+    setAuditAction,
     setAuthEmail,
     setAuthPassword,
     toggleCrmAuthStrict,
     loadCrmUsers,
+    loadAuditLog,
     updateCrmUserRole,
     removeCrmUserRole,
     createCrmUserRole,
@@ -568,6 +891,18 @@ export default function App() {
   const canAdminSettings = crmRole === "admin";
   const crmRoleLabel = CRM_ROLE_LABELS[crmRole] || CRM_ROLE_LABELS.viewer;
   const authUserLabel = String(authUser?.email || authUser?.phone || authUser?.id || "").trim();
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const onOnline = () => setIsOnline(true);
+    const onOffline = () => setIsOnline(false);
+    window.addEventListener("online", onOnline);
+    window.addEventListener("offline", onOffline);
+    return () => {
+      window.removeEventListener("online", onOnline);
+      window.removeEventListener("offline", onOffline);
+    };
+  }, []);
 
   useEffect(() => {
     if (view !== "overview") setOverviewSubView("kanban");
@@ -894,7 +1229,6 @@ export default function App() {
       await syncPlanCellToGoogleSheetEdge(baseUrl, token, payload);
     } catch (_) {
       // Keep saving plan resilient; still log to console for troubleshooting.
-      // eslint-disable-next-line no-console
       console.warn("[CRM] sync-plan-cell-to-gsheet failed (best-effort)", payload);
     }
   }
@@ -3074,6 +3408,11 @@ export default function App() {
         </div>
       </section>
 
+      {!isOnline && (
+        <div className="network-banner" role="status">
+          Нет подключения к интернету. Данные могут быть устаревшими.
+        </div>
+      )}
       {error && <div className="error">{error}</div>}
 
       <section className="cards">
@@ -3211,6 +3550,14 @@ export default function App() {
             crmUsers={crmUsers}
             updateCrmUserRole={updateCrmUserRole}
             removeCrmUserRole={removeCrmUserRole}
+            auditLog={auditLog}
+            auditLoading={auditLoading}
+            auditError={auditError}
+            auditAction={auditAction}
+            auditLimit={auditLimit}
+            auditOffset={auditOffset}
+            setAuditAction={setAuditAction}
+            loadAuditLog={loadAuditLog}
             formatDateTimeRu={formatDateTimeRu}
             roleOptions={CRM_ROLES}
             roleLabels={CRM_ROLE_LABELS}
