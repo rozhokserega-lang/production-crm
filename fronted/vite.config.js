@@ -4,6 +4,11 @@ import react from "@vitejs/plugin-react";
 export default defineConfig({
   plugins: [react()],
   base: "/",
+  test: {
+    environment: "jsdom",
+    globals: true,
+    clearMocks: true,
+  },
   build: {
     outDir: "dist",
     assetsDir: "assets",
