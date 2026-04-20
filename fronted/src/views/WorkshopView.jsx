@@ -20,7 +20,6 @@ export function WorkshopView({
   setExecutorByOrder,
   executorOptions,
   getMaterialLabel,
-  onOpenOrderDrawer,
 }) {
   const kromkaOptions = Array.isArray(executorOptions?.kromka) && executorOptions.kromka.length > 0
     ? executorOptions.kromka
@@ -69,18 +68,8 @@ export function WorkshopView({
         const assemblyDone = isDone(o.assemblyStatus);
         const packagingDone = isOrderCustomerShipped(o);
 
-        const handleCardClick = (e) => {
-          if (!orderId || typeof onOpenOrderDrawer !== "function") return;
-          if (e.target.closest("button, select, a, input, textarea, label")) return;
-          onOpenOrderDrawer(orderId);
-        };
-
         return (
-          <article
-            key={orderId || `${o.item}-${o.row}`}
-            className={`card card--order-clickable ${statusClass(o)}`}
-            onClick={handleCardClick}
-          >
+          <article key={orderId || `${o.item}-${o.row}`} className={`card ${statusClass(o)}`}>
             <div className="line1">
               <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                 <strong>{o.item}</strong>

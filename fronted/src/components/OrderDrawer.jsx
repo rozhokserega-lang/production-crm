@@ -29,6 +29,10 @@ export function OrderDrawer({
   if (!open || !orderId) return null;
 
   const first = lines[0] || {};
+  const pilkaS = first.pilkaStatus ?? first.pilka_status ?? first.pilka ?? "";
+  const kromkaS = first.kromkaStatus ?? first.kromka_status ?? first.kromka ?? "";
+  const prasS = first.prasStatus ?? first.pras_status ?? first.pras ?? "";
+  const assemblyS = first.assemblyStatus ?? first.assembly_status ?? "";
   const orderLabel = String(orderId);
   const updatedRaw =
     lines.reduce((acc, row) => {
@@ -99,10 +103,10 @@ export function OrderDrawer({
           <h3 className="order-drawer__h3">Производство</h3>
           <div className="order-drawer__pipeline">
             {[
-              { label: "Пила", s: first.pilkaStatus },
-              { label: "Кромка", s: first.kromkaStatus },
-              { label: "Присадка", s: first.prasStatus },
-              { label: "Сборка", s: first.assemblyStatus },
+              { label: "Пила", s: pilkaS },
+              { label: "Кромка", s: kromkaS },
+              { label: "Присадка", s: prasS },
+              { label: "Сборка", s: assemblyS },
             ].map(({ label, s }) => (
               <div key={label} className="order-drawer__pipe-step">
                 <span className={stageDotClass(s, isDone, isInWork)} title={String(s || "—")} />
@@ -111,10 +115,10 @@ export function OrderDrawer({
             ))}
           </div>
           <div className="order-drawer__statuses">
-            <div>Пила: {first.pilkaStatus || "—"}</div>
-            <div>Кромка: {first.kromkaStatus || "—"}</div>
-            <div>Присадка: {first.prasStatus || "—"}</div>
-            <div>Сборка: {first.assemblyStatus || "—"}</div>
+            <div>Пила: {pilkaS || "—"}</div>
+            <div>Кромка: {kromkaS || "—"}</div>
+            <div>Присадка: {prasS || "—"}</div>
+            <div>Сборка: {assemblyS || "—"}</div>
           </div>
         </div>
       </aside>

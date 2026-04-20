@@ -1594,12 +1594,31 @@ button:disabled {
 }
 
 /* Order detail drawer (overview / workshop) */
+@keyframes order-drawer-backdrop-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes order-drawer-panel-in {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
 .order-drawer-root {
   position: fixed;
   inset: 0;
   z-index: 1200;
   display: flex;
   justify-content: flex-end;
+  align-items: stretch;
   pointer-events: none;
 }
 
@@ -1609,9 +1628,10 @@ button:disabled {
   border: 0;
   padding: 0;
   margin: 0;
-  background: rgba(15, 23, 42, 0.35);
+  background: rgba(15, 23, 42, 0.12);
   cursor: pointer;
   pointer-events: auto;
+  animation: order-drawer-backdrop-in 0.22s ease-out forwards;
 }
 
 .order-drawer {
@@ -1621,11 +1641,23 @@ button:disabled {
   overflow: auto;
   background: #ffffff;
   border-left: 1px solid #dbe5f3;
-  box-shadow: -8px 0 24px rgba(15, 23, 42, 0.12);
+  box-shadow: -12px 0 32px rgba(15, 23, 42, 0.1);
   pointer-events: auto;
   display: flex;
   flex-direction: column;
   gap: 0;
+  will-change: transform;
+  animation: order-drawer-panel-in 0.32s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .order-drawer-backdrop {
+    animation: none;
+  }
+
+  .order-drawer {
+    animation: none;
+  }
 }
 
 .order-drawer__head {
@@ -1760,7 +1792,8 @@ button:disabled {
 }
 
 .order-drawer__dot--wait {
-  background: #cbd5e1;
+  background: #94a3b8;
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.12);
 }
 
 .order-drawer__pipe-label {
@@ -1774,21 +1807,41 @@ button:disabled {
   color: #475569;
 }
 
-.overview-card--clickable,
-.card--order-clickable {
+.overview-card--clickable {
   cursor: pointer;
 }
 
-.overview-card--clickable:focus-visible,
-.card--order-clickable:focus-visible {
+.overview-card--clickable {
+  position: relative;
+  transition:
+    transform 0.2s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.2s ease;
+}
+
+.overview-card--clickable:hover {
+  transform: translateY(-3px);
+  z-index: 2;
+  box-shadow:
+    0 10px 26px rgba(15, 23, 42, 0.12),
+    0 0 0 2px rgba(59, 130, 246, 0.45);
+}
+
+.overview-card--clickable:active {
+  transform: translateY(-1px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .overview-card--clickable {
+    transition: box-shadow 0.15s ease;
+  }
+
+  .overview-card--clickable:hover,
+  .overview-card--clickable:active {
+    transform: none;
+  }
+}
+
+.overview-card--clickable:focus-visible {
   outline: 2px solid #3b82f6;
   outline-offset: 2px;
-}
-
-.overview-table-row--clickable {
-  cursor: pointer;
-}
-
-.overview-table-row--clickable:focus-within {
-  outline: 1px solid #cbd5e1;
 }

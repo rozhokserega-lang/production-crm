@@ -96,13 +96,7 @@ export function OverviewView({
                         o.created_at ||
                         "";
                       return (
-                        <tr
-                          key={`shipped-${orderId || o.item}`}
-                          className={orderId && onOpenOrderDrawer ? "overview-table-row--clickable" : undefined}
-                          onClick={() => {
-                            if (orderId && typeof onOpenOrderDrawer === "function") onOpenOrderDrawer(orderId);
-                          }}
-                        >
+                        <tr key={`shipped-${orderId || o.item}`}>
                           <td>{orderId || "-"}</td>
                           <td>{o.item || "-"}</td>
                           <td>{o.week || "-"}</td>

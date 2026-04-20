@@ -848,6 +848,7 @@ export default function App() {
 
   function isDone(s) {
     const v = String(s || "").toLowerCase();
+    if (/\bне\s*готов/.test(v) || v.includes("неготов")) return false;
     return v.includes("готов") || v.includes("собрано");
   }
   function getCurrentStage(order) {
@@ -1434,7 +1435,7 @@ export default function App() {
   }, [rows, orderDrawerId]);
 
   useEffect(() => {
-    if (view !== "overview" && view !== "workshop") setOrderDrawerId("");
+    if (view !== "overview") setOrderDrawerId("");
   }, [view]);
 
   useEffect(() => {
@@ -3513,7 +3514,6 @@ export default function App() {
             setExecutorByOrder={setExecutorByOrder}
             executorOptions={executorOptions}
             getMaterialLabel={getMaterialLabel}
-            onOpenOrderDrawer={setOrderDrawerId}
           />
         )}
       </section>
