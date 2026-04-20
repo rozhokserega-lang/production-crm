@@ -42,9 +42,11 @@ export function ShipmentView({
   deleteSelectedShipmentPlan,
   setSelectedShipments,
 }) {
+  const isPlanPreviewOpen = planPreviews.length > 0;
+
   return (
-    <div className="shipment-layout">
-      <aside className="selection-summary-pane">
+    <div className={`shipment-layout ${isPlanPreviewOpen ? "is-plan-preview-open" : ""}`}>
+      {!isPlanPreviewOpen && <aside className="selection-summary-pane">
         {selectedShipments.length > 0 || strapItems.length > 0 ? (
           <div className="selection-summary">
             <div className="selection-summary-title">Расчет для выделенных ячеек:</div>
@@ -113,9 +115,9 @@ export function ShipmentView({
             )}
           </div>
         )}
-      </aside>
+      </aside>}
       <div className="shipment-main">
-        {planPreviews.length > 0 && (
+        {isPlanPreviewOpen && (
           <div className="print-area">
             {planPreviews.map((planPreview, idx) => (
               <div key={planPreview._key || idx} className="plan-preview print-plan-page">
@@ -125,7 +127,7 @@ export function ShipmentView({
                     <div className="strap-print-meta">Дата: {planPreview.generatedAt}</div>
                     {Array.isArray(planPreview.products) && planPreview.products.length > 0 && (
                       <div className="strap-print-meta">
-                        Изделие: {planPreview.products.join(", ")}
+                        Для изделия: {planPreview.products.join(", ")}
                       </div>
                     )}
                     <table className="plan-table strap-plan-table">
@@ -159,6 +161,11 @@ export function ShipmentView({
                       <div className="plan-yellow">
                         <div className="name">{planPreview.firstName || planPreview.detailedName || "-"}</div>
                         <div className="color">{planPreview.colorName || "-"}</div>
+                        {!!String(planPreview.strapTargetProduct || "").trim() && (
+                          <div className="strap-target">
+                            Обвязка для изделия: {planPreview.strapTargetProduct}
+                          </div>
+                        )}
                       </div>
                       <div className="plan-right-meta">
                         <div className="plan-number-box">
@@ -220,8 +227,8 @@ export function ShipmentView({
             ))}
           </div>
         )}
-        {!filtered.length && !loading && <div className="empty">Нет позиций в отгрузке</div>}
-        {shipmentViewMode === "table" && (
+        {!isPlanPreviewOpen && !filtered.length && !loading && <div className="empty">Нет позиций в отгрузке</div>}
+        {!isPlanPreviewOpen && shipmentViewMode === "table" && (
           <div>
             <div className="shipment-group-filters">
               <span className="shipment-group-filters__label">Группы:</span>
@@ -355,7 +362,7 @@ export function ShipmentView({
             </div>
           </div>
         )}
-        {shipmentViewMode !== "table" && shipmentRenderSections.map((section) => (
+        {!isPlanPreviewOpen && shipmentViewMode !== "table" && shipmentRenderSections.map((section) => (
           <div key={section.name} className="shipment-section">
             <button
               type="button"
@@ -480,7 +487,7 @@ export function ShipmentView({
           </div>
         ))}
       </div>
-      <aside className="shipment-actions-pane">
+      {!isPlanPreviewOpen && <aside className="shipment-actions-pane">
         {selectedShipments.length > 0 && (
           <div className="shipment-toolbar shipment-toolbar--side">
             <div className="shipment-toolbar__summary">
@@ -527,7 +534,7 @@ export function ShipmentView({
             </div>
           </div>
         )}
-      </aside>
+      </aside>}
     </div>
   );
 }

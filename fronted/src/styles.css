@@ -757,6 +757,20 @@ button:disabled {
   min-width: 0;
 }
 
+/* While plan preview is open, use single-column layout and center printable page. */
+.shipment-layout.is-plan-preview-open {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.shipment-layout.is-plan-preview-open .shipment-main {
+  width: 100%;
+}
+
+.shipment-layout.is-plan-preview-open .print-area {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
 .sheet-table-wrap {
   background: #ffffff;
   border: 1px solid #dbe5f3;
@@ -1318,6 +1332,13 @@ button:disabled {
   font-size: 42px;
   font-weight: 800;
   line-height: 1.1;
+}
+
+.plan-yellow .strap-target {
+  margin-top: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.2;
 }
 
 .plan-number-box {

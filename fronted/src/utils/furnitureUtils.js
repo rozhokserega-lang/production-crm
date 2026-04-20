@@ -6,10 +6,11 @@ export function toNum(v) {
 }
 
 export function furnitureProductLabel(name) {
-  return String(name || "")
-    .replace(/^Авела Лайт\b/i, "Авелла Лайт")
-    .replace(/^Авела\b/i, "Авелла")
-    .trim();
+  const raw = String(name || "").trim();
+  const key = normalizeStrapProductKey(raw);
+  if (key === "авелла лайт") return "Авелла Лайт";
+  if (key === "авелла") return "Авелла";
+  return raw;
 }
 
 export function normalizeFurnitureKey(v) {
@@ -22,9 +23,12 @@ export function normalizeFurnitureKey(v) {
 }
 
 export function normalizeStrapProductKey(v) {
-  const key = normalizeFurnitureKey(v);
-  if (key === "авела") return "авелла";
-  if (key === "авела лайт") return "авелла лайт";
+  const key = normalizeFurnitureKey(v)
+    .replace(/\bavella\b/g, "авелла")
+    .replace(/\bavela\b/g, "авелла")
+    .replace(/\blite\b/g, "лайт");
+  if (key === "авела" || key === "авелла") return "авелла";
+  if (key === "авела лайт" || key === "авелла лайт") return "авелла лайт";
   const hasDonini = key.includes("донини") || key.includes("donini");
   const hasWhite = key.includes("бел") || key.includes("white");
   const isR = key.includes("донини r") || key.includes("donini r");
@@ -176,6 +180,7 @@ export function isStrapVirtualRowId(rowId) {
 export function canonicalStrapProductName(name) {
   const label = furnitureProductLabel(name);
   const key = normalizeStrapProductKey(label);
+  if (key === "авелла") return "Авелла";
   if (key === "авела лайт" || key === "авелла лайт") return "Авелла Лайт";
   if (key === "донини белый") return "Донини Белый";
   if (key === "донини гранде") return "Донини Гранде";

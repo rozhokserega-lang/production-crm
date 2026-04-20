@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import {
   callBackend,
@@ -32,7 +32,6 @@ import {
   getShipmentCellStatus,
   getShipmentCellStatusShort,
   getShipmentStageKey,
-  mapPipelineStageToShipmentKey,
   isGarbageShipmentItemName,
   isObvyazkaSectionName,
   isStorageLikeName,
@@ -83,6 +82,104 @@ import { WarehouseView } from "./views/WarehouseView";
 import { StatsView } from "./views/StatsView";
 import { SheetMirrorView } from "./views/SheetMirrorView";
 import { FurnitureView } from "./views/FurnitureView";
+import {
+  CRM_ROLES,
+  CRM_ROLE_LABELS,
+  DEFAULT_SHIPMENT_PREFS,
+  STAGE_SYNC_META,
+  TABS,
+  VIEWS,
+} from "./app/appConstants";
+import {
+  getOverallStatusDisplay,
+  stageBg,
+  stageLabel,
+  statusClass,
+} from "./app/statusHelpers";
+import {
+  getMaterialLabel,
+  getPlanPreviewArticleCode,
+  hasArticleLikeCode,
+  mergeOrderPreferNewer,
+  shipmentOrderKey,
+} from "./app/orderHelpers";
+import {
+  mapStageFieldToKey,
+  normalizeStageStatus,
+  parseStageAuditRows,
+} from "./app/auditHelpers";
+import {
+  buildPlanPreviewQrPayload,
+  buildQrCodeUrl,
+  resolvePlanPreviewArticleByName,
+} from "./app/planPreviewHelpers";
+import {
+  extractErrorMessage,
+  normalizeCatalogDedupKey,
+  normalizeCatalogItemName,
+  toUserError,
+} from "./app/errorCatalogHelpers";
+import {
+  formatDateTimeRu,
+  isShipmentCellMissingError,
+  normalizeOrder,
+} from "./app/rowHelpers";
+import {
+  logConsumeToGoogleSheetEdge,
+  notifyAssemblyReadyTelegramEdge,
+  notifyFinalStageTelegramEdge,
+  syncLeftoversToGoogleSheetEdge,
+  syncPlanCellToGoogleSheetEdge,
+  syncWarehouseFromGoogleSheetEdge,
+} from "./app/edgeSyncService";
+import {
+  buildNotifyPayload,
+  buildPilkaDoneDialogInit,
+  buildConsumeDialogData,
+  buildStageSyncPayload,
+  getDefaultSheetsQty,
+} from "./app/runActionHelpers";
+import {
+  buildShipmentCellAttempts,
+  runShipmentCellActionWithFallback,
+} from "./app/shipmentActionHelpers";
+import {
+  getStatsDeleteActionKey,
+  resolveStatsOrderSourceCell,
+} from "./app/statsDeleteHelpers";
+import {
+  buildCreatePlanDialogInit,
+  buildStrapPlanCellPayload,
+  buildStrapPreviewPlans,
+  buildStrapPlanRows,
+  buildStrapDialogInit,
+  remapStrapDraftByOptions,
+} from "./app/shipmentDialogHelpers";
+import {
+  buildShipmentPreviewPlans,
+  enrichPreviewFromFurniture,
+  enrichPreviewWithStrapProduct,
+} from "./app/shipmentPreviewHelpers";
+import {
+  applyImportPlanRows,
+  buildImportArticleMap,
+  buildShipmentExportRows,
+  formatImportShipmentPartialError,
+  formatShipmentImportError,
+  formatShipmentExportPartialError,
+  getImportPlanNoValidRowsError,
+  getShipmentExportNoArticlesError,
+  loadImportCatalogRows,
+  parseImportPlanRows,
+} from "./app/shipmentExportHelpers";
+import {
+  buildLaborFactPayload,
+  formatLaborImportError,
+  formatLaborSaveRowError,
+  getLaborImportNoValidRowsError,
+  markLaborImportRowSaved,
+  parseLaborImportRows,
+} from "./app/laborImportHelpers";
 
 /** Для KPI «Статистика»: собрано, готово к отправке клиенту, отгружено. */
 const TERMINAL_PIPELINE_STAGES = new Set([
@@ -91,44 +188,6 @@ const TERMINAL_PIPELINE_STAGES = new Set([
   PipelineStage.SHIPPED,
 ]);
 
-const CRM_ROLES = ["viewer", "operator", "manager", "admin"];
-const CRM_ROLE_LABELS = {
-  viewer: "Наблюдатель",
-  operator: "Оператор",
-  manager: "Менеджер",
-  admin: "Админ",
-};
-
-const TABS = [
-  { id: "pilka", label: "Пила" },
-  { id: "kromka", label: "Кромка" },
-  { id: "pras", label: "Присадка" },
-  { id: "assembly", label: "Сборка" },
-  { id: "done", label: "Финал" },
-];
-const VIEWS = [
-  { id: "shipment", label: "Отгрузка" },
-  { id: "overview", label: "Обзор заказов" },
-  { id: "workshop", label: "Производство" },
-  { id: "warehouse", label: "Склад" },
-  { id: "labor", label: "Трудоемкость" },
-  { id: "stats", label: "Статистика" },
-  { id: "furniture", label: "Мебель" },
-  { id: "admin", label: "Админ" },
-];
-const DEFAULT_SHIPMENT_PREFS = {
-  weekFilter: "all",
-  shipmentSort: "name",
-  showAwaiting: true,
-  showOnPilka: true,
-  showOnKromka: true,
-  showOnPras: true,
-  showReadyAssembly: true,
-  /** Собран / готово к отправке клиенту — «ждёт отправку» (отдельно от «готовы к сборке»). */
-  showAwaitShipment: true,
-  showShipped: true,
-  collapsedSections: {},
-};
 const SHIPMENT_SECTION_ORDER = [];
 const STRAP_OPTIONS = [
   "Бока (316_167)",
@@ -156,317 +215,6 @@ const CONSUME_LOG_SHEET_NAME = "расход апрель 2026";
 // Google Sheet (вкладка "Отгрузка") для записи плана
 const PLAN_SYNC_SHEET_ID = "1gRMs2AVxIXwmQLLnB2WIoRW7mPkGc9usyaUrXZAHuIs";
 const PLAN_SYNC_GID = "1998084017";
-const STAGE_SYNC_META = {
-  webSetPilkaInWork: { code: "pilka_in_work", label: "Пила: в работе" },
-  webSetPilkaDone: { code: "pilka_done", label: "Пила: готово" },
-  webSetPilkaPause: { code: "pilka_pause", label: "Пила: пауза" },
-  webSetKromkaInWork: { code: "kromka_in_work", label: "Кромка: в работе" },
-  webSetKromkaDone: { code: "kromka_done", label: "Кромка: готово" },
-  webSetKromkaPause: { code: "kromka_pause", label: "Кромка: пауза" },
-  webSetPrasInWork: { code: "pras_in_work", label: "Присадка: в работе" },
-  webSetPrasDone: { code: "pras_done", label: "Присадка: готово" },
-  webSetPrasPause: { code: "pras_pause", label: "Присадка: пауза" },
-  webSetAssemblyDone: { code: "assembly_done", label: "Сборка: готово" },
-  webSetShippingDone: { code: "shipping_done", label: "Отгрузка: готово" },
-};
-
-function statusClass(order) {
-  const ps = resolvePipelineStage(order);
-  if (ps === PipelineStage.SHIPPED || ps === PipelineStage.READY_TO_SHIP || ps === PipelineStage.ASSEMBLED) {
-    return "done";
-  }
-  const a = String(order?.assemblyStatus || "");
-  if (a.includes("СОБРАНО") || a.toLowerCase().includes("собрано")) return "done";
-  const pilka = String(order?.pilkaStatus || order?.pilka || "");
-  const kromka = String(order?.kromkaStatus || order?.kromka || "");
-  const pras = String(order?.prasStatus || order?.pras || "");
-  const lc = (s) => String(s || "").toLowerCase();
-  const inWork = (s) => lc(s).includes("в работе");
-  const onPause = (s) => lc(s).includes("пауза");
-  if (ps === PipelineStage.PILKA && onPause(pilka)) return "pause";
-  if (ps === PipelineStage.KROMKA && onPause(kromka)) return "pause";
-  if (ps === PipelineStage.PRAS && onPause(pras)) return "pause";
-  if (ps === PipelineStage.PILKA && inWork(pilka)) return "work";
-  if (ps === PipelineStage.KROMKA && inWork(kromka)) return "work";
-  if (ps === PipelineStage.PRAS && inWork(pras)) return "work";
-  return "wait";
-}
-
-function shipmentOrderKey(sourceRow, week) {
-  return `${String(sourceRow || "").trim()}|${String(week || "").trim()}`;
-}
-
-function orderUpdatedTs(o) {
-  return new Date(o?.updatedAt || o?.updated_at || o?.createdAt || o?.created_at || 0).getTime();
-}
-
-function mergeOrderPreferNewer(map, key, o) {
-  if (!key || !o) return;
-  const prev = map.get(key);
-  if (!prev || orderUpdatedTs(o) >= orderUpdatedTs(prev)) map.set(key, o);
-}
-
-function stageLabel(stageKey) {
-  if (stageKey === "awaiting") return "Ожидаю заказ";
-  if (stageKey === "on_pilka_wait") return "На пиле (ожидает запуск)";
-  if (stageKey === "on_pilka_work") return "На пиле";
-  if (stageKey === "on_kromka_wait") return "Ожидает кромку";
-  if (stageKey === "on_kromka_work") return "На кромке";
-  if (stageKey === "on_pras_wait") return "Ожидает присадку";
-  if (stageKey === "on_pras_work") return "На присадке";
-  if (stageKey === "ready_assembly") return "Готово к сборке";
-  if (stageKey === "assembled_wait_ship") return "Собран, ждет отправку";
-  if (stageKey === "shipped") return "Отправлен";
-  return "Статус неизвестен";
-}
-
-function stageBg(stageKey, rawBg = "#ffffff") {
-  if (stageKey === "awaiting") return "#ffffff";
-  if (stageKey === "on_pilka_wait") return "#fff7cc";
-  if (stageKey === "on_pilka_work") return "#ffe066";
-  if (stageKey === "on_kromka_wait") return "#dbeafe";
-  if (stageKey === "on_kromka_work") return "#3b82f6";
-  if (stageKey === "on_pras_wait") return "#ffddb5";
-  if (stageKey === "on_pras_work") return "#8b5a2b";
-  if (stageKey === "ready_assembly") return "#f59e0b";
-  if (stageKey === "assembled_wait_ship") return "#22c55e";
-  if (stageKey === "shipped") return "#d31d1d";
-  return rawBg || "#ffffff";
-}
-
-function getOverallStatusDisplay(order) {
-  const raw = String(order?.overallStatus || order?.overall || "").trim();
-  const stageKey = mapPipelineStageToShipmentKey(order);
-  const computed = stageLabel(stageKey);
-  if (!raw) return computed;
-
-  // If legacy overall_status is stale (e.g. still "Отправлен на пилу"),
-  // trust the current pipeline-derived status for UI consistency.
-  const rawLc = raw.toLowerCase();
-  const isLegacyPilka = rawLc.includes("на пилу");
-  const isPilkaStage = stageKey === "on_pilka_wait" || stageKey === "on_pilka_work";
-  if (isLegacyPilka && !isPilkaStage) return computed;
-
-  return raw;
-}
-
-function getMaterialLabel(item, material) {
-  const direct = String(material || "").trim();
-  if (direct) return direct;
-  const name = String(item || "").trim();
-  if (!name) return "Материал не указан";
-  const parts = name
-    .split(".")
-    .map((x) => String(x || "").trim())
-    .filter(Boolean);
-  const tail = String(parts[parts.length - 1] || "").trim();
-  return tail || "Материал не указан";
-}
-
-function hasArticleLikeCode(row) {
-  const raw = String(
-    row?.article_code ||
-      row?.articleCode ||
-      row?.article ||
-      row?.mapped_article_code ||
-      row?.mappedArticleCode ||
-      "",
-  ).trim();
-  if (!raw) return false;
-  const compact = raw.replace(/\s+/g, "");
-  return /^[A-Za-z0-9][A-Za-z0-9._-]{2,}$/.test(compact);
-}
-
-function getPlanPreviewArticleCode(planPreview) {
-  const direct = String(
-    planPreview?.article_code ||
-      planPreview?.articleCode ||
-      planPreview?.article ||
-      planPreview?.mapped_article_code ||
-      planPreview?.mappedArticleCode ||
-      "",
-  ).trim();
-  if (direct) return direct;
-  const rows = Array.isArray(planPreview?.rows) ? planPreview.rows : [];
-  for (const row of rows) {
-    const fromRow = String(
-      row?.article_code ||
-        row?.articleCode ||
-        row?.article ||
-        row?.mapped_article_code ||
-        row?.mappedArticleCode ||
-        "",
-    ).trim();
-    if (fromRow) return fromRow;
-  }
-  return "";
-}
-
-function resolvePlanPreviewArticleByName(planPreview, articleLookupByItemKey) {
-  if (!(articleLookupByItemKey instanceof Map) || articleLookupByItemKey.size === 0) return "";
-  const candidates = [
-    String(planPreview?.firstName || "").trim(),
-    String(planPreview?.detailedName || "").trim(),
-  ];
-  const rows = Array.isArray(planPreview?.rows) ? planPreview.rows : [];
-  rows.forEach((row) => {
-    candidates.push(String(row?.part || row?.name || row?.item_name || row?.itemName || "").trim());
-  });
-  for (const candidate of candidates) {
-    if (!candidate) continue;
-    const key = normalizeFurnitureKey(candidate);
-    if (!key) continue;
-    const article = String(articleLookupByItemKey.get(key) || "").trim();
-    if (article) return article;
-  }
-  return "";
-}
-
-function buildPlanPreviewQrPayload(planPreview, fallbackArticle = "") {
-  const article = getPlanPreviewArticleCode(planPreview) || String(fallbackArticle || "").trim() || "-";
-  const planNumber = String(planPreview?.planNumber || "-").trim() || "-";
-  const qtyRaw = Number(planPreview?.qty || 0);
-  const qty = Number.isFinite(qtyRaw) ? qtyRaw : 0;
-  return `ARTICLE:${article};PLAN:${planNumber};QTY:${qty}`;
-}
-
-function buildQrCodeUrl(payload, size = 160) {
-  return `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${encodeURIComponent(payload)}`;
-}
-
-function parseStageAuditRows(rows) {
-  const list = Array.isArray(rows) ? rows : [];
-  const out = [];
-  const stageKeys = ["pilka_status", "kromka_status", "pras_status", "assembly_status", "overall_status"];
-  list.forEach((row) => {
-    const details = row?.details && typeof row.details === "object" ? row.details : {};
-    const before = details?.before && typeof details.before === "object" ? details.before : {};
-    const after = details?.after && typeof details.after === "object" ? details.after : {};
-    const changed = [];
-    stageKeys.forEach((key) => {
-      const prev = String(before?.[key] ?? "").trim();
-      const next = String(after?.[key] ?? "").trim();
-      if (prev !== next) changed.push({ key, before: prev || "-", after: next || "-" });
-    });
-    const orderId = String(row?.entity_id || details?.order_id || "").trim();
-    if (!orderId && !changed.length) return;
-    out.push({
-      id: row?.id ?? `${row?.created_at || ""}-${orderId || "order"}`,
-      createdAt: String(row?.created_at || "").trim(),
-      orderId: orderId || "-",
-      changed,
-    });
-  });
-  return out;
-}
-
-function mapStageFieldToKey(field) {
-  if (field === "pilka_status") return "pilka";
-  if (field === "kromka_status") return "kromka";
-  if (field === "pras_status") return "pras";
-  return "";
-}
-
-function normalizeStageStatus(value) {
-  const raw = String(value || "").trim();
-  const lc = raw.toLowerCase();
-  if (!raw) return "-";
-  if (lc.includes("в работе")) return "В работе";
-  if (lc.includes("готов")) return "Готово";
-  if (lc.includes("ожида")) return "Ожидает";
-  if (lc.includes("пауза")) return "Пауза";
-  return raw;
-}
-
-function normalizeCatalogItemName(name) {
-  return String(name || "")
-    .replace(/^стол\s+письменный\s+/i, "")
-    .trim();
-}
-
-function normalizeCatalogDedupKey(name) {
-  return normalizeCatalogItemName(name)
-    .toLowerCase()
-    .replaceAll("х", "x")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function extractErrorMessage(e) {
-  const raw = String(e?.message || e || "").trim();
-  if (!raw) return "Неизвестная ошибка";
-  try {
-    const parsed = JSON.parse(raw);
-    if (parsed && typeof parsed === "object") {
-      const preferred = [
-        parsed.message,
-        parsed.error,
-        parsed.details,
-        parsed.hint,
-        parsed.error_description,
-      ]
-        .map((x) => String(x || "").trim())
-        .find(Boolean);
-      return preferred || raw;
-    }
-  } catch (_) {
-    // Raw value is not JSON, keep original string.
-  }
-  return raw;
-}
-
-function toUserError(e) {
-  const msg = extractErrorMessage(e);
-  if (msg.includes("Система занята")) return "Система занята, повторите через 1-2 секунды.";
-  if (msg.includes("Failed to fetch") || msg.includes("NetworkError")) return "Нет связи с сервером. Проверьте интернет и повторите.";
-  return msg || "Неизвестная ошибка";
-}
-
-function isShipmentCellMissingError(e) {
-  let raw = "";
-  try {
-    raw = JSON.stringify(e);
-  } catch {
-    raw = "";
-  }
-  const text = [
-    e?.message,
-    e?.details,
-    e?.hint,
-    e?.error_description,
-    raw,
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
-  return /shipment cell not found|not\s*found|не найден|not\s*exists/.test(text);
-}
-
-function normalizeOrder(row) {
-  if (!row || typeof row !== "object") return row;
-  const out = {
-    ...row,
-    orderId: row.orderId ?? row.order_id ?? "",
-    pilkaStatus: row.pilkaStatus ?? row.pilka_status ?? row.pilka ?? "",
-    kromkaStatus: row.kromkaStatus ?? row.kromka_status ?? row.kromka ?? "",
-    prasStatus: row.prasStatus ?? row.pras_status ?? row.pras ?? "",
-    assemblyStatus: row.assemblyStatus ?? row.assembly_status ?? "",
-    overallStatus: row.overallStatus ?? row.overall_status ?? row.overall ?? "",
-    colorName: row.colorName ?? row.color_name ?? "",
-    createdAt: row.createdAt ?? row.created_at ?? "",
-    sheetsNeeded: row.sheetsNeeded ?? row.sheets_needed ?? 0,
-  };
-  out.pipelineStage = row.pipeline_stage ?? row.pipelineStage ?? null;
-  out.pipelineStage = resolvePipelineStage(out);
-  return out;
-}
-
-function formatDateTimeRu(value) {
-  if (!value) return "-";
-  const dt = new Date(value);
-  if (Number.isNaN(dt.getTime())) return String(value);
-  return dt.toLocaleString("ru-RU", { timeZone: "Europe/Moscow" });
-}
 
 function resolveDefaultConsumeSheets(order, shipmentOrders) {
   const direct = Number(order?.sheetsNeeded ?? order?.sheets_needed ?? 0);
@@ -1035,22 +783,7 @@ export default function App() {
     const token = String(SUPABASE_ANON_KEY || "").trim();
     if (!baseUrl || !token) return;
     try {
-      await fetch(`${baseUrl}/functions/v1/notify-assembly-ready`, {
-        method: "POST",
-        headers: {
-          apikey: token,
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          orderId: String(meta.orderId || "").trim(),
-          item: String(meta.item || "").trim(),
-          material: String(meta.material || "").trim(),
-          week: String(meta.week || "").trim(),
-          qty: Number(meta.qty || 0),
-          executor: String(meta.executor || "").trim(),
-        }),
-      });
+      await notifyAssemblyReadyTelegramEdge(baseUrl, token, meta);
     } catch (_) {
       // Notification is best-effort and should not block production workflow.
     }
@@ -1061,23 +794,7 @@ export default function App() {
     const token = String(SUPABASE_ANON_KEY || "").trim();
     if (!baseUrl || !token) return;
     try {
-      await fetch(`${baseUrl}/functions/v1/notify-assembly-ready`, {
-        method: "POST",
-        headers: {
-          apikey: token,
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          stage: "final_done",
-          orderId: String(meta.orderId || "").trim(),
-          item: String(meta.item || "").trim(),
-          material: String(meta.material || "").trim(),
-          week: String(meta.week || "").trim(),
-          qty: Number(meta.qty || 0),
-          executor: String(meta.executor || "").trim(),
-        }),
-      });
+      await notifyFinalStageTelegramEdge(baseUrl, token, meta);
     } catch (_) {
       // Notification is best-effort and should not block production workflow.
     }
@@ -1093,24 +810,11 @@ export default function App() {
     setWarehouseSyncLoading(true);
     setError("");
     try {
-      const resp = await fetch(`${baseUrl}/functions/v1/sync-materials-stock`, {
-        method: "POST",
-        headers: {
-          apikey: token,
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          sheetId: WAREHOUSE_SYNC_SHEET_ID,
-          gid: WAREHOUSE_SYNC_GID,
-          leftoversGid: LEFTOVERS_SYNC_GID,
-        }),
+      await syncWarehouseFromGoogleSheetEdge(baseUrl, token, {
+        sheetId: WAREHOUSE_SYNC_SHEET_ID,
+        gid: WAREHOUSE_SYNC_GID,
+        leftoversGid: LEFTOVERS_SYNC_GID,
       });
-      const payload = await resp.json().catch(() => ({}));
-      if (!resp.ok || payload?.ok === false) {
-        const reason = String(payload?.error || `HTTP ${resp.status}`);
-        throw new Error(reason);
-      }
       await load();
     } catch (e) {
       setError(`Не удалось синхронизировать склад: ${extractErrorMessage(e)}`);
@@ -1130,23 +834,10 @@ export default function App() {
     if (!silent) setLeftoversSyncLoading(true);
     if (!silent) setError("");
     try {
-      const resp = await fetch(`${baseUrl}/functions/v1/sync-leftovers-sheet`, {
-        method: "POST",
-        headers: {
-          apikey: token,
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          sheetId: WAREHOUSE_SYNC_SHEET_ID,
-          gid: LEFTOVERS_SYNC_GID,
-        }),
+      await syncLeftoversToGoogleSheetEdge(baseUrl, token, {
+        sheetId: WAREHOUSE_SYNC_SHEET_ID,
+        gid: LEFTOVERS_SYNC_GID,
       });
-      const payload = await resp.json().catch(() => ({}));
-      if (!resp.ok || payload?.ok === false) {
-        const reason = String(payload?.error || `HTTP ${resp.status}`);
-        throw new Error(reason);
-      }
     } catch (e) {
       if (!silent) {
         setError(`Не удалось выгрузить остатки в Google Sheet: ${extractErrorMessage(e)}`);
@@ -1161,27 +852,15 @@ export default function App() {
     const token = String(SUPABASE_ANON_KEY || "").trim();
     if (!baseUrl || !token) return;
     try {
-      const resp = await fetch(`${baseUrl}/functions/v1/log-consume-sheet`, {
-        method: "POST",
-        headers: {
-          apikey: token,
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          sheetId: WAREHOUSE_SYNC_SHEET_ID,
-          sheetName: CONSUME_LOG_SHEET_NAME,
-          orderId: String(meta.orderId || "").trim(),
-          item: String(meta.item || "").trim(),
-          material: String(meta.material || "").trim(),
-          week: String(meta.week || "").trim(),
-          qty: Number(meta.qty || 0),
-        }),
+      await logConsumeToGoogleSheetEdge(baseUrl, token, {
+        sheetId: WAREHOUSE_SYNC_SHEET_ID,
+        sheetName: CONSUME_LOG_SHEET_NAME,
+        orderId: String(meta.orderId || "").trim(),
+        item: String(meta.item || "").trim(),
+        material: String(meta.material || "").trim(),
+        week: String(meta.week || "").trim(),
+        qty: Number(meta.qty || 0),
       });
-      const payload = await resp.json().catch(() => ({}));
-      if (!resp.ok || payload?.ok === false) {
-        throw new Error(String(payload?.error || `HTTP ${resp.status}`));
-      }
     } catch (_) {
       // Best-effort sync to sheet should not block core consumption flow.
     }
@@ -1212,24 +891,62 @@ export default function App() {
     }
 
     try {
-      const resp = await fetch(`${baseUrl}/functions/v1/sync-plan-cell-to-gsheet`, {
-        method: "POST",
-        headers: {
-          apikey: token,
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      });
-      const payloadJson = await resp.json().catch(() => ({}));
-      if (!resp.ok || payloadJson?.ok === false) {
-        throw new Error(String(payloadJson?.error || `HTTP ${resp.status}`));
-      }
+      await syncPlanCellToGoogleSheetEdge(baseUrl, token, payload);
     } catch (_) {
       // Keep saving plan resilient; still log to console for troubleshooting.
       // eslint-disable-next-line no-console
       console.warn("[CRM] sync-plan-cell-to-gsheet failed (best-effort)", payload);
     }
+  }
+
+  function openPilkaDoneConsumeDialog(orderId, meta = {}) {
+    const init = buildPilkaDoneDialogInit(orderId, meta);
+    const isPlankOrder = init.isPlankOrder;
+    const defaultQty = init.consumeQty;
+
+    // Open dialog immediately; fetch hints in background.
+    setConsumeDialogData(init.consumeDialogData);
+    setConsumeMaterial(init.consumeMaterial);
+    setConsumeQty(init.consumeQty);
+    setConsumeEditMode(true);
+    setConsumeError("");
+    setConsumeLoading(true);
+    setConsumeDialogOpen(true);
+
+    // Do not block UI while fetching consume options.
+    callBackend("webGetConsumeOptions", { orderId })
+      .then((options) => {
+        setConsumeDialogData(options || { orderId });
+        const suggested = isPlankOrder
+          ? "Черный"
+          : String(options?.suggestedMaterial || meta.material || "").trim();
+        if (suggested) setConsumeMaterial(suggested);
+        const suggestedSheetsRaw = options?.suggestedSheets ?? options?.sheetsNeeded ?? defaultQty ?? 0;
+        const suggestedSheets = Number(suggestedSheetsRaw);
+        if (Number.isFinite(suggestedSheets) && suggestedSheets > 0) {
+          setConsumeQty((prev) => {
+            const prevNum = Number(String(prev || "").replace(",", "."));
+            if (Number.isFinite(prevNum) && prevNum > 0) return prev;
+            return String(suggestedSheets);
+          });
+        }
+        if (!isPlankOrder && suggested) setConsumeEditMode(false);
+      })
+      .catch(() => {
+        // Keep manual mode without hints.
+      })
+      .finally(() => setConsumeLoading(false));
+  }
+
+  function openPilkaDoneConsumeDialogOnError(orderId, meta = {}, error) {
+    const init = buildPilkaDoneDialogInit(orderId, meta, { useMetaMaterialOnError: true });
+    setConsumeDialogData(init.consumeDialogData);
+    setConsumeMaterial(init.consumeMaterial);
+    setConsumeQty(init.consumeQty);
+    setConsumeEditMode(true);
+    setConsumeLoading(false);
+    setConsumeError(`Этап "Пила: Готово" вернул ошибку, но списание можно выполнить вручную: ${extractErrorMessage(error)}`);
+    setConsumeDialogOpen(true);
   }
 
   async function runAction(action, orderId, payload = {}, meta = {}) {
@@ -1245,97 +962,33 @@ export default function App() {
       const stageSync = STAGE_SYNC_META[action];
       if (stageSync) {
         const sourceOrder = orderIndexById.get(String(orderId)) || {};
-        const syncItem = String(meta.item || sourceOrder.item || "").trim();
-        const syncMaterial = String(
-          meta.material || getMaterialLabel(syncItem, sourceOrder.material || sourceOrder.colorName || ""),
-        ).trim();
-        const syncWeek = String(meta.week || sourceOrder.week || "").trim();
-        const syncQty = Number(meta.qty ?? sourceOrder.qty ?? 0);
-        const syncSection = String(meta.sectionName || resolveSectionNameForOrder(sourceOrder) || "").trim();
-        if (syncSection && syncItem && syncMaterial && syncWeek && Number.isFinite(syncQty) && syncQty > 0) {
-          void syncPlanCellToGoogleSheet({
-            sectionName: syncSection,
-            item: syncItem,
-            material: syncMaterial,
-            week: syncWeek,
-            qty: syncQty,
-            stage: stageSync.label,
-            stageCode: stageSync.code,
-            stageComment: `${stageSync.label}; Заказ: ${orderId}`,
-            orderId: String(orderId),
-          });
+        const stageSyncPayload = buildStageSyncPayload({
+          orderId,
+          meta,
+          sourceOrder,
+          stageSync,
+          getMaterialLabel,
+          resolveSectionNameForOrder,
+        });
+        if (stageSyncPayload) {
+          void syncPlanCellToGoogleSheet(stageSyncPayload);
         }
       }
       if (action === "webSetPrasDone" && meta.notifyOnAssembly) {
-        notifyAssemblyReadyTelegram({
-          orderId,
-          item: meta.item,
-          material: meta.material,
-          week: meta.week,
-          qty: meta.qty,
-          executor: meta.executor,
-        });
+        notifyAssemblyReadyTelegram(buildNotifyPayload(orderId, meta));
       }
       if (action === "webSetShippingDone" && meta.notifyOnFinalStage) {
-        notifyFinalStageTelegram({
-          orderId,
-          item: meta.item,
-          material: meta.material,
-          week: meta.week,
-          qty: meta.qty,
-          executor: meta.executor,
-        });
+        notifyFinalStageTelegram(buildNotifyPayload(orderId, meta));
       }
       if (action === "webSetPilkaDone") {
-        const isPlankOrder = !!meta.isPlankOrder;
-        const defaultQty = Number(meta.defaultSheets || 0) > 0 ? String(Number(meta.defaultSheets || 0)) : "";
-        // Открываем диалог сразу, а подсказки подтягиваем в фоне.
-        setConsumeDialogData({ orderId, item: String(meta.item || ""), suggestedMaterial: "", materials: [] });
-        setConsumeMaterial(isPlankOrder ? "Черный" : "");
-        setConsumeQty(defaultQty);
-        setConsumeEditMode(true);
-        setConsumeError("");
-        setConsumeLoading(true);
-        setConsumeDialogOpen(true);
-        // Не блокируем UI ожиданием подсказок.
-        callBackend("webGetConsumeOptions", { orderId })
-          .then((options) => {
-            setConsumeDialogData(options || { orderId });
-            const suggested = isPlankOrder
-              ? "Черный"
-              : String(options?.suggestedMaterial || meta.material || "").trim();
-            if (suggested) setConsumeMaterial(suggested);
-            const suggestedSheetsRaw = options?.suggestedSheets ?? options?.sheetsNeeded ?? defaultQty ?? 0;
-            const suggestedSheets = Number(suggestedSheetsRaw);
-            if (Number.isFinite(suggestedSheets) && suggestedSheets > 0) {
-              setConsumeQty((prev) => {
-                const prevNum = Number(String(prev || "").replace(",", "."));
-                if (Number.isFinite(prevNum) && prevNum > 0) return prev;
-                return String(suggestedSheets);
-              });
-            }
-            if (!isPlankOrder && suggested) setConsumeEditMode(false);
-          })
-          .catch(() => {
-            // Оставляем ручной режим без подсказок.
-          })
-          .finally(() => setConsumeLoading(false));
-
+        openPilkaDoneConsumeDialog(orderId, meta);
         await load();
         return;
       }
       await load();
     } catch (e) {
       if (action === "webSetPilkaDone") {
-        const isPlankOrder = !!meta.isPlankOrder;
-        const defaultQty = Number(meta.defaultSheets || 0) > 0 ? String(Number(meta.defaultSheets || 0)) : "";
-        setConsumeDialogData({ orderId, item: String(meta.item || ""), suggestedMaterial: "", materials: [] });
-        setConsumeMaterial(isPlankOrder ? "Черный" : String(meta.material || "").trim());
-        setConsumeQty(defaultQty);
-        setConsumeEditMode(true);
-        setConsumeLoading(false);
-        setConsumeError(`Этап "Пила: Готово" вернул ошибку, но списание можно выполнить вручную: ${extractErrorMessage(e)}`);
-        setConsumeDialogOpen(true);
+        openPilkaDoneConsumeDialogOnError(orderId, meta, e);
       }
       setError(toUserError(e));
     } finally {
@@ -1572,15 +1225,17 @@ export default function App() {
     return filtered.filter((x) => getOverviewLaneId(x) === "shipped");
   }, [view, filtered]);
 
-  function visibleCellsForItem(it) {
+  const visibleCellsForItem = useCallback((it) => {
     const sourceRow = it?.sourceRowId != null ? String(it.sourceRowId) : String(it?.row || "");
     return (it?.cells || []).filter((c) => {
       const qtyOk = (Number(c.qty) || 0) > 0;
       if (!qtyOk) return false;
+      const byWeek = weekFilter === "all" || String(c.week || "") === weekFilter;
+      if (!byWeek) return false;
       const stageKey = getShipmentStageKey(c, sourceRow, shipmentOrderMaps, it.item);
       return passesShipmentStageFilter(stageKey);
     });
-  }
+  }, [weekFilter, shipmentOrderMaps, passesShipmentStageFilter]);
 
   function weekSortValue(it) {
     const arr = visibleCellsForItem(it)
@@ -1885,7 +1540,7 @@ export default function App() {
       });
     });
     return rowsFlat;
-  }, [view, shipmentRenderSections, shipmentOrderMaps]);
+  }, [view, shipmentRenderSections, shipmentOrderMaps, visibleCellsForItem]);
   const shipmentMaterialBalance = useMemo(() => {
     const byMaterial = new Map();
     shipmentTableRows.forEach((row) => {
@@ -2428,6 +2083,30 @@ export default function App() {
     return map;
   }, [furnitureDetailArticleRows]);
 
+  const strapProductsByArticleCode = useMemo(() => {
+    const buckets = new Map();
+    const splitArticleCodes = (raw) =>
+      String(raw || "")
+        .split(/[,\n;]+/g)
+        .map((x) => String(x || "").trim().toUpperCase())
+        .filter(Boolean);
+    (furnitureDetailArticleRows || []).forEach((r) => {
+      const isActive = r?.is_active ?? r?.isActive;
+      if (isActive === false) return;
+      const productRaw = String(r.product_name || r.productName || "").trim();
+      const productName = canonicalStrapProductName(productRaw);
+      const articles = splitArticleCodes(r.article);
+      if (!productName || articles.length === 0) return;
+      articles.forEach((article) => {
+        if (!buckets.has(article)) buckets.set(article, new Set());
+        buckets.get(article).add(productName);
+      });
+    });
+    return new Map(
+      [...buckets.entries()].map(([article, set]) => [article, [...set.values()]])
+    );
+  }, [furnitureDetailArticleRows]);
+
   const strapProductNames = useMemo(() => {
     if (strapOptionsByProduct.length > 0) return strapOptionsByProduct.map((x) => x.productName);
     return ["Обвязка"];
@@ -2461,29 +2140,14 @@ export default function App() {
     setError("");
     try {
       for (const s of sendable) {
-        const attempts = [
-          { row: s.row, col: s.col },
-          { row: s.rawRow, col: s.rawCol },
-          { row: s.row, col: s.weekCol },
-          { row: s.rawRow, col: s.weekCol },
-        ].filter((x) => x.row != null && x.col != null && String(x.row).trim() && String(x.col).trim());
-        let sent = false;
-        let lastErr = null;
-        try {
-          for (const p of attempts) {
-            try {
-              await callBackend("webSendShipmentToWork", { row: p.row, col: p.col });
-              sent = true;
-              break;
-            } catch (e) {
-              lastErr = e;
-              if (!isShipmentCellMissingError(e)) throw e;
-            }
-          }
-          if (!sent) throw lastErr || new Error("Shipment cell not found");
-        } catch (e) {
-          throw e;
-        }
+        const attempts = buildShipmentCellAttempts(s);
+        await runShipmentCellActionWithFallback({
+          callBackend,
+          backendAction: "webSendShipmentToWork",
+          attempts,
+          isMissingError: isShipmentCellMissingError,
+          requestBuilder: (p) => ({ row: p.row, col: p.col }),
+        });
       }
       setPlanPreviews([]);
       setSelectedShipments([]);
@@ -2512,25 +2176,14 @@ export default function App() {
     setError("");
     try {
       for (const s of deletable) {
-        const attempts = [
-          { row: s.row, col: s.col },
-          { row: s.rawRow, col: s.rawCol },
-          { row: s.row, col: s.weekCol },
-          { row: s.rawRow, col: s.weekCol },
-        ].filter((x) => x.row != null && x.col != null && String(x.row).trim() && String(x.col).trim());
-        let done = false;
-        let lastErr = null;
-        for (const p of attempts) {
-          try {
-            await callBackend("webDeleteShipmentPlanCell", { p_row: p.row, p_col: p.col });
-            done = true;
-            break;
-          } catch (e) {
-            lastErr = e;
-            if (!isShipmentCellMissingError(e)) throw e;
-          }
-        }
-        if (!done) throw lastErr || new Error("Shipment cell not found");
+        const attempts = buildShipmentCellAttempts(s);
+        await runShipmentCellActionWithFallback({
+          callBackend,
+          backendAction: "webDeleteShipmentPlanCell",
+          attempts,
+          isMissingError: isShipmentCellMissingError,
+          requestBuilder: (p) => ({ p_row: p.row, p_col: p.col }),
+        });
       }
       setPlanPreviews([]);
       setSelectedShipments([]);
@@ -2539,98 +2192,6 @@ export default function App() {
       setError(toUserError(e));
     } finally {
       setActionLoading("");
-    }
-  }
-
-  function getStatsOrderSourceCell(order) {
-    const fromOrderRow = String(
-      order?.sourceRowId ||
-      order?.source_row_id ||
-      order?.sourceRow ||
-      order?.row_ref ||
-      order?.rowRef ||
-      order?.row ||
-      ""
-    ).trim();
-    const fromOrderCol = String(
-      order?.sourceColId ||
-      order?.source_col_id ||
-      order?.sourceCol ||
-      order?.col_ref ||
-      order?.colRef ||
-      order?.col ||
-      ""
-    ).trim();
-    if (fromOrderRow && fromOrderCol) return { row: fromOrderRow, col: fromOrderCol };
-
-    const orderId = String(order?.orderId || order?.order_id || "").trim();
-    if (!orderId) return { row: "", col: "" };
-
-    const linked = (rows || []).find((r) => String(r?.orderId || r?.order_id || "").trim() === orderId);
-    if (!linked) return { row: "", col: "" };
-
-    return {
-      row: String(
-        linked?.sourceRowId ||
-        linked?.source_row_id ||
-        linked?.sourceRow ||
-        linked?.row_ref ||
-        linked?.rowRef ||
-        linked?.row ||
-        ""
-      ).trim(),
-      col: String(
-        linked?.sourceColId ||
-        linked?.source_col_id ||
-        linked?.sourceCol ||
-        linked?.col_ref ||
-        linked?.colRef ||
-        linked?.col ||
-        ""
-      ).trim(),
-    };
-  }
-
-  function getStatsDeleteActionKey(order) {
-    const orderId = String(order?.orderId || order?.order_id || "").trim();
-    const source = getStatsOrderSourceCell(order);
-    return `stats:delete:${orderId || `${source.row}-${source.col}`}`;
-  }
-
-  async function resolveStatsOrderSourceCell(order) {
-    const fromCurrent = getStatsOrderSourceCell(order);
-    if (fromCurrent.row && fromCurrent.col) return fromCurrent;
-
-    const orderId = String(order?.orderId || order?.order_id || "").trim();
-    if (!orderId) return fromCurrent;
-
-    try {
-      const allOrdersRaw = await callBackend("webGetOrdersAll");
-      const allOrders = Array.isArray(allOrdersRaw) ? allOrdersRaw : [];
-      const linked = allOrders.find((r) => String(r?.orderId || r?.order_id || "").trim() === orderId);
-      if (!linked) return fromCurrent;
-      return {
-        row: String(
-          linked?.sourceRowId ||
-          linked?.source_row_id ||
-          linked?.sourceRow ||
-          linked?.row_ref ||
-          linked?.rowRef ||
-          linked?.row ||
-          ""
-        ).trim(),
-        col: String(
-          linked?.sourceColId ||
-          linked?.source_col_id ||
-          linked?.sourceCol ||
-          linked?.col_ref ||
-          linked?.colRef ||
-          linked?.col ||
-          ""
-        ).trim(),
-      };
-    } catch (_) {
-      return fromCurrent;
     }
   }
 
@@ -2648,7 +2209,7 @@ export default function App() {
       `Удалить заказ ${orderId || ""} из плана? Действие необратимо.`
     );
     if (!ok) return;
-    const actionKey = getStatsDeleteActionKey(order);
+    const actionKey = getStatsDeleteActionKey(order, rows);
     setActionLoading(actionKey);
     setError("");
     try {
@@ -2665,7 +2226,7 @@ export default function App() {
           msg.includes("not configured");
         if (!missingAction) throw deleteByOrderErr;
         // Fallback for legacy backends without delete-by-order endpoint.
-        const source = await resolveStatsOrderSourceCell(order);
+        const source = await resolveStatsOrderSourceCell(order, rows, callBackend);
         const sourceRow = source.row;
         const sourceCol = source.col;
         if (!sourceRow || !sourceCol) {
@@ -2700,25 +2261,25 @@ export default function App() {
       denyActionByRole("Недостаточно прав для добавления обвязки.");
       return;
     }
-    const defaultProduct = strapItems[0]?.productName || strapProductNames[0] || "Обвязка";
-    setStrapTargetProduct(defaultProduct);
-    const defaultWeek = weekFilter !== "all" ? String(weekFilter) : String(weeks[0] || "").trim();
-    setStrapPlanWeek(defaultWeek);
-    const options = strapOptionsByProduct.length > 0
-      ? (strapOptionsByProduct.find((x) => normalizeStrapProductKey(x.productName) === normalizeStrapProductKey(defaultProduct))?.options || [])
-      : STRAP_OPTIONS;
-    const nextDraft = options.reduce((acc, name) => ({ ...acc, [name]: "" }), {});
-    strapItems.forEach((x) => {
-      if (nextDraft[x.name] !== undefined) nextDraft[x.name] = String(x.qty || "");
+    const init = buildStrapDialogInit({
+      strapItems,
+      strapProductNames,
+      weekFilter,
+      weeks,
+      strapOptionsByProduct,
+      defaultOptions: STRAP_OPTIONS,
+      normalizeProductKey: normalizeStrapProductKey,
     });
-    setStrapDraft(nextDraft);
+    setStrapTargetProduct(init.defaultProduct);
+    setStrapPlanWeek(init.defaultWeek);
+    setStrapDraft(init.draft);
     setStrapDialogOpen(true);
   }
 
   useEffect(() => {
     if (!strapDialogOpen) return;
     const options = strapOptionsForSelectedProduct;
-    const nextDraft = options.reduce((acc, name) => ({ ...acc, [name]: strapDraft[name] || "" }), {});
+    const nextDraft = remapStrapDraftByOptions(options, strapDraft);
     setStrapDraft(nextDraft);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [strapDialogOpen, strapTargetProduct, strapOptionsForSelectedProduct.join("|")]);
@@ -2728,21 +2289,17 @@ export default function App() {
       denyActionByRole("Недостаточно прав для добавления плана.");
       return;
     }
-    const firstSection = sectionOptions[0] || "Прочее";
-    const firstWeek = weeks[0] || "";
-    const firstArticle = (sectionArticleRows || [])
-      .map((x) => ({
-        sectionName: String(x.section_name || x.sectionName || "").trim(),
-        article: String(x.article || "").trim(),
-        itemName: String(x.item_name || x.itemName || "").trim(),
-        material: String(x.material || "").trim(),
-      }))
-      .find((x) => x.sectionName === firstSection && x.article);
-    setPlanSection(firstSection);
-    setPlanArticle(firstArticle?.itemName || "");
-    setPlanMaterial(resolvePlanMaterial(firstArticle));
-    setPlanWeek(firstWeek);
-    setPlanQty("");
+    const init = buildCreatePlanDialogInit({
+      sectionOptions,
+      weeks,
+      sectionArticleRows,
+      resolvePlanMaterial,
+    });
+    setPlanSection(init.section);
+    setPlanArticle(init.article);
+    setPlanMaterial(init.material);
+    setPlanWeek(init.week);
+    setPlanQty(init.qty);
     setPlanDialogOpen(true);
   }
 
@@ -2801,10 +2358,11 @@ export default function App() {
       denyActionByRole("Недостаточно прав для изменения плана.");
       return;
     }
-    const next = strapOptionsForSelectedProduct
-      .map((name) => ({ name, qty: Number(String(strapDraft[name] || "").replace(",", ".")) }))
-      .filter((x) => Number.isFinite(x.qty) && x.qty > 0)
-      .map((x) => ({ ...x, productName: strapTargetProduct || "" }));
+    const next = buildStrapPlanRows({
+      options: strapOptionsForSelectedProduct,
+      draft: strapDraft,
+      productName: strapTargetProduct || "",
+    });
     if (!next.length) {
       setStrapItems([]);
       setStrapDialogOpen(false);
@@ -2819,22 +2377,12 @@ export default function App() {
     setError("");
     try {
       for (const row of next) {
-        const material = resolveStrapMaterialByProduct(row.productName || "");
-        const qty = Number(row.qty || 0);
-        await callBackend("webCreateShipmentPlanCell", {
-          sectionName: "Обвязка",
-          item: strapNameToOrderItem(row.name),
-          material,
-          week,
-          qty,
+        const payload = buildStrapPlanCellPayload(row, week, {
+          resolveStrapMaterialByProduct,
+          strapNameToOrderItem,
         });
-        void syncPlanCellToGoogleSheet({
-          sectionName: "Обвязка",
-          item: strapNameToOrderItem(row.name),
-          material,
-          week,
-          qty,
-        });
+        await callBackend("webCreateShipmentPlanCell", payload);
+        void syncPlanCellToGoogleSheet(payload);
       }
       setStrapItems([]);
       setStrapDialogOpen(false);
@@ -2853,48 +2401,26 @@ export default function App() {
     setActionLoading("preview:batch");
     setError("");
     try {
-      const now = new Date();
-      const strapPreviews = (() => {
-        if (strapSelections.length === 0) return [];
-        return strapSelections.map((x, idx) => {
-          const product = String(x.strapProduct || "Обвязка").trim() || "Обвязка";
-          return {
-            _key: `strap-plan-selected-${idx}-${x.row}-${x.col}`,
-          isStrapPlan: true,
-          generatedAt: formatDateTimeForPrint(now),
-          products: [product],
-            rows: [
-              {
-                part: `${String(x.item || "")} (${product})`,
-                qty: Number(x.qty || 0),
-              },
-            ],
-          };
+      const generatedAt = formatDateTimeForPrint(new Date());
+      const strapPreviews = buildStrapPreviewPlans(strapSelections, generatedAt);
+      const enrichPreview = (preview, shipmentRow) => {
+        const withFurniture = enrichPreviewFromFurniture(preview, {
+          furnitureTemplates,
+          resolveFurnitureTemplateForPreview,
+          buildPreviewRowsFromFurnitureTemplate,
         });
-      })();
-
-      const enrichPreviewFromFurniture = (preview) => {
-        if (!preview || preview.isStrapPlan) return preview;
-        const template = resolveFurnitureTemplateForPreview(preview, furnitureTemplates);
-        if (!template) return preview;
-        const rows = buildPreviewRowsFromFurnitureTemplate(template, preview.qty);
-        if (!rows.length) return preview;
-        return { ...preview, rows };
-      };
-      const enrichPreviewWithStrapProduct = (preview, shipmentRow) => {
-        if (!preview) return preview;
-        const sectionKey = normalizeFurnitureKey(shipmentRow?.section || "");
-        if (!sectionKey.includes("обвяз")) return preview;
-        const token =
-          extractDetailSizeToken(shipmentRow?.item || "") ||
-          extractDetailSizeToken(preview?.firstName || "") ||
-          extractDetailSizeToken(preview?.detailedName || "");
-        const productName = token ? String(strapProductBySizeToken.get(normalizeStrapProductKey(token)) || "").trim() : "";
-        if (!productName) return preview;
-        return {
-          ...preview,
-          colorName: productName,
-        };
+        return enrichPreviewWithStrapProduct(withFurniture, shipmentRow, {
+          canonicalStrapProductName,
+          normalizeFurnitureKey,
+          getPlanPreviewArticleCode,
+          resolvePlanPreviewArticleByName,
+          articleLookupByItemKey,
+          strapProductsByArticleCode,
+          normalizeStrapProductKey,
+          extractDetailSizeToken,
+          strapProductBySizeToken,
+          strapTargetProduct,
+        });
       };
       if (shipmentSelections.length === 0) {
         setPlanPreviews(strapPreviews);
@@ -2906,39 +2432,20 @@ export default function App() {
           row: s.row,
           col: s.col,
         });
-        const enrichedRaw = preview ? enrichPreviewFromFurniture({ ...preview, _key: `${s.row}-${s.col}` }) : null;
-        const enriched = enrichPreviewWithStrapProduct(enrichedRaw, s);
+        const enriched = preview ? enrichPreview({ ...preview, _key: `${s.row}-${s.col}` }, s) : null;
         const plans = enriched ? [enriched] : [];
         plans.push(...strapPreviews);
         setPlanPreviews(plans);
       } else {
-        const byKey = new Map(shipmentSelections.map((x) => [`${x.row}-${x.col}`, x]));
-        let plans = [];
-        try {
-          const batch = await callBackend("webPreviewPlansBatch", {
-            items: shipmentSelections.map((x) => ({ row: x.row, col: x.col })),
-          });
-          plans = (batch && Array.isArray(batch.plans) ? batch.plans : [])
-            .map((p) => ({ ...(p.plan || {}), _key: `${p.row}-${p.col}` }))
-            .map((p) => enrichPreviewWithStrapProduct(enrichPreviewFromFurniture(p), byKey.get(p._key)));
-        } catch (batchError) {
-          // Fallback: если пачка упала из-за одной позиции, собираем предпросмотры поштучно.
-          const settled = await Promise.allSettled(
-            shipmentSelections.map((s) =>
-              callBackend("webPreviewPlanFromShipment", { row: s.row, col: s.col })
-                .then((plan) => ({ ...plan, _key: `${s.row}-${s.col}` }))
-            )
+        const { plans = [], failedCount = 0, batchError } = await buildShipmentPreviewPlans(shipmentSelections, {
+          callBackend,
+          enrichPreview,
+        });
+        if (failedCount > 0) {
+          setError(
+            `Часть предпросмотров не построена (${failedCount} шт). ` +
+            `Причина: ${extractErrorMessage(batchError)}`
           );
-          plans = settled
-            .filter((x) => x.status === "fulfilled" && x.value)
-            .map((x) => enrichPreviewWithStrapProduct(enrichPreviewFromFurniture(x.value), byKey.get(x.value?._key)));
-          const failedCount = settled.length - plans.length;
-          if (failedCount > 0) {
-            setError(
-              `Часть предпросмотров не построена (${failedCount} шт). ` +
-              `Причина: ${extractErrorMessage(batchError)}`
-            );
-          }
         }
         if (!plans.length && strapPreviews.length === 0) {
           throw new Error("Не удалось построить предпросмотр ни для одной выбранной позиции.");
@@ -2963,32 +2470,14 @@ export default function App() {
       return;
     }
 
-    const byArticle = new Map();
-    const missingItems = [];
-    selectedShipments.forEach((s) => {
-      const item = String(s.item || "").trim();
-      const key = normalizeFurnitureKey(item);
-      let article = articleLookupByItemKey.get(key) || "";
-      if (!article && key) {
-        const match = [...articleLookupByItemKey.entries()].find(([itemKey]) => key.includes(itemKey) || itemKey.includes(key));
-        if (match) article = match[1];
-      }
-      if (!article) {
-        missingItems.push(item || "Без названия");
-        return;
-      }
-      const qty = Number(s.qty || 0);
-      byArticle.set(article, (byArticle.get(article) || 0) + (Number.isFinite(qty) ? qty : 0));
+    const { rows, missingItems } = buildShipmentExportRows(selectedShipments, {
+      articleLookupByItemKey,
+      normalizeItemKey: normalizeFurnitureKey,
     });
-
-    if (!byArticle.size) {
-      setError("Не найдено ни одного артикула для экспорта.");
+    if (!rows.length) {
+      setError(getShipmentExportNoArticlesError());
       return;
     }
-
-    const rows = [...byArticle.entries()]
-      .sort((a, b) => a[0].localeCompare(b[0], "ru"))
-      .map(([article, qty]) => [article, qty]);
 
     const ws = XLSX.utils.aoa_to_sheet(rows);
     const wb = XLSX.utils.book_new();
@@ -2996,7 +2485,7 @@ export default function App() {
     XLSX.writeFile(wb, `План_${planNumber}.xlsx`);
 
     if (missingItems.length > 0) {
-      setError(`Экспорт выполнен частично: не найден артикул для ${missingItems.length} позиций.`);
+      setError(formatShipmentExportPartialError(missingItems.length));
     } else {
       setError("");
     }
@@ -3025,68 +2514,30 @@ export default function App() {
       if (!firstSheet) throw new Error("В файле не найден лист.");
       const ws = wb.Sheets[firstSheet];
       const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: "" });
-      const importRows = rows
-        .map((r) => ({
-          article: String(r?.[0] || "").trim(),
-          qty: Number(String(r?.[1] || "").replace(",", ".")),
-        }))
-        .filter((x) => x.article && Number.isFinite(x.qty) && x.qty > 0);
+      const importRows = parseImportPlanRows(rows);
       if (!importRows.length) {
-        throw new Error("Не найдено валидных строк. Ожидается: колонка A — артикул, B — количество.");
+        throw new Error(getImportPlanNoValidRowsError());
       }
 
-      let importCatalogRows = [];
-      try {
-        // Excel import must use full article map from Supabase even when UI runs in GAS mode.
-        const catalogData = await supabaseCall("webGetArticlesForImport");
-        importCatalogRows = Array.isArray(catalogData) ? catalogData : [];
-      } catch (_) {
-        try {
-          const catalogData = await callBackend("webGetArticlesForImport");
-          importCatalogRows = Array.isArray(catalogData) ? catalogData : [];
-        } catch (_) {
-          // Fallback to UI catalog if dedicated import RPC is unavailable.
-          importCatalogRows = Array.isArray(sectionArticleRows) ? sectionArticleRows : [];
-        }
-      }
-
-      const articleMap = new Map();
-      importCatalogRows.forEach((x) => {
-        const article = String(x.article || "").trim();
-        const sectionName = String(x.section_name || x.sectionName || "").trim();
-        const itemName = String(x.item_name || x.itemName || "").trim();
-        const material = String(x.material || "").trim();
-        if (!article || !sectionName || !itemName) return;
-        const key = article.toUpperCase();
-        if (!articleMap.has(key)) {
-          articleMap.set(key, { sectionName, itemName, material });
-        }
+      const importCatalogRows = await loadImportCatalogRows({
+        supabaseCall,
+        callBackend,
+        sectionArticleRows,
       });
 
-      const missing = [];
-      let imported = 0;
-      for (const row of importRows) {
-        const mapped = articleMap.get(String(row.article || "").trim().toUpperCase());
-        if (!mapped) {
-          missing.push(row.article);
-          continue;
-        }
-        await callBackend("webCreateShipmentPlanCell", {
-          sectionName: mapped.sectionName,
-          item: mapped.itemName,
-          material: mapped.material,
-          week: planNumber,
-          qty: row.qty,
-        });
-        imported += 1;
-      }
+      const articleMap = buildImportArticleMap(importCatalogRows);
+
+      const { imported, missing } = await applyImportPlanRows(importRows, articleMap, {
+        callBackend,
+        planNumber,
+      });
 
       await load();
       if (missing.length > 0) {
-        setError(`Импорт выполнен частично: ${imported} строк(и) добавлено, не найдены артикулы: ${missing.slice(0, 8).join(", ")}${missing.length > 8 ? "..." : ""}`);
+        setError(formatImportShipmentPartialError(imported, missing));
       }
     } catch (e) {
-      setError(`Ошибка импорта Excel: ${extractErrorMessage(e)}`);
+      setError(formatShipmentImportError(extractErrorMessage(e)));
     } finally {
       setActionLoading("");
       if (importPlanFileRef.current) importPlanFileRef.current.value = "";
@@ -3134,18 +2585,6 @@ export default function App() {
     setActionLoading("labor:import");
     setError("");
     try {
-      const toNum = (v) => {
-        const n = Number(String(v ?? "").replace(",", ".").trim());
-        return Number.isFinite(n) ? n : 0;
-      };
-      const normHead = (s) =>
-        String(s || "")
-          .toLowerCase()
-          .replace(/[ё]/g, "е")
-          .replace(/[^\p{L}\p{N}\s]/gu, " ")
-          .replace(/\s+/g, " ")
-          .trim();
-
       const buf = await file.arrayBuffer();
       const wb = XLSX.read(buf, { type: "array" });
       const firstSheet = String(wb?.SheetNames?.[0] || "");
@@ -3153,61 +2592,16 @@ export default function App() {
       const ws = wb.Sheets[firstSheet];
       const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: "" });
       if (!rows.length) throw new Error("Файл пустой.");
-
-      const headers = Array.isArray(rows[0]) ? rows[0].map(normHead) : [];
-      const idx = {
-        orderId: headers.findIndex((h) => h === "id заказа" || h === "id"),
-        item: headers.findIndex((h) => h === "изделие" || h === "наименование"),
-        week: headers.findIndex((h) => h === "план" || h === "неделя"),
-        qty: headers.findIndex((h) => h.includes("кол") && h.includes("во")),
-        pilka: headers.findIndex((h) => h.includes("пилка")),
-        kromka: headers.findIndex((h) => h.includes("кромка")),
-        pras: headers.findIndex((h) => h.includes("присад")),
-        total: headers.findIndex((h) => h.includes("итого")),
-        date: headers.findIndex((h) => h.includes("дата")),
-      };
-      const hasHeader = idx.item >= 0 || idx.total >= 0 || idx.pilka >= 0 || idx.kromka >= 0 || idx.pras >= 0;
-      const dataRows = hasHeader ? rows.slice(1) : rows;
-
-      const imported = [];
       const nowKey = Date.now();
-      dataRows.forEach((r, i) => {
-        const row = Array.isArray(r) ? r : [];
-        const item = String((idx.item >= 0 ? row[idx.item] : row[1]) || "").trim();
-        const orderId = String((idx.orderId >= 0 ? row[idx.orderId] : row[0]) || "").trim();
-        const week = String((idx.week >= 0 ? row[idx.week] : row[2]) || "").trim();
-        const qty = toNum(idx.qty >= 0 ? row[idx.qty] : row[3]);
-        const pilkaMin = toNum(idx.pilka >= 0 ? row[idx.pilka] : row[4]);
-        const kromkaMin = toNum(idx.kromka >= 0 ? row[idx.kromka] : row[5]);
-        const prasMin = toNum(idx.pras >= 0 ? row[idx.pras] : row[6]);
-        const totalRaw = toNum(idx.total >= 0 ? row[idx.total] : row[7]);
-        const totalMin = totalRaw > 0 ? totalRaw : pilkaMin + kromkaMin + prasMin;
-        const dateFinished = String((idx.date >= 0 ? row[idx.date] : row[8]) || "").trim();
-        if (!item && !orderId) return;
-        if (totalMin <= 0 && pilkaMin <= 0 && kromkaMin <= 0 && prasMin <= 0) return;
-
-        imported.push({
-          order_id: orderId || `IMPORT-${Date.now()}-${i + 1}`,
-          item: item || "Импортированная позиция",
-          week,
-          qty,
-          pilka_min: pilkaMin,
-          kromka_min: kromkaMin,
-          pras_min: prasMin,
-          total_min: totalMin,
-          date_finished: dateFinished,
-          imported_local: true,
-          import_key: `labor-import-${nowKey}-${i + 1}`,
-        });
-      });
+      const imported = parseLaborImportRows(rows, nowKey);
 
       if (!imported.length) {
-        throw new Error("Не найдено валидных строк. Используйте экспорт из раздела 'Трудоемкость -> Общая' как шаблон.");
+        throw new Error(getLaborImportNoValidRowsError());
       }
 
       setLaborImportedRows((prev) => [...prev, ...imported]);
     } catch (e) {
-      setError(`Ошибка импорта трудоемкости: ${extractErrorMessage(e)}`);
+      setError(formatLaborImportError(extractErrorMessage(e)));
     } finally {
       setActionLoading("");
       if (importLaborFileRef.current) importLaborFileRef.current.value = "";
@@ -3224,25 +2618,13 @@ export default function App() {
     setLaborSavingByKey((prev) => ({ ...prev, [key]: true }));
     setError("");
     try {
-      await callBackend("webUpsertLaborFact", {
-        orderId: row.orderId,
-        item: row.item,
-        week: row.week,
-        qty: row.qty,
-        pilkaMin: row.pilkaMin,
-        kromkaMin: row.kromkaMin,
-        prasMin: row.prasMin,
-        assemblyMin: row.assemblyMin,
-        dateFinished: row.dateFinished || null,
-      });
+      await callBackend("webUpsertLaborFact", buildLaborFactPayload(row));
       setLaborSavedByKey((prev) => ({ ...prev, [key]: true }));
       setLaborSaveSelected((prev) => ({ ...prev, [key]: false }));
-      setLaborImportedRows((prev) =>
-        prev.map((x) => (String(x.import_key || "") === key ? { ...x, imported_local: false, imported_saved: true } : x))
-      );
+      setLaborImportedRows((prev) => markLaborImportRowSaved(prev, key));
       await load();
     } catch (e) {
-      setError(`Не удалось сохранить строку трудоемкости: ${extractErrorMessage(e)}`);
+      setError(formatLaborSaveRowError(extractErrorMessage(e)));
     } finally {
       setLaborSavingByKey((prev) => ({ ...prev, [key]: false }));
     }
