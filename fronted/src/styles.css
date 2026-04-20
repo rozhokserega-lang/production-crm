@@ -1639,12 +1639,16 @@ button:disabled {
   padding: 0;
   margin: 0;
   display: block;
-  appearance: none;
-  -webkit-appearance: none;
   cursor: pointer;
   pointer-events: auto;
-  /* Лёгкое нейтральное затемнение: интерфейс под слоем остаётся виден */
-  background: rgba(15, 23, 42, 0.06);
+  /* Нейтральное затемнение (не полагаться на UA-стили кнопки) */
+  background-color: rgba(15, 23, 42, 0.14);
+  outline: none;
+}
+
+.order-drawer-backdrop:focus-visible {
+  outline: 2px solid rgba(59, 130, 246, 0.7);
+  outline-offset: -2px;
 }
 
 .order-drawer {

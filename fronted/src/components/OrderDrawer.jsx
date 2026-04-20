@@ -71,7 +71,19 @@ export function OrderDrawer({
 
   const drawer = (
     <div className="order-drawer-root" role="dialog" aria-modal="true" aria-labelledby="order-drawer-title">
-      <button type="button" className="order-drawer-backdrop" aria-label="Закрыть" onClick={onClose} />
+      <div
+        role="button"
+        tabIndex={0}
+        className="order-drawer-backdrop"
+        aria-label="Закрыть"
+        onClick={onClose}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onClose();
+          }
+        }}
+      />
       <aside className="order-drawer">
         <header className="order-drawer__head">
           <div>
