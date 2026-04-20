@@ -141,7 +141,7 @@ body {
 
 .admin-panel__audit-controls {
   display: grid;
-  grid-template-columns: 1.8fr 160px auto;
+  grid-template-columns: 1.4fr 1.4fr 160px auto;
   gap: 8px;
 }
 

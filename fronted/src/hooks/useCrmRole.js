@@ -94,6 +94,7 @@ export function useCrmRole({
   const [auditLoading, setAuditLoading] = useState(false);
   const [auditError, setAuditError] = useState("");
   const [auditAction, setAuditAction] = useState("");
+  const [auditEntity, setAuditEntity] = useState("");
   const [auditLimit, setAuditLimit] = useState(50);
   const [auditOffset, setAuditOffset] = useState(0);
   const [newCrmUserId, setNewCrmUserId] = useState("");
@@ -300,6 +301,7 @@ export function useCrmRole({
     auditLoading,
     auditError,
     auditAction,
+    auditEntity,
     auditLimit,
     auditOffset,
     newCrmUserId,
@@ -313,6 +315,7 @@ export function useCrmRole({
     setNewCrmUserRole,
     setNewCrmUserNote,
     setAuditAction,
+    setAuditEntity,
     setAuthEmail,
     setAuthPassword,
     toggleCrmAuthStrict,

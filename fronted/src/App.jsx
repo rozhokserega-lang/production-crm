@@ -559,6 +559,7 @@ export default function App() {
     auditLoading,
     auditError,
     auditAction,
+    auditEntity,
     auditLimit,
     auditOffset,
     newCrmUserId,
@@ -572,6 +573,7 @@ export default function App() {
     setNewCrmUserRole,
     setNewCrmUserNote,
     setAuditAction,
+    setAuditEntity,
     setAuthEmail,
     setAuthPassword,
     toggleCrmAuthStrict,
@@ -3359,9 +3361,11 @@ export default function App() {
             auditLoading={auditLoading}
             auditError={auditError}
             auditAction={auditAction}
+            auditEntity={auditEntity}
             auditLimit={auditLimit}
             auditOffset={auditOffset}
             setAuditAction={setAuditAction}
+            setAuditEntity={setAuditEntity}
             loadAuditLog={loadAuditLog}
             formatDateTimeRu={formatDateTimeRu}
             roleOptions={CRM_ROLES}

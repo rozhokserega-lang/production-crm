@@ -1,3 +1,5 @@
+import { useMemo } from "react";
+
 export function AdminView({
   canAdminSettings,
   crmUsersLoading,
@@ -20,12 +22,20 @@ export function AdminView({
   auditLoading,
   auditError,
   auditAction,
+  auditEntity,
   auditLimit,
   auditOffset,
   setAuditAction,
+  setAuditEntity,
   loadAuditLog,
 }) {
   if (!canAdminSettings) return null;
+
+  const filteredAuditLog = useMemo(() => {
+    const needle = String(auditEntity || "").trim().toLowerCase();
+    if (!needle) return auditLog;
+    return (auditLog || []).filter((row) => String(row?.entity || "").toLowerCase().includes(needle));
+  }, [auditLog, auditEntity]);
 
   return (
     <div className="admin-panel">
@@ -118,6 +128,11 @@ export function AdminView({
           value={auditAction}
           onChange={(e) => setAuditAction(e.target.value)}
         />
+        <input
+          placeholder="Фильтр entity (например, orders)"
+          value={auditEntity}
+          onChange={(e) => setAuditEntity(e.target.value)}
+        />
         <select
           value={String(auditLimit)}
           onChange={(e) => loadAuditLog({ limit: Number(e.target.value || 50), offset: 0 })}
@@ -136,10 +151,10 @@ export function AdminView({
         </button>
       </div>
       {auditError && <div className="error">{auditError}</div>}
-      {!auditLoading && auditLog.length === 0 && (
+      {!auditLoading && filteredAuditLog.length === 0 && (
         <div className="empty">Записей аудита не найдено.</div>
       )}
-      {auditLog.length > 0 && (
+      {filteredAuditLog.length > 0 && (
         <div className="sheet-table-wrap">
           <table className="sheet-table">
             <thead>
@@ -154,7 +169,7 @@ export function AdminView({
               </tr>
             </thead>
             <tbody>
-              {auditLog.map((row) => (
+              {filteredAuditLog.map((row) => (
                 <tr key={`audit-${row.id}`}>
                   <td>{row.createdAt ? formatDateTimeRu(row.createdAt) : "-"}</td>
                   <td>{row.actorUserId || row.actorDbRole || "-"}</td>
