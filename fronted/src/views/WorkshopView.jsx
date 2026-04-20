@@ -37,6 +37,7 @@ export function WorkshopView({
         const displaySheetsNeeded =
           resolveDefaultConsumeSheets(o, shipmentOrders) || resolveDefaultConsumeSheetsFromBoard(o, shipmentBoard);
         const displayMaterial = String(o.material || o.colorName || "").trim() || "Материал не указан";
+        const adminNote = String(o.adminComment ?? o.admin_comment ?? "").trim();
 
         const pilkaDone = isDone(o.pilkaStatus);
         const pilkaInWork = isInWork(o.pilkaStatus);
@@ -84,6 +85,12 @@ export function WorkshopView({
                 Листы: {displayMaterial} ({Number(displaySheetsNeeded || 0)} шт)
               </span>
             </div>
+            {adminNote ? (
+              <div className="card__admin-note" role="note">
+                <span className="card__admin-note-label">Комментарий администратора</span>
+                <span className="card__admin-note-text">{adminNote}</span>
+              </div>
+            ) : null}
             {tab !== "all" && (
               <div className="actions">
                 {showPilka && (
