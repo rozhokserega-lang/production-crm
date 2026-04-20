@@ -1,0 +1,123 @@
+import { useEffect } from "react";
+
+function stageDotClass(status, isDone, isInWork) {
+  if (isDone(status)) return "order-drawer__dot order-drawer__dot--done";
+  if (isInWork(status)) return "order-drawer__dot order-drawer__dot--work";
+  return "order-drawer__dot order-drawer__dot--wait";
+}
+
+export function OrderDrawer({
+  orderId,
+  lines,
+  open,
+  onClose,
+  getStageLabel,
+  formatDateTimeRu,
+  isDone,
+  isInWork,
+  getMaterialLabel,
+}) {
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKey = (e) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
+  if (!open || !orderId) return null;
+
+  const first = lines[0] || {};
+  const orderLabel = String(orderId);
+  const updatedRaw =
+    lines.reduce((acc, row) => {
+      const t = row.updatedAt || row.updated_at || row.createdAt || row.created_at || "";
+      return t > acc ? t : acc;
+    }, "") || first.updatedAt || first.updated_at || "";
+
+  const material =
+    getMaterialLabel && first.item
+      ? getMaterialLabel(String(first.item || "").trim(), first.material || first.colorName || "")
+      : String(first.material || first.colorName || "").trim();
+
+  return (
+    <div className="order-drawer-root" role="dialog" aria-modal="true" aria-labelledby="order-drawer-title">
+      <button type="button" className="order-drawer-backdrop" aria-label="Закрыть" onClick={onClose} />
+      <aside className="order-drawer">
+        <header className="order-drawer__head">
+          <div>
+            <h2 id="order-drawer-title" className="order-drawer__title">
+              Заказ #{orderLabel}
+            </h2>
+            <p className="order-drawer__stage">{getStageLabel(first)}</p>
+          </div>
+          <button type="button" className="order-drawer__close mini" onClick={onClose}>
+            ✕
+          </button>
+        </header>
+
+        <div className="order-drawer__section">
+          <h3 className="order-drawer__h3">Кратко</h3>
+          <ul className="order-drawer__meta">
+            <li>
+              <span>План (первая позиция)</span> <strong>{first.week || "—"}</strong>
+            </li>
+            <li>
+              <span>Материал</span> <strong>{material || "—"}</strong>
+            </li>
+            {updatedRaw ? (
+              <li>
+                <span>Обновлено</span> <strong>{formatDateTimeRu(updatedRaw)}</strong>
+              </li>
+            ) : null}
+          </ul>
+        </div>
+
+        <div className="order-drawer__section">
+          <h3 className="order-drawer__h3">Состав заказа</h3>
+          {lines.length === 0 ? (
+            <p className="order-drawer__empty">Нет строк для этого заказа в загруженных данных.</p>
+          ) : (
+            <ul className="order-drawer__lines">
+              {lines.map((row, idx) => {
+                const key = `${row.item}-${idx}`;
+                return (
+                  <li key={key} className="order-drawer__line">
+                    <span className="order-drawer__line-item">{row.item || "—"}</span>
+                    <span className="order-drawer__line-meta">
+                      план {row.week || "—"} · кол-во {Number(row.qty || 0)}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+
+        <div className="order-drawer__section">
+          <h3 className="order-drawer__h3">Производство</h3>
+          <div className="order-drawer__pipeline">
+            {[
+              { label: "Пила", s: first.pilkaStatus },
+              { label: "Кромка", s: first.kromkaStatus },
+              { label: "Присадка", s: first.prasStatus },
+              { label: "Сборка", s: first.assemblyStatus },
+            ].map(({ label, s }) => (
+              <div key={label} className="order-drawer__pipe-step">
+                <span className={stageDotClass(s, isDone, isInWork)} title={String(s || "—")} />
+                <span className="order-drawer__pipe-label">{label}</span>
+              </div>
+            ))}
+          </div>
+          <div className="order-drawer__statuses">
+            <div>Пила: {first.pilkaStatus || "—"}</div>
+            <div>Кромка: {first.kromkaStatus || "—"}</div>
+            <div>Присадка: {first.prasStatus || "—"}</div>
+            <div>Сборка: {first.assemblyStatus || "—"}</div>
+          </div>
+        </div>
+      </aside>
+    </div>
+  );
+}

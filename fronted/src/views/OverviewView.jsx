@@ -6,6 +6,7 @@ export function OverviewView({
   getStageLabel,
   overviewShippedOnly,
   formatDateTimeRu,
+  onOpenOrderDrawer,
 }) {
   return (
     <>
@@ -23,8 +24,23 @@ export function OverviewView({
                   <div className="overview-column__list">
                     {col.items.map((o) => {
                       const orderId = String(o.orderId || o.order_id || "");
+                      const openDrawer = () => {
+                        if (orderId && typeof onOpenOrderDrawer === "function") onOpenOrderDrawer(orderId);
+                      };
+                      const onCardKeyDown = (e) => {
+                        if (e.key !== "Enter" && e.key !== " ") return;
+                        e.preventDefault();
+                        openDrawer();
+                      };
                       return (
-                        <article key={`${col.id}-${orderId || o.item}`} className={`overview-card lane-${col.id}`}>
+                        <article
+                          key={`${col.id}-${orderId || o.item}`}
+                          className={`overview-card overview-card--clickable lane-${col.id}`}
+                          role={orderId && onOpenOrderDrawer ? "button" : undefined}
+                          tabIndex={orderId && onOpenOrderDrawer ? 0 : undefined}
+                          onClick={openDrawer}
+                          onKeyDown={onCardKeyDown}
+                        >
                           <div className="overview-card__id">Заказ #{orderId || "-"}</div>
                           <div className="overview-card__item">{o.item}</div>
                           <div className="overview-card__meta">
@@ -80,7 +96,13 @@ export function OverviewView({
                         o.created_at ||
                         "";
                       return (
-                        <tr key={`shipped-${orderId || o.item}`}>
+                        <tr
+                          key={`shipped-${orderId || o.item}`}
+                          className={orderId && onOpenOrderDrawer ? "overview-table-row--clickable" : undefined}
+                          onClick={() => {
+                            if (orderId && typeof onOpenOrderDrawer === "function") onOpenOrderDrawer(orderId);
+                          }}
+                        >
                           <td>{orderId || "-"}</td>
                           <td>{o.item || "-"}</td>
                           <td>{o.week || "-"}</td>

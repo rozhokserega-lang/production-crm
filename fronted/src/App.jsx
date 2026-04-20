@@ -74,6 +74,7 @@ import {
 } from "./hooks/useOrders";
 import { useDataLoader } from "./hooks/useDataLoader";
 import { useCrmRole } from "./hooks/useCrmRole";
+import { OrderDrawer } from "./components/OrderDrawer";
 import { ConsumeDialog } from "./components/ConsumeDialog";
 import { PlanDialog } from "./components/PlanDialog";
 import { StrapDialog } from "./components/StrapDialog";
@@ -507,6 +508,7 @@ export default function App() {
   const [laborPlannerQtyByGroup, setLaborPlannerQtyByGroup] = useState({});
   const [collapsedSections, setCollapsedSections] = useState({});
   const [actionLoading, setActionLoading] = useState("");
+  const [orderDrawerId, setOrderDrawerId] = useState("");
   const [pendingStageActionKeys, setPendingStageActionKeys] = useState(() => new Set());
   const [error, setError] = useState("");
   const [isOnline, setIsOnline] = useState(
@@ -1424,6 +1426,16 @@ export default function App() {
     shipmentFiltered,
     view,
   ]);
+
+  const orderDrawerLines = useMemo(() => {
+    const id = String(orderDrawerId || "").trim();
+    if (!id) return [];
+    return (rows || []).filter((r) => String(r?.orderId || r?.order_id || "").trim() === id);
+  }, [rows, orderDrawerId]);
+
+  useEffect(() => {
+    if (view !== "overview" && view !== "workshop") setOrderDrawerId("");
+  }, [view]);
 
   useEffect(() => {
     if (view !== "labor" || laborSubView !== "stages") {
@@ -3385,6 +3397,7 @@ export default function App() {
             getStageLabel={getStageLabel}
             overviewShippedOnly={overviewShippedOnly}
             formatDateTimeRu={formatDateTimeRu}
+            onOpenOrderDrawer={setOrderDrawerId}
           />
         )}
         {view === "labor" && (
@@ -3500,6 +3513,7 @@ export default function App() {
             setExecutorByOrder={setExecutorByOrder}
             executorOptions={executorOptions}
             getMaterialLabel={getMaterialLabel}
+            onOpenOrderDrawer={setOrderDrawerId}
           />
         )}
       </section>
@@ -3511,6 +3525,17 @@ export default function App() {
           {hoverTip.text}
         </div>
       )}
+      <OrderDrawer
+        orderId={orderDrawerId}
+        lines={orderDrawerLines}
+        open={Boolean(orderDrawerId)}
+        onClose={() => setOrderDrawerId("")}
+        getStageLabel={getStageLabel}
+        formatDateTimeRu={formatDateTimeRu}
+        isDone={isDone}
+        isInWork={isInWork}
+        getMaterialLabel={getMaterialLabel}
+      />
       <ConsumeDialog
         isOpen={consumeDialogOpen}
         consumeDialogData={consumeDialogData}
