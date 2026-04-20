@@ -13,6 +13,7 @@ export function WorkshopView({
   isInWork,
   isOrderCustomerShipped,
   actionLoading,
+  isActionPending,
   canOperateProduction,
   runAction,
   executorByOrder,
@@ -26,6 +27,7 @@ export function WorkshopView({
   const prasOptions = Array.isArray(executorOptions?.pras) && executorOptions.pras.length > 0
     ? executorOptions.pras
     : PRAS_EXECUTORS;
+  const isPending = (key) => (typeof isActionPending === "function" ? isActionPending(key) : actionLoading === key);
 
   return (
     <>
@@ -89,14 +91,14 @@ export function WorkshopView({
                     <button
                       type="button"
                       className={pilkaInWork ? "mini" : "mini ghost"}
-                      disabled={actionLoading === `webSetPilkaInWork:${orderId}` || pilkaDone || pilkaInWork || !canOperateProduction}
+                      disabled={isPending(`webSetPilkaInWork:${orderId}`) || pilkaDone || pilkaInWork || !canOperateProduction}
                       onClick={() => runAction("webSetPilkaInWork", orderId, {})}
                     >
                       {tab === "pilka" ? "Начать" : "Пила: Начать"}
                     </button>
                     <button
                       className="mini ok"
-                      disabled={actionLoading === `webSetPilkaDone:${orderId}` || pilkaDone || !pilkaInWork || !canOperateProduction}
+                      disabled={isPending(`webSetPilkaDone:${orderId}`) || pilkaDone || !pilkaInWork || !canOperateProduction}
                       onClick={() =>
                         runAction("webSetPilkaDone", orderId, {}, {
                           defaultSheets: displaySheetsNeeded,
@@ -110,7 +112,7 @@ export function WorkshopView({
                     </button>
                     <button
                       className="mini warn"
-                      disabled={actionLoading === `webSetPilkaPause:${orderId}` || pilkaDone || !pilkaInWork || !canOperateProduction}
+                      disabled={isPending(`webSetPilkaPause:${orderId}`) || pilkaDone || !pilkaInWork || !canOperateProduction}
                       onClick={() => runAction("webSetPilkaPause", orderId)}
                     >
                       {tab === "pilka" ? "Пауза" : "Пила: Пауза"}
@@ -134,7 +136,7 @@ export function WorkshopView({
                     <button
                       type="button"
                       className={kromkaInWork ? "mini" : "mini ghost"}
-                      disabled={actionLoading === `webSetKromkaInWork:${orderId}` || kromkaDone || kromkaInWork || !canOperateProduction}
+                      disabled={isPending(`webSetKromkaInWork:${orderId}`) || kromkaDone || kromkaInWork || !canOperateProduction}
                       onClick={() =>
                         runAction("webSetKromkaInWork", orderId, {
                           executor: kromkaExecValue,
@@ -145,14 +147,14 @@ export function WorkshopView({
                     </button>
                     <button
                       className="mini ok"
-                      disabled={actionLoading === `webSetKromkaDone:${orderId}` || kromkaDone || !kromkaInWork || !canOperateProduction}
+                      disabled={isPending(`webSetKromkaDone:${orderId}`) || kromkaDone || !kromkaInWork || !canOperateProduction}
                       onClick={() => runAction("webSetKromkaDone", orderId)}
                     >
                       {tab === "kromka" ? "Готово" : "Кромка: Готово"}
                     </button>
                     <button
                       className="mini warn"
-                      disabled={actionLoading === `webSetKromkaPause:${orderId}` || kromkaDone || !kromkaInWork || !canOperateProduction}
+                      disabled={isPending(`webSetKromkaPause:${orderId}`) || kromkaDone || !kromkaInWork || !canOperateProduction}
                       onClick={() => runAction("webSetKromkaPause", orderId)}
                     >
                       {tab === "kromka" ? "Пауза" : "Кромка: Пауза"}
@@ -176,7 +178,7 @@ export function WorkshopView({
                     <button
                       type="button"
                       className={prasInWork ? "mini" : "mini ghost"}
-                      disabled={actionLoading === `webSetPrasInWork:${orderId}` || prasDone || prasInWork || !canOperateProduction}
+                      disabled={isPending(`webSetPrasInWork:${orderId}`) || prasDone || prasInWork || !canOperateProduction}
                       onClick={() =>
                         runAction("webSetPrasInWork", orderId, {
                           executor: prasExecValue,
@@ -187,7 +189,7 @@ export function WorkshopView({
                     </button>
                     <button
                       className="mini ok"
-                      disabled={actionLoading === `webSetPrasDone:${orderId}` || prasDone || !prasInWork || !canOperateProduction}
+                      disabled={isPending(`webSetPrasDone:${orderId}`) || prasDone || !prasInWork || !canOperateProduction}
                       onClick={() =>
                         runAction("webSetPrasDone", orderId, {}, {
                           notifyOnAssembly: pilkaDone && kromkaDone && !assemblyDone,
@@ -203,7 +205,7 @@ export function WorkshopView({
                     </button>
                     <button
                       className="mini warn"
-                      disabled={actionLoading === `webSetPrasPause:${orderId}` || prasDone || !prasInWork || !canOperateProduction}
+                      disabled={isPending(`webSetPrasPause:${orderId}`) || prasDone || !prasInWork || !canOperateProduction}
                       onClick={() => runAction("webSetPrasPause", orderId)}
                     >
                       {tab === "pras" ? "Пауза" : "Присадка: Пауза"}
@@ -213,7 +215,7 @@ export function WorkshopView({
                 {showAssembly && (
                   <button
                     className="mini ok"
-                    disabled={actionLoading === `webSetAssemblyDone:${orderId}` || assemblyDone || !canOperateProduction}
+                    disabled={isPending(`webSetAssemblyDone:${orderId}`) || assemblyDone || !canOperateProduction}
                     onClick={() => runAction("webSetAssemblyDone", orderId)}
                   >
                     {tab === "assembly" ? "Готово" : "Сборка: Готово"}
@@ -222,7 +224,7 @@ export function WorkshopView({
                 {showDone && (
                   <button
                     className="mini ok"
-                    disabled={actionLoading === `webSetShippingDone:${orderId}` || packagingDone || !canOperateProduction}
+                    disabled={isPending(`webSetShippingDone:${orderId}`) || packagingDone || !canOperateProduction}
                     onClick={() =>
                       runAction("webSetShippingDone", orderId, {}, {
                         notifyOnFinalStage: true,

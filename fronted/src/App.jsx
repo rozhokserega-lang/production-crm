@@ -192,6 +192,57 @@ const TERMINAL_PIPELINE_STAGES = new Set([
   PipelineStage.SHIPPED,
 ]);
 
+const ACTION_OPTIMISTIC_MAP = {
+  webSetPilkaInWork: {
+    field: "pilkaStatus",
+    snakeField: "pilka_status",
+    value: (payload) => `В работе${payload?.executor ? ` (${payload.executor})` : ""}`,
+    pipelineStage: "pilka",
+  },
+  webSetPilkaDone: { field: "pilkaStatus", snakeField: "pilka_status", value: "Готово", pipelineStage: "kromka" },
+  webSetPilkaPause: { field: "pilkaStatus", snakeField: "pilka_status", value: "Пауза", pipelineStage: "pilka" },
+  webSetKromkaInWork: {
+    field: "kromkaStatus",
+    snakeField: "kromka_status",
+    value: (payload) => `В работе${payload?.executor ? ` (${payload.executor})` : ""}`,
+    pipelineStage: "kromka",
+  },
+  webSetKromkaDone: { field: "kromkaStatus", snakeField: "kromka_status", value: "Готово", pipelineStage: "pras" },
+  webSetKromkaPause: { field: "kromkaStatus", snakeField: "kromka_status", value: "Пауза", pipelineStage: "kromka" },
+  webSetPrasInWork: {
+    field: "prasStatus",
+    snakeField: "pras_status",
+    value: (payload) => `В работе${payload?.executor ? ` (${payload.executor})` : ""}`,
+    pipelineStage: "pras",
+  },
+  webSetPrasDone: { field: "prasStatus", snakeField: "pras_status", value: "Готово", pipelineStage: "assembly" },
+  webSetPrasPause: { field: "prasStatus", snakeField: "pras_status", value: "Пауза", pipelineStage: "pras" },
+  webSetAssemblyDone: {
+    field: "assemblyStatus",
+    snakeField: "assembly_status",
+    value: "Собрано",
+    pipelineStage: "assembled",
+  },
+  webSetShippingDone: {
+    field: "overallStatus",
+    snakeField: "overall_status",
+    value: "Отгружено",
+    pipelineStage: "shipped",
+  },
+};
+
+function applyOptimisticOrderRow(row, action, payload = {}) {
+  const config = ACTION_OPTIMISTIC_MAP[action];
+  if (!config) return row;
+  const nextValue = typeof config.value === "function" ? config.value(payload) : config.value;
+  return {
+    ...row,
+    [config.field]: nextValue,
+    [config.snakeField]: nextValue,
+    ...(config.pipelineStage ? { pipelineStage: config.pipelineStage, pipeline_stage: config.pipelineStage } : {}),
+  };
+}
+
 const SHIPMENT_SECTION_ORDER = [];
 const STRAP_OPTIONS = [
   "Бока (316_167)",
@@ -456,6 +507,7 @@ export default function App() {
   const [laborPlannerQtyByGroup, setLaborPlannerQtyByGroup] = useState({});
   const [collapsedSections, setCollapsedSections] = useState({});
   const [actionLoading, setActionLoading] = useState("");
+  const [pendingStageActionKeys, setPendingStageActionKeys] = useState(() => new Set());
   const [error, setError] = useState("");
   const [isOnline, setIsOnline] = useState(
     typeof navigator === "undefined" ? true : navigator.onLine,
@@ -512,7 +564,9 @@ export default function App() {
   const [furnitureSelectedQty, setFurnitureSelectedQty] = useState("1");
   const importPlanFileRef = useRef(null);
   const importLaborFileRef = useRef(null);
+  const stageActionSeqRef = useRef(new Map());
   const authEnabled = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
+  const isActionPending = useCallback((key) => pendingStageActionKeys.has(key), [pendingStageActionKeys]);
 
   function denyActionByRole(message) {
     setError(message);
@@ -1053,8 +1107,37 @@ export default function App() {
       return;
     }
     const key = `${action}:${orderId}`;
-    setActionLoading(key);
+    const seq = (stageActionSeqRef.current.get(key) || 0) + 1;
+    stageActionSeqRef.current.set(key, seq);
+    setPendingStageActionKeys((prev) => {
+      const next = new Set(prev);
+      next.add(key);
+      return next;
+    });
     setError("");
+    const targetOrderId = String(orderId || "");
+    const hasOptimisticRule = Boolean(ACTION_OPTIMISTIC_MAP[action]);
+    let rowsSnapshot = null;
+    let shipmentOrdersSnapshot = null;
+    if (hasOptimisticRule) {
+      const patchList = (list, setSnapshot) =>
+        list.map((row) => {
+          const rowOrderId = String(row.orderId || row.order_id || "");
+          if (rowOrderId !== targetOrderId) return row;
+          setSnapshot(row);
+          return applyOptimisticOrderRow(row, action, payload);
+        });
+      setRows((prev) =>
+        patchList(prev, (row) => {
+          rowsSnapshot = row;
+        }),
+      );
+      setShipmentOrders((prev) =>
+        patchList(prev, (row) => {
+          shipmentOrdersSnapshot = row;
+        }),
+      );
+    }
     try {
       const data = await callBackend(action, { orderId, ...payload });
       const stageSync = STAGE_SYNC_META[action];
@@ -1080,17 +1163,41 @@ export default function App() {
       }
       if (action === "webSetPilkaDone") {
         openPilkaDoneConsumeDialog(orderId, meta);
-        await load();
         return;
       }
-      await load();
+      // Non-blocking reconcile: optimistic state updates instantly, backend sync runs in background.
+      void load();
     } catch (e) {
+      if (hasOptimisticRule && stageActionSeqRef.current.get(key) === seq) {
+        if (rowsSnapshot) {
+          setRows((prev) =>
+            prev.map((row) => {
+              const rowOrderId = String(row.orderId || row.order_id || "");
+              return rowOrderId === targetOrderId ? rowsSnapshot : row;
+            }),
+          );
+        }
+        if (shipmentOrdersSnapshot) {
+          setShipmentOrders((prev) =>
+            prev.map((row) => {
+              const rowOrderId = String(row.orderId || row.order_id || "");
+              return rowOrderId === targetOrderId ? shipmentOrdersSnapshot : row;
+            }),
+          );
+        }
+      }
       if (action === "webSetPilkaDone") {
         openPilkaDoneConsumeDialogOnError(orderId, meta, e);
       }
       setError(toUserError(e));
     } finally {
-      setActionLoading("");
+      if (stageActionSeqRef.current.get(key) === seq) {
+        setPendingStageActionKeys((prev) => {
+          const next = new Set(prev);
+          next.delete(key);
+          return next;
+        });
+      }
     }
   }
 
@@ -3386,6 +3493,7 @@ export default function App() {
             isInWork={isInWork}
             isOrderCustomerShipped={isOrderCustomerShipped}
             actionLoading={actionLoading}
+            isActionPending={isActionPending}
             canOperateProduction={canOperateProduction}
             runAction={runAction}
             executorByOrder={executorByOrder}
