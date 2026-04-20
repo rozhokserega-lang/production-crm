@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { STAGE_SYNC_META } from '../../constants/stages';
+import { ALL_EXECUTORS, KROMKA_EXECUTORS, PRAS_EXECUTORS } from '../../config';
 
 export function OrderCard({ 
   order, 
@@ -95,6 +96,7 @@ export function OrderCard({
           statusClass={getStatusClass(order.kromkaStatus)}
           showExecutor={currentTab === 'kromka' || currentTab === 'all'}
           executor={currentExecutors.kromka}
+          executorOptions={KROMKA_EXECUTORS}
           onExecutorChange={(executor) => handleExecutorChange('kromka', executor)}
           disabled={isOrderLoading}
         />
@@ -105,6 +107,7 @@ export function OrderCard({
           statusClass={getStatusClass(order.prasStatus)}
           showExecutor={currentTab === 'pras' || currentTab === 'all'}
           executor={currentExecutors.pras}
+          executorOptions={PRAS_EXECUTORS}
           onExecutorChange={(executor) => handleExecutorChange('pras', executor)}
           disabled={isOrderLoading}
         />
@@ -144,6 +147,7 @@ function StageItem({
   status, 
   statusClass, 
   showExecutor = false, 
+  executorOptions = ALL_EXECUTORS,
   executor = '', 
   onExecutorChange,
   disabled = false 
@@ -156,6 +160,7 @@ function StageItem({
       {showExecutor && (
         <ExecutorSelect
           value={executor}
+          options={executorOptions}
           onChange={onExecutorChange}
           disabled={disabled}
         />
@@ -164,9 +169,9 @@ function StageItem({
   );
 }
 
-function ExecutorSelect({ value, onChange, disabled }) {
-  const executors = ['Слава', 'Сережа', 'Виталик', 'Леха'];
-  
+function ExecutorSelect({ value, options, onChange, disabled }) {
+  const executors = Array.isArray(options) && options.length > 0 ? options : ALL_EXECUTORS;
+
   return (
     <select
       className="executor-select"

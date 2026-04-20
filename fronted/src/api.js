@@ -318,6 +318,7 @@ const RPC_MAP = {
   webGetOrderStats: "web_get_order_stats",
   webGetMyRole: "web_effective_crm_role",
   webGetCrmAuthStrict: "web_is_crm_auth_strict",
+  webGetCrmExecutors: "web_get_crm_executors",
   webSetCrmAuthStrict: "web_set_crm_auth_strict",
   webListCrmUserRoles: "web_list_crm_user_roles",
   webSetCrmUserRole: "web_set_crm_user_role",

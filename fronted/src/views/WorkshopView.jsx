@@ -1,3 +1,5 @@
+import { KROMKA_EXECUTORS, PRAS_EXECUTORS } from "../config";
+
 export function WorkshopView({
   workshopRows,
   loading,
@@ -15,8 +17,16 @@ export function WorkshopView({
   runAction,
   executorByOrder,
   setExecutorByOrder,
+  executorOptions,
   getMaterialLabel,
 }) {
+  const kromkaOptions = Array.isArray(executorOptions?.kromka) && executorOptions.kromka.length > 0
+    ? executorOptions.kromka
+    : KROMKA_EXECUTORS;
+  const prasOptions = Array.isArray(executorOptions?.pras) && executorOptions.pras.length > 0
+    ? executorOptions.pras
+    : PRAS_EXECUTORS;
+
   return (
     <>
       {!workshopRows.length && !loading && <div className="empty">Нет заказов</div>}
@@ -44,8 +54,10 @@ export function WorkshopView({
             : String(o.prasStatus || "").includes("Леха") || String(o.prasStatus || "").includes("Лёха")
               ? "Леха"
               : "";
-        const kromkaExecValue = executorByOrder[orderId] || currentKromkaExec || "Слава";
-        const prasExecValue = executorByOrder[`${orderId}:pras`] || currentPrasExec || "Леха";
+        const kromkaExecValue =
+          executorByOrder[orderId] || currentKromkaExec || kromkaOptions[0] || "";
+        const prasExecValue =
+          executorByOrder[`${orderId}:pras`] || currentPrasExec || prasOptions[0] || "";
         const showPilka = tab === "all" || tab === "pilka";
         const showKromka = tab === "all" || tab === "kromka";
         const showPras = tab === "all" || tab === "pras";
@@ -114,8 +126,9 @@ export function WorkshopView({
                         disabled={!canOperateProduction}
                         onChange={(e) => setExecutorByOrder((prev) => ({ ...prev, [orderId]: e.target.value }))}
                       >
-                        <option>Слава</option>
-                        <option>Сережа</option>
+                        {kromkaOptions.map((name) => (
+                          <option key={name} value={name}>{name}</option>
+                        ))}
                       </select>
                     )}
                     <button
@@ -155,8 +168,9 @@ export function WorkshopView({
                         disabled={!canOperateProduction}
                         onChange={(e) => setExecutorByOrder((prev) => ({ ...prev, [`${orderId}:pras`]: e.target.value }))}
                       >
-                        <option>Леха</option>
-                        <option>Виталик</option>
+                        {prasOptions.map((name) => (
+                          <option key={name} value={name}>{name}</option>
+                        ))}
                       </select>
                     )}
                     <button

@@ -7,6 +7,8 @@ import {
 } from "./api";
 import {
   BACKEND_PROVIDER,
+  KROMKA_EXECUTORS,
+  PRAS_EXECUTORS,
   SHEET_MIRROR_GID,
   SUPABASE_ANON_KEY,
   SUPABASE_URL,
@@ -407,6 +409,14 @@ function buildPreviewRowsFromFurnitureTemplate(template, orderQty) {
 }
 
 export default function App() {
+  function normalizeExecutorList(rawList, fallback) {
+    const source = Array.isArray(rawList) ? rawList : [];
+    const normalized = source
+      .map((x) => String(x || "").trim())
+      .filter(Boolean);
+    return normalized.length > 0 ? normalized : fallback;
+  }
+
   const [view, setView] = useState("shipment");
   const {
     tab,
@@ -450,6 +460,10 @@ export default function App() {
     typeof navigator === "undefined" ? true : navigator.onLine,
   );
   const [executorByOrder, setExecutorByOrder] = useState({});
+  const [executorOptions, setExecutorOptions] = useState({
+    kromka: KROMKA_EXECUTORS,
+    pras: PRAS_EXECUTORS,
+  });
   const [consumeDialogOpen, setConsumeDialogOpen] = useState(false);
   const [consumeEditMode, setConsumeEditMode] = useState(false);
   const [consumeDialogData, setConsumeDialogData] = useState(null);
@@ -590,6 +604,32 @@ export default function App() {
     return () => {
       window.removeEventListener("online", onOnline);
       window.removeEventListener("offline", onOffline);
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadCrmExecutors() {
+      try {
+        const payload = await callBackend("webGetCrmExecutors");
+        if (cancelled) return;
+        const source =
+          Array.isArray(payload) && payload.length > 0 && payload[0] && typeof payload[0] === "object"
+            ? payload[0]
+            : payload && typeof payload === "object"
+              ? payload
+              : {};
+        setExecutorOptions({
+          kromka: normalizeExecutorList(source.kromka_executors || source.kromka, KROMKA_EXECUTORS),
+          pras: normalizeExecutorList(source.pras_executors || source.pras, PRAS_EXECUTORS),
+        });
+      } catch (_) {
+        // Keep environment defaults if RPC is missing or unavailable.
+      }
+    }
+    loadCrmExecutors();
+    return () => {
+      cancelled = true;
     };
   }, []);
 
@@ -3270,6 +3310,7 @@ export default function App() {
             runAction={runAction}
             executorByOrder={executorByOrder}
             setExecutorByOrder={setExecutorByOrder}
+            executorOptions={executorOptions}
             getMaterialLabel={getMaterialLabel}
           />
         )}
