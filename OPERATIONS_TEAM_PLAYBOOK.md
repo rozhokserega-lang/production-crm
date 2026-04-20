@@ -33,3 +33,13 @@ Before enabling strict mode:
 2. Assign owner for restore and owner for verification.
 3. Execute restore drill checks.
 4. Reopen traffic only after smoke checks pass.
+
+## Daily health-check (mandatory)
+
+Run once per day (manual or scheduled CI):
+1. Supabase advisors: `security` and `performance`.
+2. SQL smoke checks from `STAGING_GO_LIVE_CHECKLIST.md`.
+3. Frontend read check (`web_get_orders_all`/`web_get_labor_table`) via RPC smoke script.
+
+Persist results in a date-stamped artifact/report.  
+If any advisor returns new `ERROR`, freeze release and escalate to admin.

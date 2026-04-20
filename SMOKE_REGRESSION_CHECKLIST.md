@@ -30,6 +30,11 @@ Minimum target: 7 scenarios before release.
 - Assign a role, remove a role, toggle strict mode.
 - Expected: permission behavior matches role; audit gets `assign_role`/`remove_role`/`toggle_strict_mode`.
 
+## Artifact capture
+
+- Save timestamped evidence for each scenario (`passed/failed`, short notes, screenshot/log link).
+- Attach final scenario summary to release readiness report.
+
 ## Verification queries
 
 ```sql

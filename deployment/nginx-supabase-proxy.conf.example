@@ -1,0 +1,48 @@
+# Пример: reverse proxy с VPS на Supabase (HTTPS).
+# Скопируйте в /etc/nginx/sites-available/ (или conf.d/), подставьте домен и ref проекта.
+#
+# Перед включением:
+#   1) DNS A/AAAA: supabase-proxy.ВАШ-ДОМЕН → IP VPS
+#   2) certbot certonly --nginx -d supabase-proxy.ВАШ-ДОМЕН
+#   3) Замените YOUR_PROJECT_REF и пути к сертификатам
+
+# Для Realtime (WebSocket) позже добавьте в http { } map и Connection upgrade — см. документацию Nginx.
+
+# server {
+#   listen 80;
+#   server_name supabase-proxy.ВАШ-ДОМЕН;
+#   return 301 https://$host$request_uri;
+# }
+
+server {
+    listen 443 ssl http2;
+    server_name supabase-proxy.ВАШ-ДОМЕН;
+
+    ssl_certificate     /etc/letsencrypt/live/supabase-proxy.ВАШ-ДОМЕН/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/supabase-proxy.ВАШ-ДОМЕН/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+    client_max_body_size 50m;
+
+    location / {
+        proxy_pass https://YOUR_PROJECT_REF.supabase.co;
+        proxy_http_version 1.1;
+
+        proxy_ssl_server_name on;
+        proxy_ssl_name YOUR_PROJECT_REF.supabase.co;
+        proxy_set_header Host YOUR_PROJECT_REF.supabase.co;
+
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Для WebSocket (Realtime Supabase) раскомментируйте и настройте map в nginx.conf:
+        # proxy_set_header Upgrade $http_upgrade;
+        # proxy_set_header Connection "upgrade";
+
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 120s;
+        proxy_read_timeout 120s;
+    }
+}

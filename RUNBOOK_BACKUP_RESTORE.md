@@ -24,6 +24,7 @@ Runbook for safe backup + restore verification before releases affecting:
    - project ref,
    - UTC timestamp,
    - release candidate commit hash.
+4. Attach metadata to release artifact (for example `RELEASE_READINESS_<date>.md`).
 
 ## 3) Restore drill (must be tested, not only documented)
 
@@ -52,6 +53,7 @@ select count(*) as audit_rows from public.crm_audit_log;
    - toggle strict mode,
    - assign/remove role.
 4. Confirm new rows appear in `crm_audit_log` for all actions.
+5. Save verification SQL output and smoke result reference into release artifact.
 
 ## 4) Roll-forward after restore
 

@@ -10,6 +10,7 @@
 ## Release gate (must pass)
 
 - `security advisors`: zero `ERROR`.
+- Supabase Auth leaked password protection: `enabled`.
 - critical RPCs callable with expected roles.
 - smoke checklist passed.
 - audit log captures all critical events.
@@ -36,3 +37,12 @@ Capture:
 - affected actions and users,
 - recovery path used,
 - preventive action for next release.
+
+## Rollback drill cadence
+
+- Minimum cadence: once per release candidate before production go-live.
+- Drill evidence must include:
+  - backup id,
+  - restore target environment,
+  - SQL/object verification output,
+  - smoke regression result reference.
