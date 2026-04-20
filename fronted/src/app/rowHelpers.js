@@ -27,6 +27,7 @@ export function normalizeOrder(row) {
     colorName: row.colorName ?? row.color_name ?? "",
     createdAt: row.createdAt ?? row.created_at ?? "",
     sheetsNeeded: row.sheetsNeeded ?? row.sheets_needed ?? 0,
+    adminComment: row.adminComment ?? row.admin_comment ?? "",
   };
   out.pipelineStage = row.pipeline_stage ?? row.pipelineStage ?? null;
   out.pipelineStage = resolvePipelineStage(out);

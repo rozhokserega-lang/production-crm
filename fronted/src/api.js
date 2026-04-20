@@ -353,6 +353,7 @@ const RPC_MAP = {
   webCreateShipmentPlanCell: "web_create_shipment_plan_cell",
   webDeleteShipmentPlanCell: "web_delete_shipment_plan_cell_by_source",
   webDeleteOrderById: "web_delete_order_by_id",
+  webSetOrderAdminComment: "web_set_order_admin_comment",
   webGetPlanCatalog: "web_get_plan_catalog",
   webSetPilkaInWork: "web_set_stage_in_work",
   webSetKromkaInWork: "web_set_stage_in_work",
@@ -440,6 +441,12 @@ function buildRpcPayload(action, payload = {}) {
   if (action === "webDeleteOrderById") {
     return {
       p_order_id: String(payload.orderId || payload.p_order_id || "").trim(),
+    };
+  }
+  if (action === "webSetOrderAdminComment") {
+    return {
+      p_order_id: String(payload.orderId || payload.p_order_id || "").trim(),
+      p_comment: String(payload.text ?? payload.p_comment ?? "").trim(),
     };
   }
   if (action === "webUpsertItemColorMap") {

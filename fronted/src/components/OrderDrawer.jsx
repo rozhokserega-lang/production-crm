@@ -1,9 +1,14 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 
 function stageDotClass(status, isDone, isInWork) {
   if (isDone(status)) return "order-drawer__dot order-drawer__dot--done";
   if (isInWork(status)) return "order-drawer__dot order-drawer__dot--work";
   return "order-drawer__dot order-drawer__dot--wait";
+}
+
+function readAdminComment(row) {
+  return String(row?.adminComment ?? row?.admin_comment ?? "").trim();
 }
 
 export function OrderDrawer({
@@ -16,7 +21,12 @@ export function OrderDrawer({
   isDone,
   isInWork,
   getMaterialLabel,
+  canEditAdminComment,
+  onSaveAdminComment,
+  savingAdminComment,
 }) {
+  const [commentDraft, setCommentDraft] = useState("");
+
   useEffect(() => {
     if (!open) return undefined;
     const onKey = (e) => {
@@ -26,6 +36,12 @@ export function OrderDrawer({
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
+  useEffect(() => {
+    if (!open || !orderId) return;
+    const first = lines[0] || {};
+    setCommentDraft(String(first.adminComment ?? first.admin_comment ?? ""));
+  }, [open, orderId, lines]);
+
   if (!open || !orderId) return null;
 
   const first = lines[0] || {};
@@ -34,6 +50,9 @@ export function OrderDrawer({
   const prasS = first.prasStatus ?? first.pras_status ?? first.pras ?? "";
   const assemblyS = first.assemblyStatus ?? first.assembly_status ?? "";
   const orderLabel = String(orderId);
+  const storedComment = readAdminComment(first);
+  const showCommentBlock = canEditAdminComment || Boolean(storedComment);
+
   const updatedRaw =
     lines.reduce((acc, row) => {
       const t = row.updatedAt || row.updated_at || row.createdAt || row.created_at || "";
@@ -45,7 +64,12 @@ export function OrderDrawer({
       ? getMaterialLabel(String(first.item || "").trim(), first.material || first.colorName || "")
       : String(first.material || first.colorName || "").trim();
 
-  return (
+  async function handleSaveComment() {
+    if (!onSaveAdminComment) return;
+    await onSaveAdminComment(commentDraft.trim());
+  }
+
+  const drawer = (
     <div className="order-drawer-root" role="dialog" aria-modal="true" aria-labelledby="order-drawer-title">
       <button type="button" className="order-drawer-backdrop" aria-label="Закрыть" onClick={onClose} />
       <aside className="order-drawer">
@@ -121,7 +145,40 @@ export function OrderDrawer({
             <div>Сборка: {assemblyS || "—"}</div>
           </div>
         </div>
+
+        {showCommentBlock ? (
+          <div className="order-drawer__section order-drawer__section--comment">
+            <h3 className="order-drawer__h3">Комментарий администратора</h3>
+            {canEditAdminComment ? (
+              <>
+                <textarea
+                  className="order-drawer__textarea"
+                  rows={4}
+                  value={commentDraft}
+                  onChange={(e) => setCommentDraft(e.target.value)}
+                  placeholder="Заметка для производства (видна при смене этапов)…"
+                  maxLength={4000}
+                />
+                <div className="order-drawer__comment-actions">
+                  <button
+                    type="button"
+                    className="mini ok"
+                    disabled={savingAdminComment || !onSaveAdminComment}
+                    onClick={() => void handleSaveComment()}
+                  >
+                    {savingAdminComment ? "Сохранение…" : "Сохранить"}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <p className="order-drawer__comment-readonly">{storedComment || "—"}</p>
+            )}
+          </div>
+        ) : null}
       </aside>
     </div>
   );
+
+  if (typeof document === "undefined" || !document.body) return drawer;
+  return createPortal(drawer, document.body);
 }

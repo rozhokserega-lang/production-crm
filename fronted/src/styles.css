@@ -409,11 +409,30 @@ button:disabled {
 }
 
 .overview-card {
+  position: relative;
   background: #fff;
   border: 1px solid #d9e3f0;
   border-left: 3px solid #94a3b8;
   border-radius: 8px;
   padding: 8px;
+}
+
+.overview-card--has-admin-comment {
+  padding-bottom: 30px;
+  padding-right: 12px;
+}
+
+.overview-card__admin-marker {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  filter: drop-shadow(0 1px 2px rgba(15, 23, 42, 0.2));
+  pointer-events: none;
 }
 
 .overview-card.lane-pilka {
@@ -1594,15 +1613,6 @@ button:disabled {
 }
 
 /* Order detail drawer (overview / workshop) */
-@keyframes order-drawer-backdrop-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
 @keyframes order-drawer-panel-in {
   from {
     transform: translateX(100%);
@@ -1615,7 +1625,7 @@ button:disabled {
 .order-drawer-root {
   position: fixed;
   inset: 0;
-  z-index: 1200;
+  z-index: 10500;
   display: flex;
   justify-content: flex-end;
   align-items: stretch;
@@ -1628,10 +1638,13 @@ button:disabled {
   border: 0;
   padding: 0;
   margin: 0;
-  background: rgba(15, 23, 42, 0.12);
+  display: block;
+  appearance: none;
+  -webkit-appearance: none;
   cursor: pointer;
   pointer-events: auto;
-  animation: order-drawer-backdrop-in 0.22s ease-out forwards;
+  /* Лёгкое нейтральное затемнение: интерфейс под слоем остаётся виден */
+  background: rgba(15, 23, 42, 0.06);
 }
 
 .order-drawer {
@@ -1651,10 +1664,6 @@ button:disabled {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .order-drawer-backdrop {
-    animation: none;
-  }
-
   .order-drawer {
     animation: none;
   }
@@ -1807,12 +1816,53 @@ button:disabled {
   color: #475569;
 }
 
+.order-drawer__section--comment {
+  border-bottom: none;
+}
+
+.order-drawer__textarea {
+  width: 100%;
+  margin: 0;
+  padding: 10px 12px;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.45;
+  color: #0f172a;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  resize: vertical;
+  min-height: 88px;
+  background: #f8fafc;
+}
+
+.order-drawer__textarea:focus {
+  outline: none;
+  border-color: #3b82f6;
+  background: #fff;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+.order-drawer__comment-actions {
+  margin-top: 10px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.order-drawer__comment-readonly {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #334155;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .overview-card--clickable {
   cursor: pointer;
 }
 
 .overview-card--clickable {
-  position: relative;
   transition:
     transform 0.2s cubic-bezier(0.22, 1, 0.36, 1),
     box-shadow 0.2s ease;

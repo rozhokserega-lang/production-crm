@@ -24,6 +24,7 @@ export function OverviewView({
                   <div className="overview-column__list">
                     {col.items.map((o) => {
                       const orderId = String(o.orderId || o.order_id || "");
+                      const adminCommentMark = String(o.adminComment ?? o.admin_comment ?? "").trim();
                       const openDrawer = () => {
                         if (orderId && typeof onOpenOrderDrawer === "function") onOpenOrderDrawer(orderId);
                       };
@@ -35,7 +36,9 @@ export function OverviewView({
                       return (
                         <article
                           key={`${col.id}-${orderId || o.item}`}
-                          className={`overview-card overview-card--clickable lane-${col.id}`}
+                          className={`overview-card overview-card--clickable lane-${col.id}${
+                            adminCommentMark ? " overview-card--has-admin-comment" : ""
+                          }`}
                           role={orderId && onOpenOrderDrawer ? "button" : undefined}
                           tabIndex={orderId && onOpenOrderDrawer ? 0 : undefined}
                           onClick={openDrawer}
@@ -48,6 +51,21 @@ export function OverviewView({
                             <span>Кол-во: {Number(o.qty || 0)}</span>
                           </div>
                           <div className={`overview-card__stage lane-${col.id}`}>{getStageLabel(o)}</div>
+                          {adminCommentMark ? (
+                            <span
+                              className="overview-card__admin-marker"
+                              title="Есть комментарий администратора"
+                              aria-label="Есть комментарий администратора"
+                            >
+                              <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+                                <circle cx="12" cy="12" r="11" fill="#ea580c" />
+                                <path
+                                  fill="#ffffff"
+                                  d="M12 6.2 16 8.9v6.2L12 17.8 8 15.1V8.9l4-2.7zm0 1.2-2.9 1.9v4.2L12 15.4l2.9-1.9V9.3L12 7.4z"
+                                />
+                              </svg>
+                            </span>
+                          ) : null}
                         </article>
                       );
                     })}

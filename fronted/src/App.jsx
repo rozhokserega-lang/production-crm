@@ -651,6 +651,7 @@ export default function App() {
   const canOperateProduction = crmRole === "operator" || crmRole === "manager" || crmRole === "admin";
   const canManageOrders = crmRole === "manager" || crmRole === "admin";
   const canAdminSettings = crmRole === "admin";
+  const [adminCommentSaving, setAdminCommentSaving] = useState(false);
   const crmRoleLabel = CRM_ROLE_LABELS[crmRole] || CRM_ROLE_LABELS.viewer;
   const authUserLabel = String(authUser?.email || authUser?.phone || authUser?.id || "").trim();
 
@@ -1433,6 +1434,24 @@ export default function App() {
     if (!id) return [];
     return (rows || []).filter((r) => String(r?.orderId || r?.order_id || "").trim() === id);
   }, [rows, orderDrawerId]);
+
+  const saveOrderAdminComment = useCallback(
+    async (text) => {
+      const id = String(orderDrawerId || "").trim();
+      if (!id || !canAdminSettings) return;
+      setAdminCommentSaving(true);
+      setError("");
+      try {
+        await callBackend("webSetOrderAdminComment", { orderId: id, text });
+        await load();
+      } catch (e) {
+        setError(toUserError(e));
+      } finally {
+        setAdminCommentSaving(false);
+      }
+    },
+    [orderDrawerId, canAdminSettings, load],
+  );
 
   useEffect(() => {
     if (view !== "overview") setOrderDrawerId("");
@@ -3535,6 +3554,9 @@ export default function App() {
         isDone={isDone}
         isInWork={isInWork}
         getMaterialLabel={getMaterialLabel}
+        canEditAdminComment={canAdminSettings}
+        onSaveAdminComment={saveOrderAdminComment}
+        savingAdminComment={adminCommentSaving}
       />
       <ConsumeDialog
         isOpen={consumeDialogOpen}

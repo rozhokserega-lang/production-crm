@@ -35,6 +35,7 @@ export interface OrderRow {
   pipeline_stage: PipelineStage | null;
   color_name: string | null;
   sheets_needed: number;
+  admin_comment?: string | null;
   created_at: string;
   updated_at: string;
 }

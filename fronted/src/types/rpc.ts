@@ -10,6 +10,8 @@ export interface OrderRow {
   assemblyStatus?: string;
   overallStatus?: string;
   pipeline_stage?: string;
+  adminComment?: string;
+  admin_comment?: string;
   [key: string]: unknown;
 }
 
@@ -102,6 +104,7 @@ export interface RpcPayloadMap {
   };
   webDeleteShipmentPlanCell: { row?: string | number; col?: string | number; source?: string };
   webDeleteOrderById: { orderId: string };
+  webSetOrderAdminComment: { orderId: string; text?: string; p_comment?: string };
   webGetPlanCatalog: Record<string, never>;
   webSetPilkaInWork: { orderId: string; executor?: string };
   webSetKromkaInWork: { orderId: string; executor?: string };
