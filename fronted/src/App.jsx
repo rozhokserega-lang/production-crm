@@ -1853,10 +1853,13 @@ export default function App() {
         }
       });
     });
-    return [...byOrder.values()]
-      .filter((r) => activeSet.size === 0 || activeSet.has(String(r.orderId || "").trim()))
+    const allRows = [...byOrder.values()]
       .filter((r) => !q || String(r.orderId || "").toLowerCase().includes(q))
       .sort((a, b) => new Date(b.lastEventAt || 0).getTime() - new Date(a.lastEventAt || 0).getTime());
+    if (activeSet.size === 0) return allRows;
+    const scopedRows = allRows.filter((r) => activeSet.has(String(r.orderId || "").trim()));
+    // If labor table ids don't intersect with audit ids, still show stage timeline instead of empty state.
+    return scopedRows.length > 0 ? scopedRows : allRows;
   }, [view, laborSubView, stageAuditRows, query, activeOrderIds]);
   const laborPlannerRows = useMemo(() => {
     if (view !== "labor") return [];
