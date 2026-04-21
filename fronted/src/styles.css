@@ -8,9 +8,15 @@
   box-sizing: border-box;
 }
 
+html {
+  /* Prevent layout jumping when vertical scrollbar appears/disappears. */
+  scrollbar-gutter: stable;
+}
+
 body {
   margin: 0;
   background: #f7f9fc;
+  overflow-y: scroll;
 }
 
 .page {
