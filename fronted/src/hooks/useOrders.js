@@ -158,12 +158,14 @@ export function useBaseOrderFilter({
       const storageLike = isStorageLikeName(x.item);
       const allowInWorkshop = view === "workshop" && storageLike;
       const allowInStats = view === "stats" && storageLike;
+      const laneId = String(getOverviewLaneId(x) || "");
       const inWorkStage =
         /в работе/i.test(String(x.pilkaStatus || x.pilka_status || x.pilka || "")) ||
         /в работе/i.test(String(x.kromkaStatus || x.kromka_status || x.kromka || "")) ||
         /в работе/i.test(String(x.prasStatus || x.pras_status || x.pras || "")) ||
         /в работе/i.test(String(x.assemblyStatus || x.assembly_status || ""));
-      const allowInOverviewInWork = view === "overview" && storageLike && inWorkStage;
+      const inActiveProductionLane = laneId && laneId !== "ready_to_ship" && laneId !== "shipped";
+      const allowInOverviewInWork = view === "overview" && storageLike && (inWorkStage || inActiveProductionLane);
       const allowStorageLike =
         allowInWorkshop ||
         allowInStats ||
