@@ -101,8 +101,8 @@ export function useDashboardDerivedData({
       { id: "pilka", title: "Пила" },
       { id: "kromka", title: "Кромка" },
       { id: "pras", title: "Присадка" },
-      { id: "workshop_complete", title: "Готов к сборке" },
-      { id: "ready_to_ship", title: "Готово к отправке" },
+      { id: "workshop_complete", title: "Сборка" },
+      { id: "ready_to_ship", title: "Отправка" },
     ];
     const grouped = Object.fromEntries(defs.map((x) => [x.id, []]));
     (filtered || []).forEach((o) => {

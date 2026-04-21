@@ -1943,7 +1943,7 @@ export default function App() {
             </div>
             <div className="kpi"><span>На паузе</span><b>{filtered.filter((x) => statusClass(x) === "pause").length}</b></div>
             <div className="kpi">
-              <span>Готово к отправке</span>
+              <span>Отправка</span>
               <b>{filtered.filter((x) => getOverviewLaneId(x) === "ready_to_ship").length}</b>
             </div>
             <div className="kpi">
