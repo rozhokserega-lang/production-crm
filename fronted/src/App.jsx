@@ -186,6 +186,17 @@ import {
   markLaborImportRowSaved,
   parseLaborImportRows,
 } from "./app/laborImportHelpers";
+import {
+  applyOptimisticOrderRow,
+  buildPreviewRowsFromFurnitureTemplate,
+  formatDateTimeForPrint,
+  hasOptimisticActionRule,
+  mergeShipmentBoardWithTable,
+  normalizeShipmentBoard,
+  parseStrapSize,
+  resolveDefaultConsumeSheets,
+  resolveDefaultConsumeSheetsFromBoard,
+} from "./app/appUtils";
 
 /** Для KPI «Статистика»: собрано, готово к отправке клиенту, отгружено. */
 const TERMINAL_PIPELINE_STAGES = new Set([
@@ -193,57 +204,6 @@ const TERMINAL_PIPELINE_STAGES = new Set([
   PipelineStage.READY_TO_SHIP,
   PipelineStage.SHIPPED,
 ]);
-
-const ACTION_OPTIMISTIC_MAP = {
-  webSetPilkaInWork: {
-    field: "pilkaStatus",
-    snakeField: "pilka_status",
-    value: (payload) => `В работе${payload?.executor ? ` (${payload.executor})` : ""}`,
-    pipelineStage: "pilka",
-  },
-  webSetPilkaDone: { field: "pilkaStatus", snakeField: "pilka_status", value: "Готово", pipelineStage: "kromka" },
-  webSetPilkaPause: { field: "pilkaStatus", snakeField: "pilka_status", value: "Пауза", pipelineStage: "pilka" },
-  webSetKromkaInWork: {
-    field: "kromkaStatus",
-    snakeField: "kromka_status",
-    value: (payload) => `В работе${payload?.executor ? ` (${payload.executor})` : ""}`,
-    pipelineStage: "kromka",
-  },
-  webSetKromkaDone: { field: "kromkaStatus", snakeField: "kromka_status", value: "Готово", pipelineStage: "pras" },
-  webSetKromkaPause: { field: "kromkaStatus", snakeField: "kromka_status", value: "Пауза", pipelineStage: "kromka" },
-  webSetPrasInWork: {
-    field: "prasStatus",
-    snakeField: "pras_status",
-    value: (payload) => `В работе${payload?.executor ? ` (${payload.executor})` : ""}`,
-    pipelineStage: "pras",
-  },
-  webSetPrasDone: { field: "prasStatus", snakeField: "pras_status", value: "Готово", pipelineStage: "assembly" },
-  webSetPrasPause: { field: "prasStatus", snakeField: "pras_status", value: "Пауза", pipelineStage: "pras" },
-  webSetAssemblyDone: {
-    field: "assemblyStatus",
-    snakeField: "assembly_status",
-    value: "Собрано",
-    pipelineStage: "assembled",
-  },
-  webSetShippingDone: {
-    field: "overallStatus",
-    snakeField: "overall_status",
-    value: "Отгружено",
-    pipelineStage: "shipped",
-  },
-};
-
-function applyOptimisticOrderRow(row, action, payload = {}) {
-  const config = ACTION_OPTIMISTIC_MAP[action];
-  if (!config) return row;
-  const nextValue = typeof config.value === "function" ? config.value(payload) : config.value;
-  return {
-    ...row,
-    [config.field]: nextValue,
-    [config.snakeField]: nextValue,
-    ...(config.pipelineStage ? { pipelineStage: config.pipelineStage, pipeline_stage: config.pipelineStage } : {}),
-  };
-}
 
 const SHIPMENT_SECTION_ORDER = [];
 const WEEK_DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
@@ -273,195 +233,6 @@ const CONSUME_LOG_SHEET_NAME = "расход апрель 2026";
 // Google Sheet (вкладка "Отгрузка") для записи плана
 const PLAN_SYNC_SHEET_ID = "1gRMs2AVxIXwmQLLnB2WIoRW7mPkGc9usyaUrXZAHuIs";
 const PLAN_SYNC_GID = "1998084017";
-
-function resolveDefaultConsumeSheets(order, shipmentOrders) {
-  const direct = Number(order?.sheetsNeeded ?? order?.sheets_needed ?? 0);
-  if (Number.isFinite(direct) && direct > 0) return direct;
-
-  const orderId = String(order?.orderId || order?.order_id || "").trim();
-  const sourceRowId = String(order?.sourceRowId || order?.source_row_id || "").trim();
-  const week = String(order?.week || "").trim();
-  const item = String(order?.item || "").trim();
-  const all = Array.isArray(shipmentOrders) ? shipmentOrders : [];
-
-  const getSheets = (x) => Number(x?.sheetsNeeded ?? x?.sheets_needed ?? 0);
-
-  if (orderId) {
-    const byOrderId = all.find((x) => String(x?.orderId || x?.order_id || "").trim() === orderId && getSheets(x) > 0);
-    if (byOrderId) return getSheets(byOrderId);
-  }
-  if (sourceRowId && week) {
-    const byRowWeek = all.find(
-      (x) =>
-        String(x?.sourceRowId || x?.source_row_id || "").trim() === sourceRowId &&
-        String(x?.week || "").trim() === week &&
-        getSheets(x) > 0
-    );
-    if (byRowWeek) return getSheets(byRowWeek);
-  }
-  if (item && week) {
-    const byItemWeek = all.find(
-      (x) =>
-        String(x?.item || "").trim() === item &&
-        String(x?.week || "").trim() === week &&
-        getSheets(x) > 0
-    );
-    if (byItemWeek) return getSheets(byItemWeek);
-  }
-  return 0;
-}
-
-function resolveDefaultConsumeSheetsFromBoard(order, shipmentBoard) {
-  const direct = Number(order?.sheetsNeeded ?? order?.sheets_needed ?? 0);
-  if (Number.isFinite(direct) && direct > 0) return direct;
-
-  const sourceRowId = String(order?.sourceRowId || order?.source_row_id || "").trim();
-  const week = String(order?.week || "").trim();
-  const item = String(order?.item || "").trim();
-  const sections = Array.isArray(shipmentBoard?.sections) ? shipmentBoard.sections : [];
-
-  let byRowWeek = 0;
-  let byItemWeek = 0;
-  for (const section of sections) {
-    for (const it of section?.items || []) {
-      const rowId = String(it?.sourceRowId || it?.source_row_id || it?.row || "").trim();
-      const itemName = String(it?.item || "").trim();
-      for (const c of it?.cells || []) {
-        const cellWeek = String(c?.week || "").trim();
-        const sheets = Number(c?.sheetsNeeded ?? c?.sheets_needed ?? 0);
-        if (!(Number.isFinite(sheets) && sheets > 0)) continue;
-        if (sourceRowId && week && rowId === sourceRowId && cellWeek === week) byRowWeek = Math.max(byRowWeek, sheets);
-        if (item && week && itemName === item && cellWeek === week) byItemWeek = Math.max(byItemWeek, sheets);
-      }
-    }
-  }
-  return byRowWeek || byItemWeek || 0;
-}
-
-function normalizeShipmentBoard(data) {
-  if (data && Array.isArray(data.sections)) return data;
-  if (!Array.isArray(data)) return { sections: [] };
-  const sectionMap = new Map();
-  data.forEach((row, idx) => {
-    const sectionName = String(row?.section_name || row?.sectionName || "Прочее").trim() || "Прочее";
-    const itemName = String(row?.item || "").trim();
-    if (!itemName) return;
-    if (!sectionMap.has(sectionName)) sectionMap.set(sectionName, new Map());
-    const itemMap = sectionMap.get(sectionName);
-    const rowKey = String(row?.row_ref || row?.rowRef || row?.source_row_id || `${sectionName}:${itemName}`);
-    if (!itemMap.has(rowKey)) {
-      itemMap.set(rowKey, {
-        row: rowKey,
-        sourceRowId: String(row?.source_row_id || row?.sourceRowId || rowKey),
-        item: itemName,
-        material: row?.material || "",
-        cells: [],
-      });
-    }
-    itemMap.get(rowKey).cells.push({
-      col: row?.source_col_id || row?.sourceColId || row?.col_ref || row?.colRef || String(idx + 1),
-      sourceColId: row?.source_col_id || row?.sourceColId || row?.col_ref || row?.colRef || String(idx + 1),
-      week: row?.week || "",
-      qty: Number(row?.qty || 0),
-      bg: row?.bg || "#ffffff",
-      canSendToWork: !!row?.can_send_to_work || !!row?.canSendToWork,
-      inWork: !!row?.in_work || !!row?.inWork,
-      sheetsNeeded: Number(row?.sheets_needed ?? row?.sheetsNeeded ?? 0),
-      outputPerSheet: Number(row?.output_per_sheet ?? row?.outputPerSheet ?? 0),
-      availableSheets: Number(row?.available_sheets ?? row?.availableSheets ?? 0),
-      materialEnoughForOrder:
-        row?.material_enough_for_order == null
-          ? row?.materialEnoughForOrder
-          : !!row?.material_enough_for_order,
-      note: row?.note || "",
-    });
-  });
-  const sections = [...sectionMap.entries()].map(([name, items]) => ({
-    name,
-    items: [...items.values()],
-  }));
-  return { sections };
-}
-
-function mergeShipmentBoardWithTable(board, tableRows) {
-  const normalized = normalizeShipmentBoard(board);
-  const rows = Array.isArray(tableRows) ? tableRows : [];
-  if (!rows.length) return normalized;
-
-  const bySource = new Map();
-  rows.forEach((r) => {
-    const sourceRow = String(r?.source_row_id || r?.sourceRowId || "").trim();
-    const sourceCol = String(r?.source_col_id || r?.sourceColId || "").trim();
-    if (!sourceRow || !sourceCol) return;
-    bySource.set(`${sourceRow}|${sourceCol}`, {
-      availableSheets: Number(r?.available_sheets ?? r?.availableSheets ?? 0),
-      sheetsNeeded: Number(r?.sheets_needed ?? r?.sheetsNeeded ?? 0),
-      materialEnoughForOrder:
-        r?.material_enough_for_order == null
-          ? (r?.materialEnoughForOrder == null ? undefined : !!r?.materialEnoughForOrder)
-          : !!r?.material_enough_for_order,
-    });
-  });
-
-  return {
-    ...normalized,
-    sections: (normalized.sections || []).map((section) => ({
-      ...section,
-      items: (section.items || []).map((item) => ({
-        ...item,
-        cells: (item.cells || []).map((cell) => {
-          const key = `${String(item?.sourceRowId || item?.row || "").trim()}|${String(cell?.sourceColId || cell?.col || "").trim()}`;
-          const fromTable = bySource.get(key);
-          if (!fromTable) return cell;
-          return {
-            ...cell,
-            availableSheets: fromTable.availableSheets,
-            sheetsNeeded: fromTable.sheetsNeeded > 0 ? fromTable.sheetsNeeded : cell.sheetsNeeded,
-            materialEnoughForOrder:
-              fromTable.materialEnoughForOrder == null ? cell.materialEnoughForOrder : fromTable.materialEnoughForOrder,
-          };
-        }),
-      })),
-    })),
-  };
-}
-
-function parseStrapSize(name) {
-  const m = String(name || "").match(/\((\d+)\s*[_xх]\s*(\d+)\)/i);
-  if (!m) return null;
-  const length = Number(m[1]);
-  const width = Number(m[2]);
-  if (!(length > 0 && width > 0)) return null;
-  return { length, width };
-}
-
-function formatDateTimeForPrint(date) {
-  return date.toLocaleString("ru-RU", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-function buildPreviewRowsFromFurnitureTemplate(template, orderQty) {
-  const qtyNum = Number(orderQty || 0);
-  const baseQty = Number(template?.baseQty || 0) > 0 ? Number(template.baseQty) : 1;
-  if (!(qtyNum > 0) || !Array.isArray(template?.details)) return [];
-  return template.details.map((d) => {
-    const perUnit = Number(d?.perUnit || 0);
-    const raw = perUnit > 0 ? perUnit * qtyNum : 0;
-    const rounded = Math.round(raw * 1000) / 1000;
-    const normalizedQty = Number.isInteger(rounded) ? String(Math.trunc(rounded)) : String(rounded).replace(".", ",");
-    const partName = String(d?.detailName || "").trim();
-    return {
-      part: partName,
-      qty: normalizedQty,
-      baseQty,
-    };
-  }).filter((x) => x.part);
-}
 
 export default function App() {
   function normalizeExecutorList(rawList, fallback) {
@@ -1308,7 +1079,7 @@ export default function App() {
     });
     setError("");
     const targetOrderId = String(orderId || "");
-    const hasOptimisticRule = Boolean(ACTION_OPTIMISTIC_MAP[action]);
+    const hasOptimisticRule = hasOptimisticActionRule(action);
     let rowsSnapshot = null;
     let shipmentOrdersSnapshot = null;
     if (hasOptimisticRule) {
