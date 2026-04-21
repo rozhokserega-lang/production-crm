@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import {
   callBackend,
@@ -21,8 +21,6 @@ import {
   OVERVIEW_POST_PRODUCTION_LANE_IDS,
   isCustomerShippedOverall,
   isOrderCustomerShipped,
-  PipelineStage,
-  resolvePipelineStage,
 } from "./orderPipeline";
 import {
   getReadableTextColor,
@@ -39,25 +37,18 @@ import {
   isGarbageShipmentItemName,
   isObvyazkaSectionName,
   isStorageLikeName,
-  normText,
-  sectionSortKey,
-  shipmentOrderItemWeekKey,
 } from "./utils/shipmentUtils";
 import {
   buildFurnitureTemplates,
   canonicalStrapProductName,
-  detailPatternToStrapName,
   extractDetailSizeToken,
   furnitureProductLabel,
   isStrapVirtualRowId,
-  normalizeDetailPatternKey,
   normalizeFurnitureKey,
   normalizeStrapProductKey,
-  parseFurnitureSheet,
   resolveFurnitureTemplateForPreview,
   resolveStrapMaterialByProduct,
   strapNameToOrderItem,
-  toNum,
 } from "./utils/furnitureUtils";
 import {
   useBaseOrderFilter,
@@ -74,6 +65,25 @@ import {
 } from "./hooks/useOrders";
 import { useDataLoader } from "./hooks/useDataLoader";
 import { useCrmRole } from "./hooks/useCrmRole";
+import { useShipmentDialogsState } from "./hooks/useShipmentDialogsState";
+import { useShipmentUiState } from "./hooks/useShipmentUiState";
+import { useShipmentSelectionStats } from "./hooks/useShipmentSelectionStats";
+import { useShipmentTableData } from "./hooks/useShipmentTableData";
+import { useStrapDerivedData } from "./hooks/useStrapDerivedData";
+import { useFurnitureDerivedData } from "./hooks/useFurnitureDerivedData";
+import { useDashboardDerivedData } from "./hooks/useDashboardDerivedData";
+import { useWarehouseTableData } from "./hooks/useWarehouseTableData";
+import { useWarehouseOrderPlanRows } from "./hooks/useWarehouseOrderPlanRows";
+import { useLaborDerivedData } from "./hooks/useLaborDerivedData";
+import { useLaborStageAnalytics } from "./hooks/useLaborStageAnalytics";
+import { useShipmentPlanningDerivedData } from "./hooks/useShipmentPlanningDerivedData";
+import { useShipmentOrderIndexes } from "./hooks/useShipmentOrderIndexes";
+import { useCommonDerivedData } from "./hooks/useCommonDerivedData";
+import { useShipmentBoardRenderDerived } from "./hooks/useShipmentBoardRenderDerived";
+import { useLaborState } from "./hooks/useLaborState";
+import { useLaborActions } from "./hooks/useLaborActions";
+import { useMetalState } from "./hooks/useMetalState";
+import { useWorkSchedule } from "./hooks/useWorkSchedule";
 import { OrderDrawer } from "./components/OrderDrawer";
 import { ConsumeDialog } from "./components/ConsumeDialog";
 import { PlanDialog } from "./components/PlanDialog";
@@ -106,14 +116,7 @@ import {
   getMaterialLabel,
   getPlanPreviewArticleCode,
   hasArticleLikeCode,
-  mergeOrderPreferNewer,
-  shipmentOrderKey,
 } from "./app/orderHelpers";
-import {
-  mapStageFieldToKey,
-  normalizeStageStatus,
-  parseStageAuditRows,
-} from "./app/auditHelpers";
 import {
   buildPlanPreviewQrPayload,
   buildQrCodeUrl,
@@ -121,8 +124,6 @@ import {
 } from "./app/planPreviewHelpers";
 import {
   extractErrorMessage,
-  normalizeCatalogDedupKey,
-  normalizeCatalogItemName,
   toUserError,
 } from "./app/errorCatalogHelpers";
 import {
@@ -179,14 +180,6 @@ import {
   parseImportPlanRows,
 } from "./app/shipmentExportHelpers";
 import {
-  buildLaborFactPayload,
-  formatLaborImportError,
-  formatLaborSaveRowError,
-  getLaborImportNoValidRowsError,
-  markLaborImportRowSaved,
-  parseLaborImportRows,
-} from "./app/laborImportHelpers";
-import {
   applyOptimisticOrderRow,
   buildPreviewRowsFromFurnitureTemplate,
   formatDateTimeForPrint,
@@ -198,15 +191,6 @@ import {
   resolveDefaultConsumeSheetsFromBoard,
 } from "./app/appUtils";
 
-/** Для KPI «Статистика»: собрано, готово к отправке клиенту, отгружено. */
-const TERMINAL_PIPELINE_STAGES = new Set([
-  PipelineStage.ASSEMBLED,
-  PipelineStage.READY_TO_SHIP,
-  PipelineStage.SHIPPED,
-]);
-
-const SHIPMENT_SECTION_ORDER = [];
-const WEEK_DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 const STRAP_OPTIONS = [
   "Бока (316_167)",
   "Обвязка (1000_80)",
@@ -261,25 +245,40 @@ export default function App() {
   const [sectionCatalogRows, setSectionCatalogRows] = useState([]);
   const [sectionArticleRows, setSectionArticleRows] = useState([]);
   const [shipmentOrders, setShipmentOrders] = useState([]);
-  const [selectedShipments, setSelectedShipments] = useState([]);
-  const [planPreviews, setPlanPreviews] = useState([]);
-  const [hoverTip, setHoverTip] = useState({ visible: false, text: "", x: 0, y: 0 });
-  const [weekFilter, setWeekFilter] = useState("all");
-  const [showAwaiting, setShowAwaiting] = useState(true);
-  const [showOnPilka, setShowOnPilka] = useState(true);
-  const [showOnKromka, setShowOnKromka] = useState(true);
-  const [showOnPras, setShowOnPras] = useState(true);
-  const [showReadyAssembly, setShowReadyAssembly] = useState(true);
-  const [showAwaitShipment, setShowAwaitShipment] = useState(true);
-  const [showShipped, setShowShipped] = useState(true);
-  const [hiddenShipmentGroups, setHiddenShipmentGroups] = useState({});
-  const [shipmentSort, setShipmentSort] = useState("name");
-  const [shipmentViewMode, setShipmentViewMode] = useState("table");
+  const {
+    selectedShipments,
+    setSelectedShipments,
+    planPreviews,
+    setPlanPreviews,
+    hoverTip,
+    setHoverTip,
+    weekFilter,
+    setWeekFilter,
+    showAwaiting,
+    setShowAwaiting,
+    showOnPilka,
+    setShowOnPilka,
+    showOnKromka,
+    setShowOnKromka,
+    showOnPras,
+    setShowOnPras,
+    showReadyAssembly,
+    setShowReadyAssembly,
+    showAwaitShipment,
+    setShowAwaitShipment,
+    showShipped,
+    setShowShipped,
+    hiddenShipmentGroups,
+    setHiddenShipmentGroups,
+    shipmentSort,
+    setShipmentSort,
+    shipmentViewMode,
+    setShipmentViewMode,
+    resetShipmentFilters,
+    isSectionCollapsed,
+    toggleSectionCollapsed,
+  } = useShipmentUiState(DEFAULT_SHIPMENT_PREFS);
   const [statsSort, setStatsSort] = useState("stage");
-  const [laborSort, setLaborSort] = useState("total_desc");
-  const [laborSubView, setLaborSubView] = useState("total");
-  const [laborPlannerQtyByGroup, setLaborPlannerQtyByGroup] = useState({});
-  const [collapsedSections, setCollapsedSections] = useState({});
   const [actionLoading, setActionLoading] = useState("");
   const [orderDrawerId, setOrderDrawerId] = useState("");
   const [pendingStageActionKeys, setPendingStageActionKeys] = useState(() => new Set());
@@ -292,47 +291,69 @@ export default function App() {
     kromka: KROMKA_EXECUTORS,
     pras: PRAS_EXECUTORS,
   });
-  const [consumeDialogOpen, setConsumeDialogOpen] = useState(false);
-  const [consumeEditMode, setConsumeEditMode] = useState(false);
-  const [consumeDialogData, setConsumeDialogData] = useState(null);
-  const [consumeMaterial, setConsumeMaterial] = useState("");
-  const [consumeQty, setConsumeQty] = useState("");
-  const [consumeSaving, setConsumeSaving] = useState(false);
-  const [consumeError, setConsumeError] = useState("");
-  const [consumeLoading, setConsumeLoading] = useState(false);
-  const [strapDialogOpen, setStrapDialogOpen] = useState(false);
-  const [strapTargetProduct, setStrapTargetProduct] = useState("");
-  const [strapPlanWeek, setStrapPlanWeek] = useState("");
-  const [planDialogOpen, setPlanDialogOpen] = useState(false);
-  const [planSection, setPlanSection] = useState("Прочее");
-  const [planArticle, setPlanArticle] = useState("");
-  const [planMaterial, setPlanMaterial] = useState("");
-  const [planWeek, setPlanWeek] = useState("");
-  const [planQty, setPlanQty] = useState("");
-  const [planSaving, setPlanSaving] = useState(false);
-  const [strapDraft, setStrapDraft] = useState(() =>
-    STRAP_OPTIONS.reduce((acc, name) => ({ ...acc, [name]: "" }), {})
-  );
-  const [strapItems, setStrapItems] = useState([]);
-  const [laborRows, setLaborRows] = useState([]);
-  const [laborImportedRows, setLaborImportedRows] = useState([]);
-  const [laborSaveSelected, setLaborSaveSelected] = useState({});
-  const [laborSavingByKey, setLaborSavingByKey] = useState({});
-  const [laborSavedByKey, setLaborSavedByKey] = useState({});
+  const {
+    consumeDialogOpen,
+    setConsumeDialogOpen,
+    consumeEditMode,
+    setConsumeEditMode,
+    consumeDialogData,
+    setConsumeDialogData,
+    consumeMaterial,
+    setConsumeMaterial,
+    consumeQty,
+    setConsumeQty,
+    consumeSaving,
+    setConsumeSaving,
+    consumeError,
+    setConsumeError,
+    consumeLoading,
+    setConsumeLoading,
+    strapDialogOpen,
+    setStrapDialogOpen,
+    strapTargetProduct,
+    setStrapTargetProduct,
+    strapPlanWeek,
+    setStrapPlanWeek,
+    strapDraft,
+    setStrapDraft,
+    strapItems,
+    setStrapItems,
+    planDialogOpen,
+    setPlanDialogOpen,
+    planSection,
+    setPlanSection,
+    planArticle,
+    setPlanArticle,
+    planMaterial,
+    setPlanMaterial,
+    planWeek,
+    setPlanWeek,
+    planQty,
+    setPlanQty,
+    planSaving,
+    setPlanSaving,
+  } = useShipmentDialogsState(STRAP_OPTIONS);
+  const {
+    laborSort,
+    setLaborSort,
+    laborSubView,
+    setLaborSubView,
+    laborPlannerQtyByGroup,
+    setLaborPlannerQtyByGroup,
+    laborRows,
+    setLaborRows,
+    laborImportedRows,
+    setLaborImportedRows,
+    laborSaveSelected,
+    setLaborSaveSelected,
+    laborSavingByKey,
+    setLaborSavingByKey,
+    laborSavedByKey,
+    setLaborSavedByKey,
+  } = useLaborState(view);
   const [stageAuditRows, setStageAuditRows] = useState([]);
   const [activeOrderIds, setActiveOrderIds] = useState([]);
   const [warehouseRows, setWarehouseRows] = useState([]);
-  const [metalStockRows, setMetalStockRows] = useState([]);
-  const [metalSavingArticle, setMetalSavingArticle] = useState("");
-  const [metalSubView, setMetalSubView] = useState("queue");
-  const [metalQueueRows, setMetalQueueRows] = useState([]);
-  const [metalQueueLoading, setMetalQueueLoading] = useState(false);
-  const [metalQueueUpdatingId, setMetalQueueUpdatingId] = useState(0);
-  const [selectedShipmentMetal, setSelectedShipmentMetal] = useState({
-    loading: false,
-    rows: [],
-    missingItems: [],
-  });
   const [materialsStockRows, setMaterialsStockRows] = useState([]);
   const [leftoversRows, setLeftoversRows] = useState([]);
   const [consumeHistoryRows, setConsumeHistoryRows] = useState([]);
@@ -349,7 +370,6 @@ export default function App() {
   const [furnitureSelectedProduct, setFurnitureSelectedProduct] = useState("");
   const [furnitureSelectedQty, setFurnitureSelectedQty] = useState("1");
   const importPlanFileRef = useRef(null);
-  const importLaborFileRef = useRef(null);
   const stageActionSeqRef = useRef(new Map());
   const authEnabled = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
   const isActionPending = useCallback((key) => pendingStageActionKeys.has(key), [pendingStageActionKeys]);
@@ -436,18 +456,6 @@ export default function App() {
   const canManageOrders = crmRole === "manager" || crmRole === "admin";
   const canAdminSettings = crmRole === "admin";
   const [adminCommentSaving, setAdminCommentSaving] = useState(false);
-  const [workScheduleLoading, setWorkScheduleLoading] = useState(false);
-  const [workScheduleSaving, setWorkScheduleSaving] = useState(false);
-  const [workSchedule, setWorkSchedule] = useState({
-    hoursPerDay: 8,
-    workingDays: ["mon", "tue", "wed", "thu", "fri"],
-    weekendDays: ["sat", "sun"],
-    workStart: "08:00",
-    workEnd: "18:00",
-    lunchStart: "12:00",
-    lunchEnd: "13:00",
-    updatedAt: "",
-  });
   const crmRoleLabel = CRM_ROLE_LABELS[crmRole] || CRM_ROLE_LABELS.viewer;
   const authUserLabel = String(authUser?.email || authUser?.phone || authUser?.id || "").trim();
 
@@ -524,74 +532,20 @@ export default function App() {
   useEffect(() => {
     if (view !== "overview") setOverviewSubView("kanban");
   }, [view]);
-  const normalizeWorkSchedule = useCallback((payload) => {
-    const source =
-      Array.isArray(payload) && payload.length > 0 && payload[0] && typeof payload[0] === "object"
-        ? payload[0]
-        : payload && typeof payload === "object"
-          ? payload
-          : {};
-    const hoursRaw = Number(source.hours_per_day ?? source.hoursPerDay ?? 8);
-    const hoursPerDay = Number.isFinite(hoursRaw) ? Math.min(24, Math.max(1, hoursRaw)) : 8;
-    const workingDaysRaw = Array.isArray(source.working_days ?? source.workingDays)
-      ? source.working_days ?? source.workingDays
-      : ["mon", "tue", "wed", "thu", "fri"];
-    const workingDays = [...new Set(workingDaysRaw.map((x) => String(x || "").trim().toLowerCase()))]
-      .filter((x) => WEEK_DAYS.includes(x));
-    const fixedWorkingDays = workingDays.length > 0 ? workingDays : ["mon", "tue", "wed", "thu", "fri"];
-    const weekendDays = WEEK_DAYS.filter((d) => !fixedWorkingDays.includes(d));
-    const workStart = String(source.work_start || source.workStart || "08:00").trim() || "08:00";
-    const workEnd = String(source.work_end || source.workEnd || "18:00").trim() || "18:00";
-    const lunchStart = String(source.lunch_start || source.lunchStart || "12:00").trim() || "12:00";
-    const lunchEnd = String(source.lunch_end || source.lunchEnd || "13:00").trim() || "13:00";
-    return {
-      hoursPerDay,
-      workingDays: fixedWorkingDays,
-      weekendDays,
-      workStart,
-      workEnd,
-      lunchStart,
-      lunchEnd,
-      updatedAt: String(source.updated_at || source.updatedAt || "").trim(),
-    };
-  }, []);
-  const loadWorkSchedule = useCallback(async () => {
-    if (!canAdminSettings) return;
-    setWorkScheduleLoading(true);
-    try {
-      const payload = await callBackend("webGetWorkSchedule");
-      setWorkSchedule(normalizeWorkSchedule(payload));
-    } catch (e) {
-      setError(toUserError(e));
-    } finally {
-      setWorkScheduleLoading(false);
-    }
-  }, [canAdminSettings, callBackend, normalizeWorkSchedule, setError, toUserError]);
-  const saveWorkSchedule = useCallback(async () => {
-    if (!canAdminSettings || workScheduleSaving) return;
-    setWorkScheduleSaving(true);
-    setError("");
-    try {
-      const payload = await callBackend("webSetWorkSchedule", {
-        hoursPerDay: workSchedule.hoursPerDay,
-        workingDays: workSchedule.workingDays,
-        workStart: workSchedule.workStart,
-        workEnd: workSchedule.workEnd,
-        lunchStart: workSchedule.lunchStart,
-        lunchEnd: workSchedule.lunchEnd,
-      });
-      setWorkSchedule(normalizeWorkSchedule(payload));
-    } catch (e) {
-      setError(toUserError(e));
-    } finally {
-      setWorkScheduleSaving(false);
-    }
-  }, [canAdminSettings, callBackend, normalizeWorkSchedule, setError, toUserError, workSchedule, workScheduleSaving]);
-  useEffect(() => {
-    if (view !== "admin" || !canAdminSettings) return;
-    loadWorkSchedule();
-  }, [view, canAdminSettings, loadWorkSchedule]);
-
+  const {
+    workScheduleLoading,
+    workScheduleSaving,
+    workSchedule,
+    setWorkSchedule,
+    loadWorkSchedule,
+    saveWorkSchedule,
+  } = useWorkSchedule({
+    canAdminSettings,
+    view,
+    callBackend,
+    setError,
+    toUserError,
+  });
   useEffect(() => {
     let alive = true;
     setFurnitureLoading(true);
@@ -624,147 +578,6 @@ export default function App() {
   useEffect(() => {
     if (view !== "warehouse") setWarehouseSubView("sheets");
   }, [view]);
-  useEffect(() => {
-    if (view !== "metal") setMetalSubView("queue");
-  }, [view]);
-  const loadMetalStock = useCallback(async () => {
-    const payload = await callBackend("webGetMetalStock", {});
-    const list = Array.isArray(payload) ? payload : [];
-    setMetalStockRows(
-      list.map((row) => ({
-        metal_article: String(row?.metal_article || "").trim(),
-        metal_name: String(row?.metal_name || "").trim(),
-        qty_available: Number(row?.qty_available || 0),
-        qty_reserved: Number(row?.qty_reserved || 0),
-      })),
-    );
-  }, []);
-  const loadMetalQueue = useCallback(async () => {
-    setMetalQueueLoading(true);
-    try {
-      const payload = await callBackend("webGetMetalWorkQueue", {});
-      const list = Array.isArray(payload) ? payload : [];
-      setMetalQueueRows(
-        list.map((row) => ({
-          id: Number(row?.id || 0),
-          status: String(row?.status || "").trim(),
-          sourceRow: String(row?.source_row || "").trim(),
-          sourceCol: String(row?.source_col || "").trim(),
-          item: String(row?.item || "").trim(),
-          week: String(row?.week || "").trim(),
-          qty: Number(row?.qty || 0),
-          shortage: Array.isArray(row?.shortage) ? row.shortage : [],
-        })),
-      );
-    } catch (e) {
-      const msg = String(e?.message || e || "");
-      if (
-        msg.includes("не настроен для action") ||
-        msg.includes("Supabase RPC не настроен") ||
-        msg.includes("Could not find the function")
-      ) {
-        setMetalQueueRows([]);
-        return;
-      }
-      throw e;
-    } finally {
-      setMetalQueueLoading(false);
-    }
-  }, []);
-  useEffect(() => {
-    if (view !== "metal") return;
-    setLoading(true);
-    setError("");
-    Promise.all([loadMetalStock(), loadMetalQueue()])
-      .catch((e) => setError(toUserError(e)))
-      .finally(() => setLoading(false));
-  }, [view, loadMetalStock, loadMetalQueue, setLoading, setError]);
-  useEffect(() => {
-    if (view !== "labor") setLaborSubView("total");
-  }, [view]);
-
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem("shipmentUiPrefs");
-      if (!raw) return;
-      const prefs = JSON.parse(raw);
-      if (prefs && typeof prefs === "object") {
-        if (typeof prefs.weekFilter === "string") setWeekFilter(prefs.weekFilter);
-        if (typeof prefs.shipmentSort === "string") setShipmentSort(prefs.shipmentSort);
-        if (typeof prefs.showAwaiting === "boolean") setShowAwaiting(prefs.showAwaiting);
-        if (typeof prefs.showOnPilka === "boolean") setShowOnPilka(prefs.showOnPilka);
-        if (typeof prefs.showOnKromka === "boolean") setShowOnKromka(prefs.showOnKromka);
-        if (typeof prefs.showOnPras === "boolean") setShowOnPras(prefs.showOnPras);
-        if (typeof prefs.showReadyAssembly === "boolean") setShowReadyAssembly(prefs.showReadyAssembly);
-        if (typeof prefs.showAwaitShipment === "boolean") setShowAwaitShipment(prefs.showAwaitShipment);
-        if (typeof prefs.showShipped === "boolean") setShowShipped(prefs.showShipped);
-        if (typeof prefs.showOnlyEmpty === "boolean") setShowAwaiting(prefs.showOnlyEmpty);
-        if (typeof prefs.showCompletedRedCells === "boolean") setShowShipped(prefs.showCompletedRedCells);
-        if (prefs.collapsedSections && typeof prefs.collapsedSections === "object") {
-          setCollapsedSections(prefs.collapsedSections);
-        }
-      }
-    } catch (_) {}
-  }, []);
-
-  function resetShipmentFilters() {
-    setWeekFilter(DEFAULT_SHIPMENT_PREFS.weekFilter);
-    setShipmentSort(DEFAULT_SHIPMENT_PREFS.shipmentSort);
-    setShowAwaiting(DEFAULT_SHIPMENT_PREFS.showAwaiting);
-    setShowOnPilka(DEFAULT_SHIPMENT_PREFS.showOnPilka);
-    setShowOnKromka(DEFAULT_SHIPMENT_PREFS.showOnKromka);
-    setShowOnPras(DEFAULT_SHIPMENT_PREFS.showOnPras);
-    setShowReadyAssembly(DEFAULT_SHIPMENT_PREFS.showReadyAssembly);
-    setShowAwaitShipment(DEFAULT_SHIPMENT_PREFS.showAwaitShipment);
-    setShowShipped(DEFAULT_SHIPMENT_PREFS.showShipped);
-    setHiddenShipmentGroups({});
-    setCollapsedSections(DEFAULT_SHIPMENT_PREFS.collapsedSections);
-  }
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(
-        "shipmentUiPrefs",
-        JSON.stringify({
-          weekFilter,
-          shipmentSort,
-          showAwaiting,
-          showOnPilka,
-          showOnKromka,
-          showOnPras,
-          showReadyAssembly,
-          showAwaitShipment,
-          showShipped,
-          collapsedSections,
-        })
-      );
-    } catch (_) {}
-  }, [
-    weekFilter,
-    shipmentSort,
-    showAwaiting,
-    showOnPilka,
-    showOnKromka,
-    showOnPras,
-    showReadyAssembly,
-    showAwaitShipment,
-    showShipped,
-    collapsedSections,
-  ]);
-
-  function sectionCollapseKey(name) {
-    return `${shipmentSort}:${String(name || "")}`;
-  }
-
-  function isSectionCollapsed(name) {
-    return !!collapsedSections[sectionCollapseKey(name)];
-  }
-
-  function toggleSectionCollapsed(name) {
-    const key = sectionCollapseKey(name);
-    setCollapsedSections((prev) => ({ ...prev, [key]: !prev[key] }));
-  }
-
   function isDone(s) {
     const v = String(s || "").toLowerCase();
     if (/\bне\s*готов/.test(v) || v.includes("неготов")) return false;
@@ -922,20 +735,6 @@ export default function App() {
       setError(toUserError(e));
     } finally {
       setMetalSavingArticle("");
-    }
-  }
-  async function updateMetalQueueStatus(id, status) {
-    const queueId = Number(id || 0);
-    if (!(queueId > 0)) return;
-    setMetalQueueUpdatingId(queueId);
-    setError("");
-    try {
-      await callBackend("webSetMetalWorkQueueStatus", { id: queueId, status });
-      await loadMetalQueue();
-    } catch (e) {
-      setError(toUserError(e));
-    } finally {
-      setMetalQueueUpdatingId(0);
     }
   }
 
@@ -1164,92 +963,24 @@ export default function App() {
     }
   }
 
-  const weeks = useMemo(() => {
-    if (view === "shipment") {
-      const set = new Set();
-      (shipmentBoard.sections || []).forEach((s) =>
-        (s.items || []).forEach((it) =>
-          (it.cells || []).forEach((c) => c.week && set.add(String(c.week)))
-        )
-      );
-      return [...set].sort((a, b) => Number(a) - Number(b));
-    }
-    if (view === "labor") {
-      return [...new Set(laborRows.map((x) => String(x.week || "")).filter(Boolean))].sort((a, b) => Number(a) - Number(b));
-    }
-    return [...new Set(rows.map((x) => String(x.week || "")).filter(Boolean))].sort((a, b) => Number(a) - Number(b));
-  }, [rows, shipmentBoard, laborRows, view]);
-  const planCatalogBySection = useMemo(() => {
-    const map = {};
-    // Base options from current shipment cells.
-    (shipmentBoard.sections || []).forEach((s) => {
-      const section = String(s?.name || "").trim();
-      if (!section) return;
-      (s.items || []).forEach((it) => {
-        const itemName = String(it?.item || "").trim();
-        if (!itemName) return;
-        const materialLabel = getMaterialLabel(itemName, it?.material);
-        if (!map[section]) map[section] = [];
-        const exists = map[section].some((x) => normText(x.material) === normText(materialLabel));
-        if (!exists) map[section].push({ material: materialLabel, itemName });
-      });
-      map[section].sort((a, b) => a.material.localeCompare(b.material, "ru"));
-    });
-    // Merge full catalog so materials are available even without active shipment rows.
-    (planCatalogRows || []).forEach((row) => {
-      const section = String(row?.section_name || row?.sectionName || "").trim();
-      const itemName = String(row?.item_name || row?.itemName || "").trim();
-      const material = String(row?.material || "").trim();
-      if (!section || !itemName || !material) return;
-      if (!map[section]) map[section] = [];
-      const exists = map[section].some((x) => normText(x.material) === normText(material));
-      if (!exists) map[section].push({ material, itemName });
-    });
-    Object.keys(map).forEach((section) => {
-      map[section].sort((a, b) => a.material.localeCompare(b.material, "ru"));
-    });
-    return map;
-  }, [shipmentBoard, planCatalogRows]);
-  const shipmentSectionNames = useMemo(() => {
-    const names = Object.keys(planCatalogBySection).filter(Boolean);
-    return [...new Set(names)].sort((a, b) => a.localeCompare(b, "ru"));
-  }, [planCatalogBySection]);
-  const sectionCatalogNames = useMemo(() => {
-    return (sectionCatalogRows || [])
-      .map((x) => String(x.section_name || x.sectionName || "").trim())
-      .filter(Boolean);
-  }, [sectionCatalogRows]);
-  const sectionOptions = useMemo(() => {
-    return [...sectionCatalogNames, ...shipmentSectionNames, "Прочее"]
-      .filter((v, i, a) => a.indexOf(v) === i);
-  }, [sectionCatalogNames, shipmentSectionNames]);
-  const sectionArticles = useMemo(() => {
-    const hasWhiteAliasSection = sectionOptions.includes(`${planSection} белый`);
-    const rows = (sectionArticleRows || [])
-      .map((x) => ({
-        sectionName: String(x.section_name || x.sectionName || "").trim(),
-        article: String(x.article || "").trim(),
-        itemName: normalizeCatalogItemName(String(x.item_name || x.itemName || "").trim()),
-        material: String(x.material || "").trim(),
-      }))
-      .filter((x) => x.sectionName === planSection && x.article && x.itemName)
-      .filter((x) => {
-        if (!hasWhiteAliasSection) return true;
-        return !/(белый|белые ноги)/i.test(x.itemName);
-      })
-      .sort((a, b) => a.itemName.localeCompare(b.itemName, "ru"));
-    const byItemName = new Map();
-    rows.forEach((row) => {
-      const dedupKey = normalizeCatalogDedupKey(row.itemName);
-      if (!byItemName.has(dedupKey)) {
-        byItemName.set(dedupKey, row);
-      }
-    });
-    return [...byItemName.values()];
-  }, [sectionArticleRows, planSection, sectionOptions]);
-  const selectedArticleRow = useMemo(() => {
-    return sectionArticles.find((x) => x.itemName === planArticle) || null;
-  }, [sectionArticles, planArticle]);
+  const {
+    weeks,
+    sectionOptions,
+    sectionArticles,
+    articleLookupByItemKey,
+    resolvedPlanItem,
+  } = useShipmentPlanningDerivedData({
+    view,
+    shipmentBoard,
+    laborRows,
+    rows,
+    planCatalogRows,
+    sectionCatalogRows,
+    sectionArticleRows,
+    planSection,
+    planArticle,
+    normalizeFurnitureKey,
+  });
   function handlePlanSectionChange(nextSection) {
     setPlanSection(nextSection);
     const firstArticle = (sectionArticleRows || [])
@@ -1268,35 +999,34 @@ export default function App() {
     const matched = sectionArticles.find((x) => x.itemName === nextArticle);
     setPlanMaterial(resolvePlanMaterial(matched));
   }
-  const articleLookupByItemKey = useMemo(() => {
-    const map = new Map();
-    (sectionArticleRows || []).forEach((x) => {
-      const article = String(x.article || "").trim();
-      const itemName = String(x.item_name || x.itemName || "").trim();
-      if (!article || !itemName) return;
-      const key = normalizeFurnitureKey(itemName);
-      if (!key || map.has(key)) return;
-      map.set(key, article);
-    });
-    return map;
-  }, [sectionArticleRows]);
-  const resolvedPlanItem = useMemo(() => {
-    return String(selectedArticleRow?.itemName || "").trim();
-  }, [selectedArticleRow]);
+  const {
+    metalStockRows,
+    metalSavingArticle,
+    setMetalSavingArticle,
+    metalSubView,
+    setMetalSubView,
+    metalQueueRows,
+    metalQueueLoading,
+    metalQueueUpdatingId,
+    selectedShipmentMetal,
+    loadMetalStock,
+    loadMetalQueue,
+    updateMetalQueueStatus,
+  } = useMetalState({
+    view,
+    callBackend,
+    setLoading,
+    setError,
+    toUserError,
+    selectedShipments,
+    articleLookupByItemKey,
+    normalizeFurnitureKey,
+  });
 
-  const shipmentOrderMaps = useMemo(() => {
-    const byRowWeek = new Map();
-    const byItemWeek = new Map();
-    (shipmentOrders || []).forEach((o) => {
-      const week = String(o?.week || "").trim();
-      if (!week) return;
-      const sourceRow = String(o?.source_row_id || o?.sourceRowId || "").trim();
-      if (sourceRow) mergeOrderPreferNewer(byRowWeek, shipmentOrderKey(sourceRow, week), o);
-      const item = String(o?.item || "").trim();
-      if (item) mergeOrderPreferNewer(byItemWeek, shipmentOrderItemWeekKey(item, week), o);
-    });
-    return { byRowWeek, byItemWeek };
-  }, [shipmentOrders]);
+  const { shipmentOrderMaps, orderIndexById } = useShipmentOrderIndexes({
+    shipmentOrders,
+    rows,
+  });
   const baseOrderFiltered = useBaseOrderFilter({
     rows,
     view,
@@ -1317,18 +1047,6 @@ export default function App() {
     rows,
     query,
   });
-
-  const orderIndexById = useMemo(() => {
-    const map = new Map();
-    const add = (x) => {
-      const id = String(x?.orderId || x?.order_id || "").trim();
-      if (!id || map.has(id)) return;
-      map.set(id, x);
-    };
-    (rows || []).forEach(add);
-    (shipmentOrders || []).forEach(add);
-    return map;
-  }, [rows, shipmentOrders]);
 
   function resolveSectionNameForOrder(order) {
     const week = String(order?.week || "").trim();
@@ -1375,24 +1093,15 @@ export default function App() {
     passesShipmentStageFilter,
   });
 
-  const filtered = useMemo(() => {
-    if (view === "shipment") return shipmentFiltered;
-    if (view === "labor") return laborFiltered;
-    if (view === "sheetMirror") return sheetMirrorFiltered;
-    return baseOrderFiltered;
-  }, [
-    baseOrderFiltered,
+  const { filtered, orderDrawerLines } = useCommonDerivedData({
+    view,
+    shipmentFiltered,
     laborFiltered,
     sheetMirrorFiltered,
-    shipmentFiltered,
-    view,
-  ]);
-
-  const orderDrawerLines = useMemo(() => {
-    const id = String(orderDrawerId || "").trim();
-    if (!id) return [];
-    return (rows || []).filter((r) => String(r?.orderId || r?.order_id || "").trim() === id);
-  }, [rows, orderDrawerId]);
+    baseOrderFiltered,
+    rows,
+    orderDrawerId,
+  });
 
   const saveOrderAdminComment = useCallback(
     async (text) => {
@@ -1456,245 +1165,35 @@ export default function App() {
     };
   }, [view, laborSubView, canManageOrders, filtered, setError]);
 
-  const overviewShippedOnly = useMemo(() => {
-    if (view !== "overview") return [];
-    return filtered.filter((x) => getOverviewLaneId(x) === "shipped");
-  }, [view, filtered]);
+  const {
+    overviewShippedOnly,
+    visibleCellsForItem,
+    sortItemsForShipment,
+    shipmentRenderSections,
+  } = useShipmentBoardRenderDerived({
+    view,
+    filtered,
+    weekFilter,
+    shipmentOrderMaps,
+    passesShipmentStageFilter,
+    shipmentSort,
+    materialsStockRows,
+    strapItems,
+  });
 
-  const visibleCellsForItem = useCallback((it) => {
-    const sourceRow = it?.sourceRowId != null ? String(it.sourceRowId) : String(it?.row || "");
-    return (it?.cells || []).filter((c) => {
-      const qtyOk = (Number(c.qty) || 0) > 0;
-      if (!qtyOk) return false;
-      const byWeek = weekFilter === "all" || String(c.week || "") === weekFilter;
-      if (!byWeek) return false;
-      const stageKey = getShipmentStageKey(c, sourceRow, shipmentOrderMaps, it.item);
-      return passesShipmentStageFilter(stageKey);
-    });
-  }, [weekFilter, shipmentOrderMaps, passesShipmentStageFilter]);
-
-  function weekSortValue(it) {
-    const arr = visibleCellsForItem(it)
-      .map((c) => Number(c.week))
-      .filter((n) => Number.isFinite(n));
-    if (!arr.length) return 9999;
-    return Math.min(...arr);
-  }
-
-  function colorSortValue(it) {
-    return normText(it?.material || "");
-  }
-
-  function sortItemsForShipment(items) {
-    const arr = [...(items || [])];
-    arr.sort((a, b) => {
-      if (shipmentSort === "week") {
-        const wa = weekSortValue(a);
-        const wb = weekSortValue(b);
-        if (wa !== wb) return wa - wb;
-      } else if (shipmentSort === "color") {
-        const wa = weekSortValue(a);
-        const wb = weekSortValue(b);
-        if (wa !== wb) return wa - wb;
-        const ca = colorSortValue(a);
-        const cb = colorSortValue(b);
-        if (ca !== cb) return ca.localeCompare(cb, "ru");
-      }
-      return String(a.item || "").localeCompare(String(b.item || ""), "ru");
-    });
-    return arr;
-  }
-
-  const strapStockByMaterial = useMemo(() => {
-    const result = { "Черный": 0, "Белый": 0 };
-    if (!Array.isArray(materialsStockRows) || materialsStockRows.length === 0) return result;
-    materialsStockRows.forEach((row) => {
-      const material = String(row?.material || "").trim();
-      const key = normalizeFurnitureKey(material);
-      const qtySheets = Number(row?.qty_sheets ?? row?.qtySheets ?? 0);
-      const qty = Number.isFinite(qtySheets) ? qtySheets : 0;
-      if (key.includes("черн")) result["Черный"] = Math.max(result["Черный"], qty);
-      if (key.includes("бел")) result["Белый"] = Math.max(result["Белый"], qty);
-    });
-    return result;
-  }, [materialsStockRows]);
-
-  const shipmentRenderSections = useMemo(() => {
-    if (view !== "shipment") return [];
-
-    let baseSections = [];
-
-    // Режим "по названию": текущие секции по моделям (как было).
-    if (shipmentSort === "name") {
-      baseSections = [...filtered]
-        .sort((a, b) => {
-          const ka = sectionSortKey(a.name, SHIPMENT_SECTION_ORDER);
-          const kb = sectionSortKey(b.name, SHIPMENT_SECTION_ORDER);
-          if (ka !== kb) return ka - kb;
-          return String(a.name || "").localeCompare(String(b.name || ""), "ru");
-        })
-        .map((section) => ({
-          name: section.name,
-          items: sortItemsForShipment(section.items || []),
-        }));
-    } else {
-      // Для режимов "по цвету" и "по неделе" убираем секции по моделям.
-      const groups = {};
-      (filtered || []).forEach((section) => {
-        (section.items || []).forEach((it) => {
-          const visibleCells = visibleCellsForItem(it);
-          if (!visibleCells.length) return;
-
-          if (shipmentSort === "color") {
-            const key = String(it.material || "Материал не указан").trim() || "Материал не указан";
-            if (!groups[key]) groups[key] = [];
-            groups[key].push({ ...it, cells: visibleCells });
-            return;
-          }
-
-          // shipmentSort === "week"
-          visibleCells.forEach((cell) => {
-            const wk = String(cell.week || "-").trim() || "-";
-            const key = `Неделя ${wk}`;
-            if (!groups[key]) groups[key] = {};
-            const rowKey = String(it.row);
-            if (!groups[key][rowKey]) groups[key][rowKey] = { ...it, cells: [] };
-            groups[key][rowKey].cells.push(cell);
-          });
-        });
-      });
-
-      if (shipmentSort === "color") {
-        baseSections = Object.keys(groups)
-          .sort((a, b) => a.localeCompare(b, "ru"))
-          .map((name) => ({
-            name,
-            items: sortItemsForShipment(groups[name]),
-          }));
-      } else {
-        baseSections = Object.keys(groups)
-          .sort((a, b) => {
-            const na = Number(String(a).replace(/[^\d]/g, ""));
-            const nb = Number(String(b).replace(/[^\d]/g, ""));
-            if (Number.isFinite(na) && Number.isFinite(nb)) return na - nb;
-            return String(a).localeCompare(String(b), "ru");
-          })
-          .map((name) => ({
-            name,
-            items: sortItemsForShipment(Object.values(groups[name])),
-          }));
-      }
-    }
-
-    if (!strapItems.length) return baseSections;
-    const strapRows = strapItems.map((x, idx) => {
-      const size = parseStrapSize(x.name);
-      const stripsPerSheet = size ? Math.floor(STRAP_SHEET_HEIGHT / size.width) : 0;
-      const perStrip = size ? Math.floor(STRAP_SHEET_WIDTH / size.length) : 0;
-      const outputPerSheet = stripsPerSheet * perStrip;
-      const qty = Number(x.qty || 0);
-      const sheetsNeeded = outputPerSheet > 0 ? Math.ceil(qty / outputPerSheet) : 0;
-      const material = resolveStrapMaterialByProduct(x.productName || "");
-      const availableSheets = Number(strapStockByMaterial[material] || 0);
-      return {
-        row: `strap-order:${idx}`,
-        sourceRowId: `strap-order:${idx}`,
-        item: strapNameToOrderItem(x.name),
-        strapProduct: String(x.productName || "").trim(),
-        material,
-        cells: [
-          {
-            col: `strap-order-col:${idx}`,
-            sourceColId: `strap-order-col:${idx}`,
-            week: "-",
-            qty,
-            bg: "#ffffff",
-            canSendToWork: false,
-            inWork: false,
-            sheetsNeeded,
-            outputPerSheet,
-            availableSheets,
-            note: "Обвязка: добавлена как заказ",
-          },
-        ],
-      };
-    });
-
-    return [...baseSections, { name: "Обвязка", items: sortItemsForShipment(strapRows) }];
-  }, [view, shipmentSort, filtered, strapItems, strapStockByMaterial]);
-
-  const kpi = useMemo(() => {
-    const total = filtered.length;
-    const stageWork = (o) => {
-      if (view !== "workshop") return statusClass(o) === "work";
-      if (tab === "pilka") return isInWork(o.pilkaStatus);
-      if (tab === "kromka") return isInWork(o.kromkaStatus);
-      if (tab === "pras") return isInWork(o.prasStatus);
-      if (tab === "assembly") return isInWork(o.assemblyStatus);
-      if (tab === "done") return false;
-      return isInWork(o.pilkaStatus) || isInWork(o.kromkaStatus) || isInWork(o.prasStatus);
-    };
-    const onPause = (s) => String(s || "").toLowerCase().includes("пауза");
-    const stagePause = (o) => {
-      if (view !== "workshop") return statusClass(o) === "pause";
-      if (tab === "pilka") return onPause(o.pilkaStatus);
-      if (tab === "kromka") return onPause(o.kromkaStatus);
-      if (tab === "pras") return onPause(o.prasStatus);
-      if (tab === "assembly") return onPause(o.assemblyStatus);
-      if (tab === "done") return false;
-      return onPause(o.pilkaStatus) || onPause(o.kromkaStatus) || onPause(o.prasStatus);
-    };
-    const work = filtered.filter(stageWork).length;
-    const paused = filtered.filter(stagePause).length;
-    const done =
-      view === "workshop"
-        ? filtered.filter((x) => resolvePipelineStage(x) === PipelineStage.ASSEMBLED).length
-        : filtered.filter((x) => TERMINAL_PIPELINE_STAGES.has(resolvePipelineStage(x))).length;
-    return { total, work, paused, done };
-  }, [filtered, view, tab]);
-  const statsGroups = useMemo(() => {
-    if (view !== "stats") return [];
-    const map = {};
-    filtered.forEach((o) => {
-      let key = "";
-      if (statsSort === "stage") key = getCurrentStage(o);
-      else if (statsSort === "readiness") {
-        const cls = statusClass(o);
-        key = cls === "done" ? "Готово" : cls === "work" ? "В работе" : cls === "pause" ? "Пауза" : "Ожидание";
-      } else if (statsSort === "color") key = getColorGroup(o.item);
-      else key = getWeekday(o);
-      if (!map[key]) map[key] = { key, count: 0, qty: 0, orders: [] };
-      map[key].count += 1;
-      map[key].qty += Number(o.qty || 0);
-      map[key].orders.push(o);
-    });
-    return Object.values(map).sort((a, b) => String(a.key).localeCompare(String(b.key), "ru"));
-  }, [filtered, view, tab, statsSort]);
-  const statsList = useMemo(() => {
-    if (view !== "stats") return [];
-    const arr = [...filtered];
-    arr.sort((a, b) => {
-      if (statsSort === "stage") {
-        const sa = getStageLabel(a);
-        const sb = getStageLabel(b);
-        if (sa !== sb) return sa.localeCompare(sb, "ru");
-      } else if (statsSort === "readiness") {
-        const ra = statusClass(a);
-        const rb = statusClass(b);
-        if (ra !== rb) return ra.localeCompare(rb, "ru");
-      } else if (statsSort === "color") {
-        const ca = getColorGroup(a.item);
-        const cb = getColorGroup(b.item);
-        if (ca !== cb) return ca.localeCompare(cb, "ru");
-      } else if (statsSort === "weekday") {
-        const wa = getWeekday(a);
-        const wb = getWeekday(b);
-        if (wa !== wb) return wa.localeCompare(wb, "ru");
-      }
-      return String(a.item || "").localeCompare(String(b.item || ""), "ru");
-    });
-    return arr;
-  }, [filtered, view, statsSort]);
+  const { kpi, statsGroups, statsList, overviewColumns, shipmentKpi } = useDashboardDerivedData({
+    filtered,
+    view,
+    tab,
+    statsSort,
+    isInWork,
+    statusClass,
+    getCurrentStage,
+    getColorGroup,
+    getWeekday,
+    getStageLabel,
+    getOverviewLaneId,
+  });
   const workshopRows = useWorkshopRows({
     filtered,
     view,
@@ -1704,184 +1203,28 @@ export default function App() {
     getOverviewLaneId,
     isOrderCustomerShipped,
   });
-  const overviewColumns = useMemo(() => {
-    if (view !== "overview") return [];
-    const defs = [
-      { id: "pilka", title: "Пила" },
-      { id: "kromka", title: "Кромка" },
-      { id: "pras", title: "Присадка" },
-      { id: "workshop_complete", title: "Готов к сборке" },
-      { id: "ready_to_ship", title: "Готово к отправке" },
-    ];
-    const grouped = Object.fromEntries(defs.map((x) => [x.id, []]));
-    (filtered || []).forEach((o) => {
-      const laneRaw = getOverviewLaneId(o);
-      // "Собран" is merged into "Готово к отправке" to avoid duplicated stages in kanban.
-      const lane = laneRaw === "assembled" ? "ready_to_ship" : laneRaw;
-      if (!grouped[lane]) grouped[lane] = [];
-      grouped[lane].push(o);
-    });
-    defs.forEach((d) => {
-      grouped[d.id].sort((a, b) => String(a.item || "").localeCompare(String(b.item || ""), "ru"));
-    });
-    return defs.map((d) => ({ ...d, items: grouped[d.id] || [] }));
-  }, [filtered, view]);
-  const shipmentKpi = useMemo(() => {
-    if (view !== "shipment") return { totalOrders: 0, totalQty: 0, readyAssembly: 0, assembled: 0 };
-    let totalOrders = 0;
-    let totalQty = 0;
-    let readyAssembly = 0;
-    let assembled = 0;
-    (filtered || []).forEach((s) => {
-      (s.items || []).forEach((it) => {
-        (it.cells || []).forEach((c) => {
-          totalOrders += 1;
-          totalQty += Number(c.qty) || 0;
-          if (c.canSendToWork) readyAssembly += 1;
-          if (c.inWork) assembled += 1;
-        });
-      });
-    });
-    return { totalOrders, totalQty, readyAssembly, assembled };
-  }, [filtered, view]);
-  const shipmentTableRows = useMemo(() => {
-    if (view !== "shipment") return [];
-    const rowsFlat = [];
-    shipmentRenderSections.forEach((section) => {
-      (section.items || []).forEach((it) => {
-        visibleCellsForItem(it).forEach((c) => {
-          const sourceRow = it.sourceRowId != null ? String(it.sourceRowId) : String(it.row);
-          const sourceCol = c.sourceColId != null ? String(c.sourceColId) : String(c.col);
-          const stageKey = getShipmentStageKey(c, sourceRow, shipmentOrderMaps, it.item);
-          const displayBg = stageBg(stageKey, c.bg || "#ffffff");
-          rowsFlat.push({
-            key: `${sourceRow}-${sourceCol}`,
-            section: section.name,
-            item: it.item,
-            strapProduct: String(it.strapProduct || ""),
-            material: it.material || "",
-            week: c.week || "-",
-            qty: Number(c.qty || 0),
-            sheets: Number(c.sheetsNeeded || 0),
-            outputPerSheet: Number(c.outputPerSheet || 0),
-            availableSheets: Number(c.availableSheets || 0),
-            bg: displayBg,
-            status: stageLabel(stageKey),
-            stageKey,
-            canSendToWork: !!c.canSendToWork,
-            inWork: !!c.inWork,
-            sourceRow,
-            sourceCol,
-          });
-        });
-      });
-    });
-    return rowsFlat;
-  }, [view, shipmentRenderSections, shipmentOrderMaps, visibleCellsForItem]);
-  const shipmentMaterialBalance = useMemo(() => {
-    const byMaterial = new Map();
-    shipmentTableRows.forEach((row) => {
-      // Count only rows that are waiting to be launched.
-      // Items already launched to production stages must not consume stock again.
-      if (!row.canSendToWork) return;
-      const material = String(row.material || "Материал не указан").trim();
-      const key = normalizeFurnitureKey(material);
-      const needed = Number(row.sheets || 0);
-      const available = Number(row.availableSheets || 0);
-      if (!byMaterial.has(key)) byMaterial.set(key, { material, needed: 0, available: 0 });
-      const bucket = byMaterial.get(key);
-      bucket.needed += needed;
-      bucket.available = Math.max(bucket.available, available);
-    });
-    return byMaterial;
-  }, [shipmentTableRows]);
-  const shipmentTableRowsWithStockStatus = useMemo(() => {
-    return shipmentTableRows.map((row) => {
-      const key = normalizeFurnitureKey(row.material || "");
-      const totals = shipmentMaterialBalance.get(key) || { needed: 0, available: 0 };
-      const deficit = Math.max(0, Number(totals.needed || 0) - Number(totals.available || 0));
-      return {
-        ...row,
-        materialNeededTotal: Number(totals.needed || 0),
-        materialAvailableTotal: Number(totals.available || 0),
-        materialDeficit: deficit,
-        materialHasDeficit: deficit > 0,
-      };
-    });
-  }, [shipmentTableRows, shipmentMaterialBalance]);
-  const shipmentTableGroupNames = useMemo(() => {
-    return [...new Set(shipmentTableRowsWithStockStatus.map((row) => String(row.section || "Прочее")))]
-      .sort((a, b) => a.localeCompare(b, "ru"));
-  }, [shipmentTableRowsWithStockStatus]);
-  const visibleShipmentTableRows = useMemo(() => {
-    return shipmentTableRowsWithStockStatus.filter((row) => !hiddenShipmentGroups[String(row.section || "Прочее")]);
-  }, [shipmentTableRowsWithStockStatus, hiddenShipmentGroups]);
-  const shipmentPlanDeficits = useMemo(() => {
-    return [...shipmentMaterialBalance.values()]
-      .map((x) => ({
-        material: x.material,
-        needed: Number(x.needed || 0),
-        available: Number(x.available || 0),
-        deficit: Math.max(0, Number(x.needed || 0) - Number(x.available || 0)),
-      }))
-      .filter((x) => x.deficit > 0)
-      .sort((a, b) => b.deficit - a.deficit || a.material.localeCompare(b.material, "ru"));
-  }, [shipmentMaterialBalance]);
-  const warehouseOrderPlanRows = useMemo(() => {
-    const byMaterial = new Map();
-    const sections = Array.isArray(shipmentBoard?.sections) ? shipmentBoard.sections : [];
-    sections.forEach((section) => {
-      (section?.items || []).forEach((it) => {
-        const materialLabel = getMaterialLabel(it?.item, it?.material);
-        const materialKey = normalizeFurnitureKey(materialLabel);
-        (it?.cells || []).forEach((c) => {
-          const qty = Number(c?.qty || 0);
-          if (!(qty > 0)) return;
-          if (c?.inWork) return;
-          const sheetsRaw = Number(c?.sheetsNeeded || 0);
-          const outputPerSheet = Number(c?.outputPerSheet || 0);
-          const sheetsNeeded =
-            sheetsRaw > 0
-              ? sheetsRaw
-              : outputPerSheet > 0
-                ? Math.ceil(qty / outputPerSheet)
-                : 0;
-          if (!(sheetsNeeded > 0)) return;
-          if (!byMaterial.has(materialKey)) {
-            byMaterial.set(materialKey, {
-              material: materialLabel || "Материал не указан",
-              needed: 0,
-            });
-          }
-          byMaterial.get(materialKey).needed += sheetsNeeded;
-        });
-      });
-    });
-
-    const availableByMaterial = new Map();
-    (materialsStockRows || []).forEach((row) => {
-      const material = String(row?.material || "").trim();
-      const key = normalizeFurnitureKey(material);
-      if (!key) return;
-      const qtySheets = Number(row?.qty_sheets ?? row?.qtySheets ?? 0);
-      const qty = Number.isFinite(qtySheets) ? qtySheets : 0;
-      availableByMaterial.set(key, Math.max(availableByMaterial.get(key) || 0, qty));
-    });
-
-    return [...byMaterial.entries()]
-      .map(([materialKey, row]) => {
-        const available = Number(availableByMaterial.get(materialKey) || 0);
-        const needed = Number(row.needed || 0);
-        return {
-          material: row.material,
-          needed,
-          available,
-          toOrder: Math.max(0, needed - available),
-        };
-      })
-      .filter((row) => row.toOrder > 0)
-      .sort((a, b) => b.toOrder - a.toOrder || a.material.localeCompare(b.material, "ru"));
-  }, [shipmentBoard, materialsStockRows, getMaterialLabel, normalizeFurnitureKey]);
+  const {
+    shipmentMaterialBalance,
+    shipmentTableRowsWithStockStatus,
+    shipmentTableGroupNames,
+    shipmentPlanDeficits,
+  } = useShipmentTableData({
+    view,
+    shipmentRenderSections,
+    shipmentOrderMaps,
+    visibleCellsForItem,
+    getShipmentStageKey,
+    stageBg,
+    stageLabel,
+    normalizeFurnitureKey,
+    hiddenShipmentGroups,
+  });
+  const warehouseOrderPlanRows = useWarehouseOrderPlanRows({
+    shipmentBoard,
+    materialsStockRows,
+    getMaterialLabel,
+    normalizeFurnitureKey,
+  });
 
   function printWarehouseOrderPlanPdf() {
     const rows = warehouseOrderPlanRows;
@@ -1942,636 +1285,71 @@ export default function App() {
     popup.focus();
     popup.print();
   }
-  const laborTableRows = useMemo(() => {
-    if (view !== "labor") return [];
-    const toNum = (v) => Number(v || 0);
-    const list = [...filtered].map((x) => ({
-      orderId: String(x.order_id || x.orderId || ""),
-      item: String(x.item || ""),
-      week: String(x.week || ""),
-      qty: toNum(x.qty),
-      pilkaMin: toNum(x.pilka_min ?? x.pilkaMin),
-      kromkaMin: toNum(x.kromka_min ?? x.kromkaMin),
-      prasMin: toNum(x.pras_min ?? x.prasMin),
-      assemblyMin: toNum(x.assembly_min ?? x.assemblyMin),
-      totalMin: toNum(x.total_min ?? x.totalMin),
-      dateFinished: String(x.date_finished || x.dateFinished || ""),
-      importedLocal: Boolean(x.imported_local || x.importedLocal),
-      importKey: String(x.import_key || x.importKey || ""),
-    }));
-    list.sort((a, b) => {
-      if (laborSort === "total_asc") return a.totalMin - b.totalMin;
-      if (laborSort === "week") return Number(a.week || 0) - Number(b.week || 0);
-      if (laborSort === "item") return a.item.localeCompare(b.item, "ru");
-      return b.totalMin - a.totalMin;
-    });
-    return list;
-  }, [filtered, laborSort, view]);
-  const laborOrdersRows = useMemo(() => {
-    if (view !== "labor") return [];
-    const completed = laborTableRows.filter((x) => x.pilkaMin > 0 && x.kromkaMin > 0 && x.prasMin > 0);
-    const norm = (v) =>
-      String(v || "")
-        .toLowerCase()
-        .replace(/[ё]/g, "е")
-        .replace(/[^\p{L}\p{N}\s]/gu, " ")
-        .replace(/\s+/g, " ")
-        .trim();
-    const resolveGroup = (itemRaw) => {
-      const n = norm(itemRaw);
-      if (n.includes("обвязка") || n.includes("планка")) return "";
-      if (n.includes("1153") && n.includes("320")) return "";
-      if (n.includes("avella lite") || n.includes("авелла лайт") || n.includes("авела лайт")) return "Avella lite";
-      if (n.includes("avella") || n.includes("авелла") || n.includes("авела")) return "Avella";
-      if (n.includes("cremona") || n.includes("кремона")) return "Cremona";
-      if (n.includes("stabile") || n.includes("стабиле")) return "Stabile";
-      if (n.includes("donini grande")) return "Donini Grande";
-      if (n.includes("donini r")) return "Donini r";
-      if (n.includes("donini")) return "Donini";
-      if (n.includes("solito2")) return "Solito2";
-      if (n.includes("solito") || n.includes("солито")) return "Solito";
-      if (n.includes("премьер") || n.includes("premier")) return "Премьер";
-      if (n.includes("тв лофт") || n.includes("tv loft") || n.includes("тумба под тв")) return "ТВ Лофт";
-      if (n.includes("классико") || n.includes("classico")) return "Классико";
-      if (n.includes("siena")) return "Siena";
-      const first = String(itemRaw || "").split(".")[0].trim();
-      return first || "Прочее";
-    };
-    const grouped = new Map();
-    completed.forEach((x) => {
-      const group = resolveGroup(x.item);
-      if (!group) return;
-      if (!grouped.has(group)) {
-        grouped.set(group, {
-          group,
-          orders: 0,
-          qty: 0,
-          pilkaMin: 0,
-          kromkaMin: 0,
-          prasMin: 0,
-          totalMin: 0,
-          lastDate: "",
-        });
-      }
-      const g = grouped.get(group);
-      g.orders += 1;
-      g.qty += Number(x.qty || 0);
-      g.pilkaMin += Number(x.pilkaMin || 0);
-      g.kromkaMin += Number(x.kromkaMin || 0);
-      g.prasMin += Number(x.prasMin || 0);
-      g.totalMin += Number(x.totalMin || 0);
-      const d = String(x.dateFinished || "");
-      if (d && (!g.lastDate || d > g.lastDate)) g.lastDate = d;
-    });
-    const ORDER = [
-      "Avella",
-      "Avella lite",
-      "Cremona",
-      "Donini",
-      "Donini Grande",
-      "Donini r",
-      "Solito",
-      "Solito2",
-      "Stabile",
-      "Премьер",
-      "ТВ Лофт",
-    ];
-    const rank = new Map(ORDER.map((x, i) => [x, i]));
-    return [...grouped.values()]
-      .map((g) => {
-        const total = Number(g.totalMin || 0);
-        const pilkaShare = total > 0 ? (g.pilkaMin * 100) / total : 0;
-        const kromkaShare = total > 0 ? (g.kromkaMin * 100) / total : 0;
-        const prasShare = total > 0 ? (g.prasMin * 100) / total : 0;
-        return {
-          ...g,
-          laborPerOrderHour: g.orders > 0 ? total / g.orders / 60 : 0,
-          laborPerQtyMin: g.qty > 0 ? total / g.qty : 0,
-          laborPerQtyHour: g.qty > 0 ? total / g.qty / 60 : 0,
-          pilkaShare,
-          kromkaShare,
-          prasShare,
-        };
-      })
-      .sort((a, b) => {
-        const ra = rank.has(a.group) ? rank.get(a.group) : 9999;
-        const rb = rank.has(b.group) ? rank.get(b.group) : 9999;
-        if (ra !== rb) return ra - rb;
-        return a.group.localeCompare(b.group, "ru");
-      });
-  }, [laborTableRows, view]);
-  const laborStageTimelineRows = useMemo(() => {
-    if (view !== "labor" || laborSubView !== "stages") return [];
-    const q = query.trim().toLowerCase();
-    const activeSet = new Set((activeOrderIds || []).map((x) => String(x || "").trim()).filter(Boolean));
-    const events = parseStageAuditRows(stageAuditRows).sort(
-      (a, b) => new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime(),
-    );
-    const byOrder = new Map();
-    const ensureOrder = (orderId) => {
-      if (!byOrder.has(orderId)) {
-        byOrder.set(orderId, {
-          orderId,
-          pilkaStatus: "-",
-          pilkaStart: "",
-          pilkaEnd: "",
-          kromkaStatus: "-",
-          kromkaStart: "",
-          kromkaEnd: "",
-          prasStatus: "-",
-          prasStart: "",
-          prasEnd: "",
-          lastEventAt: "",
-        });
-      }
-      return byOrder.get(orderId);
-    };
-    events.forEach((event) => {
-      const orderId = String(event.orderId || "").trim();
-      if (!orderId || orderId === "-") return;
-      const row = ensureOrder(orderId);
-      row.lastEventAt = event.createdAt || row.lastEventAt;
-      (event.changed || []).forEach((c) => {
-        const stage = mapStageFieldToKey(c.key);
-        if (!stage) return;
-        const nextStatus = normalizeStageStatus(c.after);
-        const prevStatus = normalizeStageStatus(c.before);
-        const ts = String(event.createdAt || "").trim();
-        row[`${stage}Status`] = nextStatus;
-        if (nextStatus === "В работе" && ts) row[`${stage}Start`] = ts;
-        if (nextStatus === "Готово" && ts) {
-          row[`${stage}End`] = ts;
-          if (!row[`${stage}Start`] && prevStatus === "В работе") row[`${stage}Start`] = ts;
-        }
-      });
-    });
-    const allRows = [...byOrder.values()]
-      .filter((r) => !q || String(r.orderId || "").toLowerCase().includes(q))
-      .sort((a, b) => new Date(b.lastEventAt || 0).getTime() - new Date(a.lastEventAt || 0).getTime());
-    if (activeSet.size === 0) return allRows;
-    const scopedRows = allRows.filter((r) => activeSet.has(String(r.orderId || "").trim()));
-    // If labor table ids don't intersect with audit ids, still show stage timeline instead of empty state.
-    return scopedRows.length > 0 ? scopedRows : allRows;
-  }, [view, laborSubView, stageAuditRows, query, activeOrderIds]);
-  const laborPlannerRows = useMemo(() => {
-    if (view !== "labor") return [];
-    return laborOrdersRows
-      .filter((r) => Number(r.laborPerQtyMin || 0) > 0)
-      .map((r) => {
-        const plannedQtyRaw = laborPlannerQtyByGroup[r.group];
-        const plannedQty = Number(String(plannedQtyRaw ?? "").replace(",", "."));
-        const kits = Number.isFinite(plannedQty) && plannedQty > 0 ? plannedQty : 0;
-        const totalMin = kits * Number(r.laborPerQtyMin || 0);
-        const hours = Math.floor(totalMin / 60);
-        const minutes = Math.round(totalMin % 60);
-        const hhmm = `${hours}:${String(minutes).padStart(2, "0")}`;
-        return {
-          group: r.group,
-          laborPerQtyMin: Number(r.laborPerQtyMin || 0),
-          kits,
-          totalMin,
-          hhmm,
-        };
-      });
-  }, [laborOrdersRows, laborPlannerQtyByGroup, view]);
-  const laborKpi = useMemo(() => {
-    const totalOrders = laborTableRows.length;
-    const totalMinutes = laborTableRows.reduce((sum, x) => sum + x.totalMin, 0);
-    const totalQty = laborTableRows.reduce((sum, x) => sum + x.qty, 0);
-    const avgPerOrder = totalOrders > 0 ? totalMinutes / totalOrders : 0;
-    return { totalOrders, totalMinutes, totalQty, avgPerOrder };
-  }, [laborTableRows]);
-  const furnitureSheetNames = useMemo(() => {
-    return Array.isArray(furnitureWorkbook?.SheetNames) ? furnitureWorkbook.SheetNames : [];
-  }, [furnitureWorkbook]);
-  const furnitureSheetData = useMemo(() => {
-    if (!furnitureWorkbook || !furnitureActiveSheet) return { headers: [], rows: [] };
-    const parsed = parseFurnitureSheet(furnitureWorkbook, furnitureActiveSheet);
-    const q = String(query || "").trim().toLowerCase();
-    if (!q) return parsed;
-    const rows = parsed.rows.filter((row) =>
-      row.some((cell) =>
-        String(cell?.value || "").toLowerCase().includes(q) ||
-        String(cell?.formula || "").toLowerCase().includes(q)
-      )
-    );
-    return { headers: parsed.headers, rows };
-  }, [furnitureWorkbook, furnitureActiveSheet, query]);
-  const furnitureTemplates = useMemo(() => {
-    if (!furnitureWorkbook || !furnitureActiveSheet) return [];
-    return buildFurnitureTemplates(furnitureWorkbook, furnitureActiveSheet);
-  }, [furnitureWorkbook, furnitureActiveSheet]);
-  const furnitureSelectedTemplate = useMemo(() => {
-    return furnitureTemplates.find((x) => x.productName === furnitureSelectedProduct) || null;
-  }, [furnitureTemplates, furnitureSelectedProduct]);
-  const furnitureQtyNumber = useMemo(() => {
-    const n = toNum(furnitureSelectedQty);
-    return n > 0 ? n : 0;
-  }, [furnitureSelectedQty]);
-  const furnitureGeneratedDetails = useMemo(() => {
-    if (!furnitureSelectedTemplate || furnitureQtyNumber <= 0) return [];
-    const productKey = normalizeStrapProductKey(furnitureSelectedTemplate.productName || "");
-    const detailMapBySize = new Map();
-    const detailMapByPattern = new Map();
-    (furnitureDetailArticleRows || []).forEach((r) => {
-      const isActive = r?.is_active ?? r?.isActive;
-      if (isActive === false) return;
-      const pKey = normalizeStrapProductKey(r.product_name || r.productName || "");
-      if (pKey !== productKey) return;
-      const pattern = normalizeDetailPatternKey(r.detail_name_pattern || r.detailNamePattern || "");
-      const sizeToken = extractDetailSizeToken(r.detail_name_pattern || r.detailNamePattern || "");
-      const article = String(r.article || "").trim();
-      if (!pattern || !article) return;
-      if (sizeToken) {
-        if (!detailMapBySize.has(sizeToken)) detailMapBySize.set(sizeToken, new Set());
-        detailMapBySize.get(sizeToken).add(article);
-      }
-      if (!detailMapByPattern.has(pattern)) detailMapByPattern.set(pattern, new Set());
-      detailMapByPattern.get(pattern).add(article);
-    });
-    return (furnitureSelectedTemplate.details || []).map((d) => {
-      const raw = d.perUnit * furnitureQtyNumber;
-      const qty = Math.round(raw * 1000) / 1000;
-      const detailKey = normalizeDetailPatternKey(d.detailName || "");
-      const detailSizeToken = extractDetailSizeToken(d.detailName || "");
-      const matchedArticles = [];
-      if (detailSizeToken && detailMapBySize.has(detailSizeToken)) {
-        matchedArticles.push(...Array.from(detailMapBySize.get(detailSizeToken)));
-      } else {
-        detailMapByPattern.forEach((articles, pattern) => {
-          if (detailKey.includes(pattern) || pattern.includes(detailKey)) {
-            matchedArticles.push(...Array.from(articles));
-          }
-        });
-      }
-      if (matchedArticles.length === 0) {
-        detailMapByPattern.forEach((articles, pattern) => {
-          if (detailKey.includes(pattern) || pattern.includes(detailKey)) {
-          matchedArticles.push(...Array.from(articles));
-          }
-        });
-      }
-      return {
-        ...d,
-        qty,
-        linkedArticles: [...new Set(matchedArticles)].sort((a, b) => a.localeCompare(b, "ru")),
-      };
-    });
-  }, [furnitureDetailArticleRows, furnitureSelectedTemplate, furnitureQtyNumber]);
-  const furnitureArticleGroups = useMemo(() => {
-    if (view !== "furniture") return [];
-    const q = String(query || "").trim().toLowerCase();
-    const grouped = new Map();
-    (furnitureArticleRows || []).forEach((r) => {
-      const productName = String(r.product_name || r.productName || "").trim();
-      const sectionName = String(r.section_name || r.sectionName || "").trim();
-      const article = String(r.article || "").trim();
-      const itemName = String(r.item_name || r.itemName || "").trim();
-      const color = String(r.table_color || r.tableColor || "").trim();
-      if (!productName || !article) return;
-      const text = `${productName} ${sectionName} ${article} ${itemName} ${color}`.toLowerCase();
-      if (q && !text.includes(q)) return;
-      if (!grouped.has(productName)) grouped.set(productName, []);
-      grouped.get(productName).push({ productName, sectionName, article, itemName, color });
-    });
-    return [...grouped.entries()]
-      .map(([productName, rows]) => ({
-        productName,
-        rows: rows.sort((a, b) => a.itemName.localeCompare(b.itemName, "ru")),
-      }))
-      .sort((a, b) => a.productName.localeCompare(b.productName, "ru"));
-  }, [furnitureArticleRows, query, view]);
-  useEffect(() => {
-    if (view !== "furniture") return;
-    if (!furnitureTemplates.length) return;
-    if (furnitureTemplates.some((x) => x.productName === furnitureSelectedProduct)) return;
-    setFurnitureSelectedProduct(String(furnitureTemplates[0].productName || ""));
-  }, [view, furnitureTemplates, furnitureSelectedProduct]);
-  const warehouseTableRows = useMemo(() => {
-    if (view !== "warehouse") return [];
-    const q = String(query || "").trim().toLowerCase();
-    return [...warehouseRows]
-      .map((x) => ({
-        material: String(x.material || ""),
-        qtySheets: Number(x.qty_sheets ?? x.qtySheets ?? 0),
-        sizeLabel: String(x.size_label || x.sizeLabel || ""),
-        widthMm: Number(x.sheet_width_mm ?? x.sheetWidthMm ?? 0),
-        heightMm: Number(x.sheet_height_mm ?? x.sheetHeightMm ?? 0),
-        updatedAt: String(x.updated_at || x.updatedAt || ""),
-      }))
-      .filter((x) => !q || x.material.toLowerCase().includes(q))
-      .sort((a, b) => a.material.localeCompare(b.material, "ru"));
-  }, [query, view, warehouseRows]);
-  const leftoversTableRows = useMemo(() => {
-    if (view !== "warehouse") return [];
-    return [...leftoversRows]
-      .map((x) => ({
-        orderId: String(x.orderId || x.order_id || ""),
-        item: String(x.item || ""),
-        material: String(x.material || ""),
-        sheetsNeeded: Number(x.sheetsNeeded || x.sheets_needed || 0),
-        leftoverFormat: String(x.leftoverFormat || x.leftover_format || ""),
-        leftoversQty: Number(x.leftoversQty || x.leftovers_qty || 0),
-        createdAt: String(x.createdAt || x.created_at || ""),
-      }))
-      .filter((x) => {
-        const q = String(query || "").trim().toLowerCase();
-        return !q || x.material.toLowerCase().includes(q) || x.leftoverFormat.toLowerCase().includes(q);
-      })
-      .sort((a, b) => a.item.localeCompare(b.item, "ru"));
-  }, [leftoversRows, query, view]);
-  const consumeHistoryTableRows = useMemo(() => {
-    if (view !== "warehouse") return [];
-    const q = String(query || "").trim().toLowerCase();
-    return [...consumeHistoryRows]
-      .map((x) => ({
-        moveId: String(x.move_id || x.moveId || ""),
-        createdAt: String(x.created_at || x.createdAt || ""),
-        orderId: String(x.order_id || x.orderId || ""),
-        material: String(x.material || ""),
-        qtySheets: Number(x.qty_sheets ?? x.qtySheets ?? 0),
-        comment: String(x.comment || ""),
-      }))
-      .filter((x) => {
-        if (!q) return true;
-        return (
-          x.orderId.toLowerCase().includes(q) ||
-          x.material.toLowerCase().includes(q) ||
-          x.comment.toLowerCase().includes(q)
-        );
-      });
-  }, [consumeHistoryRows, query, view]);
+  const { laborTableRows, laborOrdersRows } = useLaborDerivedData({
+    view,
+    filtered,
+    laborSort,
+  });
+  const { laborStageTimelineRows, laborPlannerRows, laborKpi } = useLaborStageAnalytics({
+    view,
+    laborSubView,
+    stageAuditRows,
+    query,
+    activeOrderIds,
+    laborOrdersRows,
+    laborPlannerQtyByGroup,
+    laborTableRows,
+  });
+  const {
+    furnitureSheetData,
+    furnitureTemplates,
+    furnitureSelectedTemplate,
+    furnitureQtyNumber,
+    furnitureGeneratedDetails,
+  } = useFurnitureDerivedData({
+    view,
+    query,
+    furnitureWorkbook,
+    furnitureActiveSheet,
+    furnitureSelectedProduct,
+    setFurnitureSelectedProduct,
+    furnitureSelectedQty,
+    furnitureDetailArticleRows,
+    furnitureArticleRows,
+  });
+  const { warehouseTableRows, leftoversTableRows, consumeHistoryTableRows } = useWarehouseTableData({
+    view,
+    query,
+    warehouseRows,
+    leftoversRows,
+    consumeHistoryRows,
+  });
 
-  const selectedShipmentSummary = useMemo(() => {
-    const items = selectedShipments.map((s) => {
-      const qty = Number(s.qty || 0);
-      const sheetsRaw = Number(s.sheetsNeeded || 0);
-      const outputPerSheet = Number(s.outputPerSheet || 0);
-      const sheetsNeeded =
-        sheetsRaw > 0
-          ? sheetsRaw
-          : (outputPerSheet > 0 && qty > 0 ? Math.ceil(qty / outputPerSheet) : 0);
-      const material = String(s.material || "Материал не указан");
-      return { ...s, qty, sheetsNeeded, material, outputPerSheet, sheetsExact: sheetsRaw > 0 };
-    });
-    const byMaterial = {};
-    let totalSheets = 0;
-    items.forEach((x) => {
-      totalSheets += x.sheetsNeeded;
-      byMaterial[x.material] = (byMaterial[x.material] || 0) + x.sheetsNeeded;
-    });
-    const materials = Object.keys(byMaterial)
-      .sort((a, b) => a.localeCompare(b, "ru"))
-      .map((m) => ({ material: m, sheets: byMaterial[m] }));
-    return {
-      items,
-      materials,
-      selectedCount: items.length,
-      totalSheets,
-    };
-  }, [selectedShipments]);
-  const sendableSelectedCount = useMemo(
-    () => selectedShipments.filter((x) => !!x.canSendToWork).length,
-    [selectedShipments]
-  );
-  const selectedShipmentStockCheck = useMemo(() => {
-    const byMaterial = new Map();
-    selectedShipments.forEach((s) => {
-      const material = String(s.material || "Материал не указан").trim();
-      const key = normalizeFurnitureKey(material);
-      const qty = Number(s.qty || 0);
-      const sheetsRaw = Number(s.sheetsNeeded || 0);
-      const outputPerSheet = Number(s.outputPerSheet || 0);
-      const sheetsNeeded =
-        sheetsRaw > 0
-          ? sheetsRaw
-          : (outputPerSheet > 0 && qty > 0 ? Math.ceil(qty / outputPerSheet) : 0);
-      const availableSheets = Number(s.availableSheets || 0);
-      if (!byMaterial.has(key)) {
-        byMaterial.set(key, { material, needed: 0, available: 0, sourceKeys: new Set() });
-      }
-      const bucket = byMaterial.get(key);
-      bucket.needed += sheetsNeeded;
-      bucket.available = Math.max(bucket.available, availableSheets);
-      bucket.sourceKeys.add(`${String(s.row || "").trim()}|${String(s.col || "").trim()}`);
-    });
-    const deficits = [...byMaterial.values()]
-      .map((x) => ({ ...x, deficit: x.needed - x.available }))
-      .filter((x) => x.deficit > 0);
-    const deficitSourceKeys = new Set();
-    deficits.forEach((x) => x.sourceKeys.forEach((k) => deficitSourceKeys.add(k)));
-    return { deficits, deficitSourceKeys };
-  }, [selectedShipments]);
-  useEffect(() => {
-    let cancelled = false;
-    async function loadSelectedShipmentMetal() {
-      if (view !== "shipment" || selectedShipments.length === 0) {
-        setSelectedShipmentMetal({ loading: false, rows: [], missingItems: [] });
-        return;
-      }
-      const qtyByFurnitureArticle = new Map();
-      const missingItems = [];
-      selectedShipments.forEach((s) => {
-        const qty = Number(s.qty || 0);
-        if (!(qty > 0)) return;
-        const itemName = String(s.item || "").trim();
-        const directArticle = String(s.productArticle || s.product_article || "").trim();
-        const article =
-          directArticle || articleLookupByItemKey.get(normalizeFurnitureKey(itemName)) || "";
-        if (!article) {
-          if (itemName) missingItems.push(itemName);
-          return;
-        }
-        qtyByFurnitureArticle.set(article, (qtyByFurnitureArticle.get(article) || 0) + qty);
-      });
-      const uniqueMissingItems = [...new Set(missingItems)].sort((a, b) => a.localeCompare(b, "ru"));
-      if (qtyByFurnitureArticle.size === 0) {
-        setSelectedShipmentMetal({ loading: false, rows: [], missingItems: uniqueMissingItems });
-        return;
-      }
-      setSelectedShipmentMetal((prev) => ({ ...prev, loading: true, missingItems: uniqueMissingItems }));
-      try {
-        const [stockPayload, furnitureMetalRowsList] = await Promise.all([
-          callBackend("webGetMetalStock", {}),
-          Promise.all(
-            [...qtyByFurnitureArticle.keys()].map((article) =>
-              callBackend("webGetMetalForFurniture", { furnitureArticle: article }),
-            ),
-          ),
-        ]);
-        if (cancelled) return;
-        const stockByMetal = new Map();
-        (Array.isArray(stockPayload) ? stockPayload : []).forEach((row) => {
-          const metalArticle = String(row?.metal_article || "").trim();
-          if (!metalArticle) return;
-          stockByMetal.set(metalArticle, {
-            metalName: String(row?.metal_name || "").trim(),
-            qtyAvailable: Number(row?.qty_available || 0),
-          });
-        });
-        const neededByMetal = new Map();
-        [...qtyByFurnitureArticle.entries()].forEach(([furnitureArticle, furnitureQty], idx) => {
-          const componentRows = Array.isArray(furnitureMetalRowsList[idx]) ? furnitureMetalRowsList[idx] : [];
-          componentRows.forEach((row) => {
-            const metalArticle = String(row?.metal_article || "").trim();
-            if (!metalArticle) return;
-            const perUnit = Number(row?.qty_per_unit || 0);
-            if (!(perUnit > 0)) return;
-            const neededQty = furnitureQty * perUnit;
-            const current = neededByMetal.get(metalArticle) || {
-              metalArticle,
-              metalName: String(row?.metal_name || "").trim(),
-              neededQty: 0,
-            };
-            current.neededQty += neededQty;
-            if (!current.metalName) current.metalName = String(row?.metal_name || "").trim();
-            neededByMetal.set(metalArticle, current);
-          });
-        });
-        const rows = [...neededByMetal.values()]
-          .map((row) => {
-            const stock = stockByMetal.get(row.metalArticle) || { metalName: "", qtyAvailable: 0 };
-            const qtyAvailable = Number(stock.qtyAvailable || 0);
-            return {
-              metalArticle: row.metalArticle,
-              metalName: row.metalName || stock.metalName || row.metalArticle,
-              neededQty: Number(row.neededQty || 0),
-              qtyAvailable,
-              deficitQty: Math.max(0, Number(row.neededQty || 0) - qtyAvailable),
-            };
-          })
-          .sort((a, b) => b.deficitQty - a.deficitQty || a.metalArticle.localeCompare(b.metalArticle, "ru"));
-        setSelectedShipmentMetal({ loading: false, rows, missingItems: uniqueMissingItems });
-      } catch (_) {
-        if (cancelled) return;
-        setSelectedShipmentMetal({ loading: false, rows: [], missingItems: uniqueMissingItems });
-      }
-    }
-    loadSelectedShipmentMetal();
-    return () => {
-      cancelled = true;
-    };
-  }, [view, selectedShipments, articleLookupByItemKey]);
-
-  const strapCalculation = useMemo(() => {
-    const lines = [];
-    let totalSheets = 0;
-    for (const x of strapItems) {
-      const size = parseStrapSize(x.name);
-      const qty = Number(x.qty || 0);
-      if (!size || !(qty > 0)) continue;
-      const stripsPerSheet = Math.floor(STRAP_SHEET_HEIGHT / size.width);
-      const perStrip = Math.floor(STRAP_SHEET_WIDTH / size.length);
-      const perSheet = stripsPerSheet * perStrip;
-      if (perSheet <= 0) {
-        lines.push({ name: x.name, qty, perSheet: 0, sheets: 0, invalid: true });
-        continue;
-      }
-      const sheets = Math.ceil(qty / perSheet);
-      totalSheets += sheets;
-      lines.push({ name: x.name, qty, perSheet, sheets, invalid: false });
-    }
-    return { lines, totalSheets };
-  }, [strapItems]);
-
-  const strapOptionsByProduct = useMemo(() => {
-    const grouped = new Map();
-    (furnitureDetailArticleRows || []).forEach((r) => {
-      const isActive = r?.is_active ?? r?.isActive;
-      if (isActive === false) return;
-      const productRaw = String(r.product_name || r.productName || "").trim();
-      const productName = canonicalStrapProductName(productRaw);
-      const pattern = String(r.detail_name_pattern || r.detailNamePattern || "").trim();
-      if (!productName) return;
-      const optionName = detailPatternToStrapName(pattern);
-      if (!optionName) return;
-      const key = normalizeStrapProductKey(productName);
-      if (!grouped.has(key)) grouped.set(key, { productName, options: new Set() });
-      const bucket = grouped.get(key).options;
-      if (optionName === "Обвязка") {
-        const pKey = normalizeStrapProductKey(productName);
-        if (pKey === "донини" || pKey === "донини белый") {
-          bucket.add("Обвязка (1000_80)");
-          bucket.add("Обвязка (558_80)");
-          return;
-        }
-      }
-      bucket.add(optionName);
-    });
-    const rows = [...grouped.values()].map((x) => ({
-      productName: x.productName,
-      options: [...x.options].sort((a, b) => a.localeCompare(b, "ru")),
-    }));
-    rows.sort((a, b) => a.productName.localeCompare(b.productName, "ru"));
-    return rows;
-  }, [furnitureDetailArticleRows]);
-
-  const strapProductBySizeToken = useMemo(() => {
-    const map = new Map();
-    (furnitureDetailArticleRows || []).forEach((r) => {
-      const isActive = r?.is_active ?? r?.isActive;
-      if (isActive === false) return;
-      const productRaw = String(r.product_name || r.productName || "").trim();
-      const productName = canonicalStrapProductName(productRaw);
-      const pattern = String(r.detail_name_pattern || r.detailNamePattern || "").trim();
-      if (!productName) return;
-      const token = extractDetailSizeToken(pattern);
-      if (!token) return;
-      const key = normalizeStrapProductKey(token);
-      if (!map.has(key)) {
-        map.set(key, productName);
-        return;
-      }
-      const existing = String(map.get(key) || "");
-      if (normalizeStrapProductKey(existing) !== normalizeStrapProductKey(productName)) {
-        // Ambiguous mapping for same size token, skip wrong auto-substitution.
-        map.set(key, "");
-      }
-    });
-    return map;
-  }, [furnitureDetailArticleRows]);
-
-  const strapProductsByArticleCode = useMemo(() => {
-    const buckets = new Map();
-    const splitArticleCodes = (raw) =>
-      String(raw || "")
-        .split(/[,\n;]+/g)
-        .map((x) => String(x || "").trim().toUpperCase())
-        .filter(Boolean);
-    (furnitureDetailArticleRows || []).forEach((r) => {
-      const isActive = r?.is_active ?? r?.isActive;
-      if (isActive === false) return;
-      const productRaw = String(r.product_name || r.productName || "").trim();
-      const productName = canonicalStrapProductName(productRaw);
-      const articles = splitArticleCodes(r.article);
-      if (!productName || articles.length === 0) return;
-      articles.forEach((article) => {
-        if (!buckets.has(article)) buckets.set(article, new Set());
-        buckets.get(article).add(productName);
-      });
-    });
-    return new Map(
-      [...buckets.entries()].map(([article, set]) => [article, [...set.values()]])
-    );
-  }, [furnitureDetailArticleRows]);
-
-  const strapProductNames = useMemo(() => {
-    if (strapOptionsByProduct.length > 0) return strapOptionsByProduct.map((x) => x.productName);
-    return ["Обвязка"];
-  }, [strapOptionsByProduct]);
-
-  const strapOptionsForSelectedProduct = useMemo(() => {
-    if (strapOptionsByProduct.length === 0) return STRAP_OPTIONS;
-    const key = normalizeStrapProductKey(strapTargetProduct || strapProductNames[0] || "");
-    const hit = strapOptionsByProduct.find((x) => normalizeStrapProductKey(x.productName) === key);
-    return hit?.options?.length ? hit.options : [];
-  }, [strapOptionsByProduct, strapTargetProduct, strapProductNames]);
-
-  useEffect(() => {
-    if (!strapProductNames.length) return;
-    if (strapProductNames.some((name) => normalizeStrapProductKey(name) === normalizeStrapProductKey(strapTargetProduct))) return;
-    setStrapTargetProduct(strapProductNames[0]);
-  }, [strapProductNames, strapTargetProduct]);
+  const {
+    selectedShipmentSummary,
+    sendableSelectedCount,
+    selectedShipmentStockCheck,
+    strapCalculation,
+  } = useShipmentSelectionStats({
+    selectedShipments,
+    strapItems,
+    normalizeFurnitureKey,
+    parseStrapSize,
+    strapSheetWidth: STRAP_SHEET_WIDTH,
+    strapSheetHeight: STRAP_SHEET_HEIGHT,
+  });
+  const {
+    strapOptionsByProduct,
+    strapProductBySizeToken,
+    strapProductsByArticleCode,
+    strapProductNames,
+    strapOptionsForSelectedProduct,
+  } = useStrapDerivedData({
+    furnitureDetailArticleRows,
+    strapTargetProduct,
+    setStrapTargetProduct,
+    fallbackOptions: STRAP_OPTIONS,
+  });
 
   async function sendSelectedShipmentToWork() {
     if (!canOperateProduction) {
@@ -3018,91 +1796,26 @@ export default function App() {
     }
   }
 
-  function exportLaborTotalToExcel() {
-    if (view !== "labor" || laborSubView !== "total") return;
-    if (!laborTableRows.length) {
-      setError("Нет данных для экспорта общей трудоемкости.");
-      return;
-    }
-
-    const header = [
-      "ID заказа",
-      "Изделие",
-      "План",
-      "Кол-во",
-      "Пилка (мин)",
-      "Кромка (мин)",
-      "Присадка (мин)",
-      "Итого (мин)",
-      "Дата завершения",
-    ];
-    const body = laborTableRows.map((r) => [
-      String(r.orderId || ""),
-      String(r.item || ""),
-      String(r.week || ""),
-      Number(r.qty || 0),
-      Number(r.pilkaMin || 0),
-      Number(r.kromkaMin || 0),
-      Number(r.prasMin || 0),
-      Number(r.totalMin || 0),
-      String(r.dateFinished || ""),
-    ]);
-    const ws = XLSX.utils.aoa_to_sheet([header, ...body]);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Общая трудоемкость");
-    XLSX.writeFile(wb, `Трудоемкость_общая_${new Date().toISOString().slice(0, 10)}.xlsx`);
-    setError("");
-  }
-
-  async function importLaborTotalFromExcelFile(file) {
-    if (!file) return;
-    setActionLoading("labor:import");
-    setError("");
-    try {
-      const buf = await file.arrayBuffer();
-      const wb = XLSX.read(buf, { type: "array" });
-      const firstSheet = String(wb?.SheetNames?.[0] || "");
-      if (!firstSheet) throw new Error("В файле не найден лист.");
-      const ws = wb.Sheets[firstSheet];
-      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: "" });
-      if (!rows.length) throw new Error("Файл пустой.");
-      const nowKey = Date.now();
-      const imported = parseLaborImportRows(rows, nowKey);
-
-      if (!imported.length) {
-        throw new Error(getLaborImportNoValidRowsError());
-      }
-
-      setLaborImportedRows((prev) => [...prev, ...imported]);
-    } catch (e) {
-      setError(formatLaborImportError(extractErrorMessage(e)));
-    } finally {
-      setActionLoading("");
-      if (importLaborFileRef.current) importLaborFileRef.current.value = "";
-    }
-  }
-
-  async function saveImportedLaborRowToDb(row) {
-    if (!canOperateProduction) {
-      denyActionByRole("Недостаточно прав для сохранения трудоемкости в БД.");
-      return;
-    }
-    const key = String(row?.importKey || "");
-    if (!key) return;
-    setLaborSavingByKey((prev) => ({ ...prev, [key]: true }));
-    setError("");
-    try {
-      await callBackend("webUpsertLaborFact", buildLaborFactPayload(row));
-      setLaborSavedByKey((prev) => ({ ...prev, [key]: true }));
-      setLaborSaveSelected((prev) => ({ ...prev, [key]: false }));
-      setLaborImportedRows((prev) => markLaborImportRowSaved(prev, key));
-      await load();
-    } catch (e) {
-      setError(formatLaborSaveRowError(extractErrorMessage(e)));
-    } finally {
-      setLaborSavingByKey((prev) => ({ ...prev, [key]: false }));
-    }
-  }
+  const {
+    importLaborFileRef,
+    exportLaborTotalToExcel,
+    importLaborTotalFromExcelFile,
+    saveImportedLaborRowToDb,
+  } = useLaborActions({
+    view,
+    laborSubView,
+    laborTableRows,
+    setError,
+    setActionLoading,
+    canOperateProduction,
+    denyActionByRole,
+    callBackend,
+    load,
+    setLaborImportedRows,
+    setLaborSaveSelected,
+    setLaborSavingByKey,
+    setLaborSavedByKey,
+  });
 
   return (
     <div className="page">
