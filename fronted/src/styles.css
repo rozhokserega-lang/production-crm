@@ -372,10 +372,10 @@ button:disabled {
 
 .overview-board {
   display: grid;
-  /* Keep kanban lanes aligned across different monitor widths/DPIs. */
-  grid-template-columns: repeat(6, minmax(170px, 1fr));
+  /* Five lanes in overview after merging "assembled" into "ready_to_ship". */
+  grid-template-columns: repeat(5, minmax(170px, 1fr));
   gap: 10px;
-  align-items: start;
+  align-items: stretch;
 }
 
 .overview-board--shipped-tab {
@@ -398,6 +398,8 @@ button:disabled {
   border-radius: 10px;
   padding: 8px;
   min-height: 220px;
+  display: flex;
+  flex-direction: column;
 }
 
 .overview-column__head {
@@ -413,6 +415,8 @@ button:disabled {
 .overview-column__list {
   display: grid;
   gap: 8px;
+  flex: 1;
+  align-content: start;
 }
 
 .overview-card {

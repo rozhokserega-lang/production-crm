@@ -1860,12 +1860,13 @@ export default function App() {
       { id: "kromka", title: "Кромка" },
       { id: "pras", title: "Присадка" },
       { id: "workshop_complete", title: "Готов к сборке" },
-      { id: "assembled", title: "Собран" },
       { id: "ready_to_ship", title: "Готово к отправке" },
     ];
     const grouped = Object.fromEntries(defs.map((x) => [x.id, []]));
     (filtered || []).forEach((o) => {
-      const lane = getOverviewLaneId(o);
+      const laneRaw = getOverviewLaneId(o);
+      // "Собран" is merged into "Готово к отправке" to avoid duplicated stages in kanban.
+      const lane = laneRaw === "assembled" ? "ready_to_ship" : laneRaw;
       if (!grouped[lane]) grouped[lane] = [];
       grouped[lane].push(o);
     });

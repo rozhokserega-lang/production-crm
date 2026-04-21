@@ -37,6 +37,21 @@ export function OverviewView({
     }
     return { title, article };
   };
+  const readDetailedStatus = (row, laneId) => {
+    if (laneId === "pilka") {
+      return String(row?.pilkaStatus || row?.pilka_status || row?.pilka || "").trim();
+    }
+    if (laneId === "kromka") {
+      return String(row?.kromkaStatus || row?.kromka_status || row?.kromka || "").trim();
+    }
+    if (laneId === "pras") {
+      return String(row?.prasStatus || row?.pras_status || row?.pras || "").trim();
+    }
+    if (laneId === "workshop_complete" || laneId === "assembled") {
+      return String(row?.assemblyStatus || row?.assembly_status || "").trim();
+    }
+    return String(row?.overallStatus || row?.overall_status || row?.overall || "").trim();
+  };
 
   return (
     <>
@@ -83,6 +98,9 @@ export function OverviewView({
                             <span>Кол-во: {Number(o.qty || 0)}</span>
                           </div>
                           <div className={`overview-card__stage lane-${col.id}`}>{getStageLabel(o)}</div>
+                          {readDetailedStatus(o, col.id) ? (
+                            <div className="overview-card__meta">{readDetailedStatus(o, col.id)}</div>
+                          ) : null}
                           {adminCommentMark ? (
                             <span
                               className="overview-card__admin-marker"
