@@ -158,9 +158,16 @@ export function useBaseOrderFilter({
       const storageLike = isStorageLikeName(x.item);
       const allowInWorkshop = view === "workshop" && storageLike;
       const allowInStats = view === "stats" && storageLike;
+      const inWorkStage =
+        /в работе/i.test(String(x.pilkaStatus || x.pilka_status || x.pilka || "")) ||
+        /в работе/i.test(String(x.kromkaStatus || x.kromka_status || x.kromka || "")) ||
+        /в работе/i.test(String(x.prasStatus || x.pras_status || x.pras || "")) ||
+        /в работе/i.test(String(x.assemblyStatus || x.assembly_status || ""));
+      const allowInOverviewInWork = view === "overview" && storageLike && inWorkStage;
       const allowStorageLike =
         allowInWorkshop ||
         allowInStats ||
+        allowInOverviewInWork ||
         (storageLike &&
           (isObvyazkaSectionName(sectionName) || sourceRowId.startsWith("manual:") || hasArticleLikeCode(x)));
       if ((storageLike && !allowStorageLike) || isGarbageShipmentItemName(x.item)) return false;
