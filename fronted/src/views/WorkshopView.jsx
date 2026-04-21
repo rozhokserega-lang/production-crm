@@ -71,26 +71,30 @@ export function WorkshopView({
 
         return (
           <article key={orderId || `${o.item}-${o.row}`} className={`card ${statusClass(o)}`}>
-            <div className="line1">
-              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                <strong>{o.item}</strong>
-                <span className="badge meta-inline">План: {o.week || "-"}</span>
-                <span className="badge meta-inline">Кол-во: {o.qty || 0}</span>
+            <div className="card__content">
+              <div className="card__main">
+                <div className="line1">
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <strong>{o.item}</strong>
+                    <span className="badge meta-inline">План: {o.week || "-"}</span>
+                    <span className="badge meta-inline">Кол-во: {o.qty || 0}</span>
+                  </div>
+                </div>
+                <div className="line2">
+                  <span>ID: {orderId || "-"}</span>
+                  <span>Листов нужно: {Number(displaySheetsNeeded || 0)}</span>
+                  <span>
+                    Листы: {displayMaterial} ({Number(displaySheetsNeeded || 0)} шт)
+                  </span>
+                </div>
               </div>
+              {adminNote ? (
+                <aside className="card__admin-note card__admin-note--side" role="note">
+                  <span className="card__admin-note-label">Комментарий администратора</span>
+                  <span className="card__admin-note-text">{adminNote}</span>
+                </aside>
+              ) : null}
             </div>
-            <div className="line2">
-              <span>ID: {orderId || "-"}</span>
-              <span>Листов нужно: {Number(displaySheetsNeeded || 0)}</span>
-              <span>
-                Листы: {displayMaterial} ({Number(displaySheetsNeeded || 0)} шт)
-              </span>
-            </div>
-            {adminNote ? (
-              <div className="card__admin-note" role="note">
-                <span className="card__admin-note-label">Комментарий администратора</span>
-                <span className="card__admin-note-text">{adminNote}</span>
-              </div>
-            ) : null}
             {tab !== "all" && (
               <div className="actions">
                 {showPilka && (

@@ -646,6 +646,17 @@ button:disabled {
   gap: 6px;
 }
 
+.card__content {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 10px;
+  align-items: start;
+}
+
+.card__main {
+  min-width: 0;
+}
+
 .card__admin-note {
   margin-top: 8px;
   padding: 8px 10px;
@@ -671,6 +682,12 @@ button:disabled {
   color: #1e293b;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.card__admin-note--side {
+  margin-top: 0;
+  max-height: 86px;
+  overflow: auto;
 }
 
 .mini {
@@ -1330,6 +1347,14 @@ button:disabled {
 }
 
 @media (max-width: 900px) {
+  .card__content {
+    grid-template-columns: 1fr;
+  }
+
+  .card__admin-note--side {
+    max-height: none;
+  }
+
   .overview-board {
     grid-template-columns: 1fr;
   }

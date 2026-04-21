@@ -75,7 +75,7 @@ export function OverviewView({
                           onClick={openDrawer}
                           onKeyDown={onCardKeyDown}
                         >
-                          <div className="overview-card__id">Заказ #{orderId || "-"}</div>
+                          <div className="overview-card__id">#{orderId || "-"}</div>
                           <div className="overview-card__item">{title || "—"}</div>
                           {article ? <div className="overview-card__meta">Артикул: {article}</div> : null}
                           <div className="overview-card__meta">
