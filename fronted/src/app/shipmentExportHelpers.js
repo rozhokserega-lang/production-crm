@@ -56,15 +56,28 @@ export function buildImportArticleMap(importCatalogRows = []) {
 export async function applyImportPlanRows(importRows = [], articleMap = new Map(), deps = {}) {
   const callBackend = deps.callBackend;
   const week = String(deps.planNumber || "").trim();
+  const markMissingAsPlanRows = deps.markMissingAsPlanRows !== false;
   const missing = [];
   let imported = 0;
+  let marked = 0;
   if (typeof callBackend !== "function" || !week) {
-    return { imported, missing };
+    return { imported, missing, marked };
   }
   for (const row of importRows) {
-    const mapped = articleMap.get(String(row?.article || "").trim().toUpperCase());
+    const articleRaw = String(row?.article || "").trim();
+    const mapped = articleMap.get(articleRaw.toUpperCase());
     if (!mapped) {
-      missing.push(String(row?.article || "").trim());
+      missing.push(articleRaw);
+      if (markMissingAsPlanRows) {
+        await callBackend("webCreateShipmentPlanCell", {
+          sectionName: "Не сопоставлено",
+          item: `[НЕ НАЙДЕН АРТИКУЛ] ${articleRaw}`,
+          material: "Не указан",
+          week,
+          qty: row.qty,
+        });
+        marked += 1;
+      }
       continue;
     }
     await callBackend("webCreateShipmentPlanCell", {
@@ -76,7 +89,7 @@ export async function applyImportPlanRows(importRows = [], articleMap = new Map(
     });
     imported += 1;
   }
-  return { imported, missing };
+  return { imported, missing, marked };
 }
 
 export async function loadImportCatalogRows(deps = {}) {
@@ -102,10 +115,12 @@ export function formatShipmentExportPartialError(missingCount = 0) {
   return `Экспорт выполнен частично: не найден артикул для ${Number(missingCount) || 0} позиций.`;
 }
 
-export function formatImportShipmentPartialError(imported = 0, missing = []) {
+export function formatImportShipmentPartialError(imported = 0, missing = [], marked = 0) {
   const missingList = Array.isArray(missing) ? missing : [];
+  const markedCount = Number(marked) || 0;
+  const markedHint = markedCount > 0 ? ` Помечено в плане: ${markedCount}.` : "";
   return `Импорт выполнен частично: ${Number(imported) || 0} строк(и) добавлено, не найдены артикулы: ` +
-    `${missingList.slice(0, 8).join(", ")}${missingList.length > 8 ? "..." : ""}`;
+    `${missingList.slice(0, 8).join(", ")}${missingList.length > 8 ? "..." : ""}.${markedHint}`;
 }
 
 export function getShipmentExportNoArticlesError() {

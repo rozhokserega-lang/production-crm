@@ -3,6 +3,7 @@ export function ShipmentView({
   strapItems,
   selectedShipmentSummary,
   selectedShipmentStockCheck,
+  selectedShipmentMetal,
   strapCalculation,
   shipmentPlanDeficits,
   articleLookupByItemKey,
@@ -75,6 +76,24 @@ export function ShipmentView({
                   </div>
                 ))}
               </>
+            )}
+            <div className="selection-summary-title" style={{ marginTop: 10 }}>
+              Металл по выбранным заказам:
+            </div>
+            {selectedShipmentMetal.loading && <div>Считаю комплектующие металла...</div>}
+            {!selectedShipmentMetal.loading && selectedShipmentMetal.rows.length === 0 && (
+              <div>Нет данных по металлу для выбранных изделий.</div>
+            )}
+            {!selectedShipmentMetal.loading && selectedShipmentMetal.rows.map((m) => (
+              <div key={`metal-${m.metalArticle}`} style={{ color: m.deficitQty > 0 ? "#be123c" : undefined }}>
+                • {m.metalName} ({m.metalArticle}): нужно {m.neededQty}, в наличии {m.qtyAvailable}
+                {m.deficitQty > 0 ? `, не хватает ${m.deficitQty}` : " • хватает"}
+              </div>
+            ))}
+            {!selectedShipmentMetal.loading && selectedShipmentMetal.missingItems.length > 0 && (
+              <div style={{ marginTop: 6, color: "#7c2d12" }}>
+                Нет мебельного артикула для: {selectedShipmentMetal.missingItems.join(", ")}
+              </div>
             )}
             <div style={{ marginTop: 10 }}>Обработано ячеек: {selectedShipmentSummary.selectedCount}</div>
             <div>Всего листов: {selectedShipmentSummary.totalSheets}</div>

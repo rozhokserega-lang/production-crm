@@ -87,6 +87,7 @@ import { WarehouseView } from "./views/WarehouseView";
 import { StatsView } from "./views/StatsView";
 import { SheetMirrorView } from "./views/SheetMirrorView";
 import { FurnitureView } from "./views/FurnitureView";
+import { MetalView } from "./views/MetalView";
 import {
   CRM_ROLES,
   CRM_ROLE_LABELS,
@@ -549,6 +550,17 @@ export default function App() {
   const [stageAuditRows, setStageAuditRows] = useState([]);
   const [activeOrderIds, setActiveOrderIds] = useState([]);
   const [warehouseRows, setWarehouseRows] = useState([]);
+  const [metalStockRows, setMetalStockRows] = useState([]);
+  const [metalSavingArticle, setMetalSavingArticle] = useState("");
+  const [metalSubView, setMetalSubView] = useState("queue");
+  const [metalQueueRows, setMetalQueueRows] = useState([]);
+  const [metalQueueLoading, setMetalQueueLoading] = useState(false);
+  const [metalQueueUpdatingId, setMetalQueueUpdatingId] = useState(0);
+  const [selectedShipmentMetal, setSelectedShipmentMetal] = useState({
+    loading: false,
+    rows: [],
+    missingItems: [],
+  });
   const [materialsStockRows, setMaterialsStockRows] = useState([]);
   const [leftoversRows, setLeftoversRows] = useState([]);
   const [consumeHistoryRows, setConsumeHistoryRows] = useState([]);
@@ -761,6 +773,61 @@ export default function App() {
   useEffect(() => {
     if (view !== "warehouse") setWarehouseSubView("sheets");
   }, [view]);
+  useEffect(() => {
+    if (view !== "metal") setMetalSubView("queue");
+  }, [view]);
+  const loadMetalStock = useCallback(async () => {
+    const payload = await callBackend("webGetMetalStock", {});
+    const list = Array.isArray(payload) ? payload : [];
+    setMetalStockRows(
+      list.map((row) => ({
+        metal_article: String(row?.metal_article || "").trim(),
+        metal_name: String(row?.metal_name || "").trim(),
+        qty_available: Number(row?.qty_available || 0),
+        qty_reserved: Number(row?.qty_reserved || 0),
+      })),
+    );
+  }, []);
+  const loadMetalQueue = useCallback(async () => {
+    setMetalQueueLoading(true);
+    try {
+      const payload = await callBackend("webGetMetalWorkQueue", {});
+      const list = Array.isArray(payload) ? payload : [];
+      setMetalQueueRows(
+        list.map((row) => ({
+          id: Number(row?.id || 0),
+          status: String(row?.status || "").trim(),
+          sourceRow: String(row?.source_row || "").trim(),
+          sourceCol: String(row?.source_col || "").trim(),
+          item: String(row?.item || "").trim(),
+          week: String(row?.week || "").trim(),
+          qty: Number(row?.qty || 0),
+          shortage: Array.isArray(row?.shortage) ? row.shortage : [],
+        })),
+      );
+    } catch (e) {
+      const msg = String(e?.message || e || "");
+      if (
+        msg.includes("не настроен для action") ||
+        msg.includes("Supabase RPC не настроен") ||
+        msg.includes("Could not find the function")
+      ) {
+        setMetalQueueRows([]);
+        return;
+      }
+      throw e;
+    } finally {
+      setMetalQueueLoading(false);
+    }
+  }, []);
+  useEffect(() => {
+    if (view !== "metal") return;
+    setLoading(true);
+    setError("");
+    Promise.all([loadMetalStock(), loadMetalQueue()])
+      .catch((e) => setError(toUserError(e)))
+      .finally(() => setLoading(false));
+  }, [view, loadMetalStock, loadMetalQueue, setLoading, setError]);
   useEffect(() => {
     if (view !== "labor") setLaborSubView("total");
   }, [view]);
@@ -977,6 +1044,47 @@ export default function App() {
       setError(`Не удалось синхронизировать склад: ${extractErrorMessage(e)}`);
     } finally {
       setWarehouseSyncLoading(false);
+    }
+  }
+
+  async function adjustMetalStock(metalArticle, deltaQty) {
+    if (!canOperateProduction) {
+      denyActionByRole("Недостаточно прав для изменения остатков металла.");
+      return;
+    }
+    const article = String(metalArticle || "").trim();
+    const delta = Number(deltaQty || 0);
+    if (!article || !Number.isFinite(delta) || delta === 0) return;
+    setMetalSavingArticle(article);
+    setError("");
+    try {
+      const current = metalStockRows.find((x) => String(x.metal_article || "") === article);
+      const currentQty = Number(current?.qty_available || 0);
+      const nextQty = Math.max(0, currentQty + delta);
+      await callBackend("webSetMetalStock", {
+        metalArticle: article,
+        metalName: String(current?.metal_name || ""),
+        qtyAvailable: nextQty,
+      });
+      await loadMetalStock();
+    } catch (e) {
+      setError(toUserError(e));
+    } finally {
+      setMetalSavingArticle("");
+    }
+  }
+  async function updateMetalQueueStatus(id, status) {
+    const queueId = Number(id || 0);
+    if (!(queueId > 0)) return;
+    setMetalQueueUpdatingId(queueId);
+    setError("");
+    try {
+      await callBackend("webSetMetalWorkQueueStatus", { id: queueId, status });
+      await loadMetalQueue();
+    } catch (e) {
+      setError(toUserError(e));
+    } finally {
+      setMetalQueueUpdatingId(0);
     }
   }
 
@@ -2284,6 +2392,96 @@ export default function App() {
     deficits.forEach((x) => x.sourceKeys.forEach((k) => deficitSourceKeys.add(k)));
     return { deficits, deficitSourceKeys };
   }, [selectedShipments]);
+  useEffect(() => {
+    let cancelled = false;
+    async function loadSelectedShipmentMetal() {
+      if (view !== "shipment" || selectedShipments.length === 0) {
+        setSelectedShipmentMetal({ loading: false, rows: [], missingItems: [] });
+        return;
+      }
+      const qtyByFurnitureArticle = new Map();
+      const missingItems = [];
+      selectedShipments.forEach((s) => {
+        const qty = Number(s.qty || 0);
+        if (!(qty > 0)) return;
+        const itemName = String(s.item || "").trim();
+        const directArticle = String(s.productArticle || s.product_article || "").trim();
+        const article =
+          directArticle || articleLookupByItemKey.get(normalizeFurnitureKey(itemName)) || "";
+        if (!article) {
+          if (itemName) missingItems.push(itemName);
+          return;
+        }
+        qtyByFurnitureArticle.set(article, (qtyByFurnitureArticle.get(article) || 0) + qty);
+      });
+      const uniqueMissingItems = [...new Set(missingItems)].sort((a, b) => a.localeCompare(b, "ru"));
+      if (qtyByFurnitureArticle.size === 0) {
+        setSelectedShipmentMetal({ loading: false, rows: [], missingItems: uniqueMissingItems });
+        return;
+      }
+      setSelectedShipmentMetal((prev) => ({ ...prev, loading: true, missingItems: uniqueMissingItems }));
+      try {
+        const [stockPayload, furnitureMetalRowsList] = await Promise.all([
+          callBackend("webGetMetalStock", {}),
+          Promise.all(
+            [...qtyByFurnitureArticle.keys()].map((article) =>
+              callBackend("webGetMetalForFurniture", { furnitureArticle: article }),
+            ),
+          ),
+        ]);
+        if (cancelled) return;
+        const stockByMetal = new Map();
+        (Array.isArray(stockPayload) ? stockPayload : []).forEach((row) => {
+          const metalArticle = String(row?.metal_article || "").trim();
+          if (!metalArticle) return;
+          stockByMetal.set(metalArticle, {
+            metalName: String(row?.metal_name || "").trim(),
+            qtyAvailable: Number(row?.qty_available || 0),
+          });
+        });
+        const neededByMetal = new Map();
+        [...qtyByFurnitureArticle.entries()].forEach(([furnitureArticle, furnitureQty], idx) => {
+          const componentRows = Array.isArray(furnitureMetalRowsList[idx]) ? furnitureMetalRowsList[idx] : [];
+          componentRows.forEach((row) => {
+            const metalArticle = String(row?.metal_article || "").trim();
+            if (!metalArticle) return;
+            const perUnit = Number(row?.qty_per_unit || 0);
+            if (!(perUnit > 0)) return;
+            const neededQty = furnitureQty * perUnit;
+            const current = neededByMetal.get(metalArticle) || {
+              metalArticle,
+              metalName: String(row?.metal_name || "").trim(),
+              neededQty: 0,
+            };
+            current.neededQty += neededQty;
+            if (!current.metalName) current.metalName = String(row?.metal_name || "").trim();
+            neededByMetal.set(metalArticle, current);
+          });
+        });
+        const rows = [...neededByMetal.values()]
+          .map((row) => {
+            const stock = stockByMetal.get(row.metalArticle) || { metalName: "", qtyAvailable: 0 };
+            const qtyAvailable = Number(stock.qtyAvailable || 0);
+            return {
+              metalArticle: row.metalArticle,
+              metalName: row.metalName || stock.metalName || row.metalArticle,
+              neededQty: Number(row.neededQty || 0),
+              qtyAvailable,
+              deficitQty: Math.max(0, Number(row.neededQty || 0) - qtyAvailable),
+            };
+          })
+          .sort((a, b) => b.deficitQty - a.deficitQty || a.metalArticle.localeCompare(b.metalArticle, "ru"));
+        setSelectedShipmentMetal({ loading: false, rows, missingItems: uniqueMissingItems });
+      } catch (_) {
+        if (cancelled) return;
+        setSelectedShipmentMetal({ loading: false, rows: [], missingItems: uniqueMissingItems });
+      }
+    }
+    loadSelectedShipmentMetal();
+    return () => {
+      cancelled = true;
+    };
+  }, [view, selectedShipments, articleLookupByItemKey]);
 
   const strapCalculation = useMemo(() => {
     const lines = [];
@@ -2419,6 +2617,31 @@ export default function App() {
     setActionLoading("shipment:bulk");
     setError("");
     try {
+      const metalDeficits = (selectedShipmentMetal.rows || []).filter((x) => Number(x.deficitQty || 0) > 0);
+      if (metalDeficits.length > 0) {
+        for (const s of sendable) {
+          await callBackend("webEnqueueMetalWorkOrder", {
+            sourceRow: s.row,
+            sourceCol: s.col,
+            item: s.item,
+            week: s.week,
+            qty: Number(s.qty || 0),
+            reason: "Нехватка металла при отправке в работу",
+            shortage: metalDeficits.map((d) => ({
+              metalArticle: d.metalArticle,
+              metalName: d.metalName,
+              deficitQty: d.deficitQty,
+              neededQty: d.neededQty,
+              qtyAvailable: d.qtyAvailable,
+            })),
+          });
+        }
+        setError("Нехватка металла: выбранные заказы помещены в очередь 'Металл в работу'.");
+        if (view === "metal") {
+          await loadMetalQueue();
+        }
+        return;
+      }
       for (const s of sendable) {
         const attempts = buildShipmentCellAttempts(s);
         await runShipmentCellActionWithFallback({
@@ -2807,14 +3030,15 @@ export default function App() {
 
       const articleMap = buildImportArticleMap(importCatalogRows);
 
-      const { imported, missing } = await applyImportPlanRows(importRows, articleMap, {
+      const { imported, missing, marked } = await applyImportPlanRows(importRows, articleMap, {
         callBackend,
         planNumber,
+        markMissingAsPlanRows: true,
       });
 
       await load();
       if (missing.length > 0) {
-        setError(formatImportShipmentPartialError(imported, missing));
+        setError(formatImportShipmentPartialError(imported, missing, marked));
       }
     } catch (e) {
       setError(formatShipmentImportError(extractErrorMessage(e)));
@@ -3178,15 +3402,33 @@ export default function App() {
             </button>
           </div>
         )}
+        {view === "metal" && (
+          <div className="tabs tabs--overview-sub">
+            <button
+              type="button"
+              className={metalSubView === "queue" ? "tab active" : "tab"}
+              onClick={() => setMetalSubView("queue")}
+            >
+              В работе
+            </button>
+            <button
+              type="button"
+              className={metalSubView === "stock" ? "tab active" : "tab"}
+              onClick={() => setMetalSubView("stock")}
+            >
+              Наличие
+            </button>
+          </div>
+        )}
         <div className="filters">
           {view !== "furniture" && (
             <input
-              placeholder={view === "shipment" ? "Поиск отгрузки: название или ID" : view === "warehouse" ? (warehouseSubView === "leftovers" ? "Поиск по цвету или размеру" : warehouseSubView === "history" ? "Поиск: заказ, материал, комментарий" : "Поиск материала") : "Поиск по названию или ID"}
+              placeholder={view === "shipment" ? "Поиск отгрузки: название или ID" : view === "warehouse" ? (warehouseSubView === "leftovers" ? "Поиск по цвету или размеру" : warehouseSubView === "history" ? "Поиск: заказ, материал, комментарий" : "Поиск материала") : view === "metal" ? (metalSubView === "queue" ? "Поиск: изделие, неделя, статус" : "Поиск по артикулу или названию металла") : "Поиск по названию или ID"}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
           )}
-          {view !== "warehouse" && view !== "furniture" && !(view === "labor" && laborSubView === "stages") && (
+          {view !== "warehouse" && view !== "furniture" && view !== "metal" && !(view === "labor" && laborSubView === "stages") && (
             <select value={weekFilter} onChange={(e) => setWeekFilter(e.target.value)}>
               <option value="all">Все недели</option>
               {weeks.map((w) => <option key={w} value={w}>Неделя {w}</option>)}
@@ -3368,6 +3610,7 @@ export default function App() {
             strapItems={strapItems}
             selectedShipmentSummary={selectedShipmentSummary}
             selectedShipmentStockCheck={selectedShipmentStockCheck}
+            selectedShipmentMetal={selectedShipmentMetal}
             strapCalculation={strapCalculation}
             shipmentPlanDeficits={shipmentPlanDeficits}
             articleLookupByItemKey={articleLookupByItemKey}
@@ -3444,6 +3687,35 @@ export default function App() {
             leftoversTableRows={leftoversTableRows}
             consumeHistoryTableRows={consumeHistoryTableRows}
             loading={loading}
+          />
+        )}
+        {view === "metal" && (
+          <MetalView
+            metalSubView={metalSubView}
+            rows={metalStockRows.filter((row) => {
+              const q = String(query || "").trim().toLowerCase();
+              if (!q || metalSubView !== "stock") return true;
+              return (
+                String(row.metal_article || "").toLowerCase().includes(q) ||
+                String(row.metal_name || "").toLowerCase().includes(q)
+              );
+            })}
+            loading={loading}
+            canOperateProduction={canOperateProduction}
+            savingKey={metalSavingArticle}
+            onAdjustStock={adjustMetalStock}
+            queueRows={metalQueueRows.filter((row) => {
+              const q = String(query || "").trim().toLowerCase();
+              if (!q || metalSubView !== "queue") return true;
+              return (
+                String(row.item || "").toLowerCase().includes(q) ||
+                String(row.week || "").toLowerCase().includes(q) ||
+                String(row.status || "").toLowerCase().includes(q)
+              );
+            })}
+            queueLoading={metalQueueLoading}
+            queueUpdatingId={metalQueueUpdatingId}
+            onQueueStatusChange={updateMetalQueueStatus}
           />
         )}
         {view === "stats" && (

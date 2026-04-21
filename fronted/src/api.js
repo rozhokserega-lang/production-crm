@@ -334,6 +334,12 @@ const RPC_MAP = {
   webGetArticlesForImport: "web_get_articles_for_import",
   webGetFurnitureProductArticles: "web_get_furniture_product_articles",
   webGetFurnitureDetailArticles: "web_get_furniture_detail_articles",
+  webGetMetalForFurniture: "web_get_metal_for_furniture",
+  webGetMetalStock: "web_get_metal_stock",
+  webSetMetalStock: "web_set_metal_stock",
+  webGetMetalWorkQueue: "web_get_metal_work_queue",
+  webEnqueueMetalWorkOrder: "web_enqueue_metal_work_order",
+  webSetMetalWorkQueueStatus: "web_set_metal_work_queue_status",
   webGetLeftovers: "web_get_leftovers",
   webGetLaborTable: "web_get_labor_table",
   webUpsertLaborFact: "web_upsert_labor_fact",
@@ -410,6 +416,11 @@ function buildRpcPayload(action, payload = {}) {
   if (action === "webGetConsumeOptions") {
     return { p_order_id: payload.orderId };
   }
+  if (action === "webGetMetalForFurniture") {
+    return {
+      p_furniture_article: String(payload.furnitureArticle || payload.p_furniture_article || "").trim(),
+    };
+  }
   if (action === "webGetConsumeHistory") {
     return { p_limit: Number(payload.limit || payload.p_limit || 300) };
   }
@@ -447,6 +458,35 @@ function buildRpcPayload(action, payload = {}) {
     return {
       p_order_id: String(payload.orderId || payload.p_order_id || "").trim(),
       p_comment: String(payload.text ?? payload.p_comment ?? "").trim(),
+    };
+  }
+  if (action === "webSetMetalStock") {
+    return {
+      p_metal_article: String(payload.metalArticle || payload.p_metal_article || "").trim(),
+      p_metal_name: String(payload.metalName || payload.p_metal_name || "").trim() || null,
+      p_qty_available: Number(payload.qtyAvailable ?? payload.p_qty_available ?? 0),
+    };
+  }
+  if (action === "webGetMetalWorkQueue") {
+    return {
+      p_status: String(payload.status || payload.p_status || "").trim() || null,
+    };
+  }
+  if (action === "webEnqueueMetalWorkOrder") {
+    return {
+      p_source_row: String(payload.sourceRow || payload.p_source_row || "").trim(),
+      p_source_col: String(payload.sourceCol || payload.p_source_col || "").trim(),
+      p_item: String(payload.item || payload.p_item || "").trim(),
+      p_week: String(payload.week || payload.p_week || "").trim() || null,
+      p_qty: Number(payload.qty || payload.p_qty || 0),
+      p_reason: String(payload.reason || payload.p_reason || "").trim() || null,
+      p_shortage: payload.shortage || payload.p_shortage || [],
+    };
+  }
+  if (action === "webSetMetalWorkQueueStatus") {
+    return {
+      p_id: Number(payload.id || payload.p_id || 0),
+      p_status: String(payload.status || payload.p_status || "").trim(),
     };
   }
   if (action === "webUpsertItemColorMap") {
