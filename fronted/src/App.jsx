@@ -1929,6 +1929,9 @@ export default function App() {
   const shipmentMaterialBalance = useMemo(() => {
     const byMaterial = new Map();
     shipmentTableRows.forEach((row) => {
+      // Count only rows that are waiting to be launched.
+      // Items already launched to production stages must not consume stock again.
+      if (!row.canSendToWork) return;
       const material = String(row.material || "Материал не указан").trim();
       const key = normalizeFurnitureKey(material);
       const needed = Number(row.sheets || 0);
@@ -1972,6 +1975,121 @@ export default function App() {
       .filter((x) => x.deficit > 0)
       .sort((a, b) => b.deficit - a.deficit || a.material.localeCompare(b.material, "ru"));
   }, [shipmentMaterialBalance]);
+  const warehouseOrderPlanRows = useMemo(() => {
+    const byMaterial = new Map();
+    const sections = Array.isArray(shipmentBoard?.sections) ? shipmentBoard.sections : [];
+    sections.forEach((section) => {
+      (section?.items || []).forEach((it) => {
+        const materialLabel = getMaterialLabel(it?.item, it?.material);
+        const materialKey = normalizeFurnitureKey(materialLabel);
+        (it?.cells || []).forEach((c) => {
+          const qty = Number(c?.qty || 0);
+          if (!(qty > 0)) return;
+          if (c?.inWork) return;
+          const sheetsRaw = Number(c?.sheetsNeeded || 0);
+          const outputPerSheet = Number(c?.outputPerSheet || 0);
+          const sheetsNeeded =
+            sheetsRaw > 0
+              ? sheetsRaw
+              : outputPerSheet > 0
+                ? Math.ceil(qty / outputPerSheet)
+                : 0;
+          if (!(sheetsNeeded > 0)) return;
+          if (!byMaterial.has(materialKey)) {
+            byMaterial.set(materialKey, {
+              material: materialLabel || "Материал не указан",
+              needed: 0,
+            });
+          }
+          byMaterial.get(materialKey).needed += sheetsNeeded;
+        });
+      });
+    });
+
+    const availableByMaterial = new Map();
+    (materialsStockRows || []).forEach((row) => {
+      const material = String(row?.material || "").trim();
+      const key = normalizeFurnitureKey(material);
+      if (!key) return;
+      const qtySheets = Number(row?.qty_sheets ?? row?.qtySheets ?? 0);
+      const qty = Number.isFinite(qtySheets) ? qtySheets : 0;
+      availableByMaterial.set(key, Math.max(availableByMaterial.get(key) || 0, qty));
+    });
+
+    return [...byMaterial.entries()]
+      .map(([materialKey, row]) => {
+        const available = Number(availableByMaterial.get(materialKey) || 0);
+        const needed = Number(row.needed || 0);
+        return {
+          material: row.material,
+          needed,
+          available,
+          toOrder: Math.max(0, needed - available),
+        };
+      })
+      .filter((row) => row.toOrder > 0)
+      .sort((a, b) => b.toOrder - a.toOrder || a.material.localeCompare(b.material, "ru"));
+  }, [shipmentBoard, materialsStockRows, getMaterialLabel, normalizeFurnitureKey]);
+
+  function printWarehouseOrderPlanPdf() {
+    const rows = warehouseOrderPlanRows;
+    if (!rows.length) {
+      setError("Дефицита материалов нет — заказывать нечего.");
+      return;
+    }
+    const now = new Date().toLocaleString("ru-RU", { timeZone: "Europe/Moscow" });
+    const htmlRows = rows
+      .map(
+        (r, idx) => `
+          <tr>
+            <td>${idx + 1}</td>
+            <td>${String(r.material || "")}</td>
+            <td>${r.needed}</td>
+            <td>${r.available}</td>
+            <td><b>${r.toOrder}</b></td>
+          </tr>`,
+      )
+      .join("");
+    const popup = window.open("", "_blank");
+    if (!popup) {
+      setError("Не удалось открыть окно печати. Разреши pop-up для сайта.");
+      return;
+    }
+    popup.document.write(`<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <title>Что заказать (склад)</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; color: #0f172a; }
+    h1 { margin: 0 0 8px; font-size: 22px; }
+    .meta { margin: 0 0 16px; color: #334155; font-size: 13px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #cbd5e1; padding: 8px; font-size: 13px; text-align: left; }
+    th { background: #f1f5f9; }
+  </style>
+</head>
+<body>
+  <h1>Лист заказа материалов</h1>
+  <div class="meta">Сформировано: ${now}</div>
+  <table>
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Материал</th>
+        <th>Нужно для плана</th>
+        <th>В наличии</th>
+        <th>Заказать</th>
+      </tr>
+    </thead>
+    <tbody>${htmlRows}</tbody>
+  </table>
+</body>
+</html>`);
+    popup.document.close();
+    popup.focus();
+    popup.print();
+  }
   const laborTableRows = useMemo(() => {
     if (view !== "labor") return [];
     const toNum = (v) => Number(v || 0);
@@ -3368,6 +3486,15 @@ export default function App() {
             >
               {leftoversSyncLoading ? "Выгрузка..." : "Выгрузить остатки"}
             </button>
+            <button
+              type="button"
+              className="mini"
+              disabled={warehouseOrderPlanRows.length === 0}
+              onClick={printWarehouseOrderPlanPdf}
+              title="Сформировать PDF, что нужно заказать для закрытия плана"
+            >
+              Что заказать
+            </button>
           </div>
         )}
         {view === "labor" && (
@@ -3686,6 +3813,7 @@ export default function App() {
             warehouseTableRows={warehouseTableRows}
             leftoversTableRows={leftoversTableRows}
             consumeHistoryTableRows={consumeHistoryTableRows}
+            warehouseOrderPlanRows={warehouseOrderPlanRows}
             loading={loading}
           />
         )}

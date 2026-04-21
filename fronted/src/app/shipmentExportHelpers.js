@@ -60,6 +60,7 @@ export async function applyImportPlanRows(importRows = [], articleMap = new Map(
   const missing = [];
   let imported = 0;
   let marked = 0;
+  const missingAgg = new Map();
   if (typeof callBackend !== "function" || !week) {
     return { imported, missing, marked };
   }
@@ -68,16 +69,7 @@ export async function applyImportPlanRows(importRows = [], articleMap = new Map(
     const mapped = articleMap.get(articleRaw.toUpperCase());
     if (!mapped) {
       missing.push(articleRaw);
-      if (markMissingAsPlanRows) {
-        await callBackend("webCreateShipmentPlanCell", {
-          sectionName: "Не сопоставлено",
-          item: `[НЕ НАЙДЕН АРТИКУЛ] ${articleRaw}`,
-          material: "Не указан",
-          week,
-          qty: row.qty,
-        });
-        marked += 1;
-      }
+      if (markMissingAsPlanRows) missingAgg.set(articleRaw, (missingAgg.get(articleRaw) || 0) + Number(row.qty || 0));
       continue;
     }
     await callBackend("webCreateShipmentPlanCell", {
@@ -88,6 +80,18 @@ export async function applyImportPlanRows(importRows = [], articleMap = new Map(
       qty: row.qty,
     });
     imported += 1;
+  }
+  if (markMissingAsPlanRows && missingAgg.size > 0) {
+    for (const [articleRaw, qty] of missingAgg.entries()) {
+      await callBackend("webCreateShipmentPlanCell", {
+        sectionName: "Не сопоставлено",
+        item: `[НЕ НАЙДЕН АРТИКУЛ] ${articleRaw}`,
+        material: "Не указан",
+        week,
+        qty,
+      });
+      marked += 1;
+    }
   }
   return { imported, missing, marked };
 }

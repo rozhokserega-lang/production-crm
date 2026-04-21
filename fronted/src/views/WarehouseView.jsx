@@ -3,33 +3,65 @@ export function WarehouseView({
   warehouseTableRows,
   leftoversTableRows,
   consumeHistoryTableRows,
+  warehouseOrderPlanRows,
   loading,
 }) {
   return (
     <>
       {warehouseSubView === "sheets" && !warehouseTableRows.length && !loading && <div className="empty">Нет данных по складу</div>}
       {warehouseSubView === "sheets" && warehouseTableRows.length > 0 && (
-        <div className="sheet-table-wrap">
-          <table className="sheet-table">
-            <thead>
-              <tr>
-                <th>Материал</th>
-                <th>Листов в наличии</th>
-                <th>Размер</th>
-                <th>Обновлено</th>
-              </tr>
-            </thead>
-            <tbody>
-              {warehouseTableRows.map((r) => (
-                <tr key={`${r.material}-${r.sizeLabel}`}>
-                  <td>{r.material || "-"}</td>
-                  <td><b>{r.qtySheets}</b></td>
-                  <td>{r.sizeLabel || "-"}</td>
-                  <td>{r.updatedAt ? new Date(r.updatedAt).toLocaleString("ru-RU", { timeZone: "Europe/Moscow" }) : "-"}</td>
+        <div style={{ display: "grid", gap: 12 }}>
+          <div className="sheet-table-wrap">
+            <table className="sheet-table">
+              <thead>
+                <tr>
+                  <th>Материал</th>
+                  <th>Листов в наличии</th>
+                  <th>Размер</th>
+                  <th>Обновлено</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {warehouseTableRows.map((r) => (
+                  <tr key={`${r.material}-${r.sizeLabel}`}>
+                    <td>{r.material || "-"}</td>
+                    <td><b>{r.qtySheets}</b></td>
+                    <td>{r.sizeLabel || "-"}</td>
+                    <td>{r.updatedAt ? new Date(r.updatedAt).toLocaleString("ru-RU", { timeZone: "Europe/Moscow" }) : "-"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="sheet-table-wrap">
+            <div className="selection-summary-title" style={{ marginBottom: 8 }}>
+              Что заказать для закрытия плана
+            </div>
+            {warehouseOrderPlanRows.length === 0 ? (
+              <div className="empty">Дефицита материалов нет.</div>
+            ) : (
+              <table className="sheet-table">
+                <thead>
+                  <tr>
+                    <th>Материал</th>
+                    <th>Нужно</th>
+                    <th>В наличии</th>
+                    <th>Заказать</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {warehouseOrderPlanRows.map((r) => (
+                    <tr key={`order-${r.material}`}>
+                      <td>{r.material || "-"}</td>
+                      <td>{r.needed}</td>
+                      <td>{r.available}</td>
+                      <td><b>{r.toOrder}</b></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
         </div>
       )}
       {warehouseSubView === "leftovers" && !leftoversTableRows.length && !loading && <div className="empty">Нет данных по остаткам</div>}
