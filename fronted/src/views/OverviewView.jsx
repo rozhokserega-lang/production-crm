@@ -11,13 +11,13 @@ export function OverviewView({
   const ARTICLE_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{2,}$/;
   const readArticle = (row) =>
     String(
+      row?.product_article ||
+        row?.productArticle ||
       row?.article_code ||
         row?.articleCode ||
         row?.article ||
         row?.mapped_article_code ||
         row?.mappedArticleCode ||
-        row?.source_row_id ||
-        row?.sourceRowId ||
         "",
     ).trim();
   const readTitle = (row) =>

@@ -13,13 +13,13 @@ function readAdminComment(row) {
 
 function readArticle(row) {
   return String(
+    row?.product_article ||
+      row?.productArticle ||
     row?.article_code ||
       row?.articleCode ||
       row?.article ||
       row?.mapped_article_code ||
       row?.mappedArticleCode ||
-      row?.source_row_id ||
-      row?.sourceRowId ||
       "",
   ).trim();
 }
