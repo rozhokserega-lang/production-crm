@@ -90,7 +90,7 @@ export interface RpcPayloadMap {
   webListCrmUserRoles: Record<string, never>;
   webSetCrmUserRole: { userId: string; role: string; note?: string };
   webRemoveCrmUserRole: { userId: string };
-  webGetAuditLog: { action?: string | null; limit?: number; offset?: number };
+  webGetAuditLog: { action?: string | null; entity?: string | null; limit?: number; offset?: number };
   webUpsertItemColorMap: { itemName: string; colorName: string };
   webGetConsumeOptions: { orderId: string };
   webPreviewPlanFromShipment: { row: string | number; col: string | number };

@@ -37,7 +37,7 @@ Create environment file:
 ```bash
 cat > /opt/apps/production-crm/fronted/.env.production << 'EOF'
 VITE_BACKEND_PROVIDER=supabase
-VITE_SUPABASE_URL=https://nsdwypcbhmfseotclkrm.supabase.co
+VITE_SUPABASE_URL=https://supabase-proxy.crm-v175.ru
 VITE_SUPABASE_ANON_KEY=REPLACE_WITH_REAL_PUBLISHABLE_KEY
 EOF
 ```
@@ -115,7 +115,7 @@ systemctl reload nginx
 - `Invalid API key`:
   - Ensure `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are from the same Supabase project.
 - Frontend loads but data empty:
-  - Re-check `.env.production`, rebuild, copy `dist`, reload nginx.
+  - Re-check `.env.production` (for this VPS it must point to `https://supabase-proxy.crm-v175.ru`), then rebuild/copy `dist`/reload nginx.
 - RPC errors after deploy:
   - Open browser console and filter by `[CRM RPC]` / `[CRM Hybrid]` (hybrid only if legacy GAS duplicate is enabled).
 - Nginx issues:

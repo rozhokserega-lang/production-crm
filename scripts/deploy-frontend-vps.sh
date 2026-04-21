@@ -17,6 +17,8 @@ set -euo pipefail
 : "${GIT_REMOTE:=origin}"
 : "${WEB_ROOT:=/var/www/crm-test}"
 : "${FRONTEND_REL:=fronted}"
+: "${REQUIRE_PROXY:=1}"
+: "${EXPECTED_SUPABASE_URL:=https://supabase-proxy.crm-v175.ru}"
 
 need_sudo() {
   local target="$1"
@@ -52,6 +54,7 @@ fi
 echo "==> Repo:    $REPO_DIR"
 echo "==> Branch:  $GIT_BRANCH"
 echo "==> Web root: $WEB_ROOT"
+echo "==> Expected Supabase URL: $EXPECTED_SUPABASE_URL (REQUIRE_PROXY=$REQUIRE_PROXY)"
 
 cd "$REPO_DIR"
 
@@ -61,6 +64,25 @@ git pull --ff-only "$GIT_REMOTE" "$GIT_BRANCH" || git pull "$GIT_REMOTE" "$GIT_B
 
 cd "$REPO_DIR/$FRONTEND_REL"
 
+if [[ ! -f .env.production ]]; then
+  echo "ERROR: $REPO_DIR/$FRONTEND_REL/.env.production not found."
+  exit 1
+fi
+
+if [[ "$REQUIRE_PROXY" == "1" ]]; then
+  current_url="$(sed -n 's/^VITE_SUPABASE_URL=//p' .env.production | tail -n 1 | tr -d '\r')"
+  if [[ -z "$current_url" ]]; then
+    echo "ERROR: VITE_SUPABASE_URL is empty in .env.production"
+    exit 1
+  fi
+  if [[ "$current_url" != "$EXPECTED_SUPABASE_URL" ]]; then
+    echo "ERROR: VITE_SUPABASE_URL mismatch in .env.production"
+    echo "  got:      $current_url"
+    echo "  expected: $EXPECTED_SUPABASE_URL"
+    exit 1
+  fi
+fi
+
 if [[ -f package-lock.json ]]; then
   npm ci
 else
@@ -68,6 +90,13 @@ else
 fi
 
 npm run build
+
+if [[ "$REQUIRE_PROXY" == "1" ]]; then
+  if ! grep -Rqs "$EXPECTED_SUPABASE_URL" dist/assets; then
+    echo "ERROR: expected proxy URL not found in dist/assets"
+    exit 1
+  fi
+fi
 
 run_web mkdir -p "$WEB_ROOT"
 

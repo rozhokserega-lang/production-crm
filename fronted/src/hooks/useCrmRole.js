@@ -146,6 +146,7 @@ export function useCrmRole({
   const loadAuditLog = useCallback(async (next = {}) => {
     if (!canAdminSettings) return;
     const requestedAction = String(next.action ?? "").trim();
+    const requestedEntity = String(next.entity ?? "").trim();
     const requestedLimit = Math.max(1, Math.min(1000, Number(next.limit ?? 50) || 50));
     const requestedOffset = Math.max(0, Number(next.offset ?? 0) || 0);
     setAuditLoading(true);
@@ -153,11 +154,13 @@ export function useCrmRole({
     try {
       const payload = await callBackend("webGetAuditLog", {
         action: requestedAction || null,
+        entity: requestedEntity || null,
         limit: requestedLimit,
         offset: requestedOffset,
       });
       setAuditLog(normalizeAuditLog(payload));
       setAuditAction(requestedAction);
+      setAuditEntity(requestedEntity);
       setAuditLimit(requestedLimit);
       setAuditOffset(requestedOffset);
     } catch (e) {

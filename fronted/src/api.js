@@ -490,6 +490,7 @@ function buildRpcPayload(action, payload = {}) {
       p_limit: Number(payload.limit || payload.p_limit || 200),
       p_offset: Number(payload.offset || payload.p_offset || 0),
       p_action: String(payload.action || payload.p_action || "").trim() || null,
+      p_entity: String(payload.entity || payload.p_entity || "").trim() || null,
     };
   }
   return payload || {};

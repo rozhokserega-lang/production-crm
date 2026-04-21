@@ -117,7 +117,13 @@ export function AdminView({
         <button
           className="mini"
           disabled={auditLoading}
-          onClick={() => loadAuditLog({ action: auditAction, limit: auditLimit, offset: auditOffset })}
+          onClick={() =>
+            loadAuditLog({
+              action: auditAction,
+              entity: auditEntity,
+              limit: auditLimit,
+              offset: auditOffset,
+            })}
         >
           {auditLoading ? "Обновляю..." : "Обновить журнал"}
         </button>
@@ -145,7 +151,7 @@ export function AdminView({
         <button
           className="mini"
           disabled={auditLoading}
-          onClick={() => loadAuditLog({ action: auditAction, offset: 0 })}
+          onClick={() => loadAuditLog({ action: auditAction, entity: auditEntity, offset: 0 })}
         >
           Применить фильтр
         </button>
@@ -191,6 +197,7 @@ export function AdminView({
               onClick={() =>
                 loadAuditLog({
                   action: auditAction,
+                  entity: auditEntity,
                   limit: auditLimit,
                   offset: Math.max(0, auditOffset - auditLimit),
                 })}
@@ -204,6 +211,7 @@ export function AdminView({
               onClick={() =>
                 loadAuditLog({
                   action: auditAction,
+                  entity: auditEntity,
                   limit: auditLimit,
                   offset: auditOffset + auditLimit,
                 })}
