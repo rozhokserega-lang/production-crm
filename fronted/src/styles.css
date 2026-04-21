@@ -145,10 +145,81 @@ body {
   gap: 8px;
 }
 
+.admin-panel__schedule {
+  display: grid;
+  grid-template-columns: minmax(180px, 220px) minmax(220px, 280px) minmax(220px, 280px) minmax(280px, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+
+.admin-panel__schedule-hours,
+.admin-panel__schedule-days {
+  min-width: 0;
+}
+
+.admin-panel__schedule-label {
+  font-size: 12px;
+  color: #475569;
+  margin-bottom: 6px;
+  line-height: 1.2;
+}
+
+.admin-panel__schedule-hours input {
+  width: 100%;
+  min-height: 36px;
+}
+
+.admin-panel__schedule-days-list {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.admin-panel__schedule-time-row {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 6px;
+}
+
+.admin-panel__schedule-time-row input {
+  min-width: 0;
+}
+
+.admin-panel__day-toggle {
+  min-width: 46px;
+  min-height: 34px;
+  padding: 6px 8px;
+}
+
+.admin-panel__schedule-save {
+  grid-column: 1 / -1;
+  justify-self: end;
+  white-space: nowrap;
+}
+
+@media (max-width: 1450px) {
+  .admin-panel__schedule {
+    grid-template-columns: minmax(180px, 220px) minmax(220px, 1fr);
+  }
+}
+
 .admin-panel__audit-controls {
   display: grid;
   grid-template-columns: 1.4fr 1.4fr 160px auto;
   gap: 8px;
+}
+
+@media (max-width: 1100px) {
+  .admin-panel__schedule {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+
+  .admin-panel__schedule-save {
+    justify-self: start;
+  }
 }
 
 .admin-panel__audit-details {

@@ -28,7 +28,23 @@ export function AdminView({
   setAuditAction,
   setAuditEntity,
   loadAuditLog,
+  workSchedule,
+  setWorkSchedule,
+  workScheduleLoading,
+  workScheduleSaving,
+  loadWorkSchedule,
+  saveWorkSchedule,
 }) {
+  const dayLabels = {
+    mon: "Пн",
+    tue: "Вт",
+    wed: "Ср",
+    thu: "Чт",
+    fri: "Пт",
+    sat: "Сб",
+    sun: "Вс",
+  };
+  const dayOrder = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
   if (!canAdminSettings) return null;
 
   const filteredAuditLog = useMemo(() => {
@@ -112,6 +128,122 @@ export function AdminView({
           </table>
         </div>
       )}
+      <div className="admin-panel__head">
+        <div className="admin-panel__title">Рабочий календарь</div>
+        <button className="mini" disabled={workScheduleLoading || workScheduleSaving} onClick={loadWorkSchedule}>
+          {workScheduleLoading ? "Обновляю..." : "Обновить"}
+        </button>
+      </div>
+      <div className="admin-panel__schedule">
+        <div className="admin-panel__schedule-hours">
+          <div className="admin-panel__schedule-label">Часов в рабочем дне</div>
+          <input
+            inputMode="decimal"
+            value={String(workSchedule?.hoursPerDay ?? "")}
+            onChange={(e) => {
+              const next = Number(String(e.target.value || "").replace(",", "."));
+              setWorkSchedule((prev) => ({
+                ...prev,
+                hoursPerDay: Number.isFinite(next) ? next : prev.hoursPerDay,
+              }));
+            }}
+            disabled={workScheduleSaving}
+          />
+        </div>
+        <div className="admin-panel__schedule-hours">
+          <div className="admin-panel__schedule-label">Рабочее время</div>
+          <div className="admin-panel__schedule-time-row">
+            <input
+              value={String(workSchedule?.workStart ?? "08:00")}
+              onChange={(e) =>
+                setWorkSchedule((prev) => ({
+                  ...prev,
+                  workStart: String(e.target.value || "").replace(/[^\d:]/g, "").slice(0, 5),
+                }))
+              }
+              placeholder="08:00"
+              disabled={workScheduleSaving}
+            />
+            <span>—</span>
+            <input
+              value={String(workSchedule?.workEnd ?? "18:00")}
+              onChange={(e) =>
+                setWorkSchedule((prev) => ({
+                  ...prev,
+                  workEnd: String(e.target.value || "").replace(/[^\d:]/g, "").slice(0, 5),
+                }))
+              }
+              placeholder="18:00"
+              disabled={workScheduleSaving}
+            />
+          </div>
+        </div>
+        <div className="admin-panel__schedule-hours">
+          <div className="admin-panel__schedule-label">Обед</div>
+          <div className="admin-panel__schedule-time-row">
+            <input
+              value={String(workSchedule?.lunchStart ?? "12:00")}
+              onChange={(e) =>
+                setWorkSchedule((prev) => ({
+                  ...prev,
+                  lunchStart: String(e.target.value || "").replace(/[^\d:]/g, "").slice(0, 5),
+                }))
+              }
+              placeholder="12:00"
+              disabled={workScheduleSaving}
+            />
+            <span>—</span>
+            <input
+              value={String(workSchedule?.lunchEnd ?? "13:00")}
+              onChange={(e) =>
+                setWorkSchedule((prev) => ({
+                  ...prev,
+                  lunchEnd: String(e.target.value || "").replace(/[^\d:]/g, "").slice(0, 5),
+                }))
+              }
+              placeholder="13:00"
+              disabled={workScheduleSaving}
+            />
+          </div>
+        </div>
+        <div className="admin-panel__schedule-days">
+          <div className="admin-panel__schedule-label">Рабочие дни</div>
+          <div className="admin-panel__schedule-days-list">
+            {dayOrder.map((day) => {
+              const active = (workSchedule?.workingDays || []).includes(day);
+              return (
+                <button
+                  key={day}
+                  type="button"
+                  className={active ? "mini ok admin-panel__day-toggle" : "mini admin-panel__day-toggle"}
+                  disabled={workScheduleSaving}
+                  onClick={() =>
+                    setWorkSchedule((prev) => {
+                      const current = Array.isArray(prev?.workingDays) ? prev.workingDays : [];
+                      const next = active ? current.filter((d) => d !== day) : [...current, day];
+                      return {
+                        ...prev,
+                        workingDays: dayOrder.filter((d) => next.includes(d)),
+                      };
+                    })
+                  }
+                >
+                  {dayLabels[day]}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        <button className="mini ok admin-panel__schedule-save" disabled={workScheduleSaving} onClick={saveWorkSchedule}>
+          {workScheduleSaving ? "Сохраняю..." : "Сохранить график"}
+        </button>
+      </div>
+      <div className="empty" style={{ marginBottom: 10 }}>
+        Рабочее окно: {workSchedule?.workStart || "08:00"}—{workSchedule?.workEnd || "18:00"}, обед {workSchedule?.lunchStart || "12:00"}—{workSchedule?.lunchEnd || "13:00"}.
+        {" "}
+        Выходные: {(workSchedule?.weekendDays || []).map((d) => dayLabels[d] || d).join(", ") || "нет"}.
+        {workSchedule?.updatedAt ? ` Обновлено: ${formatDateTimeRu(workSchedule.updatedAt)}.` : ""}
+      </div>
       <div className="admin-panel__head">
         <div className="admin-panel__title">Журнал действий (Audit Log)</div>
         <button

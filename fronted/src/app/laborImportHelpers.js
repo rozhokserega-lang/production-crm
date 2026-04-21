@@ -3,6 +3,27 @@ function toNum(v) {
   return Number.isFinite(n) ? n : 0;
 }
 
+function parseHms(v) {
+  const s = String(v ?? "").trim();
+  const m = s.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  if (!m) return null;
+  const hh = Number(m[1]);
+  const mm = Number(m[2]);
+  const ss = Number(m[3] || "0");
+  if (!Number.isFinite(hh) || !Number.isFinite(mm) || !Number.isFinite(ss)) return null;
+  if (hh < 0 || hh > 23 || mm < 0 || mm > 59 || ss < 0 || ss > 59) return null;
+  return hh * 3600 + mm * 60 + ss;
+}
+
+function diffMinutesByHms(startRaw, endRaw) {
+  const startSec = parseHms(startRaw);
+  const endSec = parseHms(endRaw);
+  if (startSec == null || endSec == null) return 0;
+  let diff = endSec - startSec;
+  if (diff < 0) diff += 24 * 3600;
+  return Math.max(0, diff / 60);
+}
+
 function normalizeHeader(s) {
   return String(s || "")
     .toLowerCase()
@@ -39,10 +60,21 @@ export function parseLaborImportRows(rows = [], nowKey = Date.now()) {
     const orderId = String((idx.orderId >= 0 ? row[idx.orderId] : row[0]) || "").trim();
     const week = String((idx.week >= 0 ? row[idx.week] : row[2]) || "").trim();
     const qty = toNum(idx.qty >= 0 ? row[idx.qty] : row[3]);
-    const pilkaMin = toNum(idx.pilka >= 0 ? row[idx.pilka] : row[4]);
+    let pilkaMin = toNum(idx.pilka >= 0 ? row[idx.pilka] : row[4]);
     const kromkaMin = toNum(idx.kromka >= 0 ? row[idx.kromka] : row[5]);
     const prasMin = toNum(idx.pras >= 0 ? row[idx.pras] : row[6]);
-    const totalRaw = toNum(idx.total >= 0 ? row[idx.total] : row[7]);
+    let totalRaw = toNum(idx.total >= 0 ? row[idx.total] : row[7]);
+
+    // Legacy import format: [item, in_work, week, qty, pilka_start_hms, pilka_end_hms]
+    // If minute columns are empty but time interval exists, convert it to pilka/total minutes.
+    if (pilkaMin <= 0 && kromkaMin <= 0 && prasMin <= 0 && totalRaw <= 0) {
+      const legacyPilkaMin = diffMinutesByHms(row[4], row[5]);
+      if (legacyPilkaMin > 0) {
+        pilkaMin = legacyPilkaMin;
+        totalRaw = legacyPilkaMin;
+      }
+    }
+
     const totalMin = totalRaw > 0 ? totalRaw : pilkaMin + kromkaMin + prasMin;
     const dateFinished = String((idx.date >= 0 ? row[idx.date] : row[8]) || "").trim();
     if (!item && !orderId) return;

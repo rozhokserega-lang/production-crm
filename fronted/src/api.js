@@ -347,7 +347,9 @@ const RPC_MAP = {
   webGetMyRole: "web_effective_crm_role",
   webGetCrmAuthStrict: "web_is_crm_auth_strict",
   webGetCrmExecutors: "web_get_crm_executors",
+  webGetWorkSchedule: "web_get_work_schedule",
   webSetCrmAuthStrict: "web_set_crm_auth_strict",
+  webSetWorkSchedule: "web_set_work_schedule",
   webListCrmUserRoles: "web_list_crm_user_roles",
   webSetCrmUserRole: "web_set_crm_user_role",
   webRemoveCrmUserRole: "web_remove_crm_user_role",
@@ -511,6 +513,18 @@ function buildRpcPayload(action, payload = {}) {
   if (action === "webSetCrmAuthStrict") {
     return {
       p_enabled: Boolean(payload.enabled),
+    };
+  }
+  if (action === "webSetWorkSchedule") {
+    return {
+      p_hours_per_day: Number(payload.hoursPerDay ?? payload.p_hours_per_day ?? 8),
+      p_working_days: Array.isArray(payload.workingDays || payload.p_working_days)
+        ? (payload.workingDays || payload.p_working_days).map((x) => String(x || "").trim().toLowerCase()).filter(Boolean)
+        : [],
+      p_work_start: String(payload.workStart || payload.p_work_start || "08:00").trim(),
+      p_work_end: String(payload.workEnd || payload.p_work_end || "18:00").trim(),
+      p_lunch_start: String(payload.lunchStart || payload.p_lunch_start || "12:00").trim(),
+      p_lunch_end: String(payload.lunchEnd || payload.p_lunch_end || "13:00").trim(),
     };
   }
   if (action === "webSetCrmUserRole") {
