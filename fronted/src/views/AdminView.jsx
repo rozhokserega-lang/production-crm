@@ -45,13 +45,13 @@ export function AdminView({
     sun: "Вс",
   };
   const dayOrder = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
-  if (!canAdminSettings) return null;
-
   const filteredAuditLog = useMemo(() => {
     const needle = String(auditEntity || "").trim().toLowerCase();
     if (!needle) return auditLog;
     return (auditLog || []).filter((row) => String(row?.entity || "").toLowerCase().includes(needle));
   }, [auditLog, auditEntity]);
+  
+  if (!canAdminSettings) return null;
 
   return (
     <div className="admin-panel">
