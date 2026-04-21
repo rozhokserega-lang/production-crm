@@ -8,6 +8,36 @@ export function OverviewView({
   formatDateTimeRu,
   onOpenOrderDrawer,
 }) {
+  const ARTICLE_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{2,}$/;
+  const readArticle = (row) =>
+    String(
+      row?.article_code ||
+        row?.articleCode ||
+        row?.article ||
+        row?.mapped_article_code ||
+        row?.mappedArticleCode ||
+        row?.source_row_id ||
+        row?.sourceRowId ||
+        "",
+    ).trim();
+  const readTitle = (row) =>
+    String(row?.item_label || row?.itemLabel || row?.detailedName || row?.firstName || row?.itemName || row?.item || "").trim();
+  const splitTitleAndArticle = (row) => {
+    let article = readArticle(row);
+    let title = readTitle(row);
+    if (!title) return { title: "—", article: article || "" };
+    if (!article) {
+      const parts = title.split(/\s+/);
+      const head = String(parts[0] || "").trim();
+      if (ARTICLE_RE.test(head)) {
+        article = head;
+        const rest = title.slice(head.length).trim();
+        if (rest) title = rest;
+      }
+    }
+    return { title, article };
+  };
+
   return (
     <>
       {overviewSubView === "kanban" && (
@@ -24,6 +54,7 @@ export function OverviewView({
                   <div className="overview-column__list">
                     {col.items.map((o) => {
                       const orderId = String(o.orderId || o.order_id || "");
+                      const { title, article } = splitTitleAndArticle(o);
                       const adminCommentMark = String(o.adminComment ?? o.admin_comment ?? "").trim();
                       const openDrawer = () => {
                         if (orderId && typeof onOpenOrderDrawer === "function") onOpenOrderDrawer(orderId);
@@ -45,7 +76,8 @@ export function OverviewView({
                           onKeyDown={onCardKeyDown}
                         >
                           <div className="overview-card__id">Заказ #{orderId || "-"}</div>
-                          <div className="overview-card__item">{o.item}</div>
+                          <div className="overview-card__item">{title || "—"}</div>
+                          {article ? <div className="overview-card__meta">Артикул: {article}</div> : null}
                           <div className="overview-card__meta">
                             <span>План: {o.week || "-"}</span>
                             <span>Кол-во: {Number(o.qty || 0)}</span>

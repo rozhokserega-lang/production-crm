@@ -11,6 +11,40 @@ function readAdminComment(row) {
   return String(row?.adminComment ?? row?.admin_comment ?? "").trim();
 }
 
+function readArticle(row) {
+  return String(
+    row?.article_code ||
+      row?.articleCode ||
+      row?.article ||
+      row?.mapped_article_code ||
+      row?.mappedArticleCode ||
+      row?.source_row_id ||
+      row?.sourceRowId ||
+      "",
+  ).trim();
+}
+
+function readTitle(row) {
+  return String(row?.item_label || row?.itemLabel || row?.detailedName || row?.firstName || row?.itemName || row?.item || "").trim();
+}
+
+function splitTitleAndArticle(row) {
+  const ARTICLE_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{2,}$/;
+  let article = readArticle(row);
+  let title = readTitle(row);
+  if (!title) return { title: "—", article: article || "" };
+  if (!article) {
+    const parts = title.split(/\s+/);
+    const head = String(parts[0] || "").trim();
+    if (ARTICLE_RE.test(head)) {
+      article = head;
+      const rest = title.slice(head.length).trim();
+      if (rest) title = rest;
+    }
+  }
+  return { title, article };
+}
+
 export function OrderDrawer({
   orderId,
   lines,
@@ -45,6 +79,7 @@ export function OrderDrawer({
   if (!open || !orderId) return null;
 
   const first = lines[0] || {};
+  const firstDisplay = splitTitleAndArticle(first);
   const pilkaS = first.pilkaStatus ?? first.pilka_status ?? first.pilka ?? "";
   const kromkaS = first.kromkaStatus ?? first.kromka_status ?? first.kromka ?? "";
   const prasS = first.prasStatus ?? first.pras_status ?? first.pras ?? "";
@@ -101,6 +136,9 @@ export function OrderDrawer({
           <h3 className="order-drawer__h3">Кратко</h3>
           <ul className="order-drawer__meta">
             <li>
+              <span>Артикул</span> <strong>{firstDisplay.article || "—"}</strong>
+            </li>
+            <li>
               <span>План (первая позиция)</span> <strong>{first.week || "—"}</strong>
             </li>
             <li>
@@ -121,10 +159,14 @@ export function OrderDrawer({
           ) : (
             <ul className="order-drawer__lines">
               {lines.map((row, idx) => {
-                const key = `${row.item}-${idx}`;
+                const lineDisplay = splitTitleAndArticle(row);
+                const key = `${lineDisplay.title}-${idx}`;
                 return (
                   <li key={key} className="order-drawer__line">
-                    <span className="order-drawer__line-item">{row.item || "—"}</span>
+                    <span className="order-drawer__line-item">
+                      {lineDisplay.title || "—"}
+                      {lineDisplay.article ? ` (${lineDisplay.article})` : ""}
+                    </span>
                     <span className="order-drawer__line-meta">
                       план {row.week || "—"} · кол-во {Number(row.qty || 0)}
                     </span>
