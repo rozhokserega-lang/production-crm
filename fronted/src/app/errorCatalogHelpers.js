@@ -1,6 +1,6 @@
 export function normalizeCatalogItemName(name) {
   return String(name || "")
-    .replace(/^стол\s+письменный\s+/i, "")
+    .replace(/^стол\s+(письменный|кухонный)\s+/i, "")
     .trim();
 }
 
