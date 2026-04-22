@@ -18,16 +18,26 @@ export function MetalView({
   onQueueStatusChange,
 }) {
   const [deltaByArticle, setDeltaByArticle] = useState({});
-  const [commentByArticle, setCommentByArticle] = useState({});
 
   const totals = useMemo(() => {
     return rows.reduce(
       (acc, row) => {
-        acc.available += Number(row.qty_available || 0);
-        acc.reserved += Number(row.qty_reserved || 0);
+        const avail = Number(row.qty_available || 0);
+        const requiredRaw = row.qty_required;
+        const required = Number(
+          requiredRaw !== undefined && requiredRaw !== null && requiredRaw !== ""
+            ? requiredRaw
+            : row.qty_reserved || 0,
+        );
+        const canCover = required > 0 && avail >= required;
+        const deficit = required > 0 ? Math.max(0, required - avail) : 0;
+
+        acc.available += avail;
+        acc.reserved += canCover ? required : 0;
+        acc.required += !canCover ? deficit : 0;
         return acc;
       },
-      { available: 0, reserved: 0 },
+      { available: 0, reserved: 0, required: 0 },
     );
   }, [rows]);
 
@@ -44,16 +54,22 @@ export function MetalView({
         <>
           <div className="empty" style={{ marginBottom: 10 }}>
             Компонентов: <b>{rows.length}</b> | В наличии: <b>{totals.available}</b> | Резерв: <b>{totals.reserved}</b>
+            {totals.required > 0 && (
+              <>
+                {" "}
+                | Не хватает: <b style={{ color: "#be123c" }}>{totals.required}</b>
+              </>
+            )}
           </div>
           <table className="sheet-table">
             <thead>
               <tr>
                 <th>Артикул металла</th>
                 <th>Название</th>
-                <th>В наличии</th>
-                <th>Резерв</th>
+                <th style={{ textAlign: "center" }}>В наличии</th>
+                <th style={{ textAlign: "center" }}>Резерв</th>
+                <th style={{ textAlign: "center" }}>Требуется</th>
                 <th>Изменение</th>
-                <th>Комментарий</th>
                 <th>Действие</th>
               </tr>
             </thead>
@@ -61,14 +77,45 @@ export function MetalView({
               {rows.map((r) => {
                 const article = String(r.metal_article || "");
                 const value = deltaByArticle[article] ?? "";
-                const comment = commentByArticle[article] ?? "";
                 const busy = savingKey === article;
+                const avail = Number(r.qty_available || 0);
+                const requiredRaw = r.qty_required;
+                const required = Number(
+                  requiredRaw !== undefined && requiredRaw !== null && requiredRaw !== ""
+                    ? requiredRaw
+                    : r.qty_reserved || 0,
+                );
+                const hasOrder = required > 0;
+                const canCover = hasOrder && avail >= required;
+                const deficit = hasOrder ? Math.max(0, required - avail) : 0;
+                const reserveDisplay = canCover ? required : 0;
+                const requiredDisplay = !canCover && hasOrder ? deficit : 0;
+                const rowStyle = requiredDisplay > 0 ? { background: "#fff5f5" } : canCover ? { background: "#f5fff5" } : {};
                 return (
-                  <tr key={article}>
+                  <tr key={article} style={rowStyle}>
                     <td>{article || "-"}</td>
                     <td>{r.metal_name || "-"}</td>
-                    <td><b>{Number(r.qty_available || 0)}</b></td>
-                    <td>{Number(r.qty_reserved || 0)}</td>
+                    <td style={{ textAlign: "center" }}>
+                      <b style={{ color: avail === 0 ? "#9ca3af" : undefined }}>{avail}</b>
+                    </td>
+                    <td style={{ textAlign: "center" }}>
+                      {reserveDisplay > 0 ? (
+                        <span style={{ background: "#e8f5e9", color: "#2e7d32", borderRadius: 5, padding: "1px 8px", fontWeight: 700, fontSize: 13 }}>
+                          {reserveDisplay}
+                        </span>
+                      ) : (
+                        <span style={{ color: "#d1d5db" }}>-</span>
+                      )}
+                    </td>
+                    <td style={{ textAlign: "center" }}>
+                      {requiredDisplay > 0 ? (
+                        <span style={{ background: "#ffebee", color: "#be123c", borderRadius: 5, padding: "1px 8px", fontWeight: 700, fontSize: 13 }}>
+                          -{requiredDisplay}
+                        </span>
+                      ) : (
+                        <span style={{ color: "#d1d5db" }}>-</span>
+                      )}
+                    </td>
                     <td style={{ minWidth: 120 }}>
                       <input
                         value={value}
@@ -83,19 +130,6 @@ export function MetalView({
                         disabled={!canOperateProduction || busy}
                       />
                     </td>
-                    <td style={{ minWidth: 220 }}>
-                      <input
-                        value={comment}
-                        onChange={(e) =>
-                          setCommentByArticle((prev) => ({
-                            ...prev,
-                            [article]: e.target.value,
-                          }))
-                        }
-                        placeholder="Комментарий"
-                        disabled={!canOperateProduction || busy}
-                      />
-                    </td>
                     <td>
                       <button
                         className="mini ok"
@@ -103,7 +137,7 @@ export function MetalView({
                         onClick={async () => {
                           const delta = num(value);
                           if (!(Math.abs(delta) > 0)) return;
-                          await onAdjustStock(article, delta, comment);
+                          await onAdjustStock(article, delta, "");
                           setDeltaByArticle((prev) => ({ ...prev, [article]: "" }));
                         }}
                       >

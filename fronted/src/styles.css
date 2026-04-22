@@ -1091,7 +1091,7 @@ button:disabled {
 }
 
 .sheet-table tbody tr:hover {
-  filter: brightness(0.985);
+  background: #f2f7ff;
 }
 
 .sheet-table tbody tr:nth-child(even) {
@@ -1102,6 +1102,115 @@ button:disabled {
   outline: 2px solid #0ea5e9;
   outline-offset: -2px;
   box-shadow: inset 0 0 0 9999px rgba(14, 165, 233, 0.08);
+}
+
+.labor-group-cell {
+  position: relative;
+  z-index: 1;
+}
+
+.labor-group-cell:hover {
+  z-index: 80;
+}
+
+.labor-group-name {
+  border-bottom: 1px dashed #94a3b8;
+  cursor: help;
+}
+
+.labor-share-tooltip {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 6px);
+  width: 280px;
+  background: #0b1324;
+  color: #f8fafc;
+  border-radius: 12px;
+  padding: 12px;
+  box-shadow: 0 12px 26px rgba(2, 6, 23, 0.45);
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .12s ease;
+  z-index: 2000;
+  isolation: isolate;
+}
+
+.labor-group-cell:hover .labor-share-tooltip {
+  opacity: 1;
+}
+
+.labor-share-tooltip__title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #e2e8f0;
+  margin-bottom: 10px;
+}
+
+.labor-share-tooltip__bar {
+  display: flex;
+  width: 100%;
+  height: 12px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(148, 163, 184, 0.18);
+  margin-bottom: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+}
+
+.labor-share-tooltip__seg {
+  display: block;
+  height: 100%;
+}
+
+.labor-share-tooltip__seg--pilka {
+  background: #3b82f6;
+}
+
+.labor-share-tooltip__seg--kromka {
+  background: #f59e0b;
+}
+
+.labor-share-tooltip__seg--pras {
+  background: #10b981;
+}
+
+.labor-share-tooltip__rows {
+  display: grid;
+  gap: 6px;
+}
+
+.labor-share-tooltip__row {
+  font-size: 14px;
+  color: #f1f5f9;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  line-height: 1.2;
+}
+
+.labor-share-tooltip__row b {
+  color: #ffffff;
+}
+
+.labor-share-tooltip__row .dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  display: inline-block;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.08);
+}
+
+.labor-share-tooltip__row .dot.pilka {
+  background: #3b82f6;
+}
+
+.labor-share-tooltip__row .dot.kromka {
+  background: #f59e0b;
+}
+
+.labor-share-tooltip__row .dot.pras {
+  background: #10b981;
 }
 
 .selection-summary {

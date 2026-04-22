@@ -103,7 +103,37 @@ export function LaborView({
             <tbody>
               {laborOrdersRows.map((r) => (
                 <tr key={r.group}>
-                  <td>{r.group}</td>
+                  <td className="labor-group-cell">
+                    <span className="labor-group-name">{r.group}</span>
+                    <div className="labor-share-tooltip">
+                      <div className="labor-share-tooltip__title">Распределение этапов</div>
+                      <div className="labor-share-tooltip__bar">
+                        <span
+                          className="labor-share-tooltip__seg labor-share-tooltip__seg--pilka"
+                          style={{ width: `${Math.max(0, Math.min(100, Number(r.pilkaShare || 0)))}%` }}
+                        />
+                        <span
+                          className="labor-share-tooltip__seg labor-share-tooltip__seg--kromka"
+                          style={{ width: `${Math.max(0, Math.min(100, Number(r.kromkaShare || 0)))}%` }}
+                        />
+                        <span
+                          className="labor-share-tooltip__seg labor-share-tooltip__seg--pras"
+                          style={{ width: `${Math.max(0, Math.min(100, Number(r.prasShare || 0)))}%` }}
+                        />
+                      </div>
+                      <div className="labor-share-tooltip__rows">
+                        <div className="labor-share-tooltip__row">
+                          <span className="dot pilka" /> Пила: <b>{r.pilkaShare.toFixed(1)}%</b>
+                        </div>
+                        <div className="labor-share-tooltip__row">
+                          <span className="dot kromka" /> Кромка: <b>{r.kromkaShare.toFixed(1)}%</b>
+                        </div>
+                        <div className="labor-share-tooltip__row">
+                          <span className="dot pras" /> Присадка: <b>{r.prasShare.toFixed(1)}%</b>
+                        </div>
+                      </div>
+                    </div>
+                  </td>
                   <td>{r.orders}</td>
                   <td>{r.qty}</td>
                   <td>{Math.round(r.pilkaMin)}</td>
