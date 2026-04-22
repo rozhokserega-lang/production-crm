@@ -12,7 +12,7 @@ export function useMetalState({
 }) {
   const [metalStockRows, setMetalStockRows] = useState([]);
   const [metalSavingArticle, setMetalSavingArticle] = useState("");
-  const [metalSubView, setMetalSubView] = useState("queue");
+  const [metalSubView, setMetalSubView] = useState("stock");
   const [metalQueueRows, setMetalQueueRows] = useState([]);
   const [metalQueueLoading, setMetalQueueLoading] = useState(false);
   const [metalQueueUpdatingId, setMetalQueueUpdatingId] = useState(0);
@@ -87,17 +87,17 @@ export function useMetalState({
   );
 
   useEffect(() => {
-    if (view !== "metal") setMetalSubView("queue");
+    if (view !== "metal") setMetalSubView("stock");
   }, [view]);
 
   useEffect(() => {
     if (view !== "metal") return;
     setLoading(true);
     setError("");
-    Promise.all([loadMetalStock(), loadMetalQueue()])
+    Promise.resolve(loadMetalStock())
       .catch((e) => setError(toUserError(e)))
       .finally(() => setLoading(false));
-  }, [view, loadMetalStock, loadMetalQueue, setLoading, setError, toUserError]);
+  }, [view, loadMetalStock, setLoading, setError, toUserError]);
 
   useEffect(() => {
     let cancelled = false;

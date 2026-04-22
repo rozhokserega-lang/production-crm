@@ -16,6 +16,8 @@ export function useWarehouseOrderPlanRows({
         (it?.cells || []).forEach((c) => {
           const qty = Number(c?.qty || 0);
           if (!(qty > 0)) return;
+          // "Что заказать" should include only items in "Ожидаю заказ" state.
+          if (!c?.canSendToWork) return;
           if (c?.inWork) return;
           const sheetsRaw = Number(c?.sheetsNeeded || 0);
           const outputPerSheet = Number(c?.outputPerSheet || 0);

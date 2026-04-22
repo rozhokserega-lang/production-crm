@@ -180,6 +180,11 @@ import {
   parseImportPlanRows,
 } from "./app/shipmentExportHelpers";
 import {
+  formatMetalImportError,
+  getMetalImportNoValidRowsError,
+  parseMetalImportRows,
+} from "./app/metalImportHelpers";
+import {
   applyOptimisticOrderRow,
   buildPreviewRowsFromFurnitureTemplate,
   formatDateTimeForPrint,
@@ -370,6 +375,7 @@ export default function App() {
   const [furnitureSelectedProduct, setFurnitureSelectedProduct] = useState("");
   const [furnitureSelectedQty, setFurnitureSelectedQty] = useState("1");
   const importPlanFileRef = useRef(null);
+  const importMetalFileRef = useRef(null);
   const stageActionSeqRef = useRef(new Map());
   const authEnabled = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
   const isActionPending = useCallback((key) => pendingStageActionKeys.has(key), [pendingStageActionKeys]);
@@ -1003,15 +1009,9 @@ export default function App() {
     metalStockRows,
     metalSavingArticle,
     setMetalSavingArticle,
-    metalSubView,
-    setMetalSubView,
-    metalQueueRows,
-    metalQueueLoading,
-    metalQueueUpdatingId,
     selectedShipmentMetal,
     loadMetalStock,
     loadMetalQueue,
-    updateMetalQueueStatus,
   } = useMetalState({
     view,
     callBackend,
@@ -1798,6 +1798,46 @@ export default function App() {
     }
   }
 
+  async function importMetalFromExcelFile(file) {
+    if (!file) return;
+    if (!canOperateProduction) {
+      denyActionByRole("Недостаточно прав для импорта остатков металла.");
+      return;
+    }
+    setActionLoading("metal:import");
+    setError("");
+    try {
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: "array" });
+      const firstSheet = String(wb?.SheetNames?.[0] || "");
+      if (!firstSheet) throw new Error("В файле не найден лист.");
+      const ws = wb.Sheets[firstSheet];
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: "" });
+      if (!rows.length) throw new Error("Файл пустой.");
+
+      const importedRows = parseMetalImportRows(rows);
+      if (!importedRows.length) {
+        throw new Error(getMetalImportNoValidRowsError());
+      }
+
+      for (const row of importedRows) {
+        await callBackend("webSetMetalStock", {
+          metalArticle: row.metalArticle,
+          metalName: row.metalName,
+          qtyAvailable: row.qtyAvailable,
+        });
+      }
+
+      await loadMetalStock();
+      setError(`Импортировано позиций металла: ${importedRows.length}.`);
+    } catch (e) {
+      setError(formatMetalImportError(extractErrorMessage(e)));
+    } finally {
+      setActionLoading("");
+      if (importMetalFileRef.current) importMetalFileRef.current.value = "";
+    }
+  }
+
   const {
     importLaborFileRef,
     exportLaborTotalToExcel,
@@ -2098,26 +2138,13 @@ export default function App() {
         )}
         {view === "metal" && (
           <div className="tabs tabs--overview-sub">
-            <button
-              type="button"
-              className={metalSubView === "queue" ? "tab active" : "tab"}
-              onClick={() => setMetalSubView("queue")}
-            >
-              В работе
-            </button>
-            <button
-              type="button"
-              className={metalSubView === "stock" ? "tab active" : "tab"}
-              onClick={() => setMetalSubView("stock")}
-            >
-              Наличие
-            </button>
+            <button type="button" className="tab active">Наличие</button>
           </div>
         )}
         <div className="filters">
           {view !== "furniture" && (
             <input
-              placeholder={view === "shipment" ? "Поиск отгрузки: название или ID" : view === "warehouse" ? (warehouseSubView === "leftovers" ? "Поиск по цвету или размеру" : warehouseSubView === "history" ? "Поиск: заказ, материал, комментарий" : "Поиск материала") : view === "metal" ? (metalSubView === "queue" ? "Поиск: изделие, неделя, статус" : "Поиск по артикулу или названию металла") : "Поиск по названию или ID"}
+              placeholder={view === "shipment" ? "Поиск отгрузки: название или ID" : view === "warehouse" ? (warehouseSubView === "leftovers" ? "Поиск по цвету или размеру" : warehouseSubView === "history" ? "Поиск: заказ, материал, комментарий" : "Поиск материала") : view === "metal" ? "Поиск по артикулу или названию металла" : "Поиск по названию или ID"}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
@@ -2287,6 +2314,27 @@ export default function App() {
               </button>
             </div>
           )}
+          {view === "metal" && (
+            <div className="filters-right">
+              <input
+                ref={importMetalFileRef}
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                style={{ display: "none" }}
+                onChange={(e) => {
+                  const f = e.target.files && e.target.files[0];
+                  importMetalFromExcelFile(f);
+                }}
+              />
+              <button
+                className="mini"
+                disabled={!canOperateProduction || actionLoading === "metal:import"}
+                onClick={() => importMetalFileRef.current?.click()}
+              >
+                {actionLoading === "metal:import" ? "Импорт..." : "Импорт из Excel"}
+              </button>
+            </div>
+          )}
         </div>
       </section>
 
@@ -2386,10 +2434,9 @@ export default function App() {
         )}
         {view === "metal" && (
           <MetalView
-            metalSubView={metalSubView}
             rows={metalStockRows.filter((row) => {
               const q = String(query || "").trim().toLowerCase();
-              if (!q || metalSubView !== "stock") return true;
+              if (!q) return true;
               return (
                 String(row.metal_article || "").toLowerCase().includes(q) ||
                 String(row.metal_name || "").toLowerCase().includes(q)
@@ -2399,18 +2446,6 @@ export default function App() {
             canOperateProduction={canOperateProduction}
             savingKey={metalSavingArticle}
             onAdjustStock={adjustMetalStock}
-            queueRows={metalQueueRows.filter((row) => {
-              const q = String(query || "").trim().toLowerCase();
-              if (!q || metalSubView !== "queue") return true;
-              return (
-                String(row.item || "").toLowerCase().includes(q) ||
-                String(row.week || "").toLowerCase().includes(q) ||
-                String(row.status || "").toLowerCase().includes(q)
-              );
-            })}
-            queueLoading={metalQueueLoading}
-            queueUpdatingId={metalQueueUpdatingId}
-            onQueueStatusChange={updateMetalQueueStatus}
           />
         )}
         {view === "stats" && (
