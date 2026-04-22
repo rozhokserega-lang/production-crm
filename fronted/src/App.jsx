@@ -1366,7 +1366,8 @@ export default function App() {
     setError("");
     try {
       const metalDeficits = (selectedShipmentMetal.rows || []).filter((x) => Number(x.deficitQty || 0) > 0);
-      if (metalDeficits.length > 0) {
+      const hasMetalDeficit = metalDeficits.length > 0;
+      if (hasMetalDeficit) {
         for (const s of sendable) {
           await callBackend("webEnqueueMetalWorkOrder", {
             sourceRow: s.row,
@@ -1384,11 +1385,6 @@ export default function App() {
             })),
           });
         }
-        setError("Нехватка металла: выбранные заказы помещены в очередь 'Металл в работу'.");
-        if (view === "metal") {
-          await loadMetalQueue();
-        }
-        return;
       }
       for (const s of sendable) {
         const attempts = buildShipmentCellAttempts(s);
@@ -1403,6 +1399,12 @@ export default function App() {
       setPlanPreviews([]);
       setSelectedShipments([]);
       await load();
+      if (hasMetalDeficit) {
+        setError("Заказы отправлены в работу. Позиции по нехватке металла добавлены в очередь 'Металл в работу'.");
+        if (view === "metal") {
+          await loadMetalQueue();
+        }
+      }
     } catch (e) {
       setError(toUserError(e));
     } finally {
