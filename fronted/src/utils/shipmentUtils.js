@@ -69,7 +69,6 @@ function shipmentOrderKey(sourceRow, week) {
 
 export function getShipmentStageKey(c, sourceRow, orderMaps, itemName) {
   if (!c) return "awaiting";
-  if (c.canSendToWork && !c.inWork) return "awaiting";
   const rowKey = shipmentOrderKey(sourceRow, c.week);
   let order = orderMaps?.byRowWeek?.get(rowKey);
   if (!order && itemName && orderMaps?.byItemWeek) {
@@ -78,6 +77,7 @@ export function getShipmentStageKey(c, sourceRow, orderMaps, itemName) {
   if (order) {
     return mapPipelineStageToShipmentKey(order);
   }
+  if (c.canSendToWork && !c.inWork) return "awaiting";
   // Fallback for cells without bound order: if already in work,
   // show active pilka stage instead of "waiting launch".
   if (c.inWork) return "on_pilka_work";

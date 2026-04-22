@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import { extractPlanItemArticle, stripPlanItemMeta } from "../app/orderHelpers";
 
 function stageDotClass(status, isDone, isInWork) {
   if (isDone(status)) return "order-drawer__dot order-drawer__dot--done";
@@ -12,7 +13,7 @@ function readAdminComment(row) {
 }
 
 function readArticle(row) {
-  return String(
+  const direct = String(
     row?.product_article ||
       row?.productArticle ||
     row?.article_code ||
@@ -22,10 +23,16 @@ function readArticle(row) {
       row?.mappedArticleCode ||
       "",
   ).trim();
+  if (direct) return direct;
+  return extractPlanItemArticle(
+    String(row?.item_label || row?.itemLabel || row?.detailedName || row?.firstName || row?.itemName || row?.item || ""),
+  );
 }
 
 function readTitle(row) {
-  return String(row?.item_label || row?.itemLabel || row?.detailedName || row?.firstName || row?.itemName || row?.item || "").trim();
+  return stripPlanItemMeta(
+    String(row?.item_label || row?.itemLabel || row?.detailedName || row?.firstName || row?.itemName || row?.item || "").trim(),
+  );
 }
 
 function splitTitleAndArticle(row) {

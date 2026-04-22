@@ -1,5 +1,6 @@
 import { normalizeFurnitureKey } from "../utils/furnitureUtils";
 import { getPlanPreviewArticleCode } from "./orderHelpers";
+import { extractPlanItemArticle } from "./orderHelpers";
 
 export function resolvePlanPreviewArticleByName(planPreview, articleLookupByItemKey) {
   if (!(articleLookupByItemKey instanceof Map) || articleLookupByItemKey.size === 0) return "";
@@ -13,6 +14,8 @@ export function resolvePlanPreviewArticleByName(planPreview, articleLookupByItem
   });
   for (const candidate of candidates) {
     if (!candidate) continue;
+    const embedded = extractPlanItemArticle(candidate);
+    if (embedded) return embedded;
     const key = normalizeFurnitureKey(candidate);
     if (!key) continue;
     const article = String(articleLookupByItemKey.get(key) || "").trim();

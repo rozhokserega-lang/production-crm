@@ -14,6 +14,8 @@ export function FurnitureView({
   furnitureGeneratedDetails,
   furnitureSelectedTemplate,
   furnitureQtyNumber,
+  canOperateProduction,
+  createShelfPlanOrder,
 }) {
   const [furnitureSubTab, setFurnitureSubTab] = useState("main");
 
@@ -95,7 +97,12 @@ export function FurnitureView({
               </table>
             </div>
           )}
-          {furnitureSubTab === "storage" && <ShelfCalculator />}
+          {furnitureSubTab === "storage" && (
+            <ShelfCalculator
+              canOperateProduction={canOperateProduction}
+              onCreatePlanOrder={createShelfPlanOrder}
+            />
+          )}
         </div>
       )}
     </>

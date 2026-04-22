@@ -99,6 +99,15 @@ export function useWorkshopRows({
       if (tab === "done") return assemblyDone && !onPackaging && !shipped;
       return true;
     });
+    const isPaused = (status) => /пауза/i.test(String(status || ""));
+    const isRowPaused = (o) => {
+      if (tab === "pilka") return isPaused(o.pilkaStatus);
+      if (tab === "kromka") return isPaused(o.kromkaStatus);
+      if (tab === "pras") return isPaused(o.prasStatus);
+      if (tab === "assembly") return isPaused(o.assemblyStatus);
+      if (tab === "done") return false;
+      return isPaused(o.pilkaStatus) || isPaused(o.kromkaStatus) || isPaused(o.prasStatus) || isPaused(o.assemblyStatus);
+    };
     const isRowInWork = (o) => {
       if (tab === "pilka") return isInWork(o.pilkaStatus);
       if (tab === "kromka") return isInWork(o.kromkaStatus);
@@ -108,6 +117,9 @@ export function useWorkshopRows({
       return isInWork(o.pilkaStatus) || isInWork(o.kromkaStatus) || isInWork(o.prasStatus);
     };
     arr.sort((a, b) => {
+      const ap = isRowPaused(a) ? 1 : 0;
+      const bp = isRowPaused(b) ? 1 : 0;
+      if (ap !== bp) return bp - ap;
       const aw = isRowInWork(a) ? 1 : 0;
       const bw = isRowInWork(b) ? 1 : 0;
       if (aw !== bw) return bw - aw;
@@ -369,8 +381,13 @@ export function useShipmentFilter({
 } = {}) {
   return useMemo(() => {
     const q = String(query || "").trim().toLowerCase();
+    const isStorageSystemSection = (name) => /система\s*хранения/i.test(String(name || ""));
     return (shipmentBoard.sections || [])
-      .filter((s) => !isStorageLikeName(s.name))
+      .filter((s) => {
+        if (!isStorageLikeName(s.name)) return true;
+        // Keep dedicated storage system section visible in shipment plan.
+        return isStorageSystemSection(s.name) || isObvyazkaSectionName(s.name);
+      })
       .map((s) => ({
         ...s,
         items: (s.items || []).filter((it) => {

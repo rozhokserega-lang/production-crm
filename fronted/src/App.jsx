@@ -113,6 +113,7 @@ import {
   statusClass,
 } from "./app/statusHelpers";
 import {
+  embedPlanItemArticle,
   getMaterialLabel,
   getPlanPreviewArticleCode,
   hasArticleLikeCode,
@@ -1647,6 +1648,45 @@ export default function App() {
     }
   }
 
+  async function createShelfPlanOrder(payload) {
+    if (!canOperateProduction) {
+      denyActionByRole("Недостаточно прав для изменения плана.");
+      return;
+    }
+    const week = String(payload?.week || "").trim();
+    const item = String(payload?.item || "").trim();
+    const article = String(payload?.article || "").trim();
+    const material = String(payload?.material || "").trim();
+    const qty = Number(payload?.qty || 0);
+    if (!week) {
+      setError("Укажите номер плана.");
+      return;
+    }
+    if (!item || !material || !(qty > 0)) {
+      setError("Заполните поля заказа полок: изделие, материал и количество.");
+      return;
+    }
+    setActionLoading("shelf:create-plan");
+    setError("");
+    try {
+      const request = {
+        sectionName: "Система хранения",
+        item: embedPlanItemArticle(item, article),
+        material,
+        week,
+        qty,
+      };
+      await callBackend("webCreateShipmentPlanCell", request);
+      void syncPlanCellToGoogleSheet(request);
+      await load();
+    } catch (e) {
+      setError(toUserError(e));
+      throw e;
+    } finally {
+      setActionLoading("");
+    }
+  }
+
   async function previewSelectedShipmentPlan() {
     if (!selectedShipments.length) return;
     const strapSelections = selectedShipments.filter((s) => isStrapVirtualRowId(s.row));
@@ -2481,6 +2521,8 @@ export default function App() {
             furnitureGeneratedDetails={furnitureGeneratedDetails}
             furnitureSelectedTemplate={furnitureSelectedTemplate}
             furnitureQtyNumber={furnitureQtyNumber}
+            canOperateProduction={canOperateProduction}
+            createShelfPlanOrder={createShelfPlanOrder}
           />
         )}
         {view === "admin" && (

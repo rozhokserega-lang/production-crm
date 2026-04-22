@@ -28,6 +28,13 @@ const CATALOG = {
 };
 
 const CATALOG_MAP = Object.fromEntries(CATALOG.furniture_items.map((item) => [item.primary.code, item]));
+const SHEET_FORMATS = [
+  { key: "2800x2070", label: "Лист 2800 x 2070 мм", width: 2800, height: 2070 },
+  { key: "2750x1830", label: "Лист 2750 x 1830 мм", width: 2750, height: 1830 },
+  { key: "2440x1830", label: "Лист 2440 x 1830 мм", width: 2440, height: 1830 },
+];
+const COLOR_ORDER = ["Вотан", "Сонома", "Не определен"];
+const MATERIAL_OPTIONS = ["Дуб Вотан", "сонома / бардолино"];
 let idCounter = 0;
 
 function makeRow(code = "", qty = "") {
@@ -37,20 +44,138 @@ function makeRow(code = "", qty = "") {
 
 function calcTotals(rows) {
   const totals = {};
+  const byColor = {};
   for (const row of rows) {
     const qty = Number(row.qty);
     if (!qty || qty <= 0) continue;
     const item = CATALOG_MAP[row.code];
     if (!item) continue;
+    const color = resolveColor(item);
+    if (!byColor[color]) byColor[color] = {};
     for (const pair of item.pairs) {
       totals[pair.text] = (totals[pair.text] || 0) + pair.qty * qty;
+      byColor[color][pair.text] = (byColor[color][pair.text] || 0) + pair.qty * qty;
     }
   }
-  return totals;
+  return { totals, byColor };
 }
 
 function formatQty(value) {
   return Number.isInteger(value) ? String(value) : Number(value || 0).toFixed(1);
+}
+
+function resolveColor(item) {
+  const code = String(item?.primary?.code || "").toUpperCase();
+  const name = String(item?.primary?.name || "").toLowerCase();
+  if (code.includes("BVO") || name.includes("вотан")) return "Вотан";
+  if (code.includes("WOS") || name.includes("сонома")) return "Сонома";
+  return "Не определен";
+}
+
+function defaultMaterialByColor(color) {
+  if (color === "Вотан") return "Дуб Вотан";
+  if (color === "Сонома") return "сонома / бардолино";
+  return "Дуб Бардолино";
+}
+
+function buildShelfOrderItemName(shelfName, materialName) {
+  const base = String(shelfName || "").trim();
+  const material = String(materialName || "").toLowerCase();
+  let colorTag = "";
+  if (material.includes("вотан")) colorTag = "Вотан";
+  else if (material.includes("бардолино") || material.includes("соном")) colorTag = "Бардолино";
+  return colorTag ? `${base} (${colorTag})` : base;
+}
+
+function parseShelfSize(text) {
+  const m = String(text || "").match(/(\d+)\s*[xх]\s*(\d+)/i);
+  if (!m) return null;
+  const a = Number(m[1]);
+  const b = Number(m[2]);
+  if (!(a > 0) || !(b > 0)) return null;
+  return { width: Math.max(a, b), height: Math.min(a, b) };
+}
+
+function canFitInSheet(piece, sheetW, sheetH, cutGap) {
+  const gw = piece.width + cutGap;
+  const gh = piece.height + cutGap;
+  return (gw <= sheetW && gh <= sheetH) || (gh <= sheetW && gw <= sheetH);
+}
+
+function fitToRows(piece, rows, sheetW, cutGap) {
+  const variants = [
+    { w: piece.width + cutGap, h: piece.height + cutGap },
+    { w: piece.height + cutGap, h: piece.width + cutGap },
+  ];
+  for (const v of variants) {
+    for (const row of rows) {
+      if (v.h <= row.height && row.used + v.w <= sheetW) {
+        row.used += v.w;
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function estimateSheets(details, sheetW, sheetH, cutGap = 3) {
+  const pieces = [];
+  for (const d of details) {
+    const size = parseShelfSize(d.name);
+    if (!size) continue;
+    const qty = Number(d.qty || 0);
+    if (!(qty > 0)) continue;
+    if (!canFitInSheet(size, sheetW, sheetH, cutGap)) {
+      return { ok: false, reason: `Деталь ${d.name} не помещается в выбранный лист.` };
+    }
+    for (let i = 0; i < qty; i += 1) {
+      pieces.push(size);
+    }
+  }
+  if (!pieces.length) return { ok: true, sheets: 0, utilization: 0 };
+
+  pieces.sort((a, b) => b.width * b.height - a.width * a.height);
+
+  const sheets = [];
+  for (const piece of pieces) {
+    let placed = false;
+    for (const sheet of sheets) {
+      if (fitToRows(piece, sheet.rows, sheetW, cutGap)) {
+        placed = true;
+        break;
+      }
+      const variants = [
+        { w: piece.width + cutGap, h: piece.height + cutGap },
+        { w: piece.height + cutGap, h: piece.width + cutGap },
+      ];
+      for (const v of variants) {
+        if (sheet.usedHeight + v.h <= sheetH && v.w <= sheetW) {
+          sheet.rows.push({ height: v.h, used: v.w });
+          sheet.usedHeight += v.h;
+          placed = true;
+          break;
+        }
+      }
+      if (placed) break;
+    }
+    if (!placed) {
+      const variants = [
+        { w: piece.width + cutGap, h: piece.height + cutGap },
+        { w: piece.height + cutGap, h: piece.width + cutGap },
+      ];
+      const first = variants.find((v) => v.w <= sheetW && v.h <= sheetH);
+      if (!first) return { ok: false, reason: "Некоторые детали не помещаются в лист." };
+      sheets.push({
+        rows: [{ height: first.h, used: first.w }],
+        usedHeight: first.h,
+      });
+    }
+  }
+
+  const detailsArea = pieces.reduce((s, p) => s + p.width * p.height, 0);
+  const totalArea = sheets.length * sheetW * sheetH;
+  const utilization = totalArea > 0 ? (detailsArea / totalArea) * 100 : 0;
+  return { ok: true, sheets: sheets.length, utilization };
 }
 
 function ShelfBadge({ text, qty }) {
@@ -75,11 +200,18 @@ function ShelfBadge({ text, qty }) {
   );
 }
 
-export default function ShelfCalculator() {
+export default function ShelfCalculator({ canOperateProduction = false, onCreatePlanOrder }) {
   const [rows, setRows] = useState([makeRow()]);
   const [activeRowId, setActiveRowId] = useState(0);
   const [search, setSearch] = useState("");
   const [isCatalogOpen, setIsCatalogOpen] = useState(false);
+  const [sheetFormatKey, setSheetFormatKey] = useState(SHEET_FORMATS[0].key);
+  const [cutGap, setCutGap] = useState("3");
+  const [cutColor, setCutColor] = useState("all");
+  const [cutResult, setCutResult] = useState(null);
+  const [selectedShelves, setSelectedShelves] = useState([]);
+  const [planWeek, setPlanWeek] = useState("");
+  const [planLoading, setPlanLoading] = useState(false);
 
   const suggestions = useMemo(() => {
     const q = String(search || "").trim().toLowerCase();
@@ -89,9 +221,63 @@ export default function ShelfCalculator() {
     ).slice(0, 8);
   }, [search]);
 
-  const totals = useMemo(() => calcTotals(rows), [rows]);
-  const totalEntries = Object.entries(totals).sort((a, b) => a[0].localeCompare(b[0], "ru"));
+  const totalsData = useMemo(() => calcTotals(rows), [rows]);
+  const totalEntries = Object.entries(totalsData.totals).sort((a, b) => a[0].localeCompare(b[0], "ru"));
+  const totalDisplayCards = useMemo(() => {
+    const cards = [];
+    totalEntries.forEach(([name, qty]) => {
+      const parts = COLOR_ORDER
+        .map((colorName) => ({
+          colorName,
+          colorQty: Number(totalsData.byColor[colorName]?.[name] || 0),
+        }))
+        .filter((x) => x.colorQty > 0);
+      if (parts.length > 1) {
+        parts.forEach((p) => {
+          cards.push({
+            key: `${name}-${p.colorName}`,
+            name,
+            qty: p.colorQty,
+            color: p.colorName,
+          });
+        });
+        return;
+      }
+      cards.push({
+        key: `${name}-all`,
+        name,
+        qty: Number(qty || 0),
+        color: parts[0]?.colorName || "all",
+      });
+    });
+    return cards;
+  }, [totalEntries, totalsData.byColor]);
   const activeRows = rows.filter((r) => Number(r.qty) > 0 && CATALOG_MAP[r.code]);
+  const defaultArticleByCardKey = useMemo(() => {
+    const byCard = new Map();
+    activeRows.forEach((r) => {
+      const item = CATALOG_MAP[r.code];
+      if (!item) return;
+      const article = String(item?.primary?.code || "").trim();
+      if (!article) return;
+      const rowQty = Number(r.qty || 0);
+      if (!(rowQty > 0)) return;
+      const color = resolveColor(item);
+      item.pairs.forEach((pair) => {
+        const pairQty = Number(pair?.qty || 0);
+        if (!(pairQty > 0)) return;
+        const name = String(pair?.text || "").trim();
+        if (!name) return;
+        const cardKey = `${name}-${color}`;
+        const score = rowQty * pairQty;
+        const prev = byCard.get(cardKey);
+        if (!prev || score > prev.score) byCard.set(cardKey, { article, score });
+      });
+    });
+    const map = new Map();
+    byCard.forEach((v, k) => map.set(k, String(v.article || "").trim()));
+    return map;
+  }, [activeRows]);
 
   function updateRow(id, patch) {
     setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
@@ -103,6 +289,72 @@ export default function ShelfCalculator() {
 
   function removeRow(id) {
     setRows((prev) => (prev.length <= 1 ? prev : prev.filter((r) => r.id !== id)));
+  }
+
+  function runCutEstimate() {
+    const format = SHEET_FORMATS.find((x) => x.key === sheetFormatKey) || SHEET_FORMATS[0];
+    const sourceTotals =
+      cutColor === "all"
+        ? totalsData.totals
+        : totalsData.byColor[cutColor] || {};
+    const details = Object.entries(sourceTotals).map(([name, qty]) => ({ name, qty }));
+    const gap = Math.max(0, Number(String(cutGap).replace(",", ".")) || 0);
+    const result = estimateSheets(details, format.width, format.height, gap);
+    setCutResult({ ...result, format, gap, color: cutColor });
+  }
+
+  function toggleShelfCard(card) {
+    setSelectedShelves((prev) => {
+      const exists = prev.some((x) => x.id === card.key);
+      if (exists) return prev.filter((x) => x.id !== card.key);
+      return [
+        ...prev,
+        {
+          id: card.key,
+          color: card.color,
+          name: card.name,
+          qty: String(Number(card.qty || 0)),
+          material: defaultMaterialByColor(card.color),
+          article: String(defaultArticleByCardKey.get(card.key) || ""),
+        },
+      ];
+    });
+    setCutColor(card.color === "Не определен" ? "all" : card.color);
+  }
+
+  function updateSelectedShelf(id, patch) {
+    setSelectedShelves((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)));
+  }
+
+  async function createShelfOrder() {
+    if (!selectedShelves.length || typeof onCreatePlanOrder !== "function") return;
+    const week = String(planWeek || "").trim();
+    if (!week) return;
+    const rowsToCreate = selectedShelves
+      .map((s) => ({
+        ...s,
+        qtyNum: Number(String(s.qty || "").replace(",", ".")),
+      }))
+      .filter((s) => s.qtyNum > 0 && String(s.material || "").trim() && String(s.name || "").trim());
+    if (!rowsToCreate.length) return;
+    setPlanLoading(true);
+    try {
+      for (const s of rowsToCreate) {
+        await onCreatePlanOrder({
+          item: buildShelfOrderItemName(s.name, s.material),
+          article: String(s.article || "").trim(),
+          material: String(s.material || "").trim(),
+          week,
+          qty: s.qtyNum,
+        });
+      }
+      setSelectedShelves([]);
+      setPlanWeek("");
+    } catch {
+      // Error message is handled by parent screen.
+    } finally {
+      setPlanLoading(false);
+    }
   }
 
   return (
@@ -341,14 +593,173 @@ export default function ShelfCalculator() {
               <span style={{ fontSize: 30, fontWeight: 800, color: "#1d6b2c" }}>ИТОГО ПОЛОК</span>
             </div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-              {totalEntries.map(([name, qty]) => (
-                <div key={name} style={{ border: "1px solid #9bd3a5", borderRadius: 12, background: "#fff", padding: "10px 14px", minWidth: 190 }}>
-                  <div style={{ fontSize: 42, fontWeight: 800, lineHeight: 1, color: "#1f6b2d" }}>{formatQty(qty)}</div>
-                  <div style={{ marginTop: 4, fontFamily: "monospace", color: "#3a7a47", fontSize: 16 }}>{name}</div>
-                </div>
+              {totalDisplayCards.map((card) => (
+                <button
+                  key={card.key}
+                  type="button"
+                  onClick={() => toggleShelfCard(card)}
+                  style={{
+                    border: selectedShelves.some((s) => s.id === card.key) ? "2px solid #2f9e44" : "1px solid #9bd3a5",
+                    borderRadius: 12,
+                    background: "#fff",
+                    padding: "10px 14px",
+                    minWidth: 210,
+                    textAlign: "left",
+                    cursor: "pointer",
+                  }}
+                >
+                  <div style={{ fontSize: 42, fontWeight: 800, lineHeight: 1, color: "#1f6b2d" }}>{formatQty(card.qty)}</div>
+                  <div style={{ marginTop: 4, fontFamily: "monospace", color: "#3a7a47", fontSize: 16 }}>{card.name}</div>
+                  <div style={{ marginTop: 8, display: "flex", gap: 6 }}>
+                    <span
+                      style={{
+                        fontSize: 12,
+                        borderRadius: 999,
+                        padding: "2px 8px",
+                        border: "1px solid #cfe7d3",
+                        background: "#f3fbf4",
+                        color: "#1f6b2d",
+                      }}
+                    >
+                      {card.color === "all" ? "Все цвета" : card.color}
+                    </span>
+                  </div>
+                </button>
               ))}
             </div>
+            {selectedShelves.length > 0 && (
+              <div style={{ margin: "14px 0", border: "1px solid #94c8a1", borderRadius: 12, background: "#f3fbf4", padding: 12 }}>
+                <div style={{ fontWeight: 700, color: "#1f6b2d", marginBottom: 8 }}>
+                  Заказ в работу: выбрано позиций {selectedShelves.length}
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "end" }}>
+                  <div style={{ width: 160 }}>
+                    <div style={{ fontSize: 12, color: "#64748b", marginBottom: 4 }}>План (неделя)</div>
+                    <input value={planWeek} onChange={(e) => setPlanWeek(e.target.value.replace(/[^\d]/g, ""))} placeholder="72" />
+                  </div>
+                  <button
+                    type="button"
+                    className="mini ok"
+                    disabled={
+                      !canOperateProduction ||
+                      planLoading ||
+                      !String(planWeek).trim() ||
+                      !selectedShelves.some((s) => Number(String(s.qty || "").replace(",", ".")) > 0)
+                    }
+                    onClick={createShelfOrder}
+                  >
+                    {planLoading ? "Отправляю..." : `Отправить в работу (${selectedShelves.length})`}
+                  </button>
+                </div>
+                <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
+                  {selectedShelves.map((s) => (
+                    <div
+                      key={s.id}
+                      style={{
+                        display: "flex",
+                        flexWrap: "wrap",
+                        gap: 8,
+                        alignItems: "end",
+                      }}
+                    >
+                      <div style={{ flex: "1 1 220px", minWidth: 180 }}>
+                        <div style={{ fontSize: 12, color: "#64748b", marginBottom: 4 }}>Позиция</div>
+                        <input value={`${s.name} (${s.color === "all" ? "Все цвета" : s.color})`} readOnly />
+                      </div>
+                      <div style={{ width: 100 }}>
+                        <div style={{ fontSize: 12, color: "#64748b", marginBottom: 4 }}>Кол-во</div>
+                        <input
+                          value={s.qty}
+                          onChange={(e) => updateSelectedShelf(s.id, { qty: e.target.value.replace(/[^0-9.,]/g, "") })}
+                        />
+                      </div>
+                      <div style={{ flex: "1 1 190px", minWidth: 160 }}>
+                        <div style={{ fontSize: 12, color: "#64748b", marginBottom: 4 }}>Материал</div>
+                        <select value={s.material} onChange={(e) => updateSelectedShelf(s.id, { material: e.target.value })}>
+                          {MATERIAL_OPTIONS.map((m) => (
+                            <option key={m} value={m}>{m}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div style={{ flex: "1 1 220px", minWidth: 180 }}>
+                        <div style={{ fontSize: 12, color: "#64748b", marginBottom: 4 }}>Артикул заказа</div>
+                        <input value={s.article} onChange={(e) => updateSelectedShelf(s.id, { article: e.target.value })} />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedShelves((prev) => prev.filter((x) => x.id !== s.id))}
+                        title="Убрать позицию"
+                        style={{
+                          height: 36,
+                          border: "1px solid #f3b3b3",
+                          borderRadius: 8,
+                          background: "#fff1f1",
+                          color: "#b42318",
+                          cursor: "pointer",
+                          fontWeight: 700,
+                        }}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             <div style={{ height: 1, background: "#cbe5ce", margin: "14px 0" }} />
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "end", marginBottom: 12 }}>
+              <div style={{ minWidth: 150 }}>
+                <div style={{ fontSize: 12, color: "#64748b", marginBottom: 4 }}>Цвет</div>
+                <select value={cutColor} onChange={(e) => setCutColor(e.target.value)}>
+                  <option value="all">Все цвета</option>
+                  <option value="Вотан">Вотан</option>
+                  <option value="Сонома">Сонома</option>
+                </select>
+              </div>
+              <div style={{ minWidth: 220 }}>
+                <div style={{ fontSize: 12, color: "#64748b", marginBottom: 4 }}>Размер листа</div>
+                <select value={sheetFormatKey} onChange={(e) => setSheetFormatKey(e.target.value)}>
+                  {SHEET_FORMATS.map((f) => (
+                    <option key={f.key} value={f.key}>{f.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div style={{ width: 130 }}>
+                <div style={{ fontSize: 12, color: "#64748b", marginBottom: 4 }}>Пропил, мм</div>
+                <input
+                  inputMode="decimal"
+                  value={cutGap}
+                  onChange={(e) => setCutGap(e.target.value.replace(/[^0-9.,]/g, ""))}
+                  placeholder="3"
+                />
+              </div>
+              <button type="button" className="mini" onClick={runCutEstimate}>
+                Раскроить
+              </button>
+            </div>
+            {cutResult && (
+              <div
+                style={{
+                  border: `1px solid ${cutResult.ok ? "#9bd3a5" : "#f8b4b4"}`,
+                  borderRadius: 12,
+                  background: cutResult.ok ? "#edf9ef" : "#fff1f1",
+                  color: cutResult.ok ? "#1f6b2d" : "#b91c1c",
+                  padding: "10px 12px",
+                  marginBottom: 12,
+                }}
+              >
+                {cutResult.ok ? (
+                  <>
+                    <b>Нужно листов: {cutResult.sheets}</b>
+                    <span style={{ marginLeft: 10 }}>
+                      ({cutResult.color === "all" ? "все цвета" : cutResult.color}, {cutResult.format.width}x{cutResult.format.height}, пропил {cutResult.gap} мм, заполнение {cutResult.utilization.toFixed(1)}%)
+                    </span>
+                  </>
+                ) : (
+                  <b>{cutResult.reason}</b>
+                )}
+              </div>
+            )}
             <div style={{ fontSize: 16, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>Разбивка по строкам</div>
             <div style={{ display: "grid", gap: 6 }}>
               {activeRows.map((r) => {
@@ -358,6 +769,9 @@ export default function ShelfCalculator() {
                   <div key={r.id} style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, paddingBottom: 6, borderBottom: "1px dashed #dbe5d9" }}>
                     <span style={{ display: "inline-flex", gap: 6, alignItems: "center", borderRadius: 8, background: "#e6f6e9", border: "1px solid #b9dfc0", padding: "2px 7px", fontFamily: "monospace", fontSize: 13, color: "#1f6b2d" }}>
                       <b>{r.code}</b> x{qty}
+                    </span>
+                    <span style={{ fontSize: 12, color: "#64748b" }}>
+                      [{resolveColor(item)}]
                     </span>
                     <span style={{ color: "#64748b" }}>→</span>
                     <span style={{ display: "inline-flex", flexWrap: "wrap", gap: 6 }}>

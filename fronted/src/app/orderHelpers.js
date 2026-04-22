@@ -63,3 +63,21 @@ export function getPlanPreviewArticleCode(planPreview) {
   }
   return "";
 }
+
+const ITEM_ARTICLE_META_RE = /\{\{ART:([A-Za-z0-9._-]+)\}\}/i;
+
+export function embedPlanItemArticle(itemName, articleCode) {
+  const item = String(itemName || "").trim();
+  const article = String(articleCode || "").trim();
+  if (!item || !article) return item;
+  return `${item} {{ART:${article}}}`;
+}
+
+export function stripPlanItemMeta(itemName) {
+  return String(itemName || "").replace(ITEM_ARTICLE_META_RE, "").replace(/\s{2,}/g, " ").trim();
+}
+
+export function extractPlanItemArticle(itemName) {
+  const m = String(itemName || "").match(ITEM_ARTICLE_META_RE);
+  return String(m?.[1] || "").trim();
+}

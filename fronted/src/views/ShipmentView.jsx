@@ -1,3 +1,5 @@
+import { stripPlanItemMeta } from "../app/orderHelpers";
+
 export function ShipmentView({
   selectedShipments,
   strapItems,
@@ -178,7 +180,7 @@ export function ShipmentView({
                     </div>
                     <div className="plan-head-grid">
                       <div className="plan-yellow">
-                        <div className="name">{planPreview.firstName || planPreview.detailedName || "-"}</div>
+                        <div className="name">{stripPlanItemMeta(planPreview.firstName || planPreview.detailedName || "-")}</div>
                         <div className="color">{planPreview.colorName || "-"}</div>
                         {!!String(planPreview.strapTargetProduct || "").trim() && (
                           <div className="strap-target">
@@ -223,9 +225,9 @@ export function ShipmentView({
                       <tbody>
                         {(planPreview.rows || []).map((r, i) => (
                           <tr key={`${r.part}-${i}`}>
-                            <td>{i === 0 ? (planPreview.firstName || "") : ""}</td>
+                            <td>{i === 0 ? stripPlanItemMeta(planPreview.firstName || "") : ""}</td>
                             <td></td>
-                            <td>{r.part}</td>
+                            <td>{stripPlanItemMeta(r.part)}</td>
                             <td>{r.qty}</td>
                             <td></td>
                             <td></td>
@@ -328,7 +330,8 @@ export function ShipmentView({
                       const isDeficitSelected = selectedShipmentStockCheck.deficitSourceKeys.has(
                         `${String(row.sourceRow || "").trim()}|${String(row.sourceCol || "").trim()}`
                       );
-                      const showDeficitHighlight = !!row.canSendToWork && !row.inWork && row.materialHasDeficit;
+                      const isAwaitingLaunch = row.stageKey === "awaiting";
+                      const showDeficitHighlight = isAwaitingLaunch && row.materialHasDeficit;
                       const rowBg = showDeficitHighlight
                         ? "#fbcfe8"
                         : (isDeficitSelected && isSelected ? "#fbcfe8" : (row.bg || "#ffffff"));
@@ -366,7 +369,7 @@ export function ShipmentView({
                           <td>{row.availableSheets}</td>
                           <td>
                             {row.status}
-                            {!!row.canSendToWork && !row.inWork &&
+                            {isAwaitingLaunch &&
                               (row.materialHasDeficit
                                 ? ` • ❌ Не хватает: ${row.materialDeficit}`
                                 : " • ✅ Хватает")}

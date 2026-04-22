@@ -34,6 +34,7 @@ export function WorkshopView({
       {!workshopRows.length && !loading && <div className="empty">Нет заказов</div>}
       {workshopRows.map((o) => {
         const orderId = String(o.orderId || o.order_id || "");
+        const isPaused = (status) => /пауза/i.test(String(status || ""));
         const displaySheetsNeeded =
           resolveDefaultConsumeSheets(o, shipmentOrders) || resolveDefaultConsumeSheetsFromBoard(o, shipmentBoard);
         const displayMaterial = String(o.material || o.colorName || "").trim() || "Материал не указан";
@@ -68,6 +69,12 @@ export function WorkshopView({
         const showDone = tab === "all" || tab === "done";
         const assemblyDone = isDone(o.assemblyStatus);
         const packagingDone = isOrderCustomerShipped(o);
+        const pauseLabels = [];
+        if (isPaused(o.pilkaStatus)) pauseLabels.push("Пила");
+        if (isPaused(o.kromkaStatus)) pauseLabels.push("Кромка");
+        if (isPaused(o.prasStatus)) pauseLabels.push("Присадка");
+        if (isPaused(o.assemblyStatus)) pauseLabels.push("Сборка");
+        const hasPause = pauseLabels.length > 0;
 
         return (
           <article key={orderId || `${o.item}-${o.row}`} className={`card ${statusClass(o)}`}>
@@ -78,6 +85,15 @@ export function WorkshopView({
                     <strong>{o.item}</strong>
                     <span className="badge meta-inline">План: {o.week || "-"}</span>
                     <span className="badge meta-inline">Кол-во: {o.qty || 0}</span>
+                    {hasPause && (
+                      <span
+                        className="badge meta-inline"
+                        style={{ background: "#fff1f2", borderColor: "#fda4af", color: "#9f1239" }}
+                        title={`На паузе: ${pauseLabels.join(", ")}`}
+                      >
+                        ПАУЗА: {pauseLabels.join(", ")}
+                      </span>
+                    )}
                   </div>
                 </div>
                 <div className="line2">

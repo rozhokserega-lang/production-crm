@@ -36,6 +36,8 @@ const ACTION_OPTIMISTIC_MAP = {
     pipelineStage: "shipped",
   },
 };
+const STORAGE_SHEET_WIDTH = 2800;
+const STORAGE_SHEET_HEIGHT = 2070;
 
 export function hasOptimisticActionRule(action) {
   return Boolean(ACTION_OPTIMISTIC_MAP[action]);
@@ -115,7 +117,7 @@ export function resolveDefaultConsumeSheetsFromBoard(order, shipmentBoard) {
 }
 
 export function normalizeShipmentBoard(data) {
-  if (data && Array.isArray(data.sections)) return data;
+  if (data && Array.isArray(data.sections)) return applyStorageAutoCutToBoard(data);
   if (!Array.isArray(data)) return { sections: [] };
   const sectionMap = new Map();
   data.forEach((row, idx) => {
@@ -134,16 +136,28 @@ export function normalizeShipmentBoard(data) {
         cells: [],
       });
     }
+    const qtyRaw = Number(row?.qty || 0);
+    const directOutputPerSheet = Number(row?.output_per_sheet ?? row?.outputPerSheet ?? 0);
+    const directSheetsNeeded = Number(row?.sheets_needed ?? row?.sheetsNeeded ?? 0);
+    const storageAutoCut = resolveStorageAutoCut(sectionName, itemName, qtyRaw);
+    const outputPerSheet =
+      directOutputPerSheet > 0 ? directOutputPerSheet : Number(storageAutoCut.outputPerSheet || 0);
+    const sheetsNeeded =
+      directSheetsNeeded > 0
+        ? directSheetsNeeded
+        : outputPerSheet > 0 && qtyRaw > 0
+          ? Math.ceil(qtyRaw / outputPerSheet)
+          : 0;
     itemMap.get(rowKey).cells.push({
       col: row?.source_col_id || row?.sourceColId || row?.col_ref || row?.colRef || String(idx + 1),
       sourceColId: row?.source_col_id || row?.sourceColId || row?.col_ref || row?.colRef || String(idx + 1),
       week: row?.week || "",
-      qty: Number(row?.qty || 0),
+      qty: qtyRaw,
       bg: row?.bg || "#ffffff",
       canSendToWork: !!row?.can_send_to_work || !!row?.canSendToWork,
       inWork: !!row?.in_work || !!row?.inWork,
-      sheetsNeeded: Number(row?.sheets_needed ?? row?.sheetsNeeded ?? 0),
-      outputPerSheet: Number(row?.output_per_sheet ?? row?.outputPerSheet ?? 0),
+      sheetsNeeded,
+      outputPerSheet,
       availableSheets: Number(row?.available_sheets ?? row?.availableSheets ?? 0),
       materialEnoughForOrder:
         row?.material_enough_for_order == null ? row?.materialEnoughForOrder : !!row?.material_enough_for_order,
@@ -154,7 +168,7 @@ export function normalizeShipmentBoard(data) {
     name,
     items: [...items.values()],
   }));
-  return { sections };
+  return applyStorageAutoCutToBoard({ sections });
 }
 
 export function mergeShipmentBoardWithTable(board, tableRows) {
@@ -197,6 +211,63 @@ export function mergeShipmentBoardWithTable(board, tableRows) {
         }),
       })),
     })),
+  };
+}
+
+function resolveStorageAutoCut(sectionName, itemName, qty) {
+  const section = String(sectionName || "").toLowerCase();
+  if (!section.includes("система хранения")) return { outputPerSheet: 0 };
+  const size = parseItemSize(itemName);
+  if (!size) return { outputPerSheet: 0 };
+  const a = Number(size.a || 0);
+  const b = Number(size.b || 0);
+  if (!(a > 0) || !(b > 0)) return { outputPerSheet: 0 };
+  const byAB = Math.floor(STORAGE_SHEET_WIDTH / a) * Math.floor(STORAGE_SHEET_HEIGHT / b);
+  const byBA = Math.floor(STORAGE_SHEET_WIDTH / b) * Math.floor(STORAGE_SHEET_HEIGHT / a);
+  const outputPerSheet = Math.max(byAB, byBA, 0);
+  const sheetsNeeded = outputPerSheet > 0 && qty > 0 ? Math.ceil(Number(qty || 0) / outputPerSheet) : 0;
+  return { outputPerSheet, sheetsNeeded };
+}
+
+function parseItemSize(itemName) {
+  const m = String(itemName || "").match(/(\d{2,4})\s*[_xх]\s*(\d{2,4})/i);
+  if (!m) return null;
+  return { a: Number(m[1]), b: Number(m[2]) };
+}
+
+function applyStorageAutoCutToBoard(board) {
+  const sections = Array.isArray(board?.sections) ? board.sections : [];
+  return {
+    ...board,
+    sections: sections.map((section) => {
+      const sectionName = String(section?.name || "").trim();
+      const items = Array.isArray(section?.items) ? section.items : [];
+      return {
+        ...section,
+        items: items.map((item) => {
+          const itemName = String(item?.item || "").trim();
+          const cells = Array.isArray(item?.cells) ? item.cells : [];
+          return {
+            ...item,
+            cells: cells.map((cell) => {
+              const qty = Number(cell?.qty || 0);
+              const directOutputPerSheet = Number(cell?.outputPerSheet || 0);
+              const directSheetsNeeded = Number(cell?.sheetsNeeded || 0);
+              if (directOutputPerSheet > 0 || directSheetsNeeded > 0) return cell;
+              const autoCut = resolveStorageAutoCut(sectionName, itemName, qty);
+              const outputPerSheet = Number(autoCut.outputPerSheet || 0);
+              const sheetsNeeded = outputPerSheet > 0 && qty > 0 ? Math.ceil(qty / outputPerSheet) : 0;
+              if (!(outputPerSheet > 0) && !(sheetsNeeded > 0)) return cell;
+              return {
+                ...cell,
+                outputPerSheet,
+                sheetsNeeded,
+              };
+            }),
+          };
+        }),
+      };
+    }),
   };
 }
 

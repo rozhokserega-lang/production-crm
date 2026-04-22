@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { stripPlanItemMeta } from "../app/orderHelpers";
 
 export function useShipmentTableData({
   view,
@@ -24,7 +25,7 @@ export function useShipmentTableData({
           rowsFlat.push({
             key: `${sourceRow}-${sourceCol}`,
             section: section.name,
-            item: it.item,
+            item: stripPlanItemMeta(it.item),
             strapProduct: String(it.strapProduct || ""),
             material: it.material || "",
             week: c.week || "-",
@@ -57,8 +58,8 @@ export function useShipmentTableData({
   const shipmentMaterialBalance = useMemo(() => {
     const byMaterial = new Map();
     shipmentTableRows.forEach((row) => {
-      // Count only rows that are waiting to be launched.
-      if (!row.canSendToWork) return;
+      // Count only rows that are truly waiting to be launched.
+      if (row.stageKey !== "awaiting") return;
       const material = String(row.material || "Материал не указан").trim();
       const key = normalizeFurnitureKey(material);
       const needed = Number(row.sheets || 0);

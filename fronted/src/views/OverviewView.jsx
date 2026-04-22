@@ -1,3 +1,5 @@
+import { extractPlanItemArticle, stripPlanItemMeta } from "../app/orderHelpers";
+
 export function OverviewView({
   overviewSubView,
   filtered,
@@ -21,10 +23,18 @@ export function OverviewView({
         "",
     ).trim();
   const readTitle = (row) =>
-    String(row?.item_label || row?.itemLabel || row?.detailedName || row?.firstName || row?.itemName || row?.item || "").trim();
+    stripPlanItemMeta(
+      String(row?.item_label || row?.itemLabel || row?.detailedName || row?.firstName || row?.itemName || row?.item || "").trim(),
+    );
   const splitTitleAndArticle = (row) => {
     let article = readArticle(row);
     let title = readTitle(row);
+    if (!article) {
+      const embedded = extractPlanItemArticle(
+        String(row?.item_label || row?.itemLabel || row?.detailedName || row?.firstName || row?.itemName || row?.item || ""),
+      );
+      if (embedded) article = embedded;
+    }
     if (!title) return { title: "—", article: article || "" };
     if (!article) {
       const parts = title.split(/\s+/);
