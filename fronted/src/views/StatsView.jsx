@@ -45,6 +45,7 @@ function parseWeekSortKey(weekLabel) {
 }
 
 const STAGE_COLORS = ["#2563eb", "#0ea5e9", "#14b8a6", "#22c55e", "#f59e0b", "#ef4444", "#8b5cf6"];
+const BOTTLENECK_ALLOWED_STAGES = new Set(["Пила", "Кромка", "Присадка"]);
 
 export function StatsView({
   statsList,
@@ -71,6 +72,7 @@ export function StatsView({
     const map = {};
     (statsList || []).forEach((o) => {
       const stage = getStageLabel(o) || "Не определено";
+      if (!BOTTLENECK_ALLOWED_STAGES.has(stage)) return;
       if (!map[stage]) map[stage] = { stage, orders: 0, qty: 0 };
       map[stage].orders += 1;
       map[stage].qty += Number(o.qty || 0);

@@ -1,5 +1,8 @@
 import { useMemo } from "react";
 
+const isImportedLaborRow = (row) =>
+  Boolean(row?.importedLocal) || /^import-/i.test(String(row?.orderId || "").trim());
+
 export function useLaborDerivedData({ view, filtered, laborSort }) {
   const laborTableRows = useMemo(() => {
     if (view !== "labor") return [];
@@ -29,7 +32,15 @@ export function useLaborDerivedData({ view, filtered, laborSort }) {
 
   const laborOrdersRows = useMemo(() => {
     if (view !== "labor") return [];
-    const completed = laborTableRows.filter((x) => x.pilkaMin > 0 && x.kromkaMin > 0 && x.prasMin > 0);
+    const completed = laborTableRows.filter(
+      (x) => !isImportedLaborRow(x) && x.pilkaMin > 0 && x.kromkaMin > 0 && x.prasMin > 0,
+    );
+    const extractSizeToken = (value) => {
+      const raw = String(value || "");
+      const m = raw.match(/(\d{2,4})\s*[_xх]\s*(\d{2,4})/i);
+      if (!m) return "";
+      return `${m[1]}_${m[2]}`;
+    };
     const norm = (v) =>
       String(v || "")
         .toLowerCase()
@@ -39,7 +50,11 @@ export function useLaborDerivedData({ view, filtered, laborSort }) {
         .trim();
     const resolveGroup = (itemRaw) => {
       const n = norm(itemRaw);
-      if (n.includes("обвязка") || n.includes("планка")) return "";
+      const sizeToken = extractSizeToken(itemRaw);
+      // "Обвязка (1000_80)" and "1000_80" should be one group for labor aggregation.
+      if (n.includes("обвязка") || n.includes("планка") || sizeToken) {
+        return sizeToken ? `Обвязка ${sizeToken}` : "Обвязка";
+      }
       if (n.includes("1153") && n.includes("320")) return "";
       if (n.includes("avella lite") || n.includes("авелла лайт") || n.includes("авела лайт")) return "Avella lite";
       if (n.includes("avella") || n.includes("авелла") || n.includes("авела")) return "Avella";

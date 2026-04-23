@@ -971,6 +971,47 @@ export default function App() {
     }
   }
 
+  async function overrideOrderStageFromDrawer(orderId, stage, status) {
+    if (!canAdminSettings) {
+      denyActionByRole("Только администратор может вручную менять этап из канбана.");
+      return;
+    }
+    const stageKey = String(stage || "").trim().toLowerCase();
+    const statusKey = String(status || "").trim().toLowerCase();
+    const stageMap = {
+      pilka: {
+        in_work: "webSetPilkaInWork",
+        done: "webSetPilkaDone",
+        pause: "webSetPilkaPause",
+        wait: "webSetPilkaWait",
+      },
+      kromka: {
+        in_work: "webSetKromkaInWork",
+        done: "webSetKromkaDone",
+        pause: "webSetKromkaPause",
+        wait: "webSetKromkaWait",
+      },
+      pras: {
+        in_work: "webSetPrasInWork",
+        done: "webSetPrasDone",
+        pause: "webSetPrasPause",
+        wait: "webSetPrasWait",
+      },
+    };
+    const action = stageMap[stageKey]?.[statusKey];
+    if (!action) {
+      setError("Некорректная комбинация этапа и статуса.");
+      return;
+    }
+    setError("");
+    try {
+      await callBackend(action, { orderId });
+      await load();
+    } catch (e) {
+      setError(toUserError(e));
+    }
+  }
+
   const {
     weeks,
     sectionOptions,
@@ -1140,7 +1181,22 @@ export default function App() {
     }
 
     let cancelled = false;
-    const ids = (filtered || [])
+    const stageSourceRows =
+      laborSubView === "stages"
+        ? (rows || []).filter((x) => {
+            const byWeek = weekFilter === "all" || String(x?.week || "") === weekFilter;
+            if (!byWeek) return false;
+            const q = String(query || "").trim().toLowerCase();
+            const byQuery =
+              !q ||
+              String(x?.item || "").toLowerCase().includes(q) ||
+              String(x?.orderId || x?.order_id || "").toLowerCase().includes(q);
+            if (!byQuery) return false;
+            const lane = String(getOverviewLaneId(x) || "");
+            return lane && lane !== "ready_to_ship" && lane !== "shipped";
+          })
+        : filtered;
+    const ids = (stageSourceRows || [])
       .map((x) => String(x?.orderId || x?.order_id || "").trim())
       .filter(Boolean);
     setActiveOrderIds(Array.from(new Set(ids)));
@@ -1165,7 +1221,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [view, laborSubView, canManageOrders, filtered, setError]);
+  }, [view, laborSubView, canManageOrders, filtered, rows, weekFilter, query, getOverviewLaneId, setError]);
 
   const {
     overviewShippedOnly,
@@ -1298,6 +1354,8 @@ export default function App() {
     stageAuditRows,
     query,
     activeOrderIds,
+    filteredOrders: baseOrderFiltered,
+    workSchedule,
     laborOrdersRows,
     laborPlannerQtyByGroup,
     laborTableRows,
@@ -2542,6 +2600,8 @@ export default function App() {
             laborSavingByKey={laborSavingByKey}
             laborSavedByKey={laborSavedByKey}
             saveImportedLaborRowToDb={saveImportedLaborRowToDb}
+            callBackend={callBackend}
+            setError={setError}
             loading={loading}
           />
         )}
@@ -2690,6 +2750,9 @@ export default function App() {
         canEditAdminComment={canAdminSettings}
         onSaveAdminComment={saveOrderAdminComment}
         savingAdminComment={adminCommentSaving}
+        canAdminStageOverride={canAdminSettings}
+        onAdminStageOverride={overrideOrderStageFromDrawer}
+        workSchedule={workSchedule}
       />
       <ConsumeDialog
         isOpen={consumeDialogOpen}

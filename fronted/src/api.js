@@ -342,7 +342,10 @@ const RPC_MAP = {
   webSetMetalWorkQueueStatus: "web_set_metal_work_queue_status",
   webGetLeftovers: "web_get_leftovers",
   webGetLaborTable: "web_get_labor_table",
+  webGetLaborKits: "web_get_labor_kits",
   webUpsertLaborFact: "web_upsert_labor_fact",
+  webUpsertLaborKit: "web_upsert_labor_kit",
+  webDeleteLaborKit: "web_delete_labor_kit",
   webGetOrderStats: "web_get_order_stats",
   webGetMyRole: "web_effective_crm_role",
   webGetCrmAuthStrict: "web_is_crm_auth_strict",
@@ -374,6 +377,9 @@ const RPC_MAP = {
   webSetPilkaPause: "web_set_stage_pause",
   webSetKromkaPause: "web_set_stage_pause",
   webSetPrasPause: "web_set_stage_pause",
+  webSetPilkaWait: "web_set_stage_wait",
+  webSetKromkaWait: "web_set_stage_wait",
+  webSetPrasWait: "web_set_stage_wait",
   webSendShipmentToWork: "web_send_shipment_to_work_by_source",
   webSendPlanksToWork: "web_send_planks_to_work",
   webConsumeSheetsByOrderId: "web_consume_sheets_by_order_id",
@@ -389,7 +395,7 @@ function stageFromAction(action) {
 }
 
 function buildRpcPayload(action, payload = {}) {
-  if (/^webSet(Pilka|Kromka|Pras|Assembly|Shipping)(InWork|Done|Pause)?$/.test(action)) {
+  if (/^webSet(Pilka|Kromka|Pras|Assembly|Shipping)(InWork|Done|Pause|Wait)?$/.test(action)) {
     const rpcPayload = {
       p_order_id: payload.orderId,
       p_stage: stageFromAction(action),
@@ -509,6 +515,21 @@ function buildRpcPayload(action, payload = {}) {
       p_pras_min: Number(payload.prasMin || payload.p_pras_min || 0),
       p_assembly_min: Number(payload.assemblyMin || payload.p_assembly_min || 0),
       p_date_finished: String(payload.dateFinished || payload.p_date_finished || "").trim() || null,
+    };
+  }
+  if (action === "webGetLaborKits") {
+    return {};
+  }
+  if (action === "webUpsertLaborKit") {
+    return {
+      p_id: payload.id == null || payload.id === "" ? null : Number(payload.id),
+      p_kit_name: String(payload.name || payload.p_kit_name || "").trim(),
+      p_items: Array.isArray(payload.items) ? payload.items : [],
+    };
+  }
+  if (action === "webDeleteLaborKit") {
+    return {
+      p_id: Number(payload.id || payload.p_id || 0),
     };
   }
   if (action === "webSetCrmAuthStrict") {

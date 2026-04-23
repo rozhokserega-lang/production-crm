@@ -62,6 +62,7 @@ export interface RpcPayloadMap {
   webGetFurnitureDetailArticles: Record<string, never>;
   webGetLeftovers: Record<string, never>;
   webGetLaborTable: Record<string, never>;
+  webGetLaborKits: Record<string, never>;
   webUpsertLaborFact: {
     orderId?: string;
     p_order_id?: string;
@@ -81,6 +82,16 @@ export interface RpcPayloadMap {
     p_assembly_min?: number;
     dateFinished?: string;
     p_date_finished?: string;
+  };
+  webUpsertLaborKit: {
+    id?: number | null;
+    name?: string;
+    p_kit_name?: string;
+    items: Array<{ group: string; qty: number }>;
+  };
+  webDeleteLaborKit: {
+    id?: number;
+    p_id?: number;
   };
   webGetOrderStats: Record<string, never>;
   webGetMyRole: Record<string, never>;
@@ -120,6 +131,9 @@ export interface RpcPayloadMap {
   webSetPilkaPause: { orderId: string };
   webSetKromkaPause: { orderId: string };
   webSetPrasPause: { orderId: string };
+  webSetPilkaWait: { orderId: string };
+  webSetKromkaWait: { orderId: string };
+  webSetPrasWait: { orderId: string };
   webSendShipmentToWork: { row: string | number; col: string | number };
   webSendPlanksToWork: { items: Array<Record<string, unknown>> };
   webConsumeSheetsByOrderId: { orderId: string; material: string; qty: number };
@@ -143,7 +157,10 @@ export interface RpcResponseMap {
   webGetFurnitureDetailArticles: Array<Record<string, unknown>>;
   webGetLeftovers: Array<Record<string, unknown>>;
   webGetLaborTable: Array<Record<string, unknown>>;
+  webGetLaborKits: Array<Record<string, unknown>>;
   webUpsertLaborFact: Record<string, unknown>;
+  webUpsertLaborKit: Record<string, unknown>;
+  webDeleteLaborKit: boolean | Record<string, unknown>;
   webGetOrderStats: OrderRow[];
   webGetMyRole: string | Array<Record<string, unknown>> | Record<string, unknown>;
   webGetCrmAuthStrict: boolean | Array<Record<string, unknown>> | Record<string, unknown>;
@@ -172,6 +189,9 @@ export interface RpcResponseMap {
   webSetPilkaPause: Record<string, unknown>;
   webSetKromkaPause: Record<string, unknown>;
   webSetPrasPause: Record<string, unknown>;
+  webSetPilkaWait: Record<string, unknown>;
+  webSetKromkaWait: Record<string, unknown>;
+  webSetPrasWait: Record<string, unknown>;
   webSendShipmentToWork: Record<string, unknown>;
   webSendPlanksToWork: Record<string, unknown>;
   webConsumeSheetsByOrderId: Record<string, unknown>;

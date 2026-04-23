@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { extractPlanItemArticle, stripPlanItemMeta } from "../app/orderHelpers";
+import { buildLiveStageClock } from "../app/stageTime";
 
 function stageDotClass(status, isDone, isInWork) {
   if (isDone(status)) return "order-drawer__dot order-drawer__dot--done";
@@ -65,8 +66,15 @@ export function OrderDrawer({
   canEditAdminComment,
   onSaveAdminComment,
   savingAdminComment,
+  canAdminStageOverride,
+  onAdminStageOverride,
+  workSchedule,
 }) {
   const [commentDraft, setCommentDraft] = useState("");
+  const [overrideStage, setOverrideStage] = useState("kromka");
+  const [overrideStatus, setOverrideStatus] = useState("wait");
+  const [overrideSaving, setOverrideSaving] = useState(false);
+  const [clockTick, setClockTick] = useState(Date.now());
 
   useEffect(() => {
     if (!open) return undefined;
@@ -82,6 +90,12 @@ export function OrderDrawer({
     const first = lines[0] || {};
     setCommentDraft(String(first.adminComment ?? first.admin_comment ?? ""));
   }, [open, orderId, lines]);
+
+  useEffect(() => {
+    if (!open || !orderId) return undefined;
+    const timer = window.setInterval(() => setClockTick(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [open, orderId]);
 
   if (!open || !orderId) return null;
 
@@ -106,9 +120,32 @@ export function OrderDrawer({
       ? getMaterialLabel(String(first.item || "").trim(), first.material || first.colorName || "")
       : String(first.material || first.colorName || "").trim();
 
+  const liveStageClock = (() => {
+    try {
+      if (typeof isInWork !== "function") return null;
+      return buildLiveStageClock(first, {
+        nowMs: clockTick,
+        workSchedule,
+        isInWork,
+      });
+    } catch (_) {
+      return null;
+    }
+  })();
+
   async function handleSaveComment() {
     if (!onSaveAdminComment) return;
     await onSaveAdminComment(commentDraft.trim());
+  }
+
+  async function handleAdminStageOverride() {
+    if (!onAdminStageOverride || !orderId) return;
+    setOverrideSaving(true);
+    try {
+      await onAdminStageOverride(orderId, overrideStage, overrideStatus);
+    } finally {
+      setOverrideSaving(false);
+    }
   }
 
   const drawer = (
@@ -205,6 +242,18 @@ export function OrderDrawer({
             <div>Присадка: {prasS || "—"}</div>
             <div>Сборка: {assemblyS || "—"}</div>
           </div>
+          {liveStageClock ? (
+            <div style={{ marginTop: 10, padding: "8px 10px", borderRadius: 8, background: "#f8fafc", border: "1px solid #e2e8f0" }}>
+              <div><b>Таймер ({liveStageClock.label}):</b> {liveStageClock.durationText}</div>
+              <div style={{ color: liveStageClock.isRunning ? "#166534" : "#9a3412" }}>
+                {liveStageClock.isRunning ? "Время сейчас идет" : `Время сейчас не идет: ${liveStageClock.reason}`}
+              </div>
+            </div>
+          ) : (
+            <div style={{ marginTop: 10, padding: "8px 10px", borderRadius: 8, background: "#f8fafc", border: "1px solid #e2e8f0", color: "#64748b" }}>
+              Таймер недоступен: для этого заказа нет зафиксированного времени старта этапа.
+            </div>
+          )}
         </div>
 
         {showCommentBlock ? (
@@ -234,6 +283,34 @@ export function OrderDrawer({
             ) : (
               <p className="order-drawer__comment-readonly">{storedComment || "—"}</p>
             )}
+          </div>
+        ) : null}
+        {canAdminStageOverride ? (
+          <div className="order-drawer__section">
+            <h3 className="order-drawer__h3">Админ: исправить этап</h3>
+            <div style={{ display: "grid", gap: 8 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                <select value={overrideStage} onChange={(e) => setOverrideStage(e.target.value)}>
+                  <option value="pilka">Пила</option>
+                  <option value="kromka">Кромка</option>
+                  <option value="pras">Присадка</option>
+                </select>
+                <select value={overrideStatus} onChange={(e) => setOverrideStatus(e.target.value)}>
+                  <option value="wait">Ожидает</option>
+                  <option value="in_work">В работе</option>
+                  <option value="pause">Пауза</option>
+                  <option value="done">Готово</option>
+                </select>
+              </div>
+              <button
+                type="button"
+                className="mini warn"
+                disabled={overrideSaving}
+                onClick={() => void handleAdminStageOverride()}
+              >
+                {overrideSaving ? "Применяю..." : "Применить статус"}
+              </button>
+            </div>
           </div>
         ) : null}
       </aside>
