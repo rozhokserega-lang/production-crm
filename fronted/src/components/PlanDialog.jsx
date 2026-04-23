@@ -8,11 +8,13 @@ export function PlanDialog({
   planWeek,
   planQty,
   planSaving,
+  planPreviewing,
   onSectionChange,
   onArticleChange,
   onPlanWeekChange,
   onPlanQtyChange,
   onSave,
+  onPreview,
   onClose,
 }) {
   if (!isOpen) return null;
@@ -61,6 +63,9 @@ export function PlanDialog({
         <div className="actions" style={{ marginTop: 10 }}>
           <button className="mini ok" disabled={planSaving} onClick={onSave}>
             {planSaving ? "Сохраняю..." : "Сохранить план"}
+          </button>
+          <button className="mini" disabled={planSaving || planPreviewing} onClick={onPreview}>
+            {planPreviewing ? "Открываю..." : "Предпросмотр плана"}
           </button>
           <button className="mini" disabled={planSaving} onClick={onClose}>
             Отмена

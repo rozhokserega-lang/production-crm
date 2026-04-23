@@ -12,6 +12,19 @@ const SHIPMENT_SECTION_ORDER = [];
 const STRAP_SHEET_WIDTH = 2800;
 const STRAP_SHEET_HEIGHT = 2070;
 
+function pickPreferredGroupLabel(currentLabel, nextLabel) {
+  const current = String(currentLabel || "").trim();
+  const next = String(nextLabel || "").trim();
+  if (!next) return current;
+  if (!current) return next;
+  const currentFirst = current[0] || "";
+  const nextFirst = next[0] || "";
+  const currentStartsUpper = currentFirst === currentFirst.toUpperCase() && currentFirst !== currentFirst.toLowerCase();
+  const nextStartsUpper = nextFirst === nextFirst.toUpperCase() && nextFirst !== nextFirst.toLowerCase();
+  if (!currentStartsUpper && nextStartsUpper) return next;
+  return current;
+}
+
 export function useShipmentBoardRenderDerived({
   view,
   filtered,
@@ -112,9 +125,14 @@ export function useShipmentBoardRenderDerived({
           if (!visibleCells.length) return;
 
           if (shipmentSort === "color") {
-            const key = String(it.material || "Материал не указан").trim() || "Материал не указан";
-            if (!groups[key]) groups[key] = [];
-            groups[key].push({ ...it, cells: visibleCells });
+            const rawLabel = String(it.material || "Материал не указан").trim() || "Материал не указан";
+            const groupKey = normalizeFurnitureKey(rawLabel) || "материал не указан";
+            if (!groups[groupKey]) {
+              groups[groupKey] = { title: rawLabel, items: [] };
+            } else {
+              groups[groupKey].title = pickPreferredGroupLabel(groups[groupKey].title, rawLabel);
+            }
+            groups[groupKey].items.push({ ...it, cells: visibleCells });
             return;
           }
 
@@ -132,9 +150,9 @@ export function useShipmentBoardRenderDerived({
       if (shipmentSort === "color") {
         baseSections = Object.keys(groups)
           .sort((a, b) => a.localeCompare(b, "ru"))
-          .map((name) => ({
-            name,
-            items: sortItemsForShipment(groups[name]),
+          .map((groupKey) => ({
+            name: groups[groupKey].title,
+            items: sortItemsForShipment(groups[groupKey].items),
           }));
       } else {
         baseSections = Object.keys(groups)

@@ -114,6 +114,7 @@ import {
 } from "./app/statusHelpers";
 import {
   embedPlanItemArticle,
+  extractPlanItemArticle,
   getMaterialLabel,
   getPlanPreviewArticleCode,
   hasArticleLikeCode,
@@ -1607,6 +1608,48 @@ export default function App() {
     }
   }
 
+  function previewCreatePlanDialog() {
+    const item = String(resolvedPlanItem || "").trim();
+    const material = String(planMaterial || "").trim();
+    const week = String(planWeek || "").trim();
+    const qty = Number(String(planQty || "").replace(",", "."));
+    const selectedCatalogArticle = String(
+      sectionArticles.find((x) => x.itemName === planArticle)?.article || "",
+    ).trim();
+    if (!item) {
+      setError("Выберите материал для изделия.");
+      return;
+    }
+    if (!material) {
+      setError("Выберите материал.");
+      return;
+    }
+    if (!week) {
+      setError("Укажите неделю плана.");
+      return;
+    }
+    if (!Number.isFinite(qty) || qty <= 0) {
+      setError("Количество должно быть больше 0.");
+      return;
+    }
+    setError("");
+    const basePreview = {
+      _key: `dialog-preview:${Date.now()}`,
+      generatedAt: formatDateTimeForPrint(new Date()),
+      firstName: item,
+      detailedName: item,
+      colorName: material,
+      planNumber: week,
+      qty,
+      article: selectedCatalogArticle,
+      rows: [],
+    };
+    const template = resolveFurnitureTemplateForPreview(basePreview, furnitureTemplates);
+    const rows = template ? buildPreviewRowsFromFurnitureTemplate(template, qty) : [];
+    setPlanPreviews([{ ...basePreview, rows }]);
+    setPlanDialogOpen(false);
+  }
+
   async function saveStrapDialog() {
     if (!canOperateProduction) {
       denyActionByRole("Недостаточно прав для изменения плана.");
@@ -1658,6 +1701,7 @@ export default function App() {
     const article = String(payload?.article || "").trim();
     const material = String(payload?.material || "").trim();
     const qty = Number(payload?.qty || 0);
+    const qrQty = Number(payload?.qrQty || 0);
     if (!week) {
       setError("Укажите номер плана.");
       return;
@@ -1671,10 +1715,11 @@ export default function App() {
     try {
       const request = {
         sectionName: "Система хранения",
-        item: embedPlanItemArticle(item, article),
+        item: embedPlanItemArticle(item, article, qrQty),
         material,
         week,
         qty,
+        article,
       };
       await callBackend("webCreateShipmentPlanCell", request);
       void syncPlanCellToGoogleSheet(request);
@@ -1696,6 +1741,19 @@ export default function App() {
     try {
       const generatedAt = formatDateTimeForPrint(new Date());
       const strapPreviews = buildStrapPreviewPlans(strapSelections, generatedAt);
+      let shipmentTableBySource = new Map();
+      try {
+        const tableRows = await callBackend("webGetShipmentTable", {});
+        const list = Array.isArray(tableRows) ? tableRows : [];
+        shipmentTableBySource = new Map(
+          list.map((row) => [
+            `${String(row?.source_row_id || row?.sourceRowId || "").trim()}|${String(row?.source_col_id || row?.sourceColId || "").trim()}`,
+            row,
+          ]),
+        );
+      } catch (_) {
+        shipmentTableBySource = new Map();
+      }
       const enrichPreview = (preview, shipmentRow) => {
         const withFurniture = enrichPreviewFromFurniture(preview, {
           furnitureTemplates,
@@ -1714,6 +1772,31 @@ export default function App() {
           strapProductBySizeToken,
           strapTargetProduct,
         });
+        const sourceKey = `${String(shipmentRow?.row || "").trim()}|${String(shipmentRow?.col || "").trim()}`;
+        const sourceRowFromTable = shipmentTableBySource.get(sourceKey) || null;
+        const articleFromTable = String(
+          sourceRowFromTable?.product_article ||
+            sourceRowFromTable?.productArticle ||
+          sourceRowFromTable?.article_code ||
+            sourceRowFromTable?.articleCode ||
+            sourceRowFromTable?.article ||
+            sourceRowFromTable?.mapped_article_code ||
+            sourceRowFromTable?.mappedArticleCode ||
+            "",
+        ).trim();
+        const explicitArticle = String(
+          shipmentRow?.productArticle ||
+            extractPlanItemArticle(shipmentRow?.sourceItem || shipmentRow?.item || "") ||
+            articleFromTable ||
+            extractPlanItemArticle(sourceRowFromTable?.item || "") ||
+            "",
+        ).trim();
+        if (!explicitArticle) return withStrapProduct;
+        if (getPlanPreviewArticleCode(withStrapProduct)) return withStrapProduct;
+        return {
+          ...withStrapProduct,
+          article: explicitArticle,
+        };
       };
       if (shipmentSelections.length === 0) {
         setPlanPreviews(strapPreviews);
@@ -2657,11 +2740,13 @@ export default function App() {
         planWeek={planWeek}
         planQty={planQty}
         planSaving={planSaving}
+        planPreviewing={false}
         onSectionChange={handlePlanSectionChange}
         onArticleChange={handlePlanArticleChange}
         onPlanWeekChange={(value) => setPlanWeek(value.replace(/[^\d-]/g, ""))}
         onPlanQtyChange={(value) => setPlanQty(value.replace(/[^0-9.,]/g, ""))}
         onSave={saveCreatePlanDialog}
+        onPreview={previewCreatePlanDialog}
         onClose={closeCreatePlanDialog}
       />
     </div>

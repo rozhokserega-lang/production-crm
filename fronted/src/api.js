@@ -449,6 +449,7 @@ function buildRpcPayload(action, payload = {}) {
       p_material: String(payload.material || "").trim() || null,
       p_week: String(payload.week || "").trim(),
       p_qty: Number(payload.qty || 0),
+      p_article: String(payload.article || payload.productArticle || payload.p_article || "").trim() || null,
     };
   }
   if (action === "webDeleteOrderById") {

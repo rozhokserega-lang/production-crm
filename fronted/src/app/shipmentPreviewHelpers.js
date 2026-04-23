@@ -1,5 +1,10 @@
 export function enrichPreviewFromFurniture(preview, deps = {}) {
   if (!preview || preview.isStrapPlan) return preview;
+  const existingRows = Array.isArray(preview.rows)
+    ? preview.rows.filter((row) => String(row?.part || "").trim())
+    : [];
+  // Keep backend preview rows when they exist; template rows are only a fallback.
+  if (existingRows.length > 0) return preview;
   const resolveTemplate = deps.resolveFurnitureTemplateForPreview;
   const buildRows = deps.buildPreviewRowsFromFurnitureTemplate;
   if (typeof resolveTemplate !== "function" || typeof buildRows !== "function") return preview;

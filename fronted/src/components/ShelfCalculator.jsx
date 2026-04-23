@@ -27,7 +27,17 @@ const CATALOG = {
   ],
 };
 
-const CATALOG_MAP = Object.fromEntries(CATALOG.furniture_items.map((item) => [item.primary.code, item]));
+function normalizeCatalogCode(code) {
+  return String(code || "").trim().toUpperCase();
+}
+
+const CATALOG_MAP = Object.fromEntries(
+  CATALOG.furniture_items.map((item) => [normalizeCatalogCode(item.primary.code), item]),
+);
+
+function getCatalogItemByCode(code) {
+  return CATALOG_MAP[normalizeCatalogCode(code)] || null;
+}
 const SHEET_FORMATS = [
   { key: "2800x2070", label: "Лист 2800 x 2070 мм", width: 2800, height: 2070 },
   { key: "2750x1830", label: "Лист 2750 x 1830 мм", width: 2750, height: 1830 },
@@ -48,7 +58,7 @@ function calcTotals(rows) {
   for (const row of rows) {
     const qty = Number(row.qty);
     if (!qty || qty <= 0) continue;
-    const item = CATALOG_MAP[row.code];
+    const item = getCatalogItemByCode(row.code);
     if (!item) continue;
     const color = resolveColor(item);
     if (!byColor[color]) byColor[color] = {};
@@ -252,11 +262,12 @@ export default function ShelfCalculator({ canOperateProduction = false, onCreate
     });
     return cards;
   }, [totalEntries, totalsData.byColor]);
-  const activeRows = rows.filter((r) => Number(r.qty) > 0 && CATALOG_MAP[r.code]);
+  const activeRows = rows.filter((r) => Number(r.qty) > 0 && getCatalogItemByCode(r.code));
   const defaultArticleByCardKey = useMemo(() => {
     const byCard = new Map();
+    const byCardArticleSystems = new Map();
     activeRows.forEach((r) => {
-      const item = CATALOG_MAP[r.code];
+      const item = getCatalogItemByCode(r.code);
       if (!item) return;
       const article = String(item?.primary?.code || "").trim();
       if (!article) return;
@@ -272,11 +283,20 @@ export default function ShelfCalculator({ canOperateProduction = false, onCreate
         const score = rowQty * pairQty;
         const prev = byCard.get(cardKey);
         if (!prev || score > prev.score) byCard.set(cardKey, { article, score });
+        const articleSystems = byCardArticleSystems.get(cardKey) || new Map();
+        articleSystems.set(article, Number(articleSystems.get(article) || 0) + rowQty);
+        byCardArticleSystems.set(cardKey, articleSystems);
       });
     });
     const map = new Map();
-    byCard.forEach((v, k) => map.set(k, String(v.article || "").trim()));
-    return map;
+    const qrQtyMap = new Map();
+    byCard.forEach((v, k) => {
+      const article = String(v.article || "").trim();
+      map.set(k, article);
+      const articleSystems = byCardArticleSystems.get(k) || new Map();
+      qrQtyMap.set(k, Number(articleSystems.get(article) || 0));
+    });
+    return { articleByCard: map, qrQtyByCard: qrQtyMap };
   }, [activeRows]);
 
   function updateRow(id, patch) {
@@ -315,7 +335,8 @@ export default function ShelfCalculator({ canOperateProduction = false, onCreate
           name: card.name,
           qty: String(Number(card.qty || 0)),
           material: defaultMaterialByColor(card.color),
-          article: String(defaultArticleByCardKey.get(card.key) || ""),
+          article: String(defaultArticleByCardKey.articleByCard.get(card.key) || ""),
+          qrQty: String(Number(defaultArticleByCardKey.qrQtyByCard.get(card.key) || 0) || ""),
         },
       ];
     });
@@ -340,12 +361,32 @@ export default function ShelfCalculator({ canOperateProduction = false, onCreate
     setPlanLoading(true);
     try {
       for (const s of rowsToCreate) {
+        const inferred =
+          activeRows
+            .map((r) => {
+              const catalogItem = getCatalogItemByCode(r.code);
+              if (!catalogItem) return null;
+              const color = resolveColor(catalogItem);
+              if (String(s.color || "") !== String(color || "")) return null;
+              const pair = (catalogItem.pairs || []).find((p) => String(p?.text || "").trim() === String(s.name || "").trim());
+              if (!pair) return null;
+              return {
+                article: String(catalogItem.primary?.code || "").trim(),
+                systemsQty: Number(r.qty || 0),
+                pairQty: Number(pair.qty || 0),
+              };
+            })
+            .filter(Boolean)
+            .sort((a, b) => (b.systemsQty * b.pairQty) - (a.systemsQty * a.pairQty))[0] || null;
+        const article = String(s.article || inferred?.article || "").trim();
+        const qrQty = Number(String(s.qrQty || "").replace(",", ".")) || Number(inferred?.systemsQty || 0) || 0;
         await onCreatePlanOrder({
           item: buildShelfOrderItemName(s.name, s.material),
-          article: String(s.article || "").trim(),
+          article,
           material: String(s.material || "").trim(),
           week,
           qty: s.qtyNum,
+          qrQty,
         });
       }
       setSelectedShelves([]);
@@ -401,7 +442,7 @@ export default function ShelfCalculator({ canOperateProduction = false, onCreate
 
       <div style={{ display: "grid", gap: 8 }}>
         {rows.map((row, idx) => {
-          const item = CATALOG_MAP[row.code];
+          const item = getCatalogItemByCode(row.code);
           const isValid = Boolean(item);
           const isActive = activeRowId === row.id;
 
@@ -763,7 +804,7 @@ export default function ShelfCalculator({ canOperateProduction = false, onCreate
             <div style={{ fontSize: 16, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>Разбивка по строкам</div>
             <div style={{ display: "grid", gap: 6 }}>
               {activeRows.map((r) => {
-                const item = CATALOG_MAP[r.code];
+                const item = getCatalogItemByCode(r.code);
                 const qty = Number(r.qty);
                 return (
                   <div key={r.id} style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, paddingBottom: 6, borderBottom: "1px dashed #dbe5d9" }}>

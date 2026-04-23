@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { stripPlanItemMeta } from "../app/orderHelpers";
+import { extractPlanItemArticle, stripPlanItemMeta } from "../app/orderHelpers";
 
 export function useShipmentTableData({
   view,
@@ -25,7 +25,11 @@ export function useShipmentTableData({
           rowsFlat.push({
             key: `${sourceRow}-${sourceCol}`,
             section: section.name,
+            sourceItem: String(it.item || ""),
             item: stripPlanItemMeta(it.item),
+            productArticle: String(
+              it.productArticle || it.article_code || it.articleCode || it.article || it.mapped_article_code || it.mappedArticleCode || "",
+            ).trim() || extractPlanItemArticle(it.item),
             strapProduct: String(it.strapProduct || ""),
             material: it.material || "",
             week: c.week || "-",

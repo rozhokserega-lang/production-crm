@@ -27,6 +27,8 @@ export function getMaterialLabel(item, material) {
 
 export function hasArticleLikeCode(row) {
   const raw = String(
+    row?.product_article ||
+      row?.productArticle ||
     row?.article_code ||
       row?.articleCode ||
       row?.article ||
@@ -41,6 +43,8 @@ export function hasArticleLikeCode(row) {
 
 export function getPlanPreviewArticleCode(planPreview) {
   const direct = String(
+    planPreview?.product_article ||
+      planPreview?.productArticle ||
     planPreview?.article_code ||
       planPreview?.articleCode ||
       planPreview?.article ||
@@ -52,6 +56,8 @@ export function getPlanPreviewArticleCode(planPreview) {
   const rows = Array.isArray(planPreview?.rows) ? planPreview.rows : [];
   for (const r of rows) {
     const rowCode = String(
+      r?.product_article ||
+        r?.productArticle ||
       r?.article_code ||
         r?.articleCode ||
         r?.article ||
@@ -65,19 +71,51 @@ export function getPlanPreviewArticleCode(planPreview) {
 }
 
 const ITEM_ARTICLE_META_RE = /\{\{ART:([A-Za-z0-9._-]+)\}\}/i;
+const ITEM_ARTICLE_PREFIX_RE = /^\s*([A-Za-z0-9][A-Za-z0-9._-]{2,})\s*::\s*/i;
+const ITEM_QR_QTY_META_RE = /\{\{QRQTY:([0-9]+(?:[.,][0-9]+)?)\}\}/i;
+const ITEM_QR_QTY_PREFIX_RE = /(?:^|\s)QTY\s*=\s*([0-9]+(?:[.,][0-9]+)?)\s*::/i;
 
-export function embedPlanItemArticle(itemName, articleCode) {
+export function embedPlanItemArticle(itemName, articleCode, qrQty) {
   const item = String(itemName || "").trim();
   const article = String(articleCode || "").trim();
-  if (!item || !article) return item;
-  return `${item} {{ART:${article}}}`;
+  const qrQtyNum = Number(String(qrQty ?? "").replace(",", "."));
+  const hasQrQty = Number.isFinite(qrQtyNum) && qrQtyNum > 0;
+  if (!item) return item;
+  const qtyPrefix = hasQrQty ? `QTY=${Number.isInteger(qrQtyNum) ? Math.trunc(qrQtyNum) : qrQtyNum} :: ` : "";
+  const qtyMeta = hasQrQty ? ` {{QRQTY:${Number.isInteger(qrQtyNum) ? Math.trunc(qrQtyNum) : qrQtyNum}}}` : "";
+  if (!article) return `${qtyPrefix}${item}${qtyMeta}`.trim();
+  // Keep both a visible prefix and a hidden marker:
+  // some backends may strip "{{...}}" metadata, but keep plain text.
+  return `${article} :: ${qtyPrefix}${item} {{ART:${article}}}${qtyMeta}`;
 }
 
 export function stripPlanItemMeta(itemName) {
-  return String(itemName || "").replace(ITEM_ARTICLE_META_RE, "").replace(/\s{2,}/g, " ").trim();
+  return String(itemName || "")
+    .replace(ITEM_ARTICLE_META_RE, "")
+    .replace(ITEM_ARTICLE_PREFIX_RE, "")
+    .replace(ITEM_QR_QTY_META_RE, "")
+    .replace(ITEM_QR_QTY_PREFIX_RE, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
 }
 
 export function extractPlanItemArticle(itemName) {
   const m = String(itemName || "").match(ITEM_ARTICLE_META_RE);
-  return String(m?.[1] || "").trim();
+  if (m?.[1]) return String(m[1]).trim();
+  const pref = String(itemName || "").match(ITEM_ARTICLE_PREFIX_RE);
+  return String(pref?.[1] || "").trim();
+}
+
+export function extractPlanItemQrQty(itemName) {
+  const meta = String(itemName || "").match(ITEM_QR_QTY_META_RE);
+  if (meta?.[1]) {
+    const n = Number(String(meta[1]).replace(",", "."));
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  const pref = String(itemName || "").match(ITEM_QR_QTY_PREFIX_RE);
+  if (pref?.[1]) {
+    const n = Number(String(pref[1]).replace(",", "."));
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return 0;
 }

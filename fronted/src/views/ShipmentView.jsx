@@ -348,6 +348,8 @@ export function ShipmentView({
                               rawCol: row.sourceCol,
                               section: row.section,
                               item: row.item,
+                              sourceItem: row.sourceItem,
+                              productArticle: row.productArticle,
                               strapProduct: row.strapProduct,
                               week: row.week,
                               weekCol: row.week,
@@ -480,6 +482,16 @@ export function ShipmentView({
                                   rawCol: String(c.col),
                                   section: section.name,
                                   item: it.item,
+                                  sourceItem: it.item,
+                                  productArticle: String(
+                                    it.productArticle ||
+                                      it.article_code ||
+                                      it.articleCode ||
+                                      it.article ||
+                                      it.mapped_article_code ||
+                                      it.mappedArticleCode ||
+                                      "",
+                                  ).trim(),
                                   strapProduct: String(it.strapProduct || ""),
                                   week: c.week,
                                   weekCol: c.week,

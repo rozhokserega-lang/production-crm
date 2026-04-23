@@ -128,10 +128,14 @@ export function normalizeShipmentBoard(data) {
     const itemMap = sectionMap.get(sectionName);
     const rowKey = String(row?.row_ref || row?.rowRef || row?.source_row_id || `${sectionName}:${itemName}`);
     if (!itemMap.has(rowKey)) {
+      const productArticle = String(
+        row?.article_code || row?.articleCode || row?.article || row?.mapped_article_code || row?.mappedArticleCode || "",
+      ).trim();
       itemMap.set(rowKey, {
         row: rowKey,
         sourceRowId: String(row?.source_row_id || row?.sourceRowId || rowKey),
         item: itemName,
+        productArticle,
         material: row?.material || "",
         cells: [],
       });

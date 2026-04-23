@@ -101,6 +101,9 @@ export interface RpcPayloadMap {
     material?: string | null;
     week: string;
     qty: number;
+    article?: string | null;
+    productArticle?: string | null;
+    p_article?: string | null;
   };
   webDeleteShipmentPlanCell: { row?: string | number; col?: string | number; source?: string };
   webDeleteOrderById: { orderId: string };

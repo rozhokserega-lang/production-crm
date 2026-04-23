@@ -1,5 +1,25 @@
 import { useCallback, useEffect, useState } from "react";
 
+function resolveFurnitureArticle(itemName, directArticle, articleLookupByItemKey, normalizeFurnitureKey) {
+  const direct = String(directArticle || "").trim();
+  if (direct) return direct;
+  if (!(articleLookupByItemKey instanceof Map) || articleLookupByItemKey.size === 0) return "";
+  const normalizedItem = normalizeFurnitureKey(itemName);
+  if (!normalizedItem) return "";
+  const exact = String(articleLookupByItemKey.get(normalizedItem) || "").trim();
+  if (exact) return exact;
+  const beforeDot = String(itemName || "").split(".")[0] || "";
+  const normalizedBeforeDot = normalizeFurnitureKey(beforeDot);
+  if (normalizedBeforeDot) {
+    const byBaseName = String(articleLookupByItemKey.get(normalizedBeforeDot) || "").trim();
+    if (byBaseName) return byBaseName;
+  }
+  const bestFuzzyMatch = [...articleLookupByItemKey.entries()]
+    .filter(([itemKey]) => normalizedItem.includes(itemKey) || itemKey.includes(normalizedItem))
+    .sort((a, b) => String(b[0] || "").length - String(a[0] || "").length)[0];
+  return String(bestFuzzyMatch?.[1] || "").trim();
+}
+
 export function useMetalState({
   view,
   callBackend,
@@ -113,7 +133,12 @@ export function useMetalState({
         if (!(qty > 0)) return;
         const itemName = String(s.item || "").trim();
         const directArticle = String(s.productArticle || s.product_article || "").trim();
-        const article = directArticle || articleLookupByItemKey.get(normalizeFurnitureKey(itemName)) || "";
+        const article = resolveFurnitureArticle(
+          itemName,
+          directArticle,
+          articleLookupByItemKey,
+          normalizeFurnitureKey,
+        );
         if (!article) {
           if (itemName) missingItems.push(itemName);
           return;
