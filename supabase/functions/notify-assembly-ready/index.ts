@@ -10,6 +10,19 @@ type Payload = {
   executor?: string;
 };
 
+type TelegramCallbackQuery = {
+  id?: string;
+  data?: string;
+  message?: {
+    message_id?: number;
+    chat?: { id?: number | string };
+  };
+};
+
+type TelegramUpdate = {
+  callback_query?: TelegramCallbackQuery;
+};
+
 function toText(v: unknown): string {
   return String(v ?? "").trim();
 }
@@ -34,10 +47,53 @@ function moscowNow(): string {
   }).format(new Date());
 }
 
+async function telegramBotRequest(token: string, method: string, body: Record<string, unknown>) {
+  return fetch(`https://api.telegram.org/bot${token}/${method}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+async function markAssemblyDone(orderId: string) {
+  const supabaseUrl = String(Deno.env.get("SUPABASE_URL") || "").trim().replace(/\/$/, "");
+  const serviceRoleKey = String(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "").trim();
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error("Supabase admin env is missing: set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.");
+  }
+  const rpcRes = await fetch(`${supabaseUrl}/rest/v1/rpc/web_set_stage_done`, {
+    method: "POST",
+    headers: {
+      apikey: serviceRoleKey,
+      Authorization: `Bearer ${serviceRoleKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      p_order_id: orderId,
+      p_stage: "assembly",
+    }),
+  });
+  if (!rpcRes.ok) {
+    const body = await rpcRes.text().catch(() => "");
+    throw new Error(`RPC web_set_stage_done failed: HTTP ${rpcRes.status} ${body}`.trim());
+  }
+}
+
+function buildAssemblyButton(orderId: string) {
+  return {
+    inline_keyboard: [[{ text: "✅ Собрано", callback_data: `assembly_done:${orderId}` }]],
+  };
+}
+
+function toErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return String(error ?? "Unknown error");
+}
+
 serve(async (req) => {
   const corsHeaders = {
     "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-telegram-bot-api-secret-token",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
     "Content-Type": "application/json",
   };
@@ -61,13 +117,70 @@ serve(async (req) => {
     );
   }
 
-  let payload: Payload = {};
+  let incoming: Payload | TelegramUpdate = {};
   try {
-    payload = (await req.json()) as Payload;
+    incoming = (await req.json()) as Payload | TelegramUpdate;
   } catch {
     return new Response(JSON.stringify({ ok: false, error: "Invalid JSON payload" }), { status: 400, headers: corsHeaders });
   }
 
+  const callback = (incoming as TelegramUpdate).callback_query;
+  if (callback && typeof callback === "object") {
+    const configuredWebhookSecret = String(Deno.env.get("TELEGRAM_WEBHOOK_SECRET") || "").trim();
+    if (configuredWebhookSecret) {
+      const got = String(req.headers.get("x-telegram-bot-api-secret-token") || "").trim();
+      if (got !== configuredWebhookSecret) {
+        return new Response(JSON.stringify({ ok: false, error: "Invalid Telegram webhook secret." }), {
+          status: 401,
+          headers: corsHeaders,
+        });
+      }
+    }
+    const callbackId = toText(callback.id);
+    const data = toText(callback.data);
+    const prefix = "assembly_done:";
+    if (!callbackId || !data.startsWith(prefix)) {
+      return new Response(JSON.stringify({ ok: true, ignored: true }), { status: 200, headers: corsHeaders });
+    }
+    const orderId = data.slice(prefix.length).trim();
+    if (!orderId) {
+      await telegramBotRequest(token, "answerCallbackQuery", {
+        callback_query_id: callbackId,
+        text: "Не удалось определить заказ.",
+        show_alert: true,
+      });
+      return new Response(JSON.stringify({ ok: false, error: "Order id is missing in callback." }), { status: 400, headers: corsHeaders });
+    }
+    try {
+      await markAssemblyDone(orderId);
+      await telegramBotRequest(token, "answerCallbackQuery", {
+        callback_query_id: callbackId,
+        text: "Заказ переведен в финал.",
+      });
+      const chatFromMessage = callback.message?.chat?.id;
+      const messageId = callback.message?.message_id;
+      if (chatFromMessage != null && Number.isFinite(Number(messageId))) {
+        await telegramBotRequest(token, "editMessageReplyMarkup", {
+          chat_id: chatFromMessage,
+          message_id: Number(messageId),
+          reply_markup: { inline_keyboard: [] },
+        });
+      }
+      return new Response(JSON.stringify({ ok: true, orderId }), { status: 200, headers: corsHeaders });
+    } catch (error) {
+      await telegramBotRequest(token, "answerCallbackQuery", {
+        callback_query_id: callbackId,
+        text: "Не удалось перевести заказ в финал.",
+        show_alert: true,
+      });
+      return new Response(JSON.stringify({ ok: false, error: toErrorMessage(error) }), {
+        status: 500,
+        headers: corsHeaders,
+      });
+    }
+  }
+
+  const payload = incoming as Payload;
   const orderId = toText(payload.orderId);
   const stage = toText(payload.stage).toLowerCase();
   const item = toText(payload.item);
@@ -93,16 +206,16 @@ serve(async (req) => {
     `⏰ Время: <b>${escapeHtml(moscowNow())}</b>\n` +
     `🆔 ID: <code>${escapeHtml(orderId)}</code>`;
 
-  const tgRes = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text: message,
-      parse_mode: "HTML",
-      disable_web_page_preview: true,
-    }),
-  });
+  const sendBody: Record<string, unknown> = {
+    chat_id: chatId,
+    text: message,
+    parse_mode: "HTML",
+    disable_web_page_preview: true,
+  };
+  if (stage !== "final_done") {
+    sendBody.reply_markup = buildAssemblyButton(orderId);
+  }
+  const tgRes = await telegramBotRequest(token, "sendMessage", sendBody);
   const tgJson = await tgRes.json().catch(() => ({}));
   if (!tgRes.ok || !tgJson?.ok) {
     return new Response(JSON.stringify({ ok: false, telegram: tgJson }), { status: 502, headers: corsHeaders });
