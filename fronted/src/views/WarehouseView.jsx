@@ -1,4 +1,6 @@
-export function WarehouseView({
+import { memo } from "react";
+
+export const WarehouseView = memo(function WarehouseView({
   warehouseSubView,
   warehouseTableRows,
   leftoversTableRows,
@@ -151,4 +153,4 @@ export function WarehouseView({
       )}
     </>
   );
-}
+});

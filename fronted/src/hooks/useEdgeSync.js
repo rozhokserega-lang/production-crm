@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { BACKEND_PROVIDER, SUPABASE_ANON_KEY, SUPABASE_URL } from "../config";
+import { SUPABASE_ANON_KEY, SUPABASE_URL } from "../config";
 import {
   logConsumeToGoogleSheetEdge,
   notifyAssemblyReadyTelegramEdge,
@@ -135,7 +135,6 @@ export function useEdgeSync({
   const syncPlanCellToGoogleSheet = useCallback(
     async (meta = {}) => {
       // Best-effort: обновление Google Sheet не должно ломать сохранение плана в Supabase.
-      if (!["supabase", "shadow"].includes(String(BACKEND_PROVIDER || ""))) return;
       const { baseUrl, token } = resolveCreds();
       if (!baseUrl || !token) return;
 

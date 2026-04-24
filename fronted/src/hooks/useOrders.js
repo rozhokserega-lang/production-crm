@@ -248,7 +248,7 @@ export function useSheetMirrorFilter({
 }
 
 export function isOrdersDomainView(view) {
-  return !["shipment", "sheetMirror", "warehouse", "labor", "furniture"].includes(String(view || ""));
+  return !["shipment", "sheetMirror", "warehouse", "labor", "furniture", "metal"].includes(String(view || ""));
 }
 
 export async function loadOrdersDomainData({ view, callBackend }) {

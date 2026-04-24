@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { memo, useMemo } from "react";
 import {
   Bar,
   BarChart,
@@ -47,7 +47,7 @@ function parseWeekSortKey(weekLabel) {
 const STAGE_COLORS = ["#2563eb", "#0ea5e9", "#14b8a6", "#22c55e", "#f59e0b", "#ef4444", "#8b5cf6"];
 const BOTTLENECK_ALLOWED_STAGES = new Set(["Пила", "Кромка", "Присадка"]);
 
-export function StatsView({
+export const StatsView = memo(function StatsView({
   statsList,
   loading,
   getStageLabel,
@@ -177,4 +177,4 @@ export function StatsView({
       )}
     </>
   );
-}
+});

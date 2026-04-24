@@ -1,8 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
 import {
-  BACKEND_PROVIDER,
-  GAS_WEBAPP_URL,
-  HYBRID_DUPLICATE_ACTIONS,
   SUPABASE_ANON_KEY,
   SUPABASE_URL,
 } from "./config";
@@ -157,78 +154,21 @@ export async function supabaseSignOut() {
   }
 }
 
-export async function gasCall(action, payload = {}) {
-  if (!GAS_WEBAPP_URL || GAS_WEBAPP_URL.includes("PASTE_YOUR_WEBAPP_URL_HERE")) {
-    throw new Error("Задайте VITE_GAS_WEBAPP_URL (нужен для VITE_BACKEND_PROVIDER=gas|shadow или для гибридного дубля в Supabase).");
-  }
-
-  const gasUrl = new URL(GAS_WEBAPP_URL);
-  const gasPath = gasUrl.pathname;
-  const targetBase = import.meta.env.DEV
-    ? `/gas${gasPath}`
-    : `${gasUrl.origin}${gasPath}`;
-  const qs = new URLSearchParams({
-    action,
-    payload: JSON.stringify(payload || {}),
-  }).toString();
-  let lastError = null;
-  for (let attempt = 0; attempt < 3; attempt++) {
-    try {
-      const res = await fetch(`${targetBase}?${qs}`, { method: "GET" });
-      const text = await res.text();
-      let json;
-      try {
-        json = JSON.parse(text);
-      } catch (_) {
-        throw new Error(`API вернул не JSON (${res.status}): ${text.slice(0, 120)}`);
-      }
-      if (!json.ok) throw new Error(json.error || "Ошибка API");
-      return json.data;
-    } catch (e) {
-      lastError = e;
-      const msg = String(e?.message || e);
-      // При занятости lock пробуем автоматически еще раз.
-      if (msg.includes("Система занята")) {
-        await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
-        continue;
-      }
-      break;
-    }
-  }
-  throw normalizeApiError(lastError || new Error("Ошибка API"));
-}
 
 export async function callBackend(action, payload = {}) {
-  const provider = String(BACKEND_PROVIDER || "supabase").toLowerCase();
   const requestId = createRequestId();
   const payloadHash = hashPayload(payload);
   try {
-    if (provider === "supabase") {
-      if (!RPC_MAP[action]) {
-        throw new Error(`Supabase RPC не настроен для action: ${action}`);
-      }
-      const result = await supabaseCall(action, payload);
-      maybeDuplicateToGas(action, payload, { requestId, payloadHash });
-      return result;
+    if (!RPC_MAP[action]) {
+      throw new Error(`Supabase RPC не настроен для action: ${action}`);
     }
-    if (provider === "shadow") {
-      // Shadow mode: read from GAS, duplicate writes to Supabase best-effort.
-      const isWrite = /^webSet/.test(action) || [
-        "webSendShipmentToWork",
-        "webSendPlanksToWork",
-        "webConsumeSheetsByOrderId",
-      ].includes(action);
-      if (isWrite) {
-        supabaseCall(action, payload).catch(() => {});
-      }
-      return gasCall(action, payload);
-    }
-    return gasCall(action, payload);
+    const result = await supabaseCall(action, payload);
+    return result;
   } catch (error) {
     const normalized = normalizeApiError(error);
     reportRpcEvent({
       status: "error",
-      provider,
+      provider: "supabase",
       action,
       requestId,
       payloadHash,
@@ -264,13 +204,6 @@ function hashPayload(payload) {
   return hash.toString(16).padStart(8, "0");
 }
 
-function reportHybridEvent(event) {
-  reportRpcEvent({
-    stream: "hybrid",
-    ...event,
-  });
-}
-
 function reportRpcEvent(event) {
   const enriched = {
     ts: new Date().toISOString(),
@@ -279,12 +212,8 @@ function reportRpcEvent(event) {
   if (typeof window !== "undefined") {
     window.__CRM_RPC_EVENTS__ = window.__CRM_RPC_EVENTS__ || [];
     window.__CRM_RPC_EVENTS__.push(enriched);
-    if (enriched.stream === "hybrid") {
-      window.__CRM_HYBRID_LOGS__ = window.__CRM_HYBRID_LOGS__ || [];
-      window.__CRM_HYBRID_LOGS__.push(enriched);
-    }
   }
-  const label = enriched.stream === "hybrid" ? "[CRM Hybrid]" : "[CRM RPC]";
+  const label = "[CRM RPC]";
   const printer =
     enriched.status === "error"
       ? console.error
@@ -292,32 +221,6 @@ function reportRpcEvent(event) {
         ? console.warn
         : console.info;
   printer(label, enriched);
-}
-
-function maybeDuplicateToGas(action, payload, ctx) {
-  const shouldDuplicate = HYBRID_DUPLICATE_ACTIONS.includes(action);
-  if (!shouldDuplicate) return;
-  if (!String(GAS_WEBAPP_URL || "").trim()) return;
-  gasCall(action, payload)
-    .then(() => {
-      reportHybridEvent({
-        status: "ok",
-        mode: "supabase_primary_gas_duplicate",
-        action,
-        requestId: ctx.requestId,
-        payloadHash: ctx.payloadHash,
-      });
-    })
-    .catch((error) => {
-      reportHybridEvent({
-        status: "error",
-        mode: "supabase_primary_gas_duplicate",
-        action,
-        requestId: ctx.requestId,
-        payloadHash: ctx.payloadHash,
-        error: String(error?.message || error),
-      });
-    });
 }
 
 const RPC_MAP = {

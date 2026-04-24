@@ -1,6 +1,7 @@
+import { memo } from "react";
 import { KROMKA_EXECUTORS, PRAS_EXECUTORS } from "../config";
 
-export function WorkshopView({
+export const WorkshopView = memo(function WorkshopView({
   workshopRows,
   loading,
   tab,
@@ -273,4 +274,4 @@ export function WorkshopView({
       })}
     </>
   );
-}
+});

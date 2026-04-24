@@ -103,15 +103,7 @@ export function useCrmRole({
   authEnabled,
   load,
   setError,
-  // Auth-поля из useAuth (пробрасываются для обратной совместимости)
-  authEmail: _authEmail,
-  authPassword: _authPassword,
-  authSaving: _authSaving,
-  authUser: _authUser,
-  setAuthEmail: _setAuthEmail,
-  setAuthPassword: _setAuthPassword,
-  signInWithSupabase: _signInWithSupabase,
-  signOutSupabaseUser: _signOutSupabaseUser,
+  authUser,
 }) {
   const [crmRole, setCrmRole] = useState("viewer");
   const [crmAuthStrict, setCrmAuthStrict] = useState(false);
@@ -153,7 +145,7 @@ export function useCrmRole({
     return () => {
       cancelled = true;
     };
-  }, [_authUser?.id, callBackend]);
+  }, [authUser?.id, callBackend]);
 
   const loadCrmUsers = useCallback(async () => {
     if (!canAdminSettings) return;
@@ -316,15 +308,5 @@ export function useCrmRole({
     updateCrmUserRole,
     removeCrmUserRole,
     createCrmUserRole,
-
-    // Auth-поля (проброшены из useAuth для обратной совместимости)
-    authEmail: _authEmail,
-    authPassword: _authPassword,
-    authSaving: _authSaving,
-    authUser: _authUser,
-    setAuthEmail: _setAuthEmail,
-    setAuthPassword: _setAuthPassword,
-    signInWithSupabase: _signInWithSupabase,
-    signOutSupabaseUser: _signOutSupabaseUser,
   };
 }

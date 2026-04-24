@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 
 function formatHhMm(totalMin) {
   const safe = Math.max(0, Number(totalMin || 0));
@@ -11,7 +11,7 @@ const CAPACITY_STORAGE_KEY = "labor_planner_capacity_v1";
 const isImportedLaborRow = (row) =>
   Boolean(row?.importedLocal) || /^import-/i.test(String(row?.orderId || "").trim());
 
-export function LaborView({
+export const LaborView = memo(function LaborView({
   laborSubView,
   laborTableRows,
   laborOrdersRows,
@@ -660,4 +660,4 @@ export function LaborView({
       )}
     </>
   );
-}
+});

@@ -1,6 +1,7 @@
+import { memo } from "react";
 import { stripPlanItemMeta } from "../app/orderHelpers";
 
-export function ShipmentView({
+export const ShipmentView = memo(function ShipmentView({
   selectedShipments,
   strapItems,
   selectedShipmentSummary,
@@ -571,4 +572,4 @@ export function ShipmentView({
       </aside>}
     </div>
   );
-}
+});

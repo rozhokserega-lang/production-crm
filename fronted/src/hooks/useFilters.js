@@ -50,6 +50,7 @@ export function useFilters(initialFilters = {}) {
       if (key === "weekFilter" && value === "all") return false;
       if (key === "statusFilter" && value === "all") return false;
       if (key === "query" && !value.trim()) return false;
+      if (value === false) return false;
       return true;
     }).length;
   }, [filters]);

@@ -71,26 +71,4 @@ describe("useCrmRole", () => {
     expect(callBackend).not.toHaveBeenCalledWith("webSetCrmUserRole", expect.anything());
   });
 
-  it("requires credentials before Supabase sign in", async () => {
-    const setError = vi.fn();
-    const callBackend = createCallBackendMock("viewer");
-
-    const { result } = renderHook(() =>
-      useCrmRole({
-        view: "workshop",
-        callBackend,
-        toUserError: (e) => String(e?.message || e),
-        authEnabled: true,
-        load: vi.fn(),
-        setError,
-      })
-    );
-
-    await act(async () => {
-      await result.current.signInWithSupabase();
-    });
-
-    expect(setError).toHaveBeenCalledWith("Введите email и пароль.");
-    expect(supabaseSignInWithPassword).not.toHaveBeenCalled();
-  });
 });

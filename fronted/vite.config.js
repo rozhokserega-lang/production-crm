@@ -23,15 +23,7 @@ export default defineConfig({
     },
   },
   server: {
-    proxy: {
-      "/gas": {
-        target: "https://script.google.com",
-        changeOrigin: true,
-        secure: true,
-        followRedirects: true,
-        rewrite: (path) => path.replace(/^\/gas/, ""),
-      },
-    },
+    // GAS proxy removed — CRM uses only Supabase backend.
   },
   preview: {
     port: 4173,

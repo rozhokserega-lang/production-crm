@@ -1,6 +1,7 @@
+import { memo } from "react";
 import { extractPlanItemArticle, stripPlanItemMeta } from "../app/orderHelpers";
 
-export function OverviewView({
+export const OverviewView = memo(function OverviewView({
   overviewSubView,
   filtered,
   loading,
@@ -192,4 +193,4 @@ export function OverviewView({
       )}
     </>
   );
-}
+});

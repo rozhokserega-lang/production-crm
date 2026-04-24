@@ -164,9 +164,9 @@ export function useDataLoader({
     }
     if (view === "labor") setLaborRows([]);
     load();
-    const id = setInterval(load, 15000);
-    return () => clearInterval(id);
-  }, [tab, view, load, setConsumeHistoryRows, setLaborRows, setLeftoversHistoryRows, setLeftoversRows, setPilkaDoneHistoryRows, setRows, setShipmentBoard, setWarehouseRows]);
+    // Polling removed — data is now refreshed via Supabase Realtime subscriptions
+    // (see App.jsx for the Realtime channel setup)
+  }, [view, load, setConsumeHistoryRows, setLaborRows, setLeftoversHistoryRows, setLeftoversRows, setPilkaDoneHistoryRows, setRows, setShipmentBoard, setWarehouseRows]);
 
   return { load };
 }
