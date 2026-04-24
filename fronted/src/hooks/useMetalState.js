@@ -106,6 +106,32 @@ export function useMetalState({
     [callBackend, loadMetalQueue, setError, toUserError],
   );
 
+  const adjustMetalStock = useCallback(
+    async (metalArticle, delta, metalName = "") => {
+      const article = String(metalArticle || "").trim();
+      const qtyDelta = Number(delta || 0);
+      if (!article || !Number.isFinite(qtyDelta) || qtyDelta === 0) return;
+      const currentRow = metalStockRows.find((row) => String(row?.metal_article || "").trim() === article);
+      const currentQty = Number(currentRow?.qty_available || 0);
+      const nextQty = Math.max(0, currentQty + qtyDelta);
+      setMetalSavingArticle(article);
+      setError("");
+      try {
+        await callBackend("webSetMetalStock", {
+          metalArticle: article,
+          metalName: String(metalName || currentRow?.metal_name || "").trim(),
+          qtyAvailable: nextQty,
+        });
+        await loadMetalStock();
+      } catch (e) {
+        setError(toUserError(e));
+      } finally {
+        setMetalSavingArticle("");
+      }
+    },
+    [callBackend, loadMetalStock, metalStockRows, setError, setMetalSavingArticle, toUserError],
+  );
+
   useEffect(() => {
     if (view !== "metal") setMetalSubView("stock");
   }, [view]);
@@ -226,6 +252,7 @@ export function useMetalState({
     selectedShipmentMetal,
     loadMetalStock,
     loadMetalQueue,
+    adjustMetalStock,
     updateMetalQueueStatus,
   };
 }

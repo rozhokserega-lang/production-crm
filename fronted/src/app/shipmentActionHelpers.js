@@ -1,3 +1,5 @@
+import { OrderService } from "../services/orderService";
+
 export function buildShipmentCellAttempts(selection) {
   return [
     { row: selection?.row, col: selection?.col },
@@ -9,9 +11,12 @@ export function buildShipmentCellAttempts(selection) {
   );
 }
 
+/**
+ * Выполняет действие над ячейкой плана отгрузки с fallback по разным комбинациям row/col.
+ * @param {Function} actionFn - асинхронная функция вида (params) => OrderService.method(params)
+ */
 export async function runShipmentCellActionWithFallback({
-  callBackend,
-  backendAction,
+  actionFn,
   attempts,
   isMissingError,
   requestBuilder,
@@ -20,7 +25,7 @@ export async function runShipmentCellActionWithFallback({
   let lastErr = null;
   for (const p of attempts) {
     try {
-      await callBackend(backendAction, requestBuilder(p));
+      await actionFn(requestBuilder(p));
       done = true;
       break;
     } catch (e) {

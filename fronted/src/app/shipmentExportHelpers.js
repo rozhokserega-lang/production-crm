@@ -53,15 +53,17 @@ export function buildImportArticleMap(importCatalogRows = []) {
   return articleMap;
 }
 
+import { OrderService } from "../services/orderService";
+import { supabaseCall } from "../api";
+
 export async function applyImportPlanRows(importRows = [], articleMap = new Map(), deps = {}) {
-  const callBackend = deps.callBackend;
   const week = String(deps.planNumber || "").trim();
   const markMissingAsPlanRows = deps.markMissingAsPlanRows !== false;
   const missing = [];
   let imported = 0;
   let marked = 0;
   const missingAgg = new Map();
-  if (typeof callBackend !== "function" || !week) {
+  if (!week) {
     return { imported, missing, marked };
   }
   for (const row of importRows) {
@@ -72,7 +74,7 @@ export async function applyImportPlanRows(importRows = [], articleMap = new Map(
       if (markMissingAsPlanRows) missingAgg.set(articleRaw, (missingAgg.get(articleRaw) || 0) + Number(row.qty || 0));
       continue;
     }
-    await callBackend("webCreateShipmentPlanCell", {
+    await OrderService.createShipmentPlanCell({
       sectionName: mapped.sectionName,
       item: mapped.itemName,
       material: mapped.material,
@@ -83,7 +85,7 @@ export async function applyImportPlanRows(importRows = [], articleMap = new Map(
   }
   if (markMissingAsPlanRows && missingAgg.size > 0) {
     for (const [articleRaw, qty] of missingAgg.entries()) {
-      await callBackend("webCreateShipmentPlanCell", {
+      await OrderService.createShipmentPlanCell({
         sectionName: "Не сопоставлено",
         item: `[НЕ НАЙДЕН АРТИКУЛ] ${articleRaw}`,
         material: "Не указан",
@@ -97,8 +99,6 @@ export async function applyImportPlanRows(importRows = [], articleMap = new Map(
 }
 
 export async function loadImportCatalogRows(deps = {}) {
-  const supabaseCall = deps.supabaseCall;
-  const callBackend = deps.callBackend;
   const sectionArticleRows = Array.isArray(deps.sectionArticleRows) ? deps.sectionArticleRows : [];
   try {
     // Prefer full article map from Supabase even when UI runs in GAS mode.
@@ -106,7 +106,7 @@ export async function loadImportCatalogRows(deps = {}) {
     return Array.isArray(catalogData) ? catalogData : [];
   } catch (_) {
     try {
-      const catalogData = await callBackend("webGetArticlesForImport");
+      const catalogData = await OrderService.getArticlesForImport();
       return Array.isArray(catalogData) ? catalogData : [];
     } catch (_) {
       // Final fallback to already loaded UI catalog.

@@ -33,6 +33,7 @@ export function buildStageSyncPayload({
   stageSync,
   getMaterialLabel,
   resolveSectionNameForOrder,
+  shipmentBoard,
 }) {
   if (!stageSync) return null;
 
@@ -42,7 +43,7 @@ export function buildStageSyncPayload({
   ).trim();
   const syncWeek = String(meta.week || sourceOrder.week || "").trim();
   const syncQty = Number(meta.qty ?? sourceOrder.qty ?? 0);
-  const syncSectionName = String(meta.sectionName || resolveSectionNameForOrder(sourceOrder) || "").trim();
+  const syncSectionName = String(meta.sectionName || resolveSectionNameForOrder(sourceOrder, shipmentBoard) || "").trim();
 
   if (!syncSectionName || !syncItem || !syncMaterial || !syncWeek || !(Number.isFinite(syncQty) && syncQty > 0)) {
     return null;

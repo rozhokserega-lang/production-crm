@@ -61,6 +61,7 @@ export interface RpcPayloadMap {
   webGetFurnitureProductArticles: Record<string, never>;
   webGetFurnitureDetailArticles: Record<string, never>;
   webGetLeftovers: Record<string, never>;
+  webGetLeftoversHistory: { limit?: number; p_limit?: number };
   webGetLaborTable: Record<string, never>;
   webGetLaborKits: Record<string, never>;
   webUpsertLaborFact: {
@@ -102,6 +103,7 @@ export interface RpcPayloadMap {
   webSetCrmUserRole: { userId: string; role: string; note?: string };
   webRemoveCrmUserRole: { userId: string };
   webGetAuditLog: { action?: string | null; entity?: string | null; limit?: number; offset?: number };
+  webLogConsumeSheetsFailed: { orderId: string; material: string; qty: number; error: string };
   webUpsertItemColorMap: { itemName: string; colorName: string };
   webGetConsumeOptions: { orderId: string };
   webPreviewPlanFromShipment: { row: string | number; col: string | number };
@@ -156,6 +158,7 @@ export interface RpcResponseMap {
   webGetFurnitureProductArticles: Array<Record<string, unknown>>;
   webGetFurnitureDetailArticles: Array<Record<string, unknown>>;
   webGetLeftovers: Array<Record<string, unknown>>;
+  webGetLeftoversHistory: Array<Record<string, unknown>>;
   webGetLaborTable: Array<Record<string, unknown>>;
   webGetLaborKits: Array<Record<string, unknown>>;
   webUpsertLaborFact: Record<string, unknown>;
@@ -170,6 +173,7 @@ export interface RpcResponseMap {
   webSetCrmUserRole: Record<string, unknown>;
   webRemoveCrmUserRole: Record<string, unknown>;
   webGetAuditLog: AuditLogRow[];
+  webLogConsumeSheetsFailed: Record<string, unknown> | null;
   webUpsertItemColorMap: Record<string, unknown>;
   webGetConsumeOptions: ConsumeOptionsPayload;
   webPreviewPlanFromShipment: Record<string, unknown>;

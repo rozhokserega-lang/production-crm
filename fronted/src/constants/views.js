@@ -3,6 +3,7 @@ export const VIEWS = [
   { id: "overview", label: "Обзор заказов" },
   { id: "workshop", label: "Производство" },
   { id: "warehouse", label: "Склад" },
+  { id: "metal", label: "Металл" },
   { id: "labor", label: "Трудоемкость" },
   { id: "stats", label: "Статистика" },
   { id: "furniture", label: "Мебель" },

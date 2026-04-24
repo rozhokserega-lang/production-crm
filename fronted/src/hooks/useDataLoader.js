@@ -16,6 +16,9 @@ export function useDataLoader({
   setFurnitureDetailArticleRows,
   setMaterialsStockRows,
   setLeftoversRows,
+  setLeftoversHistoryRows,
+  setConsumeHistoryRows,
+  setPilkaDoneHistoryRows,
   setWarehouseRows,
   setLaborRows,
   setFurnitureArticleRows,
@@ -82,6 +85,9 @@ export function useDataLoader({
       } else if (view === "warehouse") {
         setMaterialsStockRows(warehousePayload?.materialsStockRows || []);
         setLeftoversRows(warehousePayload?.leftoversRows || []);
+        setLeftoversHistoryRows(warehousePayload?.leftoversHistoryRows || []);
+        setConsumeHistoryRows(warehousePayload?.consumeHistoryRows || []);
+        setPilkaDoneHistoryRows(warehousePayload?.pilkaDoneHistoryRows || []);
         setWarehouseRows(Array.isArray(data) ? data : []);
       } else if (view === "labor") {
         setLaborRows(Array.isArray(data) ? data : []);
@@ -129,6 +135,9 @@ export function useDataLoader({
     setFurnitureArticleRows,
     setFurnitureDetailArticleRows,
     setLaborRows,
+    setLeftoversHistoryRows,
+    setConsumeHistoryRows,
+    setPilkaDoneHistoryRows,
     setLeftoversRows,
     setLoading,
     setMaterialsStockRows,
@@ -149,12 +158,15 @@ export function useDataLoader({
     if (view === "warehouse") {
       setWarehouseRows([]);
       setLeftoversRows([]);
+      setLeftoversHistoryRows([]);
+      setConsumeHistoryRows([]);
+      setPilkaDoneHistoryRows([]);
     }
     if (view === "labor") setLaborRows([]);
     load();
     const id = setInterval(load, 15000);
     return () => clearInterval(id);
-  }, [tab, view, load, setLaborRows, setLeftoversRows, setRows, setShipmentBoard, setWarehouseRows]);
+  }, [tab, view, load, setConsumeHistoryRows, setLaborRows, setLeftoversHistoryRows, setLeftoversRows, setPilkaDoneHistoryRows, setRows, setShipmentBoard, setWarehouseRows]);
 
   return { load };
 }

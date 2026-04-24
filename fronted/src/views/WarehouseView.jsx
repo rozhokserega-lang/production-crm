@@ -5,6 +5,8 @@ export function WarehouseView({
   consumeHistoryTableRows,
   warehouseOrderPlanRows,
   loading,
+  canOperateProduction,
+  onManualConsume,
 }) {
   return (
     <>
@@ -96,20 +98,51 @@ export function WarehouseView({
             <thead>
               <tr>
                 <th>Когда</th>
+                <th>Событие</th>
                 <th>Заказ</th>
                 <th>Материал</th>
                 <th>Списано (листов)</th>
+                <th>Остаток</th>
                 <th>Комментарий</th>
+                <th>Действие</th>
               </tr>
             </thead>
             <tbody>
               {consumeHistoryTableRows.map((r) => (
                 <tr key={r.moveId || `${r.createdAt}-${r.orderId}-${r.material}`}>
                   <td>{r.createdAt ? new Date(r.createdAt).toLocaleString("ru-RU", { timeZone: "Europe/Moscow" }) : "-"}</td>
+                  <td>
+                    {r.rowType === "leftover"
+                      ? "Сформирован остаток"
+                      : r.rowType === "pilka_done"
+                        ? "Пильщик завершил"
+                        : "Списание"}
+                  </td>
                   <td>{r.orderId || "-"}</td>
                   <td>{r.material || "-"}</td>
-                  <td><b>{r.qtySheets}</b></td>
+                  <td><b>{r.rowType === "consume" ? r.qtySheets : "-"}</b></td>
+                  <td><b>{r.rowType === "leftover" ? `${r.leftoversQty}${r.leftoverFormat ? ` (${r.leftoverFormat})` : ""}` : "-"}</b></td>
                   <td>{r.comment || "-"}</td>
+                  <td>
+                    {r.rowType === "pilka_done" && canOperateProduction ? (
+                      <button
+                        type="button"
+                        className="mini ok"
+                        onClick={() =>
+                          onManualConsume?.(r.orderId, {
+                            item: r.comment || "",
+                            material: r.material || "",
+                            defaultSheets: 1,
+                            week: "",
+                          })
+                        }
+                      >
+                        Списать
+                      </button>
+                    ) : (
+                      "-"
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>

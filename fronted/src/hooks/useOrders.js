@@ -337,14 +337,81 @@ export async function loadShipmentDomainData({
 export async function loadWarehouseDomainData({ callBackend }) {
   const data = await callBackend("webGetMaterialsStock");
   let leftoversRows = [];
+  let leftoversHistoryRows = [];
+  let consumeHistoryRows = [];
+  let pilkaDoneHistoryRows = [];
   try {
     const leftoversData = await callBackend("webGetLeftovers");
     leftoversRows = Array.isArray(leftoversData) ? leftoversData : [];
+  } catch (_) {}
+  try {
+    const leftoversHistoryData = await callBackend("webGetLeftoversHistory", { limit: 500 });
+    leftoversHistoryRows = Array.isArray(leftoversHistoryData) ? leftoversHistoryData : [];
+  } catch (_) {}
+  try {
+    const consumeHistoryData = await callBackend("webGetConsumeHistory", { limit: 300 });
+    consumeHistoryRows = Array.isArray(consumeHistoryData) ? consumeHistoryData : [];
+  } catch (_) {}
+  try {
+    const auditData = await callBackend("webGetAuditLog", {
+      limit: 1000,
+      offset: 0,
+      action: "set_stage",
+      entity: "orders",
+    });
+    const auditRows = Array.isArray(auditData) ? auditData : [];
+    pilkaDoneHistoryRows = auditRows.filter((row) => {
+      const details = row?.details && typeof row.details === "object" ? row.details : {};
+      const stage = String(details?.stage || details?.p_stage || "").trim().toLowerCase();
+      const status = String(
+        details?.status ||
+          details?.new_status ||
+          details?.to_status ||
+          details?.p_status ||
+          "",
+      )
+        .trim()
+        .toLowerCase();
+      return stage === "pilka" && status === "done";
+    });
+  } catch (_) {}
+  try {
+    const ordersData = await callBackend("webGetOrdersAll");
+    const rows = Array.isArray(ordersData) ? ordersData : [];
+    const existingIds = new Set(
+      pilkaDoneHistoryRows
+        .map((row) => String(row?.entity_id || row?.entityId || "").trim())
+        .filter(Boolean),
+    );
+    const fallbackRows = rows
+      .filter((row) => {
+        const orderId = String(row?.order_id || row?.orderId || "").trim();
+        if (!orderId || existingIds.has(orderId)) return false;
+        return Boolean(row?.pilka_done_at || row?.pilkaDoneAt);
+      })
+      .map((row) => ({
+        id: `fallback:${String(row?.order_id || row?.orderId || "").trim()}`,
+        created_at: String(row?.pilka_done_at || row?.pilkaDoneAt || row?.updated_at || row?.updatedAt || ""),
+        action: "set_stage",
+        entity: "orders",
+        entity_id: String(row?.order_id || row?.orderId || "").trim(),
+        details: {
+          stage: "pilka",
+          status: "done",
+          material: String(row?.material || "").trim(),
+          item: String(row?.item || "").trim(),
+          source: "orders_fallback",
+        },
+      }));
+    pilkaDoneHistoryRows = [...pilkaDoneHistoryRows, ...fallbackRows];
   } catch (_) {}
   return {
     data,
     materialsStockRows: Array.isArray(data) ? data : [],
     leftoversRows,
+    leftoversHistoryRows,
+    consumeHistoryRows,
+    pilkaDoneHistoryRows,
   };
 }
 

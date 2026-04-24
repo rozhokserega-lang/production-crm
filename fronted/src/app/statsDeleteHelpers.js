@@ -1,3 +1,5 @@
+import { OrderService } from "../services/orderService";
+
 function pickSourceCellParts(entity) {
   return {
     row: String(
@@ -39,17 +41,17 @@ export function getStatsDeleteActionKey(order, rows = []) {
   return `stats:delete:${orderId || `${source.row}-${source.col}`}`;
 }
 
-export async function resolveStatsOrderSourceCell(order, rows = [], callBackend) {
+export async function resolveStatsOrderSourceCell(order, rows = []) {
   const fromCurrent = getStatsOrderSourceCell(order, rows);
   if (fromCurrent.row && fromCurrent.col) return fromCurrent;
 
   const orderId = String(order?.orderId || order?.order_id || "").trim();
-  if (!orderId || typeof callBackend !== "function") return fromCurrent;
+  if (!orderId) return fromCurrent;
 
   try {
-    const allOrdersRaw = await callBackend("webGetOrdersAll");
-    const allOrders = Array.isArray(allOrdersRaw) ? allOrdersRaw : [];
-    const linked = allOrders.find((r) => String(r?.orderId || r?.order_id || "").trim() === orderId);
+    const allOrders = await OrderService.getAllOrders();
+    const allOrdersList = Array.isArray(allOrders) ? allOrders : [];
+    const linked = allOrdersList.find((r) => String(r?.orderId || r?.order_id || "").trim() === orderId);
     if (!linked) return fromCurrent;
     return pickSourceCellParts(linked);
   } catch (_) {

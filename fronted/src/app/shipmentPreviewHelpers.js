@@ -78,18 +78,19 @@ export function enrichPreviewWithStrapProduct(preview, shipmentRow, deps = {}) {
   };
 }
 
+import { OrderService } from "../services/orderService";
+
 export async function buildShipmentPreviewPlans(shipmentSelections = [], deps = {}) {
   const byKey = new Map(shipmentSelections.map((x) => [`${x.row}-${x.col}`, x]));
-  const callBackend = deps.callBackend;
   const enrichPreview = deps.enrichPreview;
-  if (typeof callBackend !== "function" || typeof enrichPreview !== "function") {
+  if (typeof enrichPreview !== "function") {
     return { plans: [] };
   }
   let plans = [];
   try {
-    const batch = await callBackend("webPreviewPlansBatch", {
-      items: shipmentSelections.map((x) => ({ row: x.row, col: x.col })),
-    });
+    const batch = await OrderService.previewPlansBatch(
+      shipmentSelections.map((x) => ({ row: x.row, col: x.col })),
+    );
     plans = (batch && Array.isArray(batch.plans) ? batch.plans : [])
       .map((p) => ({ ...(p.plan || {}), _key: `${p.row}-${p.col}` }))
       .map((p) => enrichPreview(p, byKey.get(p._key)));
@@ -97,7 +98,7 @@ export async function buildShipmentPreviewPlans(shipmentSelections = [], deps = 
   } catch (batchError) {
     const settled = await Promise.allSettled(
       shipmentSelections.map((s) =>
-        callBackend("webPreviewPlanFromShipment", { row: s.row, col: s.col })
+        OrderService.previewPlanFromShipment(s.row, s.col)
           .then((plan) => ({ ...plan, _key: `${s.row}-${s.col}` })),
       ),
     );

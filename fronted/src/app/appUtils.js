@@ -313,3 +313,89 @@ export function buildPreviewRowsFromFurnitureTemplate(template, orderQty) {
     })
     .filter((x) => x.part);
 }
+
+export function normalizeExecutorList(rawList, fallback) {
+  const source = Array.isArray(rawList) ? rawList : [];
+  const normalized = source
+    .map((x) => String(x || "").trim())
+    .filter(Boolean);
+  return normalized.length > 0 ? normalized : fallback;
+}
+
+export function isDone(s) {
+  const v = String(s || "").toLowerCase();
+  if (/\bне\s*готов/.test(v) || v.includes("неготов")) return false;
+  return v.includes("готов") || v.includes("собрано");
+}
+
+export function getColorGroup(item) {
+  const text = String(item || "").trim();
+  if (!text) return "Без цвета";
+  const parts = text.split(".").map((x) => String(x || "").trim()).filter(Boolean);
+  const tail = String(parts[parts.length - 1] || "").trim();
+  return tail || "Без цвета";
+}
+
+export function resolvePlanMaterial(articleRow) {
+  const fromApi = String(articleRow?.material || "").trim();
+  if (fromApi) return fromApi;
+  const itemName = String(articleRow?.itemName || "").trim();
+  const parsedColor = getColorGroup(itemName);
+  if (parsedColor && parsedColor !== "Без цвета") return parsedColor;
+  return "";
+}
+
+export function getWeekday(order) {
+  const d = new Date(order?.createdAt || "");
+  if (!isFinite(d.getTime())) return "Неизвестно";
+  return d.toLocaleDateString("ru-RU", { weekday: "long" });
+}
+
+export function getStageClassByLabel(label) {
+  const s = String(label || "").toLowerCase();
+  if (s.includes("отгруж")) return "ship";
+  if (s.includes("отправ") && !s.includes("готово к отправке")) return "ship";
+  if (s.includes("собран")) return "done";
+  if (s.includes("готов")) return "ready";
+  if (s.includes("присад")) return "pras";
+  if (s.includes("кром")) return "kromka";
+  return "pilka";
+}
+
+export function isInWork(s) {
+  return String(s || "").toLowerCase().includes("в работе");
+}
+
+export function passesShipmentStageFilter(stageKey, filters) {
+  if (stageKey === "awaiting") return filters.showAwaiting;
+  if (stageKey === "on_pilka_wait" || stageKey === "on_pilka_work") return filters.showOnPilka;
+  if (stageKey === "on_kromka_wait" || stageKey === "on_kromka_work") return filters.showOnKromka;
+  if (stageKey === "on_pras_wait" || stageKey === "on_pras_work") return filters.showOnPras;
+  if (stageKey === "ready_assembly") return filters.showReadyAssembly;
+  if (stageKey === "assembled_wait_ship") return filters.showAwaitShipment;
+  if (stageKey === "shipped") return filters.showShipped;
+  return true;
+}
+
+export function resolveSectionNameForOrder(order, shipmentBoard) {
+  const week = String(order?.week || "").trim();
+  const sourceRowId = String(order?.sourceRowId || order?.source_row_id || "").trim();
+  const itemName = String(order?.item || "").trim();
+  if (!week) return "";
+  const sections = Array.isArray(shipmentBoard?.sections) ? shipmentBoard.sections : [];
+  for (const section of sections) {
+    const sectionName = String(section?.name || "").trim();
+    const items = Array.isArray(section?.items) ? section.items : [];
+    for (const it of items) {
+      const rowId = String(it?.sourceRowId || it?.source_row_id || it?.row || "").trim();
+      const cells = Array.isArray(it?.cells) ? it.cells : [];
+      for (const c of cells) {
+        const cellWeek = String(c?.week || "").trim();
+        if (!cellWeek || cellWeek !== week) continue;
+        if (sourceRowId && rowId && rowId === sourceRowId) return sectionName;
+        if (!sourceRowId && itemName && String(it?.item || "").trim() === itemName) return sectionName;
+      }
+    }
+  }
+  return "";
+}

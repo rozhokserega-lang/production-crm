@@ -4,7 +4,6 @@ import {
   callBackend,
   getSupabaseRealtimeClient,
   isLikelyNetworkError,
-  supabaseCall,
 } from "./api";
 import {
   BACKEND_PROVIDER,
@@ -16,11 +15,11 @@ import {
 } from "./config";
 import furnitureWorkbookUrl from "./assets/furniture.xlsx?url";
 import {
-  getOrderStageDisplayLabel as getStageLabel,
   getOverviewLaneId,
-  OVERVIEW_POST_PRODUCTION_LANE_IDS,
+  getOrderStageDisplayLabel as getStageLabel,
   isCustomerShippedOverall,
   isOrderCustomerShipped,
+  resolvePipelineStage as getCurrentStage,
 } from "./orderPipeline";
 import {
   getReadableTextColor,
@@ -64,6 +63,7 @@ import {
   useWorkshopRows,
 } from "./hooks/useOrders";
 import { useDataLoader } from "./hooks/useDataLoader";
+import { useAuth } from "./hooks/useAuth";
 import { useCrmRole } from "./hooks/useCrmRole";
 import { useShipmentDialogsState } from "./hooks/useShipmentDialogsState";
 import { useShipmentUiState } from "./hooks/useShipmentUiState";
@@ -82,8 +82,18 @@ import { useCommonDerivedData } from "./hooks/useCommonDerivedData";
 import { useShipmentBoardRenderDerived } from "./hooks/useShipmentBoardRenderDerived";
 import { useLaborState } from "./hooks/useLaborState";
 import { useLaborActions } from "./hooks/useLaborActions";
+import { useStageActions } from "./hooks/useStageActions";
+import { useConsumeDialog } from "./hooks/useConsumeDialog";
+import { usePlanDialog } from "./hooks/usePlanDialog";
+import { useStrapDialog } from "./hooks/useStrapDialog";
 import { useMetalState } from "./hooks/useMetalState";
+import { useEdgeSync } from "./hooks/useEdgeSync";
 import { useWorkSchedule } from "./hooks/useWorkSchedule";
+import { OrderService } from "./services/orderService";
+import { AppHeader } from "./components/AppHeader";
+import { ViewSwitcher } from "./components/ViewSwitcher";
+import { KpiGrid } from "./components/KpiGrid";
+import { ViewControls } from "./components/ViewControls";
 import { OrderDrawer } from "./components/OrderDrawer";
 import { ConsumeDialog } from "./components/ConsumeDialog";
 import { PlanDialog } from "./components/PlanDialog";
@@ -99,12 +109,19 @@ import { SheetMirrorView } from "./views/SheetMirrorView";
 import { FurnitureView } from "./views/FurnitureView";
 import { MetalView } from "./views/MetalView";
 import {
+  CONSUME_LOG_SHEET_NAME,
   CRM_ROLES,
   CRM_ROLE_LABELS,
   DEFAULT_SHIPMENT_PREFS,
+  LEFTOVERS_SYNC_GID,
+  PLAN_SYNC_GID,
+  PLAN_SYNC_SHEET_ID,
   STAGE_SYNC_META,
-  TABS,
-  VIEWS,
+  STRAP_OPTIONS,
+  STRAP_SHEET_HEIGHT,
+  STRAP_SHEET_WIDTH,
+  WAREHOUSE_SYNC_GID,
+  WAREHOUSE_SYNC_SHEET_ID,
 } from "./app/appConstants";
 import {
   getOverallStatusDisplay,
@@ -133,21 +150,6 @@ import {
   isShipmentCellMissingError,
   normalizeOrder,
 } from "./app/rowHelpers";
-import {
-  logConsumeToGoogleSheetEdge,
-  notifyAssemblyReadyTelegramEdge,
-  notifyFinalStageTelegramEdge,
-  syncLeftoversToGoogleSheetEdge,
-  syncPlanCellToGoogleSheetEdge,
-  syncWarehouseFromGoogleSheetEdge,
-} from "./app/edgeSyncService";
-import {
-  buildNotifyPayload,
-  buildPilkaDoneDialogInit,
-  buildConsumeDialogData,
-  buildStageSyncPayload,
-  getDefaultSheetsQty,
-} from "./app/runActionHelpers";
 import {
   buildShipmentCellAttempts,
   runShipmentCellActionWithFallback,
@@ -190,49 +192,24 @@ import {
   applyOptimisticOrderRow,
   buildPreviewRowsFromFurnitureTemplate,
   formatDateTimeForPrint,
+  getColorGroup,
+  getStageClassByLabel,
+  getWeekday,
   hasOptimisticActionRule,
+  isDone,
+  isInWork,
   mergeShipmentBoardWithTable,
+  normalizeExecutorList,
   normalizeShipmentBoard,
   parseStrapSize,
+  passesShipmentStageFilter,
   resolveDefaultConsumeSheets,
   resolveDefaultConsumeSheetsFromBoard,
+  resolvePlanMaterial,
+  resolveSectionNameForOrder,
 } from "./app/appUtils";
 
-const STRAP_OPTIONS = [
-  "Бока (316_167)",
-  "Обвязка (1000_80)",
-  "Обвязка (558_80)",
-  "Обвязка (750_80)",
-  "Обвязка (618_80)",
-  "Обвязка (600_80)",
-  "Обвязка (586_80)",
-  "Обвязка (1158_50)",
-  "Обвязка (600_50)",
-  "Обвязка (502_80)",
-  "Обвязка (544_80)",
-  "Обвязка (288_80)",
-  "Обвязка (520_80)",
-  "Фасад (396_305)",
-  "Фасад (153x320)",
-];
-const STRAP_SHEET_WIDTH = 2800;
-const STRAP_SHEET_HEIGHT = 2070;
-const WAREHOUSE_SYNC_SHEET_ID = "1SyFYOpXyHHMP31qYV5-XL8fINVUUDCrXIrewaZqkYkA";
-const WAREHOUSE_SYNC_GID = "1501570173";
-const LEFTOVERS_SYNC_GID = "762227238";
-const CONSUME_LOG_SHEET_NAME = "расход апрель 2026";
-// Google Sheet (вкладка "Отгрузка") для записи плана
-const PLAN_SYNC_SHEET_ID = "1gRMs2AVxIXwmQLLnB2WIoRW7mPkGc9usyaUrXZAHuIs";
-const PLAN_SYNC_GID = "1998084017";
-
 export default function App() {
-  function normalizeExecutorList(rawList, fallback) {
-    const source = Array.isArray(rawList) ? rawList : [];
-    const normalized = source
-      .map((x) => String(x || "").trim())
-      .filter(Boolean);
-    return normalized.length > 0 ? normalized : fallback;
-  }
 
   const [view, setView] = useState("shipment");
   const {
@@ -360,10 +337,13 @@ export default function App() {
   } = useLaborState(view);
   const [stageAuditRows, setStageAuditRows] = useState([]);
   const [activeOrderIds, setActiveOrderIds] = useState([]);
+  const laborStageFetchKeyRef = useRef("");
   const [warehouseRows, setWarehouseRows] = useState([]);
   const [materialsStockRows, setMaterialsStockRows] = useState([]);
   const [leftoversRows, setLeftoversRows] = useState([]);
+  const [leftoversHistoryRows, setLeftoversHistoryRows] = useState([]);
   const [consumeHistoryRows, setConsumeHistoryRows] = useState([]);
+  const [pilkaDoneHistoryRows, setPilkaDoneHistoryRows] = useState([]);
   const [warehouseSubView, setWarehouseSubView] = useState("sheets");
   const [warehouseSyncLoading, setWarehouseSyncLoading] = useState(false);
   const [leftoversSyncLoading, setLeftoversSyncLoading] = useState(false);
@@ -378,7 +358,6 @@ export default function App() {
   const [furnitureSelectedQty, setFurnitureSelectedQty] = useState("1");
   const importPlanFileRef = useRef(null);
   const importMetalFileRef = useRef(null);
-  const stageActionSeqRef = useRef(new Map());
   const authEnabled = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
   const isActionPending = useCallback((key) => pendingStageActionKeys.has(key), [pendingStageActionKeys]);
 
@@ -403,6 +382,9 @@ export default function App() {
     setFurnitureDetailArticleRows,
     setMaterialsStockRows,
     setLeftoversRows,
+    setLeftoversHistoryRows,
+    setConsumeHistoryRows,
+    setPilkaDoneHistoryRows,
     setWarehouseRows,
     setLaborRows,
     setFurnitureArticleRows,
@@ -416,6 +398,22 @@ export default function App() {
     loadFurnitureDomainData,
     toUserError,
   });
+  const {
+    authEmail,
+    authPassword,
+    authSaving,
+    authUser,
+    setAuthEmail,
+    setAuthPassword,
+    signInWithSupabase,
+    signOutSupabaseUser,
+  } = useAuth({
+    authEnabled,
+    onAuthChange: load,
+    setError,
+    toUserError,
+  });
+
   const {
     crmRole,
     crmAuthStrict,
@@ -433,25 +431,17 @@ export default function App() {
     newCrmUserId,
     newCrmUserRole,
     newCrmUserNote,
-    authEmail,
-    authPassword,
-    authSaving,
-    authUser,
     setNewCrmUserId,
     setNewCrmUserRole,
     setNewCrmUserNote,
     setAuditAction,
     setAuditEntity,
-    setAuthEmail,
-    setAuthPassword,
     toggleCrmAuthStrict,
     loadCrmUsers,
     loadAuditLog,
     updateCrmUserRole,
     removeCrmUserRole,
     createCrmUserRole,
-    signInWithSupabase,
-    signOutSupabaseUser,
   } = useCrmRole({
     view,
     callBackend,
@@ -459,10 +449,170 @@ export default function App() {
     authEnabled,
     load,
     setError,
+    // Пробрасываем auth-поля из useAuth для обратной совместимости
+    authEmail,
+    authPassword,
+    authSaving,
+    authUser,
+    setAuthEmail,
+    setAuthPassword,
+    signInWithSupabase,
+    signOutSupabaseUser,
   });
   const canOperateProduction = crmRole === "operator" || crmRole === "manager" || crmRole === "admin";
   const canManageOrders = crmRole === "manager" || crmRole === "admin";
   const canAdminSettings = crmRole === "admin";
+
+  const {
+    notifyAssemblyReadyTelegram,
+    notifyFinalStageTelegram,
+    syncWarehouseFromGoogleSheet,
+    syncLeftoversToGoogleSheet,
+    logConsumeToGoogleSheet,
+    syncPlanCellToGoogleSheet,
+  } = useEdgeSync({
+    setError,
+    setWarehouseSyncLoading,
+    setLeftoversSyncLoading,
+    load,
+  });
+
+  const {
+    closeConsumeDialog,
+    submitConsume,
+    openPilkaDoneConsumeDialog,
+    openPilkaDoneConsumeDialogOnError,
+  } = useConsumeDialog({
+    canOperateProduction,
+    setError,
+    consumeDialogData,
+    setConsumeDialogOpen,
+    setConsumeEditMode,
+    setConsumeDialogData,
+    setConsumeMaterial,
+    setConsumeQty,
+    setConsumeError,
+    setConsumeSaving,
+    setConsumeLoading,
+    logConsumeToGoogleSheet,
+    syncLeftoversToGoogleSheet,
+    load,
+  });
+
+  const {
+    weeks,
+    sectionOptions,
+    sectionArticles,
+    articleLookupByItemKey,
+    resolvedPlanItem,
+  } = useShipmentPlanningDerivedData({
+    view,
+    shipmentBoard,
+    laborRows,
+    rows,
+    planCatalogRows,
+    sectionCatalogRows,
+    sectionArticleRows,
+    planSection,
+    planArticle,
+    normalizeFurnitureKey,
+  });
+
+  const {
+    furnitureSheetData,
+    furnitureTemplates,
+    furnitureSelectedTemplate,
+    furnitureQtyNumber,
+    furnitureGeneratedDetails,
+  } = useFurnitureDerivedData({
+    view,
+    query,
+    furnitureWorkbook,
+    furnitureActiveSheet,
+    furnitureSelectedProduct,
+    setFurnitureSelectedProduct,
+    furnitureSelectedQty,
+    furnitureDetailArticleRows,
+    furnitureArticleRows,
+  });
+
+  const {
+    handlePlanSectionChange,
+    handlePlanArticleChange,
+    openCreatePlanDialog,
+    closeCreatePlanDialog,
+    saveCreatePlanDialog,
+    previewCreatePlanDialog,
+  } = usePlanDialog({
+    canOperateProduction,
+    denyActionByRole,
+    setError,
+    setPlanSection,
+    setPlanArticle,
+    setPlanMaterial,
+    setPlanWeek,
+    setPlanQty,
+    setPlanSaving,
+    setPlanDialogOpen,
+    setPlanPreviews,
+    sectionOptions,
+    weeks,
+    sectionArticleRows,
+    sectionArticles,
+    planSection,
+    planArticle,
+    planMaterial,
+    planWeek,
+    planQty,
+    planSaving,
+    resolvedPlanItem,
+    furnitureTemplates,
+    syncPlanCellToGoogleSheet,
+    load,
+  });
+
+  const {
+    strapOptionsByProduct,
+    strapProductBySizeToken,
+    strapProductsByArticleCode,
+    strapProductNames,
+    strapOptionsForSelectedProduct,
+  } = useStrapDerivedData({
+    furnitureDetailArticleRows,
+    strapTargetProduct,
+    setStrapTargetProduct,
+    fallbackOptions: STRAP_OPTIONS,
+  });
+
+  const {
+    openStrapDialog,
+    saveStrapDialog,
+  } = useStrapDialog({
+    canOperateProduction,
+    denyActionByRole,
+    setError,
+    setActionLoading,
+    setStrapDialogOpen,
+    setStrapTargetProduct,
+    setStrapPlanWeek,
+    setStrapDraft,
+    setStrapItems,
+    strapItems,
+    strapProductNames,
+    weekFilter,
+    weeks,
+    strapOptionsByProduct,
+    strapTargetProduct,
+    strapPlanWeek,
+    strapDraft,
+    strapOptionsForSelectedProduct,
+    resolveStrapMaterialByProduct,
+    strapNameToOrderItem,
+    normalizeStrapProductKey,
+    syncPlanCellToGoogleSheet,
+    load,
+  });
+
   const [adminCommentSaving, setAdminCommentSaving] = useState(false);
   const crmRoleLabel = CRM_ROLE_LABELS[crmRole] || CRM_ROLE_LABELS.viewer;
   const authUserLabel = String(authUser?.email || authUser?.phone || authUser?.id || "").trim();
@@ -515,7 +665,7 @@ export default function App() {
     let cancelled = false;
     async function loadCrmExecutors() {
       try {
-        const payload = await callBackend("webGetCrmExecutors");
+        const payload = await OrderService.getCrmExecutors();
         if (cancelled) return;
         const source =
           Array.isArray(payload) && payload.length > 0 && payload[0] && typeof payload[0] === "object"
@@ -586,390 +736,6 @@ export default function App() {
   useEffect(() => {
     if (view !== "warehouse") setWarehouseSubView("sheets");
   }, [view]);
-  function isDone(s) {
-    const v = String(s || "").toLowerCase();
-    if (/\bне\s*готов/.test(v) || v.includes("неготов")) return false;
-    return v.includes("готов") || v.includes("собрано");
-  }
-  function getCurrentStage(order) {
-    return getStageLabel(order);
-  }
-  function getColorGroup(item) {
-    const text = String(item || "").trim();
-    if (!text) return "Без цвета";
-    const parts = text.split(".").map((x) => String(x || "").trim()).filter(Boolean);
-    const tail = String(parts[parts.length - 1] || "").trim();
-    return tail || "Без цвета";
-  }
-  function resolvePlanMaterial(articleRow) {
-    const fromApi = String(articleRow?.material || "").trim();
-    if (fromApi) return fromApi;
-    const itemName = String(articleRow?.itemName || "").trim();
-    const parsedColor = getColorGroup(itemName);
-    if (parsedColor && parsedColor !== "Без цвета") return parsedColor;
-    return "";
-  }
-  function getWeekday(order) {
-    const d = new Date(order?.createdAt || "");
-    if (!isFinite(d.getTime())) return "Неизвестно";
-    return d.toLocaleDateString("ru-RU", { weekday: "long" });
-  }
-  function getStageClassByLabel(label) {
-    const s = String(label || "").toLowerCase();
-    if (s.includes("отгруж")) return "ship";
-    if (s.includes("отправ") && !s.includes("готово к отправке")) return "ship";
-    if (s.includes("собран")) return "done";
-    if (s.includes("готов")) return "ready";
-    if (s.includes("присад")) return "pras";
-    if (s.includes("кром")) return "kromka";
-    return "pilka";
-  }
-  function isInWork(s) {
-    return String(s || "").toLowerCase().includes("в работе");
-  }
-
-  function closeConsumeDialog() {
-    setConsumeDialogOpen(false);
-    setConsumeEditMode(false);
-    setConsumeDialogData(null);
-    setConsumeMaterial("");
-    setConsumeQty("");
-    setConsumeError("");
-    setConsumeSaving(false);
-    setConsumeLoading(false);
-  }
-
-  async function submitConsume(materialRaw, qtyRaw) {
-    if (!canOperateProduction) {
-      setConsumeError("Недостаточно прав для списания листов.");
-      return;
-    }
-    if (!consumeDialogData?.orderId) return;
-    const material = String(materialRaw || "").trim();
-    const qty = Number(String(qtyRaw || "").replace(",", "."));
-    if (!material) return setConsumeError("Укажите материал");
-    if (!isFinite(qty) || qty <= 0) return setConsumeError("Некорректное количество");
-    setConsumeSaving(true);
-    setConsumeError("");
-    try {
-      await callBackend("webConsumeSheetsByOrderId", {
-        orderId: consumeDialogData.orderId,
-        material,
-        qty,
-      });
-      logConsumeToGoogleSheet({
-        orderId: consumeDialogData.orderId,
-        item: String(consumeDialogData.item || ""),
-        material,
-        week: String(consumeDialogData.week || ""),
-        qty,
-      });
-      closeConsumeDialog();
-      await load();
-      syncLeftoversToGoogleSheet({ silent: true });
-    } catch (e) {
-      setConsumeError(String(e.message || e));
-    } finally {
-      setConsumeSaving(false);
-    }
-  }
-
-  async function notifyAssemblyReadyTelegram(meta = {}) {
-    const baseUrl = String(SUPABASE_URL || "").replace(/\/$/, "");
-    const token = String(SUPABASE_ANON_KEY || "").trim();
-    if (!baseUrl || !token) return;
-    try {
-      await notifyAssemblyReadyTelegramEdge(baseUrl, token, meta);
-    } catch (_) {
-      // Notification is best-effort and should not block production workflow.
-    }
-  }
-
-  async function notifyFinalStageTelegram(meta = {}) {
-    const baseUrl = String(SUPABASE_URL || "").replace(/\/$/, "");
-    const token = String(SUPABASE_ANON_KEY || "").trim();
-    if (!baseUrl || !token) return;
-    try {
-      await notifyFinalStageTelegramEdge(baseUrl, token, meta);
-    } catch (_) {
-      // Notification is best-effort and should not block production workflow.
-    }
-  }
-
-  async function syncWarehouseFromGoogleSheet() {
-    const baseUrl = String(SUPABASE_URL || "").replace(/\/$/, "");
-    const token = String(SUPABASE_ANON_KEY || "").trim();
-    if (!baseUrl || !token) {
-      setError("Не настроен доступ к Supabase (URL/ANON key).");
-      return;
-    }
-    setWarehouseSyncLoading(true);
-    setError("");
-    try {
-      await syncWarehouseFromGoogleSheetEdge(baseUrl, token, {
-        sheetId: WAREHOUSE_SYNC_SHEET_ID,
-        gid: WAREHOUSE_SYNC_GID,
-        leftoversGid: LEFTOVERS_SYNC_GID,
-      });
-      await load();
-    } catch (e) {
-      setError(`Не удалось синхронизировать склад: ${extractErrorMessage(e)}`);
-    } finally {
-      setWarehouseSyncLoading(false);
-    }
-  }
-
-  async function adjustMetalStock(metalArticle, deltaQty) {
-    if (!canOperateProduction) {
-      denyActionByRole("Недостаточно прав для изменения остатков металла.");
-      return;
-    }
-    const article = String(metalArticle || "").trim();
-    const delta = Number(deltaQty || 0);
-    if (!article || !Number.isFinite(delta) || delta === 0) return;
-    setMetalSavingArticle(article);
-    setError("");
-    try {
-      const current = metalStockRows.find((x) => String(x.metal_article || "") === article);
-      const currentQty = Number(current?.qty_available || 0);
-      const nextQty = Math.max(0, currentQty + delta);
-      await callBackend("webSetMetalStock", {
-        metalArticle: article,
-        metalName: String(current?.metal_name || ""),
-        qtyAvailable: nextQty,
-      });
-      await loadMetalStock();
-    } catch (e) {
-      setError(toUserError(e));
-    } finally {
-      setMetalSavingArticle("");
-    }
-  }
-
-  async function syncLeftoversToGoogleSheet(options = {}) {
-    const silent = Boolean(options.silent);
-    const baseUrl = String(SUPABASE_URL || "").replace(/\/$/, "");
-    const token = String(SUPABASE_ANON_KEY || "").trim();
-    if (!baseUrl || !token) {
-      if (!silent) setError("Не настроен доступ к Supabase (URL/ANON key).");
-      return;
-    }
-    if (!silent) setLeftoversSyncLoading(true);
-    if (!silent) setError("");
-    try {
-      await syncLeftoversToGoogleSheetEdge(baseUrl, token, {
-        sheetId: WAREHOUSE_SYNC_SHEET_ID,
-        gid: LEFTOVERS_SYNC_GID,
-      });
-    } catch (e) {
-      if (!silent) {
-        setError(`Не удалось выгрузить остатки в Google Sheet: ${extractErrorMessage(e)}`);
-      }
-    } finally {
-      if (!silent) setLeftoversSyncLoading(false);
-    }
-  }
-
-  async function logConsumeToGoogleSheet(meta = {}) {
-    const baseUrl = String(SUPABASE_URL || "").replace(/\/$/, "");
-    const token = String(SUPABASE_ANON_KEY || "").trim();
-    if (!baseUrl || !token) return;
-    try {
-      await logConsumeToGoogleSheetEdge(baseUrl, token, {
-        sheetId: WAREHOUSE_SYNC_SHEET_ID,
-        sheetName: CONSUME_LOG_SHEET_NAME,
-        orderId: String(meta.orderId || "").trim(),
-        item: String(meta.item || "").trim(),
-        material: String(meta.material || "").trim(),
-        week: String(meta.week || "").trim(),
-        qty: Number(meta.qty || 0),
-      });
-    } catch (_) {
-      // Best-effort sync to sheet should not block core consumption flow.
-    }
-  }
-
-  async function syncPlanCellToGoogleSheet(meta = {}) {
-    // Best-effort: обновление Google Sheet не должно ломать сохранение плана в Supabase.
-    if (!["supabase", "shadow"].includes(String(BACKEND_PROVIDER || ""))) return;
-    const baseUrl = String(SUPABASE_URL || "").replace(/\/$/, "");
-    const token = String(SUPABASE_ANON_KEY || "").trim();
-    if (!baseUrl || !token) return;
-
-    const payload = {
-      sheetId: PLAN_SYNC_SHEET_ID,
-      gid: PLAN_SYNC_GID,
-      sectionName: String(meta.sectionName || "").trim(),
-      item: String(meta.item || "").trim(),
-      material: String(meta.material || "").trim(),
-      week: String(meta.week || "").trim(),
-      qty: Number(meta.qty || 0),
-      stageCode: String(meta.stageCode || "").trim(),
-      stage: String(meta.stage || "").trim(),
-      stageComment: String(meta.stageComment || "").trim(),
-      orderId: String(meta.orderId || "").trim(),
-    };
-    if (!payload.sectionName || !payload.item || !payload.material || !payload.week || !Number.isFinite(payload.qty) || payload.qty <= 0) {
-      return;
-    }
-
-    try {
-      await syncPlanCellToGoogleSheetEdge(baseUrl, token, payload);
-    } catch (_) {
-      // Keep saving plan resilient; still log to console for troubleshooting.
-      console.warn("[CRM] sync-plan-cell-to-gsheet failed (best-effort)", payload);
-    }
-  }
-
-  function openPilkaDoneConsumeDialog(orderId, meta = {}) {
-    const init = buildPilkaDoneDialogInit(orderId, meta);
-    const isPlankOrder = init.isPlankOrder;
-    const defaultQty = init.consumeQty;
-
-    // Open dialog immediately; fetch hints in background.
-    setConsumeDialogData(init.consumeDialogData);
-    setConsumeMaterial(init.consumeMaterial);
-    setConsumeQty(init.consumeQty);
-    setConsumeEditMode(true);
-    setConsumeError("");
-    setConsumeLoading(true);
-    setConsumeDialogOpen(true);
-
-    // Do not block UI while fetching consume options.
-    callBackend("webGetConsumeOptions", { orderId })
-      .then((options) => {
-        setConsumeDialogData(options || { orderId });
-        const suggested = isPlankOrder
-          ? "Черный"
-          : String(options?.suggestedMaterial || meta.material || "").trim();
-        if (suggested) setConsumeMaterial(suggested);
-        const suggestedSheetsRaw = options?.suggestedSheets ?? options?.sheetsNeeded ?? defaultQty ?? 0;
-        const suggestedSheets = Number(suggestedSheetsRaw);
-        if (Number.isFinite(suggestedSheets) && suggestedSheets > 0) {
-          setConsumeQty((prev) => {
-            const prevNum = Number(String(prev || "").replace(",", "."));
-            if (Number.isFinite(prevNum) && prevNum > 0) return prev;
-            return String(suggestedSheets);
-          });
-        }
-        if (!isPlankOrder && suggested) setConsumeEditMode(false);
-      })
-      .catch(() => {
-        // Keep manual mode without hints.
-      })
-      .finally(() => setConsumeLoading(false));
-  }
-
-  function openPilkaDoneConsumeDialogOnError(orderId, meta = {}, error) {
-    const init = buildPilkaDoneDialogInit(orderId, meta, { useMetaMaterialOnError: true });
-    setConsumeDialogData(init.consumeDialogData);
-    setConsumeMaterial(init.consumeMaterial);
-    setConsumeQty(init.consumeQty);
-    setConsumeEditMode(true);
-    setConsumeLoading(false);
-    setConsumeError(`Этап "Пила: Готово" вернул ошибку, но списание можно выполнить вручную: ${extractErrorMessage(error)}`);
-    setConsumeDialogOpen(true);
-  }
-
-  async function runAction(action, orderId, payload = {}, meta = {}) {
-    if (!canOperateProduction) {
-      denyActionByRole("Недостаточно прав для изменения этапов производства.");
-      return;
-    }
-    const key = `${action}:${orderId}`;
-    const seq = (stageActionSeqRef.current.get(key) || 0) + 1;
-    stageActionSeqRef.current.set(key, seq);
-    setPendingStageActionKeys((prev) => {
-      const next = new Set(prev);
-      next.add(key);
-      return next;
-    });
-    setError("");
-    const targetOrderId = String(orderId || "");
-    const hasOptimisticRule = hasOptimisticActionRule(action);
-    let rowsSnapshot = null;
-    let shipmentOrdersSnapshot = null;
-    if (hasOptimisticRule) {
-      const patchList = (list, setSnapshot) =>
-        list.map((row) => {
-          const rowOrderId = String(row.orderId || row.order_id || "");
-          if (rowOrderId !== targetOrderId) return row;
-          setSnapshot(row);
-          return applyOptimisticOrderRow(row, action, payload);
-        });
-      setRows((prev) =>
-        patchList(prev, (row) => {
-          rowsSnapshot = row;
-        }),
-      );
-      setShipmentOrders((prev) =>
-        patchList(prev, (row) => {
-          shipmentOrdersSnapshot = row;
-        }),
-      );
-    }
-    try {
-      const data = await callBackend(action, { orderId, ...payload });
-      const stageSync = STAGE_SYNC_META[action];
-      if (stageSync) {
-        const sourceOrder = orderIndexById.get(String(orderId)) || {};
-        const stageSyncPayload = buildStageSyncPayload({
-          orderId,
-          meta,
-          sourceOrder,
-          stageSync,
-          getMaterialLabel,
-          resolveSectionNameForOrder,
-        });
-        if (stageSyncPayload) {
-          void syncPlanCellToGoogleSheet(stageSyncPayload);
-        }
-      }
-      if (action === "webSetPrasDone" && meta.notifyOnAssembly) {
-        notifyAssemblyReadyTelegram(buildNotifyPayload(orderId, meta));
-      }
-      if (action === "webSetShippingDone" && meta.notifyOnFinalStage) {
-        notifyFinalStageTelegram(buildNotifyPayload(orderId, meta));
-      }
-      if (action === "webSetPilkaDone") {
-        openPilkaDoneConsumeDialog(orderId, meta);
-        return;
-      }
-      // Non-blocking reconcile: optimistic state updates instantly, backend sync runs in background.
-      void load();
-    } catch (e) {
-      if (hasOptimisticRule && stageActionSeqRef.current.get(key) === seq) {
-        if (rowsSnapshot) {
-          setRows((prev) =>
-            prev.map((row) => {
-              const rowOrderId = String(row.orderId || row.order_id || "");
-              return rowOrderId === targetOrderId ? rowsSnapshot : row;
-            }),
-          );
-        }
-        if (shipmentOrdersSnapshot) {
-          setShipmentOrders((prev) =>
-            prev.map((row) => {
-              const rowOrderId = String(row.orderId || row.order_id || "");
-              return rowOrderId === targetOrderId ? shipmentOrdersSnapshot : row;
-            }),
-          );
-        }
-      }
-      if (action === "webSetPilkaDone") {
-        openPilkaDoneConsumeDialogOnError(orderId, meta, e);
-      }
-      setError(toUserError(e));
-    } finally {
-      if (stageActionSeqRef.current.get(key) === seq) {
-        setPendingStageActionKeys((prev) => {
-          const next = new Set(prev);
-          next.delete(key);
-          return next;
-        });
-      }
-    }
-  }
 
   async function overrideOrderStageFromDrawer(orderId, stage, status) {
     if (!canAdminSettings) {
@@ -1005,7 +771,7 @@ export default function App() {
     }
     setError("");
     try {
-      await callBackend(action, { orderId });
+      await OrderService.updateOrderStage(orderId, action);
       await load();
     } catch (e) {
       setError(toUserError(e));
@@ -1013,48 +779,13 @@ export default function App() {
   }
 
   const {
-    weeks,
-    sectionOptions,
-    sectionArticles,
-    articleLookupByItemKey,
-    resolvedPlanItem,
-  } = useShipmentPlanningDerivedData({
-    view,
-    shipmentBoard,
-    laborRows,
-    rows,
-    planCatalogRows,
-    sectionCatalogRows,
-    sectionArticleRows,
-    planSection,
-    planArticle,
-    normalizeFurnitureKey,
-  });
-  function handlePlanSectionChange(nextSection) {
-    setPlanSection(nextSection);
-    const firstArticle = (sectionArticleRows || [])
-      .map((x) => ({
-        sectionName: String(x.section_name || x.sectionName || "").trim(),
-        article: String(x.article || "").trim(),
-        itemName: String(x.item_name || x.itemName || "").trim(),
-        material: String(x.material || "").trim(),
-      }))
-      .find((x) => x.sectionName === nextSection && x.article);
-    setPlanArticle(firstArticle?.itemName || "");
-    setPlanMaterial(resolvePlanMaterial(firstArticle));
-  }
-  function handlePlanArticleChange(nextArticle) {
-    setPlanArticle(nextArticle);
-    const matched = sectionArticles.find((x) => x.itemName === nextArticle);
-    setPlanMaterial(resolvePlanMaterial(matched));
-  }
-  const {
     metalStockRows,
     metalSavingArticle,
     setMetalSavingArticle,
     selectedShipmentMetal,
     loadMetalStock,
     loadMetalQueue,
+    adjustMetalStock,
   } = useMetalState({
     view,
     callBackend,
@@ -1070,6 +801,24 @@ export default function App() {
     shipmentOrders,
     rows,
   });
+
+  const { runAction } = useStageActions({
+    canOperateProduction,
+    denyActionByRole,
+    setError,
+    setRows,
+    setShipmentOrders,
+    setPendingStageActionKeys,
+    orderIndexById,
+    shipmentBoard,
+    load,
+    syncPlanCellToGoogleSheet,
+    notifyAssemblyReadyTelegram,
+    notifyFinalStageTelegram,
+    openPilkaDoneConsumeDialog,
+    openPilkaDoneConsumeDialogOnError,
+  });
+
   const baseOrderFiltered = useBaseOrderFilter({
     rows,
     view,
@@ -1091,39 +840,19 @@ export default function App() {
     query,
   });
 
-  function resolveSectionNameForOrder(order) {
-    const week = String(order?.week || "").trim();
-    const sourceRowId = String(order?.sourceRowId || order?.source_row_id || "").trim();
-    const itemName = String(order?.item || "").trim();
-    if (!week) return "";
-    const sections = Array.isArray(shipmentBoard?.sections) ? shipmentBoard.sections : [];
-    for (const section of sections) {
-      const sectionName = String(section?.name || "").trim();
-      const items = Array.isArray(section?.items) ? section.items : [];
-      for (const it of items) {
-        const rowId = String(it?.sourceRowId || it?.source_row_id || it?.row || "").trim();
-        const cells = Array.isArray(it?.cells) ? it.cells : [];
-        for (const c of cells) {
-          const cellWeek = String(c?.week || "").trim();
-          if (!cellWeek || cellWeek !== week) continue;
-          if (sourceRowId && rowId && rowId === sourceRowId) return sectionName;
-          if (!sourceRowId && itemName && String(it?.item || "").trim() === itemName) return sectionName;
-        }
-      }
-    }
-    return "";
-  }
+  const shipmentStageFilter = useCallback(
+    (stageKey) => passesShipmentStageFilter(stageKey, {
+      showAwaiting,
+      showOnPilka,
+      showOnKromka,
+      showOnPras,
+      showReadyAssembly,
+      showAwaitShipment,
+      showShipped,
+    }),
+    [showAwaiting, showOnPilka, showOnKromka, showOnPras, showReadyAssembly, showAwaitShipment, showShipped],
+  );
 
-  function passesShipmentStageFilter(stageKey) {
-    if (stageKey === "awaiting") return showAwaiting;
-    if (stageKey === "on_pilka_wait" || stageKey === "on_pilka_work") return showOnPilka;
-    if (stageKey === "on_kromka_wait" || stageKey === "on_kromka_work") return showOnKromka;
-    if (stageKey === "on_pras_wait" || stageKey === "on_pras_work") return showOnPras;
-    if (stageKey === "ready_assembly") return showReadyAssembly;
-    if (stageKey === "assembled_wait_ship") return showAwaitShipment;
-    if (stageKey === "shipped") return showShipped;
-    return true;
-  }
   const shipmentFiltered = useShipmentFilter({
     shipmentBoard,
     shipmentOrderMaps,
@@ -1133,7 +862,7 @@ export default function App() {
     isObvyazkaSectionName,
     isGarbageShipmentItemName,
     getShipmentStageKey,
-    passesShipmentStageFilter,
+    passesShipmentStageFilter: shipmentStageFilter,
   });
 
   const { filtered, orderDrawerLines } = useCommonDerivedData({
@@ -1153,7 +882,7 @@ export default function App() {
       setAdminCommentSaving(true);
       setError("");
       try {
-        await callBackend("webSetOrderAdminComment", { orderId: id, text });
+        await OrderService.setOrderAdminComment(id, text);
         await load();
       } catch (e) {
         setError(toUserError(e));
@@ -1172,11 +901,13 @@ export default function App() {
     if (view !== "labor" || laborSubView !== "stages") {
       setStageAuditRows([]);
       setActiveOrderIds([]);
+      laborStageFetchKeyRef.current = "";
       return;
     }
     if (!canManageOrders) {
       setStageAuditRows([]);
       setActiveOrderIds([]);
+      laborStageFetchKeyRef.current = "";
       return;
     }
 
@@ -1199,15 +930,22 @@ export default function App() {
     const ids = (stageSourceRows || [])
       .map((x) => String(x?.orderId || x?.order_id || "").trim())
       .filter(Boolean);
-    setActiveOrderIds(Array.from(new Set(ids)));
+    const uniqueIds = Array.from(new Set(ids)).sort();
+    const fetchKey = `${view}|${laborSubView}|${weekFilter}|${query}|${uniqueIds.join(",")}`;
+    if (fetchKey === laborStageFetchKeyRef.current) {
+      return () => {
+        cancelled = true;
+      };
+    }
+    laborStageFetchKeyRef.current = fetchKey;
+    setActiveOrderIds((prev) => {
+      if (prev.length === uniqueIds.length && prev.every((id, idx) => id === uniqueIds[idx])) return prev;
+      return uniqueIds;
+    });
 
     async function loadLaborStageTimeline() {
       try {
-        const payload = await callBackend("webGetAuditLog", {
-          limit: 1000,
-          offset: 0,
-          action: null,
-        });
+        const payload = await OrderService.getAuditLog({ limit: 1000, offset: 0, action: null });
         if (cancelled) return;
         setStageAuditRows(Array.isArray(payload) ? payload : []);
       } catch (e) {
@@ -1233,7 +971,7 @@ export default function App() {
     filtered,
     weekFilter,
     shipmentOrderMaps,
-    passesShipmentStageFilter,
+    passesShipmentStageFilter: shipmentStageFilter,
     shipmentSort,
     materialsStockRows,
     strapItems,
@@ -1360,29 +1098,14 @@ export default function App() {
     laborPlannerQtyByGroup,
     laborTableRows,
   });
-  const {
-    furnitureSheetData,
-    furnitureTemplates,
-    furnitureSelectedTemplate,
-    furnitureQtyNumber,
-    furnitureGeneratedDetails,
-  } = useFurnitureDerivedData({
-    view,
-    query,
-    furnitureWorkbook,
-    furnitureActiveSheet,
-    furnitureSelectedProduct,
-    setFurnitureSelectedProduct,
-    furnitureSelectedQty,
-    furnitureDetailArticleRows,
-    furnitureArticleRows,
-  });
   const { warehouseTableRows, leftoversTableRows, consumeHistoryTableRows } = useWarehouseTableData({
     view,
     query,
     warehouseRows,
     leftoversRows,
+    leftoversHistoryRows,
     consumeHistoryRows,
+    pilkaDoneHistoryRows,
   });
 
   const {
@@ -1398,19 +1121,6 @@ export default function App() {
     strapSheetWidth: STRAP_SHEET_WIDTH,
     strapSheetHeight: STRAP_SHEET_HEIGHT,
   });
-  const {
-    strapOptionsByProduct,
-    strapProductBySizeToken,
-    strapProductsByArticleCode,
-    strapProductNames,
-    strapOptionsForSelectedProduct,
-  } = useStrapDerivedData({
-    furnitureDetailArticleRows,
-    strapTargetProduct,
-    setStrapTargetProduct,
-    fallbackOptions: STRAP_OPTIONS,
-  });
-
   async function sendSelectedShipmentToWork() {
     if (!canOperateProduction) {
       denyActionByRole("Недостаточно прав для отправки заказов в работу.");
@@ -1429,7 +1139,7 @@ export default function App() {
       const hasMetalDeficit = metalDeficits.length > 0;
       if (hasMetalDeficit) {
         for (const s of sendable) {
-          await callBackend("webEnqueueMetalWorkOrder", {
+          await OrderService.enqueueMetalWorkOrder({
             sourceRow: s.row,
             sourceCol: s.col,
             item: s.item,
@@ -1449,8 +1159,7 @@ export default function App() {
       for (const s of sendable) {
         const attempts = buildShipmentCellAttempts(s);
         await runShipmentCellActionWithFallback({
-          callBackend,
-          backendAction: "webSendShipmentToWork",
+          actionFn: (params) => OrderService.sendShipmentToWork(params.row, params.col),
           attempts,
           isMissingError: isShipmentCellMissingError,
           requestBuilder: (p) => ({ row: p.row, col: p.col }),
@@ -1491,8 +1200,7 @@ export default function App() {
       for (const s of deletable) {
         const attempts = buildShipmentCellAttempts(s);
         await runShipmentCellActionWithFallback({
-          callBackend,
-          backendAction: "webDeleteShipmentPlanCell",
+          actionFn: (params) => OrderService.deleteShipmentPlanCell({ p_row: params.p_row, p_col: params.p_col, row: params.p_row, col: params.p_col }),
           attempts,
           isMissingError: isShipmentCellMissingError,
           requestBuilder: (p) => ({ p_row: p.row, p_col: p.col }),
@@ -1527,10 +1235,7 @@ export default function App() {
     setError("");
     try {
       try {
-        await callBackend("webDeleteOrderById", {
-          orderId,
-          p_order_id: orderId,
-        });
+        await OrderService.deleteOrder(orderId);
       } catch (deleteByOrderErr) {
         const msg = String(deleteByOrderErr?.message || deleteByOrderErr || "");
         const missingAction =
@@ -1539,19 +1244,14 @@ export default function App() {
           msg.includes("not configured");
         if (!missingAction) throw deleteByOrderErr;
         // Fallback for legacy backends without delete-by-order endpoint.
-        const source = await resolveStatsOrderSourceCell(order, rows, callBackend);
+        const source = await resolveStatsOrderSourceCell(order, rows);
         const sourceRow = source.row;
         const sourceCol = source.col;
         if (!sourceRow || !sourceCol) {
           setError("Для этого заказа не найдена привязка к ячейке плана (row/col).");
           return;
         }
-        await callBackend("webDeleteShipmentPlanCell", {
-          p_row: sourceRow,
-          p_col: sourceCol,
-          row: sourceRow,
-          col: sourceCol,
-        });
+        await OrderService.deleteShipmentPlanCell({ p_row: sourceRow, p_col: sourceCol, row: sourceRow, col: sourceCol });
       }
       await load();
     } catch (e) {
@@ -1569,26 +1269,6 @@ export default function App() {
     });
   }
 
-  function openStrapDialog() {
-    if (!canOperateProduction) {
-      denyActionByRole("Недостаточно прав для добавления обвязки.");
-      return;
-    }
-    const init = buildStrapDialogInit({
-      strapItems,
-      strapProductNames,
-      weekFilter,
-      weeks,
-      strapOptionsByProduct,
-      defaultOptions: STRAP_OPTIONS,
-      normalizeProductKey: normalizeStrapProductKey,
-    });
-    setStrapTargetProduct(init.defaultProduct);
-    setStrapPlanWeek(init.defaultWeek);
-    setStrapDraft(init.draft);
-    setStrapDialogOpen(true);
-  }
-
   useEffect(() => {
     if (!strapDialogOpen) return;
     const options = strapOptionsForSelectedProduct;
@@ -1596,158 +1276,6 @@ export default function App() {
     setStrapDraft(nextDraft);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [strapDialogOpen, strapTargetProduct, strapOptionsForSelectedProduct.join("|")]);
-
-  function openCreatePlanDialog() {
-    if (!canOperateProduction) {
-      denyActionByRole("Недостаточно прав для добавления плана.");
-      return;
-    }
-    const init = buildCreatePlanDialogInit({
-      sectionOptions,
-      weeks,
-      sectionArticleRows,
-      resolvePlanMaterial,
-    });
-    setPlanSection(init.section);
-    setPlanArticle(init.article);
-    setPlanMaterial(init.material);
-    setPlanWeek(init.week);
-    setPlanQty(init.qty);
-    setPlanDialogOpen(true);
-  }
-
-  function closeCreatePlanDialog() {
-    if (planSaving) return;
-    setPlanDialogOpen(false);
-  }
-
-  async function saveCreatePlanDialog() {
-    if (!canOperateProduction) {
-      denyActionByRole("Недостаточно прав для изменения плана.");
-      return;
-    }
-    const item = String(resolvedPlanItem || "").trim();
-    const material = String(planMaterial || "").trim();
-    const week = String(planWeek || "").trim();
-    const qty = Number(String(planQty || "").replace(",", "."));
-    if (!item) {
-      setError("Выберите материал для изделия.");
-      return;
-    }
-    if (!material) {
-      setError("Выберите материал.");
-      return;
-    }
-    if (!week) {
-      setError("Укажите неделю плана.");
-      return;
-    }
-    if (!Number.isFinite(qty) || qty <= 0) {
-      setError("Количество должно быть больше 0.");
-      return;
-    }
-    setPlanSaving(true);
-    setError("");
-    try {
-      await callBackend("webCreateShipmentPlanCell", {
-        sectionName: planSection,
-        item,
-        material,
-        week,
-        qty,
-      });
-      void syncPlanCellToGoogleSheet({ sectionName: planSection, item, material, week, qty });
-      setPlanDialogOpen(false);
-      await load();
-    } catch (e) {
-      setError(toUserError(e));
-    } finally {
-      setPlanSaving(false);
-    }
-  }
-
-  function previewCreatePlanDialog() {
-    const item = String(resolvedPlanItem || "").trim();
-    const material = String(planMaterial || "").trim();
-    const week = String(planWeek || "").trim();
-    const qty = Number(String(planQty || "").replace(",", "."));
-    const selectedCatalogArticle = String(
-      sectionArticles.find((x) => x.itemName === planArticle)?.article || "",
-    ).trim();
-    if (!item) {
-      setError("Выберите материал для изделия.");
-      return;
-    }
-    if (!material) {
-      setError("Выберите материал.");
-      return;
-    }
-    if (!week) {
-      setError("Укажите неделю плана.");
-      return;
-    }
-    if (!Number.isFinite(qty) || qty <= 0) {
-      setError("Количество должно быть больше 0.");
-      return;
-    }
-    setError("");
-    const basePreview = {
-      _key: `dialog-preview:${Date.now()}`,
-      generatedAt: formatDateTimeForPrint(new Date()),
-      firstName: item,
-      detailedName: item,
-      colorName: material,
-      planNumber: week,
-      qty,
-      article: selectedCatalogArticle,
-      rows: [],
-    };
-    const template = resolveFurnitureTemplateForPreview(basePreview, furnitureTemplates);
-    const rows = template ? buildPreviewRowsFromFurnitureTemplate(template, qty) : [];
-    setPlanPreviews([{ ...basePreview, rows }]);
-    setPlanDialogOpen(false);
-  }
-
-  async function saveStrapDialog() {
-    if (!canOperateProduction) {
-      denyActionByRole("Недостаточно прав для изменения плана.");
-      return;
-    }
-    const next = buildStrapPlanRows({
-      options: strapOptionsForSelectedProduct,
-      draft: strapDraft,
-      productName: strapTargetProduct || "",
-    });
-    if (!next.length) {
-      setStrapItems([]);
-      setStrapDialogOpen(false);
-      return;
-    }
-    const week = String(strapPlanWeek || "").trim();
-    if (!week) {
-      setError("Укажите неделю плана для обвязки.");
-      return;
-    }
-    setActionLoading("shipment:strapsave");
-    setError("");
-    try {
-      for (const row of next) {
-        const payload = buildStrapPlanCellPayload(row, week, {
-          resolveStrapMaterialByProduct,
-          strapNameToOrderItem,
-        });
-        await callBackend("webCreateShipmentPlanCell", payload);
-        void syncPlanCellToGoogleSheet(payload);
-      }
-      setStrapItems([]);
-      setStrapDialogOpen(false);
-      await load();
-    } catch (e) {
-      setError(toUserError(e));
-    } finally {
-      setActionLoading("");
-    }
-  }
 
   async function createShelfPlanOrder(payload) {
     if (!canOperateProduction) {
@@ -1779,7 +1307,7 @@ export default function App() {
         qty,
         article,
       };
-      await callBackend("webCreateShipmentPlanCell", request);
+      await OrderService.createShipmentPlanCell(request);
       void syncPlanCellToGoogleSheet(request);
       await load();
     } catch (e) {
@@ -1801,7 +1329,7 @@ export default function App() {
       const strapPreviews = buildStrapPreviewPlans(strapSelections, generatedAt);
       let shipmentTableBySource = new Map();
       try {
-        const tableRows = await callBackend("webGetShipmentTable", {});
+        const tableRows = await OrderService.getShipmentTable();
         const list = Array.isArray(tableRows) ? tableRows : [];
         shipmentTableBySource = new Map(
           list.map((row) => [
@@ -1862,17 +1390,13 @@ export default function App() {
       }
       if (shipmentSelections.length === 1) {
         const s = shipmentSelections[0];
-        const preview = await callBackend("webPreviewPlanFromShipment", {
-          row: s.row,
-          col: s.col,
-        });
+        const preview = await OrderService.previewPlanFromShipment(s.row, s.col);
         const enriched = preview ? enrichPreview({ ...preview, _key: `${s.row}-${s.col}` }, s) : null;
         const plans = enriched ? [enriched] : [];
         plans.push(...strapPreviews);
         setPlanPreviews(plans);
       } else {
         const { plans = [], failedCount = 0, batchError } = await buildShipmentPreviewPlans(shipmentSelections, {
-          callBackend,
           enrichPreview,
         });
         if (failedCount > 0) {
@@ -1954,15 +1478,12 @@ export default function App() {
       }
 
       const importCatalogRows = await loadImportCatalogRows({
-        supabaseCall,
-        callBackend,
         sectionArticleRows,
       });
 
       const articleMap = buildImportArticleMap(importCatalogRows);
 
       const { imported, missing, marked } = await applyImportPlanRows(importRows, articleMap, {
-        callBackend,
         planNumber,
         markMissingAsPlanRows: true,
       });
@@ -2002,11 +1523,7 @@ export default function App() {
       }
 
       for (const row of importedRows) {
-        await callBackend("webSetMetalStock", {
-          metalArticle: row.metalArticle,
-          metalName: row.metalName,
-          qtyAvailable: row.qtyAvailable,
-        });
+        await OrderService.setMetalStock(row.metalArticle, row.metalName, row.qtyAvailable);
       }
 
       await loadMetalStock();
@@ -2042,482 +1559,107 @@ export default function App() {
 
   return (
     <div className="page">
-      <header className="top">
-        <h1>Управление производственными заказами</h1>
-        <div className="top-actions">
-          {authEnabled && (
-            <div className="auth-controls">
-              {authUserLabel ? (
-                <>
-                  <span className="role-badge role-viewer" title="Текущий авторизованный пользователь Supabase">
-                    Вход: {authUserLabel}
-                  </span>
-                  <button
-                    type="button"
-                    className="mini"
-                    disabled={authSaving}
-                    onClick={signOutSupabaseUser}
-                    title="Выйти из текущей Supabase-сессии"
-                  >
-                    {authSaving ? "Выход..." : "Выйти"}
-                  </button>
-                </>
-              ) : (
-                <>
-                  <input
-                    className="auth-input"
-                    type="email"
-                    placeholder="Email"
-                    value={authEmail}
-                    onChange={(e) => setAuthEmail(e.target.value)}
-                    autoComplete="username"
-                  />
-                  <input
-                    className="auth-input"
-                    type="password"
-                    placeholder="Пароль"
-                    value={authPassword}
-                    onChange={(e) => setAuthPassword(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") signInWithSupabase();
-                    }}
-                    autoComplete="current-password"
-                  />
-                  <button
-                    type="button"
-                    className="mini ok"
-                    disabled={authSaving}
-                    onClick={signInWithSupabase}
-                    title="Войти через Supabase Auth"
-                  >
-                    {authSaving ? "Вход..." : "Войти"}
-                  </button>
-                </>
-              )}
-            </div>
-          )}
-          <span className={`role-badge role-${crmRole}`} title="Текущая роль CRM">
-            Роль: {crmRoleLabel}
-          </span>
-          {canAdminSettings && (
-            <button
-              type="button"
-              className={`strict-mode-toggle ${crmAuthStrict ? "enabled" : ""}`}
-              onClick={toggleCrmAuthStrict}
-              disabled={crmAuthStrictSaving}
-              title="Управление строгим режимом авторизации CRM"
-            >
-              {crmAuthStrictSaving
-                ? "Сохраняю..."
-                : `Strict mode: ${crmAuthStrict ? "ON" : "OFF"}`}
-            </button>
-          )}
-        </div>
-      </header>
+      <AppHeader
+        authEnabled={authEnabled}
+        authUserLabel={authUserLabel}
+        authEmail={authEmail}
+        setAuthEmail={setAuthEmail}
+        authPassword={authPassword}
+        setAuthPassword={setAuthPassword}
+        authSaving={authSaving}
+        signInWithSupabase={signInWithSupabase}
+        signOutSupabaseUser={signOutSupabaseUser}
+        crmRole={crmRole}
+        crmRoleLabel={crmRoleLabel}
+        canAdminSettings={canAdminSettings}
+        crmAuthStrict={crmAuthStrict}
+        toggleCrmAuthStrict={toggleCrmAuthStrict}
+        crmAuthStrictSaving={crmAuthStrictSaving}
+      />
 
-      <section className="view-switch">
-        {VIEWS.map((v) => (
-          (v.id !== "admin" || canAdminSettings) && (
-          <button
-            key={v.id}
-            className={view === v.id ? "tab active" : "tab"}
-            onClick={() => {
-              setView(v.id);
-              if (v.id === "workshop") setTab("pilka");
-            }}
-          >
-            {v.label}
-          </button>
-          )
-        ))}
-      </section>
+      <ViewSwitcher
+        view={view}
+        setView={setView}
+        setTab={setTab}
+        canAdminSettings={canAdminSettings}
+      />
 
-      <section className="kpi-grid">
-        {view === "shipment" ? (
-          <>
-            <div className="kpi"><span>Заказов</span><b>{shipmentKpi.totalOrders}</b></div>
-            <div className="kpi"><span>Кол-во (шт)</span><b>{shipmentKpi.totalQty}</b></div>
-            <div className="kpi"><span>К отправке в работу</span><b>{shipmentKpi.readyAssembly}</b></div>
-            <div className="kpi"><span>Отправлено в цех</span><b>{shipmentKpi.assembled}</b></div>
-          </>
-        ) : view === "overview" && overviewSubView === "shipped" ? (
-          <>
-            <div className="kpi">
-              <span>Отгружено заказов</span>
-              <b>{overviewShippedOnly.length}</b>
-            </div>
-            <div className="kpi">
-              <span>Суммарно шт</span>
-              <b>{overviewShippedOnly.reduce((s, x) => s + (Number(x.qty) || 0), 0)}</b>
-            </div>
-          </>
-        ) : view === "overview" ? (
-          <>
-            <div className="kpi"><span>Всего заказов</span><b>{filtered.length}</b></div>
-            <div className="kpi">
-              <span>В производстве</span>
-              <b>
-                {
-                  filtered.filter(
-                    (x) => !OVERVIEW_POST_PRODUCTION_LANE_IDS.includes(getOverviewLaneId(x))
-                  ).length
-                }
-              </b>
-            </div>
-            <div className="kpi"><span>На паузе</span><b>{filtered.filter((x) => statusClass(x) === "pause").length}</b></div>
-            <div className="kpi">
-              <span>Отправка</span>
-              <b>{filtered.filter((x) => getOverviewLaneId(x) === "ready_to_ship").length}</b>
-            </div>
-            <div className="kpi">
-              <span>Отгружено</span>
-              <b>{filtered.filter((x) => getOverviewLaneId(x) === "shipped").length}</b>
-            </div>
-          </>
-        ) : view === "labor" ? (
-          <>
-            <div className="kpi"><span>Заказов</span><b>{laborKpi.totalOrders}</b></div>
-            <div className="kpi"><span>Общее время (мин)</span><b>{Math.round(laborKpi.totalMinutes)}</b></div>
-            <div className="kpi"><span>Всего изделий</span><b>{Math.round(laborKpi.totalQty)}</b></div>
-            <div className="kpi"><span>Среднее / заказ (мин)</span><b>{Math.round(laborKpi.avgPerOrder)}</b></div>
-          </>
-        ) : view === "workshop" ? (
-          <>
-            <div className="kpi"><span>Всего</span><b>{kpi.total}</b></div>
-            <div className="kpi"><span>В работе</span><b>{kpi.work}</b></div>
-            <div className="kpi"><span>На паузе</span><b>{kpi.paused}</b></div>
-            <div className="kpi"><span>Собрано</span><b>{kpi.done}</b></div>
-          </>
-        ) : (
-          <>
-            <div className="kpi"><span>Всего</span><b>{kpi.total}</b></div>
-            <div className="kpi"><span>В работе</span><b>{kpi.work}</b></div>
-            <div className="kpi"><span>На паузе</span><b>{kpi.paused}</b></div>
-            <div className="kpi">
-              <span>Собрано и отгрузка</span>
-              <b>{kpi.done}</b>
-            </div>
-          </>
-        )}
-      </section>
+      <KpiGrid
+        view={view}
+        shipmentKpi={shipmentKpi}
+        overviewSubView={overviewSubView}
+        overviewShippedOnly={overviewShippedOnly}
+        filtered={filtered}
+        statusClass={statusClass}
+        laborKpi={laborKpi}
+        kpi={kpi}
+      />
 
-      <section className="controls">
-        {view === "overview" && (
-          <div className="tabs tabs--overview-sub">
-            <button
-              type="button"
-              className={overviewSubView === "kanban" ? "tab active" : "tab"}
-              onClick={() => setOverviewSubView("kanban")}
-            >
-              Канбан
-            </button>
-            <button
-              type="button"
-              className={overviewSubView === "shipped" ? "tab active" : "tab"}
-              onClick={() => setOverviewSubView("shipped")}
-            >
-              Отгружено
-            </button>
-          </div>
-        )}
-        {view === "workshop" && (
-          <div className="tabs">
-            {TABS.map((t) => (
-              <button
-                key={t.id}
-                className={tab === t.id ? "tab active" : "tab"}
-                onClick={() => setTab(t.id)}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
-        )}
-        {view === "warehouse" && (
-          <div className="tabs tabs--overview-sub">
-            <button
-              type="button"
-              className={warehouseSubView === "sheets" ? "tab active" : "tab"}
-              onClick={() => setWarehouseSubView("sheets")}
-            >
-              Листы
-            </button>
-            <button
-              type="button"
-              className={warehouseSubView === "leftovers" ? "tab active" : "tab"}
-              onClick={() => setWarehouseSubView("leftovers")}
-            >
-              Остатки
-            </button>
-            <button
-              type="button"
-              className={warehouseSubView === "history" ? "tab active" : "tab"}
-              onClick={() => setWarehouseSubView("history")}
-            >
-              История списаний
-            </button>
-            <button
-              type="button"
-              className="mini ok"
-              disabled={warehouseSyncLoading || loading}
-              onClick={syncWarehouseFromGoogleSheet}
-              title="Синхронизировать материалы из основной Google-таблицы склада"
-            >
-              {warehouseSyncLoading ? "Синхронизация..." : "Синхр. склад"}
-            </button>
-            <button
-              type="button"
-              className="mini ok"
-              disabled={leftoversSyncLoading || loading}
-              onClick={() => syncLeftoversToGoogleSheet()}
-              title="Выгрузить остатки в лист 'Остатки' Google-таблицы"
-            >
-              {leftoversSyncLoading ? "Выгрузка..." : "Выгрузить остатки"}
-            </button>
-            <button
-              type="button"
-              className="mini"
-              disabled={warehouseOrderPlanRows.length === 0}
-              onClick={printWarehouseOrderPlanPdf}
-              title="Сформировать PDF, что нужно заказать для закрытия плана"
-            >
-              Что заказать
-            </button>
-          </div>
-        )}
-        {view === "labor" && (
-          <div className="tabs tabs--overview-sub">
-            <button
-              type="button"
-              className={laborSubView === "total" ? "tab active" : "tab"}
-              onClick={() => setLaborSubView("total")}
-            >
-              Общая
-            </button>
-            <button
-              type="button"
-              className={laborSubView === "orders" ? "tab active" : "tab"}
-              onClick={() => setLaborSubView("orders")}
-            >
-              По заказам
-            </button>
-            <button
-              type="button"
-              className={laborSubView === "planner" ? "tab active" : "tab"}
-              onClick={() => setLaborSubView("planner")}
-            >
-              Планировщик
-            </button>
-            <button
-              type="button"
-              className={laborSubView === "stages" ? "tab active" : "tab"}
-              onClick={() => setLaborSubView("stages")}
-            >
-              Этапы
-            </button>
-          </div>
-        )}
-        {view === "metal" && (
-          <div className="tabs tabs--overview-sub">
-            <button type="button" className="tab active">Наличие</button>
-          </div>
-        )}
-        <div className="filters">
-          {view !== "furniture" && (
-            <input
-              placeholder={view === "shipment" ? "Поиск отгрузки: название или ID" : view === "warehouse" ? (warehouseSubView === "leftovers" ? "Поиск по цвету или размеру" : warehouseSubView === "history" ? "Поиск: заказ, материал, комментарий" : "Поиск материала") : view === "metal" ? "Поиск по артикулу или названию металла" : "Поиск по названию или ID"}
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-            />
-          )}
-          {view !== "warehouse" && view !== "furniture" && view !== "metal" && !(view === "labor" && laborSubView === "stages") && (
-            <select value={weekFilter} onChange={(e) => setWeekFilter(e.target.value)}>
-              <option value="all">Все недели</option>
-              {weeks.map((w) => <option key={w} value={w}>Неделя {w}</option>)}
-            </select>
-          )}
-          {view === "stats" && (
-            <select value={statsSort} onChange={(e) => setStatsSort(e.target.value)}>
-              <option value="stage">Сортировка: по этапам</option>
-              <option value="readiness">Сортировка: по готовности</option>
-              <option value="color">Сортировка: по цвету</option>
-              <option value="weekday">Сортировка: по дням недели</option>
-            </select>
-          )}
-          {view === "shipment" && (
-            <select value={shipmentSort} onChange={(e) => setShipmentSort(e.target.value)}>
-              <option value="name">Сортировка: по названию</option>
-              <option value="week">Сортировка: по неделе плана</option>
-              <option value="color">Сортировка: по цвету</option>
-            </select>
-          )}
-          {view === "shipment" && (
-            <select value={shipmentViewMode} onChange={(e) => setShipmentViewMode(e.target.value)}>
-              <option value="table">Вид: таблица</option>
-              <option value="cards">Вид: карточки</option>
-            </select>
-          )}
-          {view === "labor" && laborSubView === "total" && (
-            <select value={laborSort} onChange={(e) => setLaborSort(e.target.value)}>
-              <option value="total_desc">Трудоемкость: больше времени</option>
-              <option value="total_asc">Трудоемкость: меньше времени</option>
-              <option value="week">Трудоемкость: по неделе</option>
-              <option value="item">Трудоемкость: по изделию</option>
-            </select>
-          )}
-          {view === "labor" && laborSubView === "total" && (
-            <div className="filters-right">
-              <button className="mini" onClick={exportLaborTotalToExcel} disabled={!laborTableRows.length}>
-                Экспорт Excel (общая)
-              </button>
-              <input
-                ref={importLaborFileRef}
-                type="file"
-                accept=".xlsx,.xls,.csv"
-                style={{ display: "none" }}
-                onChange={(e) => {
-                  const f = e.target.files && e.target.files[0];
-                  importLaborTotalFromExcelFile(f);
-                }}
-              />
-              <button
-                className="mini"
-                disabled={actionLoading === "labor:import"}
-                onClick={() => importLaborFileRef.current?.click()}
-              >
-                {actionLoading === "labor:import" ? "Импорт..." : "Импорт Excel (общая)"}
-              </button>
-              <button
-                className="mini"
-                disabled={!laborImportedRows.length}
-                onClick={() => {
-                  setLaborImportedRows([]);
-                  setLaborSaveSelected({});
-                  setLaborSavingByKey({});
-                  setLaborSavedByKey({});
-                }}
-                title="Очистить только импортированные локальные строки"
-              >
-                Очистить импорт
-              </button>
-            </div>
-          )}
-          {view === "shipment" && (
-            <div className="filters-right">
-              <label className="empty-only-toggle">
-                <input
-                  type="checkbox"
-                  checked={showAwaiting}
-                  onChange={(e) => setShowAwaiting(e.target.checked)}
-                />
-                <span>Ожидаю заказ</span>
-              </label>
-              <label className="empty-only-toggle">
-                <input
-                  type="checkbox"
-                  checked={showOnPilka}
-                  onChange={(e) => setShowOnPilka(e.target.checked)}
-                />
-                <span>На пиле</span>
-              </label>
-              <label className="empty-only-toggle">
-                <input
-                  type="checkbox"
-                  checked={showOnKromka}
-                  onChange={(e) => setShowOnKromka(e.target.checked)}
-                />
-                <span>На кромке</span>
-              </label>
-              <label className="empty-only-toggle">
-                <input
-                  type="checkbox"
-                  checked={showOnPras}
-                  onChange={(e) => setShowOnPras(e.target.checked)}
-                />
-                <span>На присадке</span>
-              </label>
-              <label className="empty-only-toggle">
-                <input
-                  type="checkbox"
-                  checked={showReadyAssembly}
-                  onChange={(e) => setShowReadyAssembly(e.target.checked)}
-                />
-                <span>Готовы к сборке</span>
-              </label>
-              <label className="empty-only-toggle">
-                <input
-                  type="checkbox"
-                  checked={showAwaitShipment}
-                  onChange={(e) => setShowAwaitShipment(e.target.checked)}
-                />
-                <span>Ждёт отправку</span>
-              </label>
-              <label className="empty-only-toggle">
-                <input
-                  type="checkbox"
-                  checked={showShipped}
-                  onChange={(e) => setShowShipped(e.target.checked)}
-                />
-                <span>Отправленные</span>
-              </label>
-              <button className="mini" onClick={resetShipmentFilters}>
-                Сброс фильтров
-              </button>
-              <button className="mini" disabled={!canOperateProduction} onClick={openStrapDialog}>
-                Добавить обвязку
-              </button>
-              <button className="mini ok" disabled={!canOperateProduction} onClick={openCreatePlanDialog}>
-                Добавить план
-              </button>
-              <button
-                className="mini"
-                disabled={selectedShipments.length === 0}
-                onClick={exportSelectedShipmentToExcel}
-              >
-                Экспорт в Excel
-              </button>
-              <input
-                ref={importPlanFileRef}
-                type="file"
-                accept=".xlsx,.xls,.csv"
-                style={{ display: "none" }}
-                onChange={(e) => {
-                  const f = e.target.files && e.target.files[0];
-                  importShipmentPlanFromExcelFile(f);
-                }}
-              />
-              <button
-                className="mini"
-                disabled={actionLoading === "shipment:import" || !canOperateProduction}
-                onClick={() => importPlanFileRef.current?.click()}
-              >
-                {actionLoading === "shipment:import" ? "Импорт..." : "Импорт из Excel"}
-              </button>
-            </div>
-          )}
-          {view === "metal" && (
-            <div className="filters-right">
-              <input
-                ref={importMetalFileRef}
-                type="file"
-                accept=".xlsx,.xls,.csv"
-                style={{ display: "none" }}
-                onChange={(e) => {
-                  const f = e.target.files && e.target.files[0];
-                  importMetalFromExcelFile(f);
-                }}
-              />
-              <button
-                className="mini"
-                disabled={!canOperateProduction || actionLoading === "metal:import"}
-                onClick={() => importMetalFileRef.current?.click()}
-              >
-                {actionLoading === "metal:import" ? "Импорт..." : "Импорт из Excel"}
-              </button>
-            </div>
-          )}
-        </div>
-      </section>
+      <ViewControls
+        view={view}
+        overviewSubView={overviewSubView}
+        setOverviewSubView={setOverviewSubView}
+        tab={tab}
+        setTab={setTab}
+        warehouseSubView={warehouseSubView}
+        setWarehouseSubView={setWarehouseSubView}
+        laborSubView={laborSubView}
+        setLaborSubView={setLaborSubView}
+        query={query}
+        setQuery={setQuery}
+        weekFilter={weekFilter}
+        setWeekFilter={setWeekFilter}
+        weeks={weeks}
+        statsSort={statsSort}
+        setStatsSort={setStatsSort}
+        shipmentSort={shipmentSort}
+        setShipmentSort={setShipmentSort}
+        shipmentViewMode={shipmentViewMode}
+        setShipmentViewMode={setShipmentViewMode}
+        laborSort={laborSort}
+        setLaborSort={setLaborSort}
+        showAwaiting={showAwaiting}
+        setShowAwaiting={setShowAwaiting}
+        showOnPilka={showOnPilka}
+        setShowOnPilka={setShowOnPilka}
+        showOnKromka={showOnKromka}
+        setShowOnKromka={setShowOnKromka}
+        showOnPras={showOnPras}
+        setShowOnPras={setShowOnPras}
+        showReadyAssembly={showReadyAssembly}
+        setShowReadyAssembly={setShowReadyAssembly}
+        showAwaitShipment={showAwaitShipment}
+        setShowAwaitShipment={setShowAwaitShipment}
+        showShipped={showShipped}
+        setShowShipped={setShowShipped}
+        resetShipmentFilters={resetShipmentFilters}
+        canOperateProduction={canOperateProduction}
+        openStrapDialog={openStrapDialog}
+        openCreatePlanDialog={openCreatePlanDialog}
+        selectedShipments={selectedShipments}
+        exportSelectedShipmentToExcel={exportSelectedShipmentToExcel}
+        importPlanFileRef={importPlanFileRef}
+        actionLoading={actionLoading}
+        importShipmentPlanFromExcelFile={importShipmentPlanFromExcelFile}
+        warehouseSyncLoading={warehouseSyncLoading}
+        loading={loading}
+        syncWarehouseFromGoogleSheet={syncWarehouseFromGoogleSheet}
+        leftoversSyncLoading={leftoversSyncLoading}
+        syncLeftoversToGoogleSheet={syncLeftoversToGoogleSheet}
+        warehouseOrderPlanRows={warehouseOrderPlanRows}
+        printWarehouseOrderPlanPdf={printWarehouseOrderPlanPdf}
+        exportLaborTotalToExcel={exportLaborTotalToExcel}
+        laborTableRows={laborTableRows}
+        importLaborFileRef={importLaborFileRef}
+        importLaborTotalFromExcelFile={importLaborTotalFromExcelFile}
+        laborImportedRows={laborImportedRows}
+        setLaborImportedRows={setLaborImportedRows}
+        setLaborSaveSelected={setLaborSaveSelected}
+        setLaborSavingByKey={setLaborSavingByKey}
+        setLaborSavedByKey={setLaborSavedByKey}
+        importMetalFileRef={importMetalFileRef}
+        importMetalFromExcelFile={importMetalFromExcelFile}
+      />
 
       {!isOnline && (
         <div className="network-banner" role="status">
@@ -2613,6 +1755,8 @@ export default function App() {
             consumeHistoryTableRows={consumeHistoryTableRows}
             warehouseOrderPlanRows={warehouseOrderPlanRows}
             loading={loading}
+            canOperateProduction={canOperateProduction}
+            onManualConsume={openPilkaDoneConsumeDialog}
           />
         )}
         {view === "metal" && (

@@ -341,6 +341,7 @@ const RPC_MAP = {
   webEnqueueMetalWorkOrder: "web_enqueue_metal_work_order",
   webSetMetalWorkQueueStatus: "web_set_metal_work_queue_status",
   webGetLeftovers: "web_get_leftovers",
+  webGetLeftoversHistory: "web_get_leftovers_history",
   webGetLaborTable: "web_get_labor_table",
   webGetLaborKits: "web_get_labor_kits",
   webUpsertLaborFact: "web_upsert_labor_fact",
@@ -357,6 +358,7 @@ const RPC_MAP = {
   webSetCrmUserRole: "web_set_crm_user_role",
   webRemoveCrmUserRole: "web_remove_crm_user_role",
   webGetAuditLog: "web_get_audit_log",
+  webLogConsumeSheetsFailed: "web_audit_log_event",
   webUpsertItemColorMap: "web_upsert_item_color_map",
   webGetConsumeOptions: "web_get_consume_options",
   webPreviewPlanFromShipment: "web_preview_plan_from_shipment",
@@ -432,6 +434,9 @@ function buildRpcPayload(action, payload = {}) {
   if (action === "webGetConsumeHistory") {
     return { p_limit: Number(payload.limit || payload.p_limit || 300) };
   }
+  if (action === "webGetLeftoversHistory") {
+    return { p_limit: Number(payload.limit || payload.p_limit || 500) };
+  }
   if (action === "webPreviewPlanFromShipment") {
     return {
       p_row: payload.row != null ? String(payload.row) : null,
@@ -467,6 +472,19 @@ function buildRpcPayload(action, payload = {}) {
     return {
       p_order_id: String(payload.orderId || payload.p_order_id || "").trim(),
       p_comment: String(payload.text ?? payload.p_comment ?? "").trim(),
+    };
+  }
+  if (action === "webLogConsumeSheetsFailed") {
+    return {
+      p_action: "consume_sheets_failed",
+      p_entity: "orders",
+      p_entity_id: String(payload.orderId || payload.p_entity_id || "").trim() || null,
+      p_details: {
+        material: String(payload.material || "").trim() || null,
+        qty: Number(payload.qty || 0),
+        error: String(payload.error || "").trim() || "unknown",
+        source: "consume_dialog",
+      },
     };
   }
   if (action === "webSetMetalStock") {

@@ -10,6 +10,7 @@ export const KNOWN_ACTIONS: AuditAction[] = [
   "assign_role",
   "remove_role",
   "consume_sheets",
+  "consume_sheets_failed",
   "toggle_strict_mode",
 ];
 

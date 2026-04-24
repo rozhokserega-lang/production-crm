@@ -18,7 +18,7 @@ export function ConsumeDialog({
   return (
     <div className="dialog-backdrop">
       <div className="dialog-card">
-        <h3 style={{ marginTop: 0 }}>Списание листов после пилки</h3>
+        <h3 style={{ marginTop: 0 }}>Списание листов</h3>
         <div className="line2" style={{ marginBottom: 8 }}>
           <span>{consumeDialogData?.item || "Заказ"}</span>
           <span>ID: {consumeDialogData?.orderId || "-"}</span>

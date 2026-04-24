@@ -1,9 +1,4 @@
 import { useCallback, useEffect, useState } from "react";
-import {
-  getSupabaseAuthUser,
-  supabaseSignInWithPassword,
-  supabaseSignOut,
-} from "../api";
 
 const CRM_ROLES = ["viewer", "operator", "manager", "admin"];
 
@@ -76,6 +71,31 @@ function normalizeAuditLog(payload) {
   }));
 }
 
+/**
+ * Хук управления CRM-ролями, пользователями, аудитом и строгим режимом.
+ *
+ * Аутентификация (authEmail, authPassword, signInWithSupabase и т.д.) вынесена
+ * в хук useAuth(). Этот хук принимает auth-поля через пропсы и пробрасывает их
+ * наружу для обратной совместимости.
+ *
+ * @param {Object} options
+ * @param {string} options.view — текущий view
+ * @param {Function} options.callBackend — функция вызова бэкенда
+ * @param {Function} options.toUserError — нормализатор ошибок
+ * @param {boolean} options.authEnabled — разрешена ли аутентификация
+ * @param {Function} options.load — функция перезагрузки данных
+ * @param {Function} options.setError — функция установки ошибки
+ *
+ * // Auth-поля из useAuth (опционально, для проброса)
+ * @param {string} [options.authEmail]
+ * @param {string} [options.authPassword]
+ * @param {boolean} [options.authSaving]
+ * @param {object} [options.authUser]
+ * @param {Function} [options.setAuthEmail]
+ * @param {Function} [options.setAuthPassword]
+ * @param {Function} [options.signInWithSupabase]
+ * @param {Function} [options.signOutSupabaseUser]
+ */
 export function useCrmRole({
   view,
   callBackend,
@@ -83,6 +103,15 @@ export function useCrmRole({
   authEnabled,
   load,
   setError,
+  // Auth-поля из useAuth (пробрасываются для обратной совместимости)
+  authEmail: _authEmail,
+  authPassword: _authPassword,
+  authSaving: _authSaving,
+  authUser: _authUser,
+  setAuthEmail: _setAuthEmail,
+  setAuthPassword: _setAuthPassword,
+  signInWithSupabase: _signInWithSupabase,
+  signOutSupabaseUser: _signOutSupabaseUser,
 }) {
   const [crmRole, setCrmRole] = useState("viewer");
   const [crmAuthStrict, setCrmAuthStrict] = useState(false);
@@ -100,10 +129,6 @@ export function useCrmRole({
   const [newCrmUserId, setNewCrmUserId] = useState("");
   const [newCrmUserRole, setNewCrmUserRole] = useState("viewer");
   const [newCrmUserNote, setNewCrmUserNote] = useState("");
-  const [authEmail, setAuthEmail] = useState("");
-  const [authPassword, setAuthPassword] = useState("");
-  const [authSaving, setAuthSaving] = useState(false);
-  const [authUser, setAuthUser] = useState(() => getSupabaseAuthUser());
 
   const canAdminSettings = crmRole === "admin";
 
@@ -128,7 +153,7 @@ export function useCrmRole({
     return () => {
       cancelled = true;
     };
-  }, [authUser?.id, callBackend]);
+  }, [_authUser?.id, callBackend]);
 
   const loadCrmUsers = useCallback(async () => {
     if (!canAdminSettings) return;
@@ -255,51 +280,25 @@ export function useCrmRole({
     }
   }
 
-  async function signInWithSupabase() {
-    if (!authEnabled || authSaving) return;
-    const email = String(authEmail || "").trim();
-    if (!email || !authPassword) {
-      setError("Введите email и пароль.");
-      return;
-    }
-    setAuthSaving(true);
-    setError("");
-    try {
-      const session = await supabaseSignInWithPassword(email, authPassword);
-      setAuthUser(session?.user || null);
-      setAuthPassword("");
-      await load();
-    } catch (e) {
-      setError(toUserError(e));
-    } finally {
-      setAuthSaving(false);
-    }
-  }
-
-  async function signOutSupabaseUser() {
-    if (!authEnabled || authSaving) return;
-    setAuthSaving(true);
-    setError("");
-    try {
-      await supabaseSignOut();
-      setAuthUser(null);
-      setCrmUsers([]);
-      setAuditLog([]);
-      await load();
-    } catch (e) {
-      setError(toUserError(e));
-    } finally {
-      setAuthSaving(false);
-    }
-  }
-
   return {
+    // CRM-роль и строгий режим
     crmRole,
     crmAuthStrict,
     crmAuthStrictSaving,
+    canAdminSettings,
+
+    // CRM-пользователи
     crmUsers,
     crmUsersLoading,
     crmUsersSaving,
+    newCrmUserId,
+    newCrmUserRole,
+    newCrmUserNote,
+    setNewCrmUserId,
+    setNewCrmUserRole,
+    setNewCrmUserNote,
+
+    // Аудит
     auditLog,
     auditLoading,
     auditError,
@@ -307,27 +306,25 @@ export function useCrmRole({
     auditEntity,
     auditLimit,
     auditOffset,
-    newCrmUserId,
-    newCrmUserRole,
-    newCrmUserNote,
-    authEmail,
-    authPassword,
-    authSaving,
-    authUser,
-    setNewCrmUserId,
-    setNewCrmUserRole,
-    setNewCrmUserNote,
     setAuditAction,
     setAuditEntity,
-    setAuthEmail,
-    setAuthPassword,
+
+    // Действия
     toggleCrmAuthStrict,
     loadCrmUsers,
     loadAuditLog,
     updateCrmUserRole,
     removeCrmUserRole,
     createCrmUserRole,
-    signInWithSupabase,
-    signOutSupabaseUser,
+
+    // Auth-поля (проброшены из useAuth для обратной совместимости)
+    authEmail: _authEmail,
+    authPassword: _authPassword,
+    authSaving: _authSaving,
+    authUser: _authUser,
+    setAuthEmail: _setAuthEmail,
+    setAuthPassword: _setAuthPassword,
+    signInWithSupabase: _signInWithSupabase,
+    signOutSupabaseUser: _signOutSupabaseUser,
   };
 }
