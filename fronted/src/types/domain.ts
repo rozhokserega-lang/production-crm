@@ -156,4 +156,5 @@ export interface AuditLogParams {
   offset?: number;
   action?: AuditAction | null;
   entity?: AuditEntity | null;
+  [key: string]: unknown;
 }

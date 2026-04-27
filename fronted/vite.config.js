@@ -24,6 +24,9 @@ export default defineConfig({
   },
   server: {
     // GAS proxy removed — CRM uses only Supabase backend.
+    host: true,
+    port: 5173,
+    strictPort: false,
   },
   preview: {
     port: 4173,

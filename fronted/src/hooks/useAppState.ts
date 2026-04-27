@@ -193,8 +193,9 @@ import {
   resolvePlanMaterial,
   resolveSectionNameForOrder,
 } from "../app/appUtils";
+import type { UseAppStateReturn, ExecutorOptions } from "./useAppState.types";
 
-export function useAppState() {
+export function useAppState(): UseAppStateReturn {
   const [view, setView] = useState("shipment");
   const {
     tab,
@@ -205,7 +206,12 @@ export function useAppState() {
     setQuery,
     loading,
     setLoading,
-  } = useOrders();
+  } = useOrders() as unknown as {
+    tab: string; setTab: (v: string) => void;
+    rows: unknown[]; setRows: (v: unknown[]) => void;
+    query: string; setQuery: (v: string) => void;
+    loading: boolean; setLoading: (v: boolean) => void;
+  };
   const [overviewSubView, setOverviewSubView] = useState("kanban");
   const {
     shipmentBoard,
@@ -253,7 +259,25 @@ export function useAppState() {
     resetShipmentFilters,
     isSectionCollapsed,
     toggleSectionCollapsed,
-  } = useShipmentUiState(DEFAULT_SHIPMENT_PREFS);
+  } = useShipmentUiState(DEFAULT_SHIPMENT_PREFS) as unknown as {
+    selectedShipments: unknown[]; setSelectedShipments: (v: unknown[]) => void;
+    planPreviews: unknown[]; setPlanPreviews: (v: unknown[]) => void;
+    hoverTip: { visible: boolean; text: string; x: number; y: number }; setHoverTip: (v: unknown) => void;
+    weekFilter: string; setWeekFilter: (v: string) => void;
+    showAwaiting: boolean; setShowAwaiting: (v: boolean) => void;
+    showOnPilka: boolean; setShowOnPilka: (v: boolean) => void;
+    showOnKromka: boolean; setShowOnKromka: (v: boolean) => void;
+    showOnPras: boolean; setShowOnPras: (v: boolean) => void;
+    showReadyAssembly: boolean; setShowReadyAssembly: (v: boolean) => void;
+    showAwaitShipment: boolean; setShowAwaitShipment: (v: boolean) => void;
+    showShipped: boolean; setShowShipped: (v: boolean) => void;
+    hiddenShipmentGroups: Record<string, boolean>; setHiddenShipmentGroups: (v: Record<string, boolean>) => void;
+    shipmentSort: string; setShipmentSort: (v: string) => void;
+    shipmentViewMode: string; setShipmentViewMode: (v: string) => void;
+    resetShipmentFilters: () => void;
+    isSectionCollapsed: (name: string) => boolean;
+    toggleSectionCollapsed: (name: string) => void;
+  };
   const [statsSort, setStatsSort] = useState("stage");
   const [actionLoading, setActionLoading] = useState("");
   const [orderDrawerId, setOrderDrawerId] = useState("");
@@ -261,13 +285,13 @@ export function useAppState() {
   const rowsRef = useRef(rows);
   selectedShipmentsRef.current = selectedShipments;
   rowsRef.current = rows;
-  const [pendingStageActionKeys, setPendingStageActionKeys] = useState(() => new Set());
+  const [pendingStageActionKeys, setPendingStageActionKeys] = useState<Set<string>>(() => new Set());
   const { error, setError } = useError();
   const [isOnline, setIsOnline] = useState(
     typeof navigator === "undefined" ? true : navigator.onLine,
   );
-  const [executorByOrder, setExecutorByOrder] = useState({});
-  const [executorOptions, setExecutorOptions] = useState({
+  const [executorByOrder, setExecutorByOrder] = useState<Record<string, string>>({});
+  const [executorOptions, setExecutorOptions] = useState<ExecutorOptions>({
     kromka: KROMKA_EXECUTORS,
     pras: PRAS_EXECUTORS,
   });
@@ -312,7 +336,28 @@ export function useAppState() {
     setPlanQty,
     planSaving,
     setPlanSaving,
-  } = useShipmentDialogsState(STRAP_OPTIONS);
+  } = useShipmentDialogsState(STRAP_OPTIONS) as unknown as {
+    consumeDialogOpen: boolean; setConsumeDialogOpen: (v: boolean) => void;
+    consumeEditMode: boolean; setConsumeEditMode: (v: boolean) => void;
+    consumeDialogData: Record<string, unknown> | null; setConsumeDialogData: (v: Record<string, unknown> | null) => void;
+    consumeMaterial: string; setConsumeMaterial: (v: string) => void;
+    consumeQty: string; setConsumeQty: (v: string) => void;
+    consumeSaving: boolean; setConsumeSaving: (v: boolean) => void;
+    consumeError: string; setConsumeError: (v: string) => void;
+    consumeLoading: boolean; setConsumeLoading: (v: boolean) => void;
+    strapDialogOpen: boolean; setStrapDialogOpen: (v: boolean) => void;
+    strapTargetProduct: string; setStrapTargetProduct: (v: string) => void;
+    strapPlanWeek: string; setStrapPlanWeek: (v: string) => void;
+    strapDraft: Record<string, string>; setStrapDraft: (v: unknown) => void;
+    strapItems: unknown[]; setStrapItems: (v: unknown[]) => void;
+    planDialogOpen: boolean; setPlanDialogOpen: (v: boolean) => void;
+    planSection: string; setPlanSection: (v: string) => void;
+    planArticle: string; setPlanArticle: (v: string) => void;
+    planMaterial: string; setPlanMaterial: (v: string) => void;
+    planWeek: string; setPlanWeek: (v: string) => void;
+    planQty: string; setPlanQty: (v: string) => void;
+    planSaving: boolean; setPlanSaving: (v: boolean) => void;
+  };
   const {
     laborSort,
     setLaborSort,
@@ -330,9 +375,18 @@ export function useAppState() {
     setLaborSavingByKey,
     laborSavedByKey,
     setLaborSavedByKey,
-  } = useLaborState(view);
-  const [stageAuditRows, setStageAuditRows] = useState([]);
-  const [activeOrderIds, setActiveOrderIds] = useState([]);
+  } = useLaborState(view) as unknown as {
+    laborSort: string; setLaborSort: (v: string) => void;
+    laborSubView: string; setLaborSubView: (v: string) => void;
+    laborPlannerQtyByGroup: Record<string, number>; setLaborPlannerQtyByGroup: (v: unknown) => void;
+    laborRows: unknown[]; setLaborRows: (v: unknown[]) => void;
+    laborImportedRows: unknown[]; setLaborImportedRows: (v: unknown[]) => void;
+    laborSaveSelected: Record<string, boolean>; setLaborSaveSelected: (v: unknown) => void;
+    laborSavingByKey: Record<string, boolean>; setLaborSavingByKey: (v: unknown) => void;
+    laborSavedByKey: Record<string, boolean>; setLaborSavedByKey: (v: unknown) => void;
+  };
+  const [stageAuditRows, setStageAuditRows] = useState<Record<string, unknown>[]>([]);
+  const [activeOrderIds, setActiveOrderIds] = useState<string[]>([]);
   const laborStageFetchKeyRef = useRef("");
   const {
     warehouseRows,
@@ -369,12 +423,12 @@ export function useAppState() {
     furnitureSelectedQty,
     setFurnitureSelectedQty,
   } = useFurnitureData();
-  const importPlanFileRef = useRef(null);
-  const importMetalFileRef = useRef(null);
+  const importPlanFileRef = useRef<HTMLInputElement | null>(null);
+  const importMetalFileRef = useRef<HTMLInputElement | null>(null);
   const authEnabled = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
-  const isActionPending = useCallback((key) => pendingStageActionKeys.has(key), [pendingStageActionKeys]);
+  const isActionPending = useCallback((key: string) => pendingStageActionKeys.has(key), [pendingStageActionKeys]);
 
-  function denyActionByRole(message) {
+  function denyActionByRole(message: string): false {
     setError(message);
     return false;
   }
@@ -410,7 +464,7 @@ export function useAppState() {
     loadWarehouseDomainData,
     loadFurnitureDomainData,
     toUserError,
-  });
+  } as unknown as Parameters<typeof useDataLoader>[0]);
   const {
     authEmail,
     authPassword,
@@ -425,7 +479,12 @@ export function useAppState() {
     onAuthChange: load,
     setError,
     toUserError,
-  });
+  } as unknown as Parameters<typeof useAuth>[0]) as unknown as {
+    authEmail: string; authPassword: string; authSaving: boolean;
+    authUser: Record<string, unknown> | null;
+    setAuthEmail: (v: string) => void; setAuthPassword: (v: string) => void;
+    signInWithSupabase: () => Promise<void>; signOutSupabaseUser: () => Promise<void>;
+  };
 
   const {
     crmRole,
@@ -463,7 +522,22 @@ export function useAppState() {
     load,
     setError,
     authUser,
-  });
+  } as unknown as Parameters<typeof useCrmRole>[0]) as unknown as {
+    crmRole: string; crmAuthStrict: boolean; crmAuthStrictSaving: boolean;
+    crmUsers: Array<{ id: string; email: string; role: string; note?: string }>;
+    crmUsersLoading: boolean; crmUsersSaving: string;
+    auditLog: Array<Record<string, unknown>>; auditLoading: boolean; auditError: string;
+    auditAction: string; auditEntity: string; auditLimit: number; auditOffset: number;
+    newCrmUserId: string; newCrmUserRole: string; newCrmUserNote: string;
+    setNewCrmUserId: (v: string) => void; setNewCrmUserRole: (v: string) => void; setNewCrmUserNote: (v: string) => void;
+    setAuditAction: (v: string) => void; setAuditEntity: (v: string) => void;
+    toggleCrmAuthStrict: () => Promise<void>;
+    loadCrmUsers: () => Promise<void>;
+    loadAuditLog: (next?: Record<string, unknown>) => Promise<void>;
+    updateCrmUserRole: (userId: string, role: string) => Promise<void>;
+    removeCrmUserRole: (userId: string) => Promise<void>;
+    createCrmUserRole: () => Promise<void>;
+  };
   const canOperateProduction = crmRole === "operator" || crmRole === "manager" || crmRole === "admin";
   const canManageOrders = crmRole === "manager" || crmRole === "admin";
   const canAdminSettings = crmRole === "admin";
@@ -480,7 +554,14 @@ export function useAppState() {
     setWarehouseSyncLoading,
     setLeftoversSyncLoading,
     load,
-  });
+  } as unknown as Parameters<typeof useEdgeSync>[0]) as unknown as {
+    notifyAssemblyReadyTelegram: (meta: Record<string, unknown>) => Promise<void>;
+    notifyFinalStageTelegram: (meta: Record<string, unknown>) => Promise<void>;
+    syncWarehouseFromGoogleSheet: (params: Record<string, unknown>) => Promise<void>;
+    syncLeftoversToGoogleSheet: (params: Record<string, unknown>) => Promise<void>;
+    logConsumeToGoogleSheet: (params: Record<string, unknown>) => Promise<void>;
+    syncPlanCellToGoogleSheet: (params: Record<string, unknown>) => Promise<void>;
+  };
 
   const {
     closeConsumeDialog,
@@ -502,7 +583,12 @@ export function useAppState() {
     logConsumeToGoogleSheet,
     syncLeftoversToGoogleSheet,
     load,
-  });
+  } as unknown as Parameters<typeof useConsumeDialog>[0]) as unknown as {
+    closeConsumeDialog: () => void;
+    submitConsume: (materialRaw: string, qtyRaw: string) => Promise<void>;
+    openPilkaDoneConsumeDialog: (orderId: string, meta?: Record<string, unknown>) => void;
+    openPilkaDoneConsumeDialogOnError: (orderId: string, meta: Record<string, unknown>, error: unknown) => void;
+  };
 
   const {
     weeks,
@@ -521,7 +607,13 @@ export function useAppState() {
     planSection,
     planArticle,
     normalizeFurnitureKey,
-  });
+  } as unknown as Parameters<typeof useShipmentPlanningDerivedData>[0]) as unknown as {
+    weeks: string[];
+    sectionOptions: Array<{ value: string; label: string }>;
+    sectionArticles: Array<{ value: string; label: string }>;
+    articleLookupByItemKey: Record<string, string>;
+    resolvedPlanItem: Record<string, unknown> | null;
+  };
 
   const {
     furnitureSheetData,
@@ -539,7 +631,13 @@ export function useAppState() {
     furnitureSelectedQty,
     furnitureDetailArticleRows,
     furnitureArticleRows,
-  });
+  } as unknown as Parameters<typeof useFurnitureDerivedData>[0]) as unknown as {
+    furnitureSheetData: Array<Record<string, unknown>>;
+    furnitureTemplates: Array<Record<string, unknown>>;
+    furnitureSelectedTemplate: Record<string, unknown> | null;
+    furnitureQtyNumber: number;
+    furnitureGeneratedDetails: Array<Record<string, unknown>>;
+  };
 
   const {
     handlePlanSectionChange,
@@ -574,7 +672,14 @@ export function useAppState() {
     furnitureTemplates,
     syncPlanCellToGoogleSheet,
     load,
-  });
+  } as unknown as Parameters<typeof usePlanDialog>[0]) as unknown as {
+    handlePlanSectionChange: (nextSection: string) => void;
+    handlePlanArticleChange: (nextArticle: string) => void;
+    openCreatePlanDialog: () => void;
+    closeCreatePlanDialog: () => void;
+    saveCreatePlanDialog: () => Promise<void>;
+    previewCreatePlanDialog: () => void;
+  };
 
   const {
     strapOptionsByProduct,
@@ -587,7 +692,13 @@ export function useAppState() {
     strapTargetProduct,
     setStrapTargetProduct,
     fallbackOptions: STRAP_OPTIONS,
-  });
+  } as unknown as Parameters<typeof useStrapDerivedData>[0]) as unknown as {
+    strapOptionsByProduct: Array<{ product: string; options: Array<{ value: string; label: string }> }>;
+    strapProductBySizeToken: Record<string, string>;
+    strapProductsByArticleCode: Record<string, string>;
+    strapProductNames: string[];
+    strapOptionsForSelectedProduct: Array<{ value: string; label: string }>;
+  };
 
   const {
     openStrapDialog,
@@ -616,11 +727,14 @@ export function useAppState() {
     normalizeStrapProductKey,
     syncPlanCellToGoogleSheet,
     load,
-  });
+  } as unknown as Parameters<typeof useStrapDialog>[0]) as unknown as {
+    openStrapDialog: () => void;
+    saveStrapDialog: () => Promise<void>;
+  };
 
   const [adminCommentSaving, setAdminCommentSaving] = useState(false);
-  const crmRoleLabel = CRM_ROLE_LABELS[crmRole] || CRM_ROLE_LABELS.viewer;
-  const authUserLabel = String(authUser?.email || authUser?.phone || authUser?.id || "").trim();
+  const crmRoleLabel = CRM_ROLE_LABELS[crmRole as keyof typeof CRM_ROLE_LABELS] || CRM_ROLE_LABELS.viewer;
+  const authUserLabel = String((authUser as Record<string, unknown>)?.email || (authUser as Record<string, unknown>)?.phone || (authUser as Record<string, unknown>)?.id || "").trim();
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
@@ -636,17 +750,17 @@ export function useAppState() {
 
   useEffect(() => {
     if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-      const fallbackId = setInterval(() => load().catch(() => {}), 60000);
-      return () => clearInterval(fallbackId);
+      const fallbackId = window.setInterval(() => load().catch(() => {}), 60000);
+      return () => window.clearInterval(fallbackId);
     }
     const client = getSupabaseRealtimeClient();
     if (!client) {
-      const fallbackId = setInterval(() => load().catch(() => {}), 60000);
-      return () => clearInterval(fallbackId);
+      const fallbackId = window.setInterval(() => load().catch(() => {}), 60000);
+      return () => window.clearInterval(fallbackId);
     }
     let disposed = false;
-    let reloadTimer = null;
-    let fallbackId = null;
+    let reloadTimer: number | null = null;
+    let fallbackId: number | null = null;
 
     const scheduleReload = () => {
       if (disposed) return;
@@ -696,7 +810,7 @@ export function useAppState() {
       );
     });
 
-    channel.subscribe((status) => {
+    channel.subscribe((status: string) => {
       if (status === "SUBSCRIBED") {
         clearFallbackPolling();
         return;
@@ -724,11 +838,11 @@ export function useAppState() {
       try {
         const payload = await OrderService.getCrmExecutors();
         if (cancelled) return;
-        const source =
+        const source: Record<string, unknown> =
           Array.isArray(payload) && payload.length > 0 && payload[0] && typeof payload[0] === "object"
-            ? payload[0]
+            ? (payload[0] as Record<string, unknown>)
             : payload && typeof payload === "object"
-              ? payload
+              ? (payload as Record<string, unknown>)
               : {};
         setExecutorOptions({
           kromka: normalizeExecutorList(source.kromka_executors || source.kromka, KROMKA_EXECUTORS),
@@ -760,7 +874,14 @@ export function useAppState() {
     callBackend,
     setError,
     toUserError,
-  });
+  } as unknown as Parameters<typeof useWorkSchedule>[0]) as unknown as {
+    workScheduleLoading: boolean;
+    workScheduleSaving: boolean;
+    workSchedule: Array<{ day: string; start: string; end: string; lunchStart: string; lunchEnd: string; isWorking: boolean }>;
+    setWorkSchedule: (v: Array<{ day: string; start: string; end: string; lunchStart: string; lunchEnd: string; isWorking: boolean }>) => void;
+    loadWorkSchedule: () => Promise<void>;
+    saveWorkSchedule: () => Promise<void>;
+  };
   useEffect(() => {
     let alive = true;
     setFurnitureLoading(true);
@@ -770,15 +891,15 @@ export function useAppState() {
       .then((buf) => XLSX.read(buf, { type: "array", cellFormula: true, cellNF: true, cellText: true }))
       .then((wb) => {
         if (!alive) return;
-        const names = Array.isArray(wb?.SheetNames) ? wb.SheetNames : [];
-        setFurnitureWorkbook(wb);
+        const names = Array.isArray((wb as XLSX.WorkBook)?.SheetNames) ? (wb as XLSX.WorkBook).SheetNames : [];
+        setFurnitureWorkbook(wb as unknown as Record<string, unknown>);
         const nextSheet = names.includes(furnitureActiveSheet) ? furnitureActiveSheet : String(names[0] || "");
         setFurnitureActiveSheet(nextSheet);
-        const templates = buildFurnitureTemplates(wb, nextSheet);
+        const templates = buildFurnitureTemplates(wb as XLSX.WorkBook, nextSheet);
         const firstProduct = String(templates[0]?.productName || "");
-        setFurnitureSelectedProduct((prev) => prev || firstProduct);
+        setFurnitureSelectedProduct(firstProduct || furnitureSelectedProduct);
       })
-      .catch((e) => {
+      .catch((e: unknown) => {
         if (!alive) return;
         setFurnitureError(`Не удалось прочитать файл Мебель.xlsx: ${extractErrorMessage(e)}`);
       })
@@ -794,14 +915,14 @@ export function useAppState() {
     if (view !== "warehouse") setWarehouseSubView("sheets");
   }, [view]);
 
-  async function overrideOrderStageFromDrawer(orderId, stage, status) {
+  async function overrideOrderStageFromDrawer(orderId: string, stage: string, status: string): Promise<void> {
     if (!canAdminSettings) {
       denyActionByRole("Только администратор может вручную менять этап из канбана.");
       return;
     }
     const stageKey = String(stage || "").trim().toLowerCase();
     const statusKey = String(status || "").trim().toLowerCase();
-    const stageMap = {
+    const stageMap: Record<string, Record<string, string>> = {
       pilka: {
         in_work: "webSetPilkaInWork",
         done: "webSetPilkaDone",
@@ -852,12 +973,23 @@ export function useAppState() {
     selectedShipments,
     articleLookupByItemKey,
     normalizeFurnitureKey,
-  });
+  } as unknown as Parameters<typeof useMetalState>[0]) as unknown as {
+    metalStockRows: unknown[];
+    metalSavingArticle: string;
+    setMetalSavingArticle: (v: string) => void;
+    selectedShipmentMetal: { rows: Array<Record<string, unknown>> };
+    loadMetalStock: () => Promise<void>;
+    loadMetalQueue: () => Promise<void>;
+    adjustMetalStock: (article: string, delta: number) => Promise<void>;
+  };
 
   const { shipmentOrderMaps, orderIndexById } = useShipmentOrderIndexes({
     shipmentOrders,
     rows,
-  });
+  } as unknown as Parameters<typeof useShipmentOrderIndexes>[0]) as unknown as {
+    shipmentOrderMaps: Record<string, unknown>;
+    orderIndexById: Record<string, unknown>;
+  };
 
   const { runAction } = useStageActions({
     canOperateProduction,
@@ -874,7 +1006,9 @@ export function useAppState() {
     notifyFinalStageTelegram,
     openPilkaDoneConsumeDialog,
     openPilkaDoneConsumeDialogOnError,
-  });
+  } as unknown as Parameters<typeof useStageActions>[0]) as unknown as {
+    runAction: (action: string, payload?: Record<string, unknown>) => Promise<void>;
+  };
 
   const baseOrderFiltered = useBaseOrderFilter({
     rows,
@@ -886,19 +1020,19 @@ export function useAppState() {
     isStorageLikeName,
     isObvyazkaSectionName,
     isGarbageShipmentItemName,
-  });
+  } as unknown as Parameters<typeof useBaseOrderFilter>[0]) as unknown as Record<string, unknown>[];
   const laborFiltered = useLaborFilter({
-    laborRows: [...laborRows, ...laborImportedRows],
+    laborRows: [...(laborRows as unknown[]), ...(laborImportedRows as unknown[])],
     query,
     weekFilter,
-  });
+  } as unknown as Parameters<typeof useLaborFilter>[0]) as unknown as Record<string, unknown>[];
   const sheetMirrorFiltered = useSheetMirrorFilter({
     rows,
     query,
-  });
+  } as unknown as Parameters<typeof useSheetMirrorFilter>[0]) as unknown as Record<string, unknown>[];
 
   const shipmentStageFilter = useCallback(
-    (stageKey) => passesShipmentStageFilter(stageKey, {
+    (stageKey: string) => passesShipmentStageFilter(stageKey, {
       showAwaiting,
       showOnPilka,
       showOnKromka,
@@ -920,7 +1054,7 @@ export function useAppState() {
     isGarbageShipmentItemName,
     getShipmentStageKey,
     passesShipmentStageFilter: shipmentStageFilter,
-  });
+  } as unknown as Parameters<typeof useShipmentFilter>[0]) as unknown as Record<string, unknown>[];
 
   const { filtered, orderDrawerLines } = useCommonDerivedData({
     view,
@@ -930,10 +1064,13 @@ export function useAppState() {
     baseOrderFiltered,
     rows,
     orderDrawerId,
-  });
+  } as unknown as Parameters<typeof useCommonDerivedData>[0]) as unknown as {
+    filtered: Record<string, unknown>[];
+    orderDrawerLines: Record<string, unknown>[];
+  };
 
   const saveOrderAdminComment = useCallback(
-    async (text) => {
+    async (text: string) => {
       const id = String(orderDrawerId || "").trim();
       if (!id || !canAdminSettings) return;
       setAdminCommentSaving(true);
@@ -971,7 +1108,7 @@ export function useAppState() {
     let cancelled = false;
     const stageSourceRows =
       laborSubView === "stages"
-        ? (rows || []).filter((x) => {
+        ? (rows as Record<string, unknown>[] || []).filter((x) => {
             const byWeek = weekFilter === "all" || String(x?.week || "") === weekFilter;
             if (!byWeek) return false;
             const q = String(query || "").trim().toLowerCase();
@@ -985,7 +1122,7 @@ export function useAppState() {
           })
         : filtered;
     const ids = (stageSourceRows || [])
-      .map((x) => String(x?.orderId || x?.order_id || "").trim())
+      .map((x: Record<string, unknown>) => String(x?.orderId || x?.order_id || "").trim())
       .filter(Boolean);
     const uniqueIds = Array.from(new Set(ids)).sort();
     const fetchKey = `${view}|${laborSubView}|${weekFilter}|${query}|${uniqueIds.join(",")}`;
@@ -1032,7 +1169,12 @@ export function useAppState() {
     shipmentSort,
     materialsStockRows,
     strapItems,
-  });
+  } as unknown as Parameters<typeof useShipmentBoardRenderDerived>[0]) as unknown as {
+    overviewShippedOnly: boolean;
+    visibleCellsForItem: (item: string) => Record<string, unknown>[];
+    sortItemsForShipment: (items: string[]) => string[];
+    shipmentRenderSections: Array<Record<string, unknown>>;
+  };
 
   const { kpi, statsGroups, statsList, overviewColumns, shipmentKpi } = useDashboardDerivedData({
     filtered,
@@ -1046,7 +1188,13 @@ export function useAppState() {
     getWeekday,
     getStageLabel,
     getOverviewLaneId,
-  });
+  } as unknown as Parameters<typeof useDashboardDerivedData>[0]) as unknown as {
+    kpi: Record<string, unknown>;
+    statsGroups: Array<Record<string, unknown>>;
+    statsList: Array<Record<string, unknown>>;
+    overviewColumns: Array<Record<string, unknown>>;
+    shipmentKpi: Record<string, unknown>;
+  };
   const workshopRows = useWorkshopRows({
     filtered,
     view,
@@ -1055,7 +1203,7 @@ export function useAppState() {
     isInWork,
     getOverviewLaneId,
     isOrderCustomerShipped,
-  });
+  } as unknown as Parameters<typeof useWorkshopRows>[0]) as unknown as Record<string, unknown>[];
   const {
     shipmentMaterialBalance,
     shipmentTableRowsWithStockStatus,
@@ -1071,13 +1219,18 @@ export function useAppState() {
     stageLabel,
     normalizeFurnitureKey,
     hiddenShipmentGroups,
-  });
+  } as unknown as Parameters<typeof useShipmentTableData>[0]) as unknown as {
+    shipmentMaterialBalance: Record<string, number>;
+    shipmentTableRowsWithStockStatus: Array<Record<string, unknown>>;
+    shipmentTableGroupNames: string[];
+    shipmentPlanDeficits: Array<Record<string, unknown>>;
+  };
   const warehouseOrderPlanRows = useWarehouseOrderPlanRows({
     shipmentBoard,
     materialsStockRows,
     getMaterialLabel,
     normalizeFurnitureKey,
-  });
+  } as unknown as Parameters<typeof useWarehouseOrderPlanRows>[0]) as unknown as Record<string, unknown>[];
 
   const printWarehouseOrderPlanPdf = useCallback(() => {
     const rows = warehouseOrderPlanRows;
@@ -1088,7 +1241,7 @@ export function useAppState() {
     const now = new Date().toLocaleString("ru-RU", { timeZone: "Europe/Moscow" });
     const htmlRows = rows
       .map(
-        (r, idx) => `
+        (r: Record<string, unknown>, idx: number) => `
           <tr>
             <td>${idx + 1}</td>
             <td>${String(r.material || "")}</td>
@@ -1142,7 +1295,10 @@ export function useAppState() {
     view,
     filtered,
     laborSort,
-  });
+  } as unknown as Parameters<typeof useLaborDerivedData>[0]) as unknown as {
+    laborTableRows: Array<Record<string, unknown>>;
+    laborOrdersRows: Array<Record<string, unknown>>;
+  };
   const { laborStageTimelineRows, laborPlannerRows, laborKpi } = useLaborStageAnalytics({
     view,
     laborSubView,
@@ -1154,7 +1310,11 @@ export function useAppState() {
     laborOrdersRows,
     laborPlannerQtyByGroup,
     laborTableRows,
-  });
+  } as unknown as Parameters<typeof useLaborStageAnalytics>[0]) as unknown as {
+    laborStageTimelineRows: Array<Record<string, unknown>>;
+    laborPlannerRows: Array<Record<string, unknown>>;
+    laborKpi: Record<string, unknown>;
+  };
   const { warehouseTableRows, leftoversTableRows, consumeHistoryTableRows } = useWarehouseTableData({
     view,
     query,
@@ -1163,7 +1323,11 @@ export function useAppState() {
     leftoversHistoryRows,
     consumeHistoryRows,
     pilkaDoneHistoryRows,
-  });
+  } as unknown as Parameters<typeof useWarehouseTableData>[0]) as unknown as {
+    warehouseTableRows: Array<Record<string, unknown>>;
+    leftoversTableRows: Array<Record<string, unknown>>;
+    consumeHistoryTableRows: Array<Record<string, unknown>>;
+  };
 
   const {
     selectedShipmentSummary,
@@ -1177,13 +1341,18 @@ export function useAppState() {
     parseStrapSize,
     strapSheetWidth: STRAP_SHEET_WIDTH,
     strapSheetHeight: STRAP_SHEET_HEIGHT,
-  });
+  } as unknown as Parameters<typeof useShipmentSelectionStats>[0]) as unknown as {
+    selectedShipmentSummary: Record<string, unknown>;
+    sendableSelectedCount: number;
+    selectedShipmentStockCheck: Array<Record<string, unknown>>;
+    strapCalculation: Array<Record<string, unknown>>;
+  };
   const sendSelectedShipmentToWork = useCallback(async () => {
     if (!canOperateProduction) {
       denyActionByRole("Недостаточно прав для отправки заказов в работу.");
       return;
     }
-    const current = selectedShipmentsRef.current;
+    const current = selectedShipmentsRef.current as Array<Record<string, unknown>>;
     if (!current.length) return;
     const sendable = current.filter((s) => !!s.canSendToWork);
     if (!sendable.length) {
@@ -1193,18 +1362,18 @@ export function useAppState() {
     setActionLoading("shipment:bulk");
     setError("");
     try {
-      const metalDeficits = (selectedShipmentMetal.rows || []).filter((x) => Number(x.deficitQty || 0) > 0);
+      const metalDeficits = ((selectedShipmentMetal as Record<string, unknown>).rows as Array<Record<string, unknown>> || []).filter((x: Record<string, unknown>) => Number(x.deficitQty || 0) > 0);
       const hasMetalDeficit = metalDeficits.length > 0;
       if (hasMetalDeficit) {
         for (const s of sendable) {
           await OrderService.enqueueMetalWorkOrder({
-            sourceRow: s.row,
-            sourceCol: s.col,
-            item: s.item,
-            week: s.week,
-            qty: Number(s.qty || 0),
+            sourceRow: (s as Record<string, unknown>).row,
+            sourceCol: (s as Record<string, unknown>).col,
+            item: (s as Record<string, unknown>).item,
+            week: (s as Record<string, unknown>).week,
+            qty: Number((s as Record<string, unknown>).qty || 0),
             reason: "Нехватка металла при отправке в работу",
-            shortage: metalDeficits.map((d) => ({
+            shortage: metalDeficits.map((d: Record<string, unknown>) => ({
               metalArticle: d.metalArticle,
               metalName: d.metalName,
               deficitQty: d.deficitQty,
@@ -1215,12 +1384,12 @@ export function useAppState() {
         }
       }
       for (const s of sendable) {
-        const attempts = buildShipmentCellAttempts(s);
+        const attempts = buildShipmentCellAttempts(s as Record<string, unknown>);
         await runShipmentCellActionWithFallback({
-          actionFn: (params) => OrderService.sendShipmentToWork(params.row, params.col),
+          actionFn: (params: Record<string, unknown>) => OrderService.sendShipmentToWork(params.row as string, params.col as string),
           attempts,
           isMissingError: isShipmentCellMissingError,
-          requestBuilder: (p) => ({ row: p.row, col: p.col }),
+          requestBuilder: ((p) => ({ row: (p as Record<string, unknown>).row, col: (p as Record<string, unknown>).col })) as (p: Record<string, unknown>) => Record<string, unknown>,
         });
       }
       setPlanPreviews([]);
@@ -1244,7 +1413,7 @@ export function useAppState() {
       denyActionByRole("Недостаточно прав для удаления позиций из плана.");
       return;
     }
-    const current = selectedShipmentsRef.current;
+    const current = selectedShipmentsRef.current as Array<Record<string, unknown>>;
     if (!current.length) return;
     const deletable = current.filter((s) => !!s.canSendToWork);
     if (!deletable.length) {
@@ -1257,12 +1426,12 @@ export function useAppState() {
     setError("");
     try {
       for (const s of deletable) {
-        const attempts = buildShipmentCellAttempts(s);
+        const attempts = buildShipmentCellAttempts(s as Record<string, unknown>);
         await runShipmentCellActionWithFallback({
-          actionFn: (params) => OrderService.deleteShipmentPlanCell({ p_row: params.p_row, p_col: params.p_col, row: params.p_row, col: params.p_col }),
+          actionFn: (params: Record<string, unknown>) => OrderService.deleteShipmentPlanCell({ p_row: params.p_row, p_col: params.p_col, row: params.p_row, col: params.p_col }),
           attempts,
           isMissingError: isShipmentCellMissingError,
-          requestBuilder: (p) => ({ p_row: p.row, p_col: p.col }),
+          requestBuilder: ((p) => ({ p_row: (p as Record<string, unknown>).row, p_col: (p as Record<string, unknown>).col })) as (p: Record<string, unknown>) => Record<string, unknown>,
         });
       }
       setPlanPreviews([]);
@@ -1275,7 +1444,7 @@ export function useAppState() {
     }
   }, [canManageOrders, setActionLoading, setError, setPlanPreviews, setSelectedShipments, load, toUserError, denyActionByRole]);
 
-  const deleteStatsOrder = useCallback(async (order) => {
+  const deleteStatsOrder = useCallback(async (order: Record<string, unknown>) => {
     if (!canManageOrders) {
       denyActionByRole("Недостаточно прав для удаления заказов.");
       return;
@@ -1289,7 +1458,7 @@ export function useAppState() {
       `Удалить заказ ${orderId || ""} из плана? Действие необратимо.`
     );
     if (!ok) return;
-    const currentRows = rowsRef.current;
+    const currentRows = rowsRef.current as Array<Record<string, unknown>>;
     const actionKey = getStatsDeleteActionKey(order, currentRows);
     setActionLoading(actionKey);
     setError("");
@@ -1297,7 +1466,7 @@ export function useAppState() {
       try {
         await OrderService.deleteOrder(orderId);
       } catch (deleteByOrderErr) {
-        const msg = String(deleteByOrderErr?.message || deleteByOrderErr || "");
+        const msg = String((deleteByOrderErr as Record<string, unknown>)?.message || deleteByOrderErr || "");
         const missingAction =
           msg.includes("не настроен для action") ||
           msg.includes("Unknown action") ||
@@ -1320,13 +1489,13 @@ export function useAppState() {
     }
   }, [canManageOrders, setActionLoading, setError, load, toUserError, denyActionByRole]);
 
-  const toggleShipmentSelection = useCallback((payload) => {
-    setSelectedShipments((prev) => {
-      const exists = prev.some((s) => s.row === payload.row && s.col === payload.col);
-      if (exists) return prev.filter((s) => !(s.row === payload.row && s.col === payload.col));
-      return [...prev, payload];
-    });
-  }, []);
+  const toggleShipmentSelection = useCallback((payload: Record<string, unknown>) => {
+    setSelectedShipments(
+      (selectedShipments as Array<Record<string, unknown>>).some((s) => s.row === payload.row && s.col === payload.col)
+        ? (selectedShipments as Array<Record<string, unknown>>).filter((s) => !(s.row === payload.row && s.col === payload.col))
+        : [...(selectedShipments as Array<Record<string, unknown>>), payload],
+    );
+  }, [selectedShipments]);
 
   useEffect(() => {
     if (!strapDialogOpen) return;
@@ -1334,9 +1503,9 @@ export function useAppState() {
     const nextDraft = remapStrapDraftByOptions(options, strapDraft);
     setStrapDraft(nextDraft);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [strapDialogOpen, strapTargetProduct, strapOptionsForSelectedProduct.join("|")]);
+  }, [strapDialogOpen, strapTargetProduct, (strapOptionsForSelectedProduct as Array<unknown>).join("|")]);
 
-  const createShelfPlanOrder = useCallback(async (payload) => {
+  const createShelfPlanOrder = useCallback(async (payload: Record<string, unknown>) => {
     if (!canOperateProduction) {
       denyActionByRole("Недостаточно прав для изменения плана.");
       return;
@@ -1358,7 +1527,7 @@ export function useAppState() {
     setActionLoading("shelf:create-plan");
     setError("");
     try {
-      const request = {
+      const request: Record<string, unknown> = {
         sectionName: "Система хранения",
         item: embedPlanItemArticle(item, article, qrQty),
         material,
@@ -1378,21 +1547,21 @@ export function useAppState() {
   }, [canOperateProduction, setActionLoading, setError, load, toUserError, denyActionByRole, syncPlanCellToGoogleSheet]);
 
   const previewSelectedShipmentPlan = useCallback(async () => {
-    const current = selectedShipmentsRef.current;
+    const current = selectedShipmentsRef.current as Array<Record<string, unknown>>;
     if (!current.length) return;
-    const strapSelections = current.filter((s) => isStrapVirtualRowId(s.row));
-    const shipmentSelections = current.filter((s) => !isStrapVirtualRowId(s.row));
+    const strapSelections = current.filter((s) => isStrapVirtualRowId(s.row as string));
+    const shipmentSelections = current.filter((s) => !isStrapVirtualRowId(s.row as string));
     setActionLoading("preview:batch");
     setError("");
     try {
       const generatedAt = formatDateTimeForPrint(new Date());
       const strapPreviews = buildStrapPreviewPlans(strapSelections, generatedAt);
-      let shipmentTableBySource = new Map();
+      let shipmentTableBySource = new Map<string, Record<string, unknown>>();
       try {
         const tableRows = await OrderService.getShipmentTable();
         const list = Array.isArray(tableRows) ? tableRows : [];
         shipmentTableBySource = new Map(
-          list.map((row) => [
+          list.map((row: Record<string, unknown>) => [
             `${String(row?.source_row_id || row?.sourceRowId || "").trim()}|${String(row?.source_col_id || row?.sourceColId || "").trim()}`,
             row,
           ]),
@@ -1400,7 +1569,7 @@ export function useAppState() {
       } catch (_) {
         shipmentTableBySource = new Map();
       }
-      const enrichPreview = (preview, shipmentRow) => {
+      const enrichPreview = (preview: Record<string, unknown>, shipmentRow: Record<string, unknown>) => {
         const withFurniture = enrichPreviewFromFurniture(preview, {
           furnitureTemplates,
           resolveFurnitureTemplateForPreview,
@@ -1450,7 +1619,7 @@ export function useAppState() {
       }
       if (shipmentSelections.length === 1) {
         const s = shipmentSelections[0];
-        const preview = await OrderService.previewPlanFromShipment(s.row, s.col);
+        const preview = await OrderService.previewPlanFromShipment(s.row as string, s.col as string);
         const enriched = preview ? enrichPreview({ ...preview, _key: `${s.row}-${s.col}` }, s) : null;
         const plans = enriched ? [enriched] : [];
         plans.push(...strapPreviews);
@@ -1479,7 +1648,7 @@ export function useAppState() {
   }, [setActionLoading, setError, setPlanPreviews, toUserError]);
 
   const exportSelectedShipmentToExcel = useCallback(() => {
-    const current = selectedShipmentsRef.current;
+    const current = selectedShipmentsRef.current as Array<Record<string, unknown>>;
     if (!current.length) return;
     const planNumberRaw = window.prompt("Введите номер плана для экспорта:", String(current[0]?.week || ""));
     if (planNumberRaw == null) return;
@@ -1510,7 +1679,7 @@ export function useAppState() {
     }
   }, [articleLookupByItemKey, normalizeFurnitureKey, setError]);
 
-  const importShipmentPlanFromExcelFile = useCallback(async (file) => {
+  const importShipmentPlanFromExcelFile = useCallback(async (file: File) => {
     if (!canOperateProduction) {
       denyActionByRole("Недостаточно прав для импорта плана.");
       return;
@@ -1532,7 +1701,7 @@ export function useAppState() {
       const firstSheet = String(wb?.SheetNames?.[0] || "");
       if (!firstSheet) throw new Error("В файле не найден лист.");
       const ws = wb.Sheets[firstSheet];
-      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: "" });
+      const rows: unknown[][] = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: "" });
       const importRows = parseImportPlanRows(rows);
       if (!importRows.length) {
         throw new Error(getImportPlanNoValidRowsError());
@@ -1561,7 +1730,7 @@ export function useAppState() {
     }
   }, [canOperateProduction, sectionArticleRows, setActionLoading, setError, load, importPlanFileRef, denyActionByRole]);
 
-  const importMetalFromExcelFile = useCallback(async (file) => {
+  const importMetalFromExcelFile = useCallback(async (file: File) => {
     if (!file) return;
     if (!canOperateProduction) {
       denyActionByRole("Недостаточно прав для импорта остатков металла.");
@@ -1575,7 +1744,7 @@ export function useAppState() {
       const firstSheet = String(wb?.SheetNames?.[0] || "");
       if (!firstSheet) throw new Error("В файле не найден лист.");
       const ws = wb.Sheets[firstSheet];
-      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: "" });
+      const rows: unknown[][] = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: "" });
       if (!rows.length) throw new Error("Файл пустой.");
 
       const importedRows = parseMetalImportRows(rows);
@@ -1616,7 +1785,12 @@ export function useAppState() {
     setLaborSaveSelected,
     setLaborSavingByKey,
     setLaborSavedByKey,
-  });
+  } as unknown as Parameters<typeof useLaborActions>[0]) as unknown as {
+    importLaborFileRef: React.RefObject<HTMLInputElement | null>;
+    exportLaborTotalToExcel: () => void;
+    importLaborTotalFromExcelFile: (file: File) => Promise<void>;
+    saveImportedLaborRowToDb: (row: Record<string, unknown>) => Promise<void>;
+  };
 
   return {
     // View state
@@ -1854,4 +2028,3 @@ export function useAppState() {
     executorByOrder, setExecutorByOrder,
     executorOptions,
   };
-}
