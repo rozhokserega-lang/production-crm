@@ -52,7 +52,9 @@ export function useLaborDerivedData({ view, filtered, laborSort }) {
       const n = norm(itemRaw);
       const sizeToken = extractSizeToken(itemRaw);
       // "Обвязка (1000_80)" and "1000_80" should be one group for labor aggregation.
-      if (n.includes("обвязка") || n.includes("планка") || sizeToken) {
+      // IMPORTANT: do not treat any "1350x650" sized product as a strap.
+      // Only explicit "обвязка" items are grouped as straps.
+      if (n.includes("обвязка")) {
         return sizeToken ? `Обвязка ${sizeToken}` : "Обвязка";
       }
       if (n.includes("1153") && n.includes("320")) return "";

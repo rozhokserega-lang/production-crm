@@ -75,7 +75,7 @@ export function useStageActions({
         );
       }
       try {
-        const data = await OrderService.updateOrderStage(orderId, action, payload);
+        await OrderService.updateOrderStage(orderId, action, payload);
         const stageSync = STAGE_SYNC_META[action];
         if (stageSync) {
           const sourceOrder = orderIndexById.get(String(orderId)) || {};

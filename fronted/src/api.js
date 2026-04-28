@@ -2,6 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import {
   SUPABASE_ANON_KEY,
   SUPABASE_URL,
+  SUPABASE_PROXY_URL,
 } from "./config";
 
 const SUPABASE_AUTH_STORAGE_KEY = "crm_supabase_auth_session";
@@ -81,6 +82,12 @@ function getSupabaseBaseUrl() {
   return String(SUPABASE_URL || "").replace(/\/$/, "");
 }
 
+function getSupabaseRpcBaseUrl() {
+  const proxy = String(SUPABASE_PROXY_URL || "").trim().replace(/\/$/, "");
+  if (proxy) return proxy;
+  return getSupabaseBaseUrl();
+}
+
 export function getSupabaseAuthSession() {
   return supabaseAuthSession;
 }
@@ -117,7 +124,7 @@ async function supabaseAuthFetch(path, body, bearerToken = "") {
   if (bearerToken) {
     headers.Authorization = `Bearer ${bearerToken}`;
   }
-  const res = await fetch(`${getSupabaseBaseUrl()}/auth/v1/${path}`, {
+  const res = await fetch(`${getSupabaseRpcBaseUrl()}/auth/v1/${path}`, {
     method: "POST",
     headers,
     body: body == null ? undefined : JSON.stringify(body),
@@ -501,7 +508,7 @@ export async function supabaseCall(action, payload = {}) {
   if (!rpcName) {
     throw new Error(`Supabase RPC не настроен для action: ${action}`);
   }
-  const url = `${SUPABASE_URL.replace(/\/$/, "")}/rest/v1/rpc/${rpcName}`;
+  const url = `${getSupabaseRpcBaseUrl()}/rest/v1/rpc/${rpcName}`;
   const body = buildRpcPayload(action, payload);
   const callWithToken = async (bearerToken) => {
     const res = await fetch(url, {

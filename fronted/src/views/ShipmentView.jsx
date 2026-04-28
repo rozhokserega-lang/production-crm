@@ -47,6 +47,24 @@ export const ShipmentView = memo(function ShipmentView({
   setSelectedShipments,
 }) {
   const isPlanPreviewOpen = planPreviews.length > 0;
+  const norm = (v) => {
+    const raw = String(v || "").trim();
+    if (!raw) return "";
+    const base = typeof normalizeFurnitureKey === "function"
+      ? normalizeFurnitureKey(raw)
+      : raw.toLowerCase().replace(/[ё]/g, "е").replace(/[^\p{L}\p{N}\s]/gu, " ").replace(/\s+/g, " ").trim();
+    return String(base || "").replace(/[xх×]/g, "x").replace(/\s+/g, " ").trim();
+  };
+  const isPlaceholderPlanPreview = (p) => {
+    const rows = Array.isArray(p?.rows) ? p.rows.filter((r) => String(r?.part || "").trim()) : [];
+    if (rows.length !== 1) return false;
+    const part = norm(rows[0]?.part);
+    const name1 = norm(p?.firstName);
+    const name2 = norm(p?.detailedName);
+    if (!part || (!name1 && !name2)) return false;
+    const qtyOk = Number(rows[0]?.qty || 0) === Number(p?.qty || 0);
+    return qtyOk && (part === name1 || part === name2);
+  };
 
   return (
     <div className={`shipment-layout ${isPlanPreviewOpen ? "is-plan-preview-open" : ""}`}>
@@ -210,10 +228,25 @@ export const ShipmentView = memo(function ShipmentView({
                       </div>
                     </div>
                     <table className="plan-table">
+                      {isPlaceholderPlanPreview(planPreview) && (
+                        <caption style={{ captionSide: "top", textAlign: "left", padding: "6px 0", color: "#b45309" }}>
+                          Показана строка-заглушка от сервера. Значит шаблон из Мебель.xlsx не применился (файл не загрузился или
+                          не найден шаблон для этого изделия).
+                          {planPreview?._furnitureDebug && (
+                            <div style={{ marginTop: 4, color: "#92400e", fontSize: 12 }}>
+                              debug: {String(planPreview._furnitureDebug.reason || "-")} / templates: {String(planPreview._furnitureDebug.templatesCount ?? "-")}
+                              {String(planPreview._furnitureDebug.furnitureLoading) === "true" ? " / loading" : ""}
+                              {String(planPreview._furnitureDebug.furnitureError || "").trim()
+                                ? ` / error: ${String(planPreview._furnitureDebug.furnitureError)}`
+                                : ""}
+                            </div>
+                          )}
+                        </caption>
+                      )}
                       <thead>
                         <tr>
                           <th className="w-model"></th>
-                          <th className="w-qty">{planPreview.qty || 0}</th>
+                          <th className="w-qty"></th>
                           <th>Деталь</th>
                           <th>Кол-во</th>
                           <th>Пила</th>
@@ -227,7 +260,9 @@ export const ShipmentView = memo(function ShipmentView({
                         {(planPreview.rows || []).map((r, i) => (
                           <tr key={`${r.part}-${i}`}>
                             <td>{i === 0 ? stripPlanItemMeta(planPreview.firstName || "") : ""}</td>
-                            <td></td>
+                            <td style={{ fontWeight: i === 0 ? 800 : 400 }}>
+                              {i === 0 ? (planPreview.qty || 0) : ""}
+                            </td>
                             <td>{stripPlanItemMeta(r.part)}</td>
                             <td>{r.qty}</td>
                             <td></td>

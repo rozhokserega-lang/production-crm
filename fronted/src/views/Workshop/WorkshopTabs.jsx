@@ -1,5 +1,3 @@
-import React from 'react';
-
 export function WorkshopTabs({ currentTab, onTabChange, tabs }) {
   return (
     <div className="workshop-tabs">

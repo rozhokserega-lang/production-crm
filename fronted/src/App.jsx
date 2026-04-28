@@ -1,4 +1,5 @@
 import { useAppState } from "./hooks/useAppState";
+import { useState } from "react";
 import { AppHeader } from "./components/AppHeader";
 import { ViewSwitcher } from "./components/ViewSwitcher";
 import { KpiGrid } from "./components/KpiGrid";
@@ -29,7 +30,6 @@ import {
 } from "./app/statusHelpers";
 import {
   getMaterialLabel,
-  getPlanPreviewArticleCode,
 } from "./app/orderHelpers";
 import {
   buildPlanPreviewQrPayload,
@@ -57,7 +57,6 @@ import {
   isOrderCustomerShipped,
 } from "./orderPipeline";
 import {
-  getStageClassByLabel,
   isDone,
   isInWork,
   resolveDefaultConsumeSheets,
@@ -65,6 +64,9 @@ import {
 } from "./app/appUtils";
 
 export default function App() {
+  const [manualLaborOpenNonce, setManualLaborOpenNonce] = useState(0);
+  const openManualLaborDialog = () => setManualLaborOpenNonce((x) => x + 1);
+
   const {
     // View state
     view, setView,
@@ -74,7 +76,7 @@ export default function App() {
     laborSubView, setLaborSubView,
     statsSort, setStatsSort,
     orderDrawerId, setOrderDrawerId,
-    actionLoading, setActionLoading,
+    actionLoading, setActionLoading: _setActionLoading,
     isOnline,
     error, setError,
 
@@ -111,17 +113,17 @@ export default function App() {
 
     // Data loading
     load,
-    rows, setRows,
+    rows: _rows, setRows: _setRows,
     query, setQuery,
-    loading, setLoading,
+    loading, setLoading: _setLoading,
 
     // Shipment data
-    shipmentBoard, setShipmentBoard,
-    planCatalogRows, setPlanCatalogRows,
-    sectionCatalogRows, setSectionCatalogRows,
-    sectionArticleRows, setSectionArticleRows,
-    shipmentOrders, setShipmentOrders,
-    materialsStockRows, setMaterialsStockRows,
+    shipmentBoard, setShipmentBoard: _setShipmentBoard,
+    planCatalogRows: _planCatalogRows, setPlanCatalogRows: _setPlanCatalogRows,
+    sectionCatalogRows: _sectionCatalogRows, setSectionCatalogRows: _setSectionCatalogRows,
+    sectionArticleRows: _sectionArticleRows, setSectionArticleRows: _setSectionArticleRows,
+    shipmentOrders, setShipmentOrders: _setShipmentOrders,
+    materialsStockRows: _materialsStockRows, setMaterialsStockRows: _setMaterialsStockRows,
     selectedShipments, setSelectedShipments,
     planPreviews, setPlanPreviews,
     hoverTip, setHoverTip,
@@ -141,48 +143,48 @@ export default function App() {
     toggleSectionCollapsed,
 
     // Dialogs state
-    consumeDialogOpen, setConsumeDialogOpen,
+    consumeDialogOpen, setConsumeDialogOpen: _setConsumeDialogOpen,
     consumeEditMode, setConsumeEditMode,
-    consumeDialogData, setConsumeDialogData,
+    consumeDialogData, setConsumeDialogData: _setConsumeDialogData,
     consumeMaterial, setConsumeMaterial,
     consumeQty, setConsumeQty,
-    consumeSaving, setConsumeSaving,
-    consumeError, setConsumeError,
-    consumeLoading, setConsumeLoading,
+    consumeSaving, setConsumeSaving: _setConsumeSaving,
+    consumeError, setConsumeError: _setConsumeError,
+    consumeLoading, setConsumeLoading: _setConsumeLoading,
     strapDialogOpen, setStrapDialogOpen,
     strapTargetProduct, setStrapTargetProduct,
     strapPlanWeek, setStrapPlanWeek,
     strapDraft, setStrapDraft,
     strapItems, setStrapItems,
-    planDialogOpen, setPlanDialogOpen,
-    planSection, setPlanSection,
-    planArticle, setPlanArticle,
-    planMaterial, setPlanMaterial,
+    planDialogOpen, setPlanDialogOpen: _setPlanDialogOpen,
+    planSection, setPlanSection: _setPlanSection,
+    planArticle, setPlanArticle: _setPlanArticle,
+    planMaterial, setPlanMaterial: _setPlanMaterial,
     planWeek, setPlanWeek,
     planQty, setPlanQty,
-    planSaving, setPlanSaving,
+    planSaving, setPlanSaving: _setPlanSaving,
 
     // Labor state
     laborSort, setLaborSort,
     laborPlannerQtyByGroup, setLaborPlannerQtyByGroup,
-    laborRows, setLaborRows,
+    laborRows: _laborRows, setLaborRows: _setLaborRows,
     laborImportedRows, setLaborImportedRows,
     laborSaveSelected, setLaborSaveSelected,
     laborSavingByKey, setLaborSavingByKey,
     laborSavedByKey, setLaborSavedByKey,
 
     // Warehouse data
-    warehouseRows, setWarehouseRows,
-    leftoversRows, setLeftoversRows,
-    leftoversHistoryRows, setLeftoversHistoryRows,
-    consumeHistoryRows, setConsumeHistoryRows,
-    pilkaDoneHistoryRows, setPilkaDoneHistoryRows,
+    warehouseRows: _warehouseRows, setWarehouseRows: _setWarehouseRows,
+    leftoversRows: _leftoversRows, setLeftoversRows: _setLeftoversRows,
+    leftoversHistoryRows: _leftoversHistoryRows, setLeftoversHistoryRows: _setLeftoversHistoryRows,
+    consumeHistoryRows: _consumeHistoryRows, setConsumeHistoryRows: _setConsumeHistoryRows,
+    pilkaDoneHistoryRows: _pilkaDoneHistoryRows, setPilkaDoneHistoryRows: _setPilkaDoneHistoryRows,
     warehouseSyncLoading,
     leftoversSyncLoading,
 
     // Furniture data
-    furnitureLoading, setFurnitureLoading,
-    furnitureError, setFurnitureError,
+    furnitureLoading, setFurnitureLoading: _setFurnitureLoading,
+    furnitureError, setFurnitureError: _setFurnitureError,
     furnitureSheetData,
     furnitureSelectedProduct, setFurnitureSelectedProduct,
     furnitureTemplates,
@@ -200,7 +202,7 @@ export default function App() {
     sectionOptions,
     sectionArticles,
     articleLookupByItemKey,
-    resolvedPlanItem,
+    resolvedPlanItem: _resolvedPlanItem,
     strapProductNames,
     strapOptionsForSelectedProduct,
     workScheduleLoading,
@@ -216,7 +218,7 @@ export default function App() {
     shipmentOrderMaps,
     runAction,
     isActionPending,
-    denyActionByRole,
+    denyActionByRole: _denyActionByRole,
     callBackend,
     filtered,
     orderDrawerLines,
@@ -224,7 +226,7 @@ export default function App() {
     visibleCellsForItem,
     sortItemsForShipment,
     shipmentRenderSections,
-    kpi, statsGroups, statsList, overviewColumns, shipmentKpi,
+    kpi, statsGroups: _statsGroups, statsList, overviewColumns, shipmentKpi,
     workshopRows,
     shipmentMaterialBalance,
     shipmentTableRowsWithStockStatus,
@@ -263,7 +265,7 @@ export default function App() {
     closeConsumeDialog,
     submitConsume,
     openPilkaDoneConsumeDialog,
-    openPilkaDoneConsumeDialogOnError,
+    openPilkaDoneConsumeDialogOnError: _openPilkaDoneConsumeDialogOnError,
     handlePlanSectionChange,
     handlePlanArticleChange,
     openCreatePlanDialog,
@@ -282,8 +284,8 @@ export default function App() {
     // Edge sync
     syncWarehouseFromGoogleSheet,
     syncLeftoversToGoogleSheet,
-    logConsumeToGoogleSheet,
-    syncPlanCellToGoogleSheet,
+    logConsumeToGoogleSheet: _logConsumeToGoogleSheet,
+    syncPlanCellToGoogleSheet: _syncPlanCellToGoogleSheet,
 
     // Executors
     executorByOrder, setExecutorByOrder,
@@ -392,6 +394,8 @@ export default function App() {
         setLaborSavedByKey={setLaborSavedByKey}
         importMetalFileRef={importMetalFileRef}
         importMetalFromExcelFile={importMetalFromExcelFile}
+        canAdminSettings={canAdminSettings}
+        openManualLaborDialog={openManualLaborDialog}
       />
 
       {!isOnline && (
@@ -478,6 +482,9 @@ export default function App() {
             callBackend={callBackend}
             setError={setError}
             loading={loading}
+            canAdminSettings={canAdminSettings}
+            load={load}
+            manualLaborOpenNonce={manualLaborOpenNonce}
           />
         )}
         {view === "warehouse" && (

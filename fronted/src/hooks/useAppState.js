@@ -3,7 +3,6 @@ import * as XLSX from "xlsx";
 import {
   callBackend,
   getSupabaseRealtimeClient,
-  isLikelyNetworkError,
 } from "../api";
 import {
   KROMKA_EXECUTORS,
@@ -16,21 +15,10 @@ import furnitureWorkbookUrl from "../assets/furniture.xlsx?url";
 import {
   getOverviewLaneId,
   getOrderStageDisplayLabel as getStageLabel,
-  isCustomerShippedOverall,
   isOrderCustomerShipped,
   resolvePipelineStage as getCurrentStage,
 } from "../orderPipeline";
 import {
-  getReadableTextColor,
-  isBlueCell,
-  isRedCell,
-  isYellowCell,
-  parseColor,
-  passesBlueYellowFilter,
-} from "../utils/colorUtils";
-import {
-  getShipmentCellStatus,
-  getShipmentCellStatusShort,
   getShipmentStageKey,
   isGarbageShipmentItemName,
   isObvyazkaSectionName,
@@ -40,7 +28,6 @@ import {
   buildFurnitureTemplates,
   canonicalStrapProductName,
   extractDetailSizeToken,
-  furnitureProductLabel,
   isStrapVirtualRowId,
   normalizeFurnitureKey,
   normalizeStrapProductKey,
@@ -94,22 +81,13 @@ import { useWarehouseData } from "../contexts/WarehouseDataContext";
 import { useFurnitureData } from "../contexts/FurnitureDataContext";
 import { OrderService } from "../services/orderService";
 import {
-  CONSUME_LOG_SHEET_NAME,
-  CRM_ROLES,
   CRM_ROLE_LABELS,
   DEFAULT_SHIPMENT_PREFS,
-  LEFTOVERS_SYNC_GID,
-  PLAN_SYNC_GID,
-  PLAN_SYNC_SHEET_ID,
-  STAGE_SYNC_META,
   STRAP_OPTIONS,
   STRAP_SHEET_HEIGHT,
   STRAP_SHEET_WIDTH,
-  WAREHOUSE_SYNC_GID,
-  WAREHOUSE_SYNC_SHEET_ID,
 } from "../app/appConstants";
 import {
-  getOverallStatusDisplay,
   stageBg,
   stageLabel,
   statusClass,
@@ -119,11 +97,8 @@ import {
   extractPlanItemArticle,
   getMaterialLabel,
   getPlanPreviewArticleCode,
-  hasArticleLikeCode,
 } from "../app/orderHelpers";
 import {
-  buildPlanPreviewQrPayload,
-  buildQrCodeUrl,
   resolvePlanPreviewArticleByName,
 } from "../app/planPreviewHelpers";
 import {
@@ -131,7 +106,6 @@ import {
   toUserError,
 } from "../app/errorCatalogHelpers";
 import {
-  formatDateTimeRu,
   isShipmentCellMissingError,
   normalizeOrder,
 } from "../app/rowHelpers";
@@ -144,11 +118,7 @@ import {
   resolveStatsOrderSourceCell,
 } from "../app/statsDeleteHelpers";
 import {
-  buildCreatePlanDialogInit,
-  buildStrapPlanCellPayload,
   buildStrapPreviewPlans,
-  buildStrapPlanRows,
-  buildStrapDialogInit,
   remapStrapDraftByOptions,
 } from "../app/shipmentDialogHelpers";
 import {
@@ -174,13 +144,10 @@ import {
   parseMetalImportRows,
 } from "../app/metalImportHelpers";
 import {
-  applyOptimisticOrderRow,
   buildPreviewRowsFromFurnitureTemplate,
   formatDateTimeForPrint,
   getColorGroup,
-  getStageClassByLabel,
   getWeekday,
-  hasOptimisticActionRule,
   isDone,
   isInWork,
   mergeShipmentBoardWithTable,
@@ -188,10 +155,6 @@ import {
   normalizeShipmentBoard,
   parseStrapSize,
   passesShipmentStageFilter,
-  resolveDefaultConsumeSheets,
-  resolveDefaultConsumeSheetsFromBoard,
-  resolvePlanMaterial,
-  resolveSectionNameForOrder,
 } from "../app/appUtils";
 
 export function useAppState() {
@@ -259,8 +222,12 @@ export function useAppState() {
   const [orderDrawerId, setOrderDrawerId] = useState("");
   const selectedShipmentsRef = useRef(selectedShipments);
   const rowsRef = useRef(rows);
-  selectedShipmentsRef.current = selectedShipments;
-  rowsRef.current = rows;
+  useEffect(() => {
+    selectedShipmentsRef.current = selectedShipments;
+  }, [selectedShipments]);
+  useEffect(() => {
+    rowsRef.current = rows;
+  }, [rows]);
   const [pendingStageActionKeys, setPendingStageActionKeys] = useState(() => new Set());
   const { error, setError } = useError();
   const [isOnline, setIsOnline] = useState(
@@ -374,10 +341,10 @@ export function useAppState() {
   const authEnabled = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
   const isActionPending = useCallback((key) => pendingStageActionKeys.has(key), [pendingStageActionKeys]);
 
-  function denyActionByRole(message) {
+  const denyActionByRole = useCallback((message) => {
     setError(message);
     return false;
-  }
+  }, [setError]);
 
   const { load } = useDataLoader({
     view,
@@ -540,6 +507,30 @@ export function useAppState() {
     furnitureDetailArticleRows,
     furnitureArticleRows,
   });
+
+  // If the user opens preview very early, templates may still be loading and
+  // previews will contain only the backend placeholder row. Once templates are ready,
+  // expand existing previews in-place.
+  useEffect(() => {
+    if (!Array.isArray(furnitureTemplates) || furnitureTemplates.length === 0) return;
+    setPlanPreviews((prev) => {
+      if (!Array.isArray(prev) || prev.length === 0) return prev;
+      let changed = false;
+      const next = prev.map((p) => {
+        const enriched = enrichPreviewFromFurniture(p, {
+          furnitureTemplates,
+          resolveFurnitureTemplateForPreview,
+          buildPreviewRowsFromFurnitureTemplate,
+          normalizeFurnitureKey,
+          furnitureLoading,
+          furnitureError,
+        });
+        if (enriched !== p) changed = true;
+        return enriched;
+      });
+      return changed ? next : prev;
+    });
+  }, [furnitureTemplates, furnitureLoading, furnitureError, setPlanPreviews]);
 
   const {
     handlePlanSectionChange,
@@ -766,7 +757,12 @@ export function useAppState() {
     setFurnitureLoading(true);
     setFurnitureError("");
     fetch(furnitureWorkbookUrl)
-      .then((r) => r.arrayBuffer())
+      .then((r) => {
+        if (!r.ok) {
+          throw new Error(`HTTP ${r.status} при загрузке ${r.url || furnitureWorkbookUrl}`);
+        }
+        return r.arrayBuffer();
+      })
       .then((buf) => XLSX.read(buf, { type: "array", cellFormula: true, cellNF: true, cellText: true }))
       .then((wb) => {
         if (!alive) return;
@@ -789,6 +785,7 @@ export function useAppState() {
     return () => {
       alive = false;
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   useEffect(() => {
     if (view !== "warehouse") setWarehouseSubView("sheets");
@@ -947,7 +944,7 @@ export function useAppState() {
         setAdminCommentSaving(false);
       }
     },
-    [orderDrawerId, canAdminSettings, load],
+    [orderDrawerId, canAdminSettings, load, setError],
   );
 
   useEffect(() => {
@@ -1016,7 +1013,7 @@ export function useAppState() {
     return () => {
       cancelled = true;
     };
-  }, [view, laborSubView, canManageOrders, filtered, rows, weekFilter, query, getOverviewLaneId, setError]);
+  }, [view, laborSubView, canManageOrders, filtered, rows, weekFilter, query, setError]);
 
   const {
     overviewShippedOnly,
@@ -1237,7 +1234,7 @@ export function useAppState() {
     } finally {
       setActionLoading("");
     }
-  }, [canOperateProduction, selectedShipmentMetal, setActionLoading, setError, setPlanPreviews, setSelectedShipments, load, view, loadMetalQueue, toUserError, denyActionByRole]);
+  }, [canOperateProduction, selectedShipmentMetal, setActionLoading, setError, setPlanPreviews, setSelectedShipments, load, view, loadMetalQueue, denyActionByRole]);
 
   const deleteSelectedShipmentPlan = useCallback(async () => {
     if (!canManageOrders) {
@@ -1273,7 +1270,7 @@ export function useAppState() {
     } finally {
       setActionLoading("");
     }
-  }, [canManageOrders, setActionLoading, setError, setPlanPreviews, setSelectedShipments, load, toUserError, denyActionByRole]);
+  }, [canManageOrders, setActionLoading, setError, setPlanPreviews, setSelectedShipments, load, denyActionByRole]);
 
   const deleteStatsOrder = useCallback(async (order) => {
     if (!canManageOrders) {
@@ -1318,7 +1315,7 @@ export function useAppState() {
     } finally {
       setActionLoading("");
     }
-  }, [canManageOrders, setActionLoading, setError, load, toUserError, denyActionByRole]);
+  }, [canManageOrders, setActionLoading, setError, load, denyActionByRole]);
 
   const toggleShipmentSelection = useCallback((payload) => {
     setSelectedShipments((prev) => {
@@ -1326,7 +1323,7 @@ export function useAppState() {
       if (exists) return prev.filter((s) => !(s.row === payload.row && s.col === payload.col));
       return [...prev, payload];
     });
-  }, []);
+  }, [setSelectedShipments]);
 
   useEffect(() => {
     if (!strapDialogOpen) return;
@@ -1375,7 +1372,7 @@ export function useAppState() {
     } finally {
       setActionLoading("");
     }
-  }, [canOperateProduction, setActionLoading, setError, load, toUserError, denyActionByRole, syncPlanCellToGoogleSheet]);
+  }, [canOperateProduction, setActionLoading, setError, load, denyActionByRole, syncPlanCellToGoogleSheet]);
 
   const previewSelectedShipmentPlan = useCallback(async () => {
     const current = selectedShipmentsRef.current;
@@ -1405,6 +1402,9 @@ export function useAppState() {
           furnitureTemplates,
           resolveFurnitureTemplateForPreview,
           buildPreviewRowsFromFurnitureTemplate,
+          normalizeFurnitureKey,
+          furnitureLoading,
+          furnitureError,
         });
         const withStrapProduct = enrichPreviewWithStrapProduct(withFurniture, shipmentRow, {
           canonicalStrapProductName,
@@ -1476,7 +1476,18 @@ export function useAppState() {
     } finally {
       setActionLoading("");
     }
-  }, [setActionLoading, setError, setPlanPreviews, toUserError]);
+  }, [
+    articleLookupByItemKey,
+    furnitureError,
+    furnitureLoading,
+    furnitureTemplates,
+    setActionLoading,
+    setError,
+    setPlanPreviews,
+    strapProductBySizeToken,
+    strapProductsByArticleCode,
+    strapTargetProduct,
+  ]);
 
   const exportSelectedShipmentToExcel = useCallback(() => {
     const current = selectedShipmentsRef.current;
@@ -1508,7 +1519,7 @@ export function useAppState() {
     } else {
       setError("");
     }
-  }, [articleLookupByItemKey, normalizeFurnitureKey, setError]);
+  }, [articleLookupByItemKey, setError]);
 
   const importShipmentPlanFromExcelFile = useCallback(async (file) => {
     if (!canOperateProduction) {

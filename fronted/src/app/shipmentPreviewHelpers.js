@@ -3,16 +3,73 @@ export function enrichPreviewFromFurniture(preview, deps = {}) {
   const existingRows = Array.isArray(preview.rows)
     ? preview.rows.filter((row) => String(row?.part || "").trim())
     : [];
-  // Keep backend preview rows when they exist; template rows are only a fallback.
-  if (existingRows.length > 0) return preview;
+  // Backend currently returns a placeholder row: [{ part: <item name>, qty: <qty> }].
+  // Treat that single "self-row" as empty so we can expand from furniture templates.
+  const normalizeText = deps.normalizeFurnitureKey;
+  const norm = (v) => {
+    const s = String(v || "").trim();
+    if (!s) return "";
+    const base = typeof normalizeText === "function"
+      ? normalizeText(s)
+      : s
+          .toLowerCase()
+          .replace(/[ё]/g, "е")
+          .replace(/[^\p{L}\p{N}\s]/gu, " ")
+          .replace(/\s+/g, " ")
+          .trim();
+    // Unify latin/cyrillic x and multiplication sign in sizes.
+    return String(base || "").replace(/[xх×]/g, "x").replace(/\s+/g, " ").trim();
+  };
+  const isPlaceholderSelfRow =
+    existingRows.length === 1 &&
+    String(existingRows[0]?.part || "").trim() &&
+    (norm(existingRows[0]?.part) === norm(preview?.firstName) ||
+      norm(existingRows[0]?.part) === norm(preview?.detailedName)) &&
+    Number(existingRows[0]?.qty || 0) === Number(preview?.qty || 0);
+
+  // Keep backend preview rows when they exist and are not the placeholder row.
+  if (existingRows.length > 0 && !isPlaceholderSelfRow) return preview;
   const resolveTemplate = deps.resolveFurnitureTemplateForPreview;
   const buildRows = deps.buildPreviewRowsFromFurnitureTemplate;
-  if (typeof resolveTemplate !== "function" || typeof buildRows !== "function") return preview;
-  const template = resolveTemplate(preview, deps.furnitureTemplates);
-  if (!template) return preview;
+  const templates = Array.isArray(deps.furnitureTemplates) ? deps.furnitureTemplates : [];
+  const furnitureError = String(deps.furnitureError || "").trim();
+  const furnitureLoading = Boolean(deps.furnitureLoading);
+  const debugBase = isPlaceholderSelfRow ? {
+    _furnitureDebug: {
+      isPlaceholder: true,
+      templatesCount: templates.length,
+      furnitureLoading,
+      furnitureError,
+      firstName: String(preview?.firstName || ""),
+      detailedName: String(preview?.detailedName || ""),
+      placeholderPart: String(existingRows[0]?.part || ""),
+    },
+  } : null;
+  if (typeof resolveTemplate !== "function" || typeof buildRows !== "function") {
+    return debugBase ? { ...preview, ...debugBase, _furnitureDebug: { ...debugBase._furnitureDebug, reason: "missing_helpers" } } : preview;
+  }
+  if (templates.length === 0) {
+    return debugBase ? { ...preview, ...debugBase, _furnitureDebug: { ...debugBase._furnitureDebug, reason: "templates_empty" } } : preview;
+  }
+  const template = resolveTemplate(preview, templates);
+  if (!template) {
+    return debugBase ? { ...preview, ...debugBase, _furnitureDebug: { ...debugBase._furnitureDebug, reason: "template_not_found" } } : preview;
+  }
   const rows = buildRows(template, preview.qty);
-  if (!Array.isArray(rows) || rows.length === 0) return preview;
-  return { ...preview, rows };
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return debugBase ? { ...preview, ...debugBase, _furnitureDebug: { ...debugBase._furnitureDebug, reason: "template_rows_empty", templateName: String(template?.productName || "") } } : preview;
+  }
+  return {
+    ...preview,
+    rows,
+    ...(debugBase || {}),
+    _furnitureDebug: {
+      ...(debugBase ? debugBase._furnitureDebug : {}),
+      reason: "applied",
+      templateName: String(template?.productName || ""),
+      expandedRows: rows.length,
+    },
+  };
 }
 
 export function enrichPreviewWithStrapProduct(preview, shipmentRow, deps = {}) {

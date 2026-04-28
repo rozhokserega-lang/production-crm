@@ -1,5 +1,3 @@
-import { OrderService } from "../services/orderService";
-
 export function buildShipmentCellAttempts(selection) {
   return [
     { row: selection?.row, col: selection?.col },

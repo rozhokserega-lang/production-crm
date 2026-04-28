@@ -98,6 +98,8 @@ git pull origin test
 
 cd /opt/apps/production-crm/fronted
 npm ci
+npm run lint
+npm run test:run
 npm run build
 
 rm -rf /var/www/crm-test/*

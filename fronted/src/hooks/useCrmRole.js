@@ -100,8 +100,8 @@ export function useCrmRole({
   view,
   callBackend,
   toUserError,
-  authEnabled,
-  load,
+  authEnabled: _authEnabled,
+  load: _load,
   setError,
   authUser,
 }) {

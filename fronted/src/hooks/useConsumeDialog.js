@@ -24,7 +24,7 @@ import { extractErrorMessage } from "../app/errorCatalogHelpers";
  */
 export function useConsumeDialog({
   canOperateProduction,
-  setError,
+  setError: _setError,
   consumeDialogData,
   setConsumeDialogOpen,
   setConsumeEditMode,

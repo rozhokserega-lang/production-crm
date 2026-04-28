@@ -1,4 +1,4 @@
-import { callBackend, supabaseCall } from "../api";
+import { callBackend } from "../api";
 
 /**
  * Единый сервисный слой для всех API-вызовов.

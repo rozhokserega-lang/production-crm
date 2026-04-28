@@ -298,7 +298,16 @@ export function buildPreviewRowsFromFurnitureTemplate(template, orderQty) {
   const qtyNum = Number(orderQty || 0);
   const baseQty = Number(template?.baseQty || 0) > 0 ? Number(template.baseQty) : 1;
   if (!(qtyNum > 0) || !Array.isArray(template?.details)) return [];
-  return template.details
+  const productKey = String(template?.productName || "")
+    .toLowerCase()
+    .replace(/[ё]/g, "е")
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const details = productKey === "авелла лайт"
+    ? template.details.slice(0, 3)
+    : template.details;
+  return details
     .map((d) => {
       const perUnit = Number(d?.perUnit || 0);
       const raw = perUnit > 0 ? perUnit * qtyNum : 0;

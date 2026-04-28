@@ -1,9 +1,11 @@
 /** Только из env. */
 const supabaseUrl = String(import.meta.env.VITE_SUPABASE_URL || "").trim();
 const supabaseAnon = String(import.meta.env.VITE_SUPABASE_ANON_KEY || "").trim();
+const supabaseProxyUrl = String(import.meta.env.VITE_SUPABASE_PROXY_URL || "").trim();
 
 export const SUPABASE_URL = supabaseUrl;
 export const SUPABASE_ANON_KEY = supabaseAnon;
+export const SUPABASE_PROXY_URL = supabaseProxyUrl;
 
 function parseListEnv(name, fallback) {
   const raw = String(import.meta.env[name] || "").trim();

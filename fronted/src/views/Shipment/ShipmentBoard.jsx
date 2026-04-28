@@ -1,8 +1,6 @@
-import React from 'react';
-
 export function ShipmentBoard({ 
   board, 
-  viewMode, 
+  viewMode: _viewMode, 
   hiddenGroups, 
   onToggleGroup, 
   onSelect, 

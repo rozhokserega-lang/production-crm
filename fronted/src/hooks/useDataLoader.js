@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef } from "react";
 
 export function useDataLoader({
   view,
-  tab,
+  tab: _tab,
   callBackend,
   SHEET_MIRROR_GID,
   setLoading,

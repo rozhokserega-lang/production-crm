@@ -74,7 +74,7 @@ export function OrderDrawer({
   const [overrideStage, setOverrideStage] = useState("kromka");
   const [overrideStatus, setOverrideStatus] = useState("wait");
   const [overrideSaving, setOverrideSaving] = useState(false);
-  const [clockTick, setClockTick] = useState(Date.now());
+  const [clockTick, setClockTick] = useState(() => Date.now());
 
   useEffect(() => {
     if (!open) return undefined;

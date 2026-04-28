@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { STAGE_SYNC_META } from '../../constants/stages';
 import { ALL_EXECUTORS, KROMKA_EXECUTORS, PRAS_EXECUTORS } from '../../config';
 
@@ -10,7 +10,7 @@ export function OrderCard({
   onStageAction, 
   onExecutorChange 
 }) {
-  const [showExecutorSelect, setShowExecutorSelect] = useState(false);
+  const [_showExecutorSelect, _setShowExecutorSelect] = useState(false);
   
   const orderId = order.orderId || order.order_id;
   const isOrderLoading = actionLoading && actionLoading.includes(orderId);

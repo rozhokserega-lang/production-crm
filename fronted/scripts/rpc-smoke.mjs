@@ -55,7 +55,21 @@ const requiredRpcs = [
   "web_get_labor_table",
 ];
 
-async function callRpc(rpcName) {
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRetryableFetchError(error) {
+  const message = String(error?.message || error || "").toLowerCase();
+  return (
+    message.includes("fetch failed") ||
+    message.includes("network") ||
+    message.includes("timeout") ||
+    message.includes("econnreset")
+  );
+}
+
+async function callRpcOnce(rpcName) {
   const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${rpcName}`, {
     method: "POST",
     headers: {
@@ -80,6 +94,22 @@ async function callRpc(rpcName) {
 
   const rows = Array.isArray(json) ? json.length : json == null ? 0 : 1;
   return { rpcName, rows };
+}
+
+async function callRpc(rpcName) {
+  const maxAttempts = 3;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await callRpcOnce(rpcName);
+    } catch (error) {
+      if (attempt >= maxAttempts || !isRetryableFetchError(error)) {
+        throw error;
+      }
+      console.warn(`[rpc-smoke] ${rpcName}: retry ${attempt}/${maxAttempts} after ${error.message || error}`);
+      await sleep(500 * attempt);
+    }
+  }
+  throw new Error(`${rpcName} failed after retries`);
 }
 
 async function main() {

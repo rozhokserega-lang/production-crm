@@ -89,6 +89,8 @@ else
   npm install
 fi
 
+npm run lint
+npm run test:run
 npm run build
 
 if [[ "$REQUIRE_PROXY" == "1" ]]; then

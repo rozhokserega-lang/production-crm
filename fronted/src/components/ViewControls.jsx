@@ -64,6 +64,8 @@ export function ViewControls({
   setLaborSavedByKey,
   importMetalFileRef,
   importMetalFromExcelFile,
+  canAdminSettings,
+  openManualLaborDialog,
 }) {
   return (
     <section className="controls">
@@ -265,6 +267,11 @@ export function ViewControls({
             >
               Очистить импорт
             </button>
+            {canAdminSettings && typeof openManualLaborDialog === "function" && (
+              <button className="mini ok" type="button" onClick={openManualLaborDialog}>
+                Добавить вручную
+              </button>
+            )}
           </div>
         )}
         {view === "shipment" && (

@@ -1,5 +1,3 @@
-import React from 'react';
-
 export function ShipmentSummary({ shipments }) {
   const totalQty = shipments.reduce((sum, s) => {
     return sum + (s.cells || []).reduce((cellSum, cell) => cellSum + (Number(cell.qty) || 0), 0);
