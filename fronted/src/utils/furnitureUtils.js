@@ -101,6 +101,17 @@ export function parseFurnitureSheet(workbook, sheetName) {
   return { headers, rows: allRows.slice(1) };
 }
 
+function resolveDetailQtyOverride({ productName, detailName, baseQty, detailQty }) {
+  const pKey = normalizeFurnitureKey(productName);
+  const size = extractDetailSizeToken(detailName);
+  // Some rows in furniture.xlsx contain non-piece quantities for specific details.
+  // For "Донини R" the row "Обвязка (520_80)" must behave like a piece-count (×2 per изделие).
+  if (pKey === "донини r" && size === "520_80" && baseQty > 0) {
+    return baseQty * 2;
+  }
+  return detailQty;
+}
+
 export function buildFurnitureTemplates(workbook, sheetName) {
   const ws = workbook?.Sheets?.[sheetName];
   if (!ws) return [];
@@ -125,11 +136,17 @@ export function buildFurnitureTemplates(workbook, sheetName) {
       };
     }
     if (current && detailName && detailQtyRaw > 0) {
-      const perUnit = current.baseQty > 0 ? detailQtyRaw / current.baseQty : detailQtyRaw;
+      const resolvedQtyRaw = resolveDetailQtyOverride({
+        productName: current.productName,
+        detailName,
+        baseQty: current.baseQty,
+        detailQty: detailQtyRaw,
+      });
+      const perUnit = current.baseQty > 0 ? resolvedQtyRaw / current.baseQty : resolvedQtyRaw;
       current.details.push({
         color: detailColor,
         detailName,
-        sampleQty: detailQtyRaw,
+        sampleQty: resolvedQtyRaw,
         perUnit,
       });
     }
@@ -205,14 +222,63 @@ export function resolveFurnitureTemplateForPreview(preview, templates) {
     .filter(Boolean);
   if (!candidates.length) return null;
 
+  const adjustTemplateByPreviewName = (template) => {
+    if (!template || !Array.isArray(template?.details) || template.details.length === 0) return template;
+    const text = candidates.join(" ");
+    // "Тумба под ТВ Лофт 180" is a special case: dimensions and piece counts depend on the constructor variant.
+    // In the current workflow the variant is encoded in the item name (e.g. "... Лофт 180"),
+    // while furniture.xlsx may contain a generic template with 1100_* parts and perUnit=1/2 values.
+    // For "180" we want 900_* and doubled крышка/полка quantities (2 and 4 per изделие).
+    if (!(text.includes("тв") && text.includes("лофт") && text.includes("180"))) return template;
+
+    const nextLen = 900;
+    const patchName = (name) => {
+      const raw = String(name || "").trim();
+      if (!raw) return raw;
+      return raw.replace(/(\d{2,4})\s*[_xх×]\s*(\d{2,4})/gi, (full, aRaw, bRaw) => {
+        const a = Number(aRaw);
+        const b = Number(bRaw);
+        if (!(a > 0) || !(b > 0)) return full;
+        const maxDim = Math.max(a, b);
+        const minDim = Math.min(a, b);
+        // touch only large panels (крышка/полка), keep side pieces (316_167, etc)
+        if (maxDim < 500) return full;
+        const sep = String(full).includes("x") ? "x" : String(full).includes("х") ? "х" : String(full).includes("×") ? "×" : "_";
+        const patched = a >= b ? `${nextLen}_${minDim}` : `${minDim}_${nextLen}`;
+        return patched.replace("_", sep);
+      });
+    };
+
+    const bumpPerUnit = (detailName, perUnit) => {
+      const n = normalizeFurnitureKey(detailName);
+      if (n.includes("крышк")) return perUnit * 2;
+      if (n.includes("полк")) return perUnit * 2;
+      return perUnit;
+    };
+
+    return {
+      ...template,
+      details: template.details.map((d) => {
+        const detailName = patchName(d?.detailName || "");
+        const perUnitRaw = Number(d?.perUnit || 0);
+        const perUnit = perUnitRaw > 0 ? bumpPerUnit(detailName, perUnitRaw) : perUnitRaw;
+        return {
+          ...d,
+          detailName,
+          perUnit,
+        };
+      }),
+    };
+  };
+
   const aliasKey = resolveFurnitureAliasKey(candidates);
   if (aliasKey) {
     const byAlias = list.find((t) => normalizeFurnitureKey(t?.productName || "") === aliasKey);
-    if (byAlias) return byAlias;
+    if (byAlias) return adjustTemplateByPreviewName(byAlias);
     // Business fallback: when "Авелла" template is missing, use "Авелла Лайт" details.
     if (aliasKey === "авелла") {
       const avellaLite = list.find((t) => normalizeFurnitureKey(t?.productName || "") === "авелла лайт");
-      if (avellaLite) return avellaLite;
+      if (avellaLite) return adjustTemplateByPreviewName(avellaLite);
     }
   }
 
@@ -220,11 +286,11 @@ export function resolveFurnitureTemplateForPreview(preview, templates) {
     const key = normalizeFurnitureKey(t?.productName || "");
     return key && candidates.some((c) => c === key);
   });
-  if (byExact) return byExact;
+  if (byExact) return adjustTemplateByPreviewName(byExact);
 
   const byContains = list.find((t) => {
     const key = normalizeFurnitureKey(t?.productName || "");
     return key && candidates.some((c) => c.includes(key) || key.includes(c));
   });
-  return byContains || null;
+  return byContains ? adjustTemplateByPreviewName(byContains) : null;
 }

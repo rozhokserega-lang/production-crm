@@ -66,6 +66,40 @@ export const ShipmentView = memo(function ShipmentView({
     return qtyOk && (part === name1 || part === name2);
   };
 
+  const stripMaterialSuffix = (name, material) => {
+    const rawName = stripPlanItemMeta(String(name || "")).trim();
+    const rawMaterial = String(material || "").trim();
+    if (!rawName) return "-";
+    if (!rawMaterial) return rawName;
+
+    const n = (v) =>
+      String(v || "")
+        .toLowerCase()
+        .replace(/[ё]/g, "е")
+        .replace(/\s+/g, " ")
+        .trim();
+
+    const m = n(rawMaterial);
+    if (!m) return rawName;
+
+    // Prefer "Название. Материал" format (common in catalog / manual entries).
+    const parts = rawName
+      .split(".")
+      .map((x) => String(x || "").trim())
+      .filter(Boolean);
+    if (parts.length >= 2) {
+      const tail = parts[parts.length - 1];
+      if (n(tail) === m) return parts.slice(0, -1).join(". ");
+    }
+
+    // Also handle "Название Материал" suffix (no dot).
+    const escaped = rawMaterial.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const rx = new RegExp(`\\s+${escaped}$`, "i");
+    if (rx.test(rawName)) return rawName.replace(rx, "").trim();
+
+    return rawName;
+  };
+
   return (
     <div className={`shipment-layout ${isPlanPreviewOpen ? "is-plan-preview-open" : ""}`}>
       {!isPlanPreviewOpen && <aside className="selection-summary-pane">
@@ -199,7 +233,9 @@ export const ShipmentView = memo(function ShipmentView({
                     </div>
                     <div className="plan-head-grid">
                       <div className="plan-yellow">
-                        <div className="name">{stripPlanItemMeta(planPreview.firstName || planPreview.detailedName || "-")}</div>
+                        <div className="name">
+                          {stripMaterialSuffix(planPreview.firstName || planPreview.detailedName || "-", planPreview.colorName)}
+                        </div>
                         <div className="color">{planPreview.colorName || "-"}</div>
                         {!!String(planPreview.strapTargetProduct || "").trim() && (
                           <div className="strap-target">
@@ -259,7 +295,7 @@ export const ShipmentView = memo(function ShipmentView({
                       <tbody>
                         {(planPreview.rows || []).map((r, i) => (
                           <tr key={`${r.part}-${i}`}>
-                            <td>{i === 0 ? stripPlanItemMeta(planPreview.firstName || "") : ""}</td>
+                            <td>{i === 0 ? stripMaterialSuffix(planPreview.firstName || "", planPreview.colorName) : ""}</td>
                             <td style={{ fontWeight: i === 0 ? 800 : 400 }}>
                               {i === 0 ? (planPreview.qty || 0) : ""}
                             </td>

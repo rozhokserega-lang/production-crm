@@ -4,6 +4,7 @@ export function PlanDialog({
   sectionOptions,
   planArticle,
   sectionArticles,
+  selectedItemVariants,
   planMaterial,
   planWeek,
   planQty,
@@ -11,6 +12,7 @@ export function PlanDialog({
   planPreviewing,
   onSectionChange,
   onArticleChange,
+  onMaterialChange,
   onPlanWeekChange,
   onPlanQtyChange,
   onSave,
@@ -18,6 +20,10 @@ export function PlanDialog({
   onClose,
 }) {
   if (!isOpen) return null;
+
+  const variants = Array.isArray(selectedItemVariants) ? selectedItemVariants : [];
+  const materialOptions = variants.map((v) => String(v.material || "").trim()).filter(Boolean);
+  const canSelectMaterial = materialOptions.length > 1;
 
   return (
     <div className="dialog-backdrop">
@@ -49,7 +55,15 @@ export function PlanDialog({
           </div>
           <div className="strap-row" style={{ gridTemplateColumns: "170px 1fr" }}>
             <label>Материал</label>
-            <input value={planMaterial} readOnly placeholder="Материал подставляется из артикула" />
+            {canSelectMaterial ? (
+              <select value={planMaterial} onChange={(e) => onMaterialChange?.(e.target.value)}>
+                {materialOptions.map((m) => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
+            ) : (
+              <input value={planMaterial} readOnly placeholder="Материал подставляется из артикула" />
+            )}
           </div>
           <div className="strap-row" style={{ gridTemplateColumns: "170px 1fr" }}>
             <label>Неделя</label>

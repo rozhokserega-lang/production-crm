@@ -13,6 +13,7 @@ export function useFurnitureDerivedData({
   query,
   furnitureWorkbook,
   furnitureActiveSheet,
+  furnitureCustomTemplates,
   furnitureSelectedProduct,
   setFurnitureSelectedProduct,
   furnitureSelectedQty,
@@ -34,9 +35,33 @@ export function useFurnitureDerivedData({
   }, [furnitureWorkbook, furnitureActiveSheet, query]);
 
   const furnitureTemplates = useMemo(() => {
-    if (!furnitureWorkbook || !furnitureActiveSheet) return [];
-    return buildFurnitureTemplates(furnitureWorkbook, furnitureActiveSheet);
-  }, [furnitureWorkbook, furnitureActiveSheet]);
+    const base = furnitureWorkbook && furnitureActiveSheet
+      ? buildFurnitureTemplates(furnitureWorkbook, furnitureActiveSheet)
+      : [];
+
+    const custom = (Array.isArray(furnitureCustomTemplates) ? furnitureCustomTemplates : [])
+      .map((t) => ({
+        productName: String(t.product_name || t.productName || "").trim(),
+        productColor: String(t.product_color || t.productColor || "").trim(),
+        baseQty: 1,
+        details: Array.isArray(t.details)
+          ? t.details.map((d) => ({
+              color: String(d?.color || "").trim(),
+              detailName: String(d?.detailName || d?.detail_name || "").trim(),
+              sampleQty: Number(d?.sampleQty || d?.sample_qty || 0) || 0,
+              perUnit: Number(d?.perUnit || d?.per_unit || 0) || 0,
+            })).filter((d) => d.detailName && d.perUnit > 0)
+          : [],
+      }))
+      .filter((t) => t.productName && Array.isArray(t.details) && t.details.length > 0);
+
+    const merged = [...base];
+    const existing = new Set(base.map((x) => String(x?.productName || "").trim()));
+    custom.forEach((t) => {
+      if (!existing.has(t.productName)) merged.push(t);
+    });
+    return merged;
+  }, [furnitureWorkbook, furnitureActiveSheet, furnitureCustomTemplates]);
 
   const furnitureSelectedTemplate = useMemo(() => {
     return furnitureTemplates.find((x) => x.productName === furnitureSelectedProduct) || null;
@@ -98,6 +123,25 @@ export function useFurnitureDerivedData({
     });
   }, [furnitureDetailArticleRows, furnitureSelectedTemplate, furnitureQtyNumber]);
 
+  const furnitureArticleSearchRows = useMemo(() => {
+    const result = [];
+    (furnitureDetailArticleRows || []).forEach((r) => {
+      const isActive = r?.is_active ?? r?.isActive;
+      if (isActive === false) return;
+      const productName = String(r.product_name || r.productName || "").trim();
+      const detailPattern = String(r.detail_name_pattern || r.detailNamePattern || "").trim();
+      const article = String(r.article || "").trim();
+      if (!productName || !article) return;
+      result.push({
+        productName,
+        productKey: normalizeStrapProductKey(productName),
+        detailPattern,
+        article,
+      });
+    });
+    return result;
+  }, [furnitureDetailArticleRows]);
+
   const furnitureArticleGroups = useMemo(() => {
     if (view !== "furniture") return [];
     const q = String(query || "").trim().toLowerCase();
@@ -135,6 +179,7 @@ export function useFurnitureDerivedData({
     furnitureSelectedTemplate,
     furnitureQtyNumber,
     furnitureGeneratedDetails,
+    furnitureArticleSearchRows,
     furnitureArticleGroups,
   };
 }

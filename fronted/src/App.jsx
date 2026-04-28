@@ -192,6 +192,8 @@ export default function App() {
     furnitureGeneratedDetails,
     furnitureSelectedTemplate,
     furnitureQtyNumber,
+    furnitureArticleSearchRows,
+    furnitureCustomTemplates,
 
     // Refs
     importPlanFileRef,
@@ -201,6 +203,7 @@ export default function App() {
     weeks,
     sectionOptions,
     sectionArticles,
+    selectedItemVariants,
     articleLookupByItemKey,
     resolvedPlanItem: _resolvedPlanItem,
     strapProductNames,
@@ -253,6 +256,8 @@ export default function App() {
     deleteStatsOrder,
     toggleShipmentSelection,
     createShelfPlanOrder,
+    createFurniturePlanOrder,
+    refreshPlanCatalogs,
     previewSelectedShipmentPlan,
     exportSelectedShipmentToExcel,
     importShipmentPlanFromExcelFile,
@@ -550,6 +555,12 @@ export default function App() {
             furnitureQtyNumber={furnitureQtyNumber}
             canOperateProduction={canOperateProduction}
             createShelfPlanOrder={createShelfPlanOrder}
+            createFurniturePlanOrder={createFurniturePlanOrder}
+            furnitureArticleSearchRows={furnitureArticleSearchRows}
+            furnitureCustomTemplates={furnitureCustomTemplates}
+            callBackend={callBackend}
+            load={load}
+            refreshPlanCatalogs={refreshPlanCatalogs}
           />
         )}
         {view === "admin" && (
@@ -683,6 +694,7 @@ export default function App() {
         sectionOptions={sectionOptions}
         planArticle={planArticle}
         sectionArticles={sectionArticles}
+        selectedItemVariants={selectedItemVariants}
         planMaterial={planMaterial}
         planWeek={planWeek}
         planQty={planQty}
@@ -690,6 +702,7 @@ export default function App() {
         planPreviewing={false}
         onSectionChange={handlePlanSectionChange}
         onArticleChange={handlePlanArticleChange}
+        onMaterialChange={_setPlanMaterial}
         onPlanWeekChange={(value) => setPlanWeek(value.replace(/[^\d-]/g, ""))}
         onPlanQtyChange={(value) => setPlanQty(value.replace(/[^0-9.,]/g, ""))}
         onSave={saveCreatePlanDialog}

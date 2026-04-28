@@ -97,6 +97,33 @@ export function useShipmentPlanningDerivedData({
     return [...byItemName.values()];
   }, [sectionArticleRows, planSection, sectionOptions]);
 
+  const selectedItemVariants = useMemo(() => {
+    const section = String(planSection || "").trim();
+    const item = String(planArticle || "").trim();
+    if (!section || !item) return [];
+    const hasWhiteAliasSection = sectionOptions.includes(`${section} белый`);
+    const list = (sectionArticleRows || [])
+      .map((x) => ({
+        sectionName: String(x.section_name || x.sectionName || "").trim(),
+        article: String(x.article || "").trim(),
+        itemName: normalizeCatalogItemName(String(x.item_name || x.itemName || "").trim()),
+        material: String(x.material || "").trim(),
+      }))
+      .filter((x) => x.sectionName === section && x.article && x.itemName && x.itemName === item && x.material)
+      .filter((x) => {
+        if (!hasWhiteAliasSection) return true;
+        return !/(белый|белые ноги)/i.test(x.itemName);
+      })
+      .sort((a, b) => a.material.localeCompare(b.material, "ru"));
+    const seen = new Set();
+    return list.filter((x) => {
+      const key = `${x.article}||${x.material}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [sectionArticleRows, planSection, planArticle, sectionOptions]);
+
   const selectedArticleRow = useMemo(() => {
     return sectionArticles.find((x) => x.itemName === planArticle) || null;
   }, [sectionArticles, planArticle]);
@@ -122,6 +149,7 @@ export function useShipmentPlanningDerivedData({
     weeks,
     sectionOptions,
     sectionArticles,
+    selectedItemVariants,
     articleLookupByItemKey,
     resolvedPlanItem,
   };

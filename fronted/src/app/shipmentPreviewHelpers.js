@@ -55,7 +55,8 @@ export function enrichPreviewFromFurniture(preview, deps = {}) {
   if (!template) {
     return debugBase ? { ...preview, ...debugBase, _furnitureDebug: { ...debugBase._furnitureDebug, reason: "template_not_found" } } : preview;
   }
-  const rows = buildRows(template, preview.qty);
+  const multiplierQty = Number(preview?.qrQty || preview?.qr_qty || preview?.qty || 0);
+  const rows = buildRows(template, multiplierQty);
   if (!Array.isArray(rows) || rows.length === 0) {
     return debugBase ? { ...preview, ...debugBase, _furnitureDebug: { ...debugBase._furnitureDebug, reason: "template_rows_empty", templateName: String(template?.productName || "") } } : preview;
   }

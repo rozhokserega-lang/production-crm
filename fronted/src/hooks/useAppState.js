@@ -331,6 +331,8 @@ export function useAppState() {
     setFurnitureArticleRows,
     furnitureDetailArticleRows,
     setFurnitureDetailArticleRows,
+    furnitureCustomTemplates,
+    setFurnitureCustomTemplates,
     furnitureSelectedProduct,
     setFurnitureSelectedProduct,
     furnitureSelectedQty,
@@ -360,6 +362,7 @@ export function useAppState() {
     setSectionArticleRows,
     setShipmentOrders,
     setFurnitureDetailArticleRows,
+    setFurnitureCustomTemplates,
     setMaterialsStockRows,
     setLeftoversRows,
     setLeftoversHistoryRows,
@@ -475,6 +478,7 @@ export function useAppState() {
     weeks,
     sectionOptions,
     sectionArticles,
+    selectedItemVariants,
     articleLookupByItemKey,
     resolvedPlanItem,
   } = useShipmentPlanningDerivedData({
@@ -496,17 +500,40 @@ export function useAppState() {
     furnitureSelectedTemplate,
     furnitureQtyNumber,
     furnitureGeneratedDetails,
+    furnitureArticleSearchRows,
   } = useFurnitureDerivedData({
     view,
     query,
     furnitureWorkbook,
     furnitureActiveSheet,
+    furnitureCustomTemplates,
     furnitureSelectedProduct,
     setFurnitureSelectedProduct,
     furnitureSelectedQty,
     furnitureDetailArticleRows,
     furnitureArticleRows,
   });
+
+  const resolveFurnitureTemplateForPreviewByArticle = useCallback((preview, templates) => {
+    const list = Array.isArray(templates) ? templates : [];
+    if (!preview || list.length === 0) return null;
+    const article = String(preview?.article || "").trim();
+    if (article) {
+      const row = (sectionArticleRows || []).find((x) => String(x?.article || "").trim() === article) || null;
+      const itemName = String(row?.item_name || row?.itemName || "").trim();
+      if (itemName) {
+        const key = normalizeFurnitureKey(itemName);
+        const byExact = list.find((t) => normalizeFurnitureKey(t?.productName || "") === key);
+        if (byExact) return byExact;
+        const byContains = list.find((t) => {
+          const k = normalizeFurnitureKey(t?.productName || "");
+          return k && (key.includes(k) || k.includes(key));
+        });
+        if (byContains) return byContains;
+      }
+    }
+    return resolveFurnitureTemplateForPreview(preview, list);
+  }, [sectionArticleRows, normalizeFurnitureKey]);
 
   // If the user opens preview very early, templates may still be loading and
   // previews will contain only the backend placeholder row. Once templates are ready,
@@ -519,7 +546,7 @@ export function useAppState() {
       const next = prev.map((p) => {
         const enriched = enrichPreviewFromFurniture(p, {
           furnitureTemplates,
-          resolveFurnitureTemplateForPreview,
+          resolveFurnitureTemplateForPreview: resolveFurnitureTemplateForPreviewByArticle,
           buildPreviewRowsFromFurnitureTemplate,
           normalizeFurnitureKey,
           furnitureLoading,
@@ -530,12 +557,27 @@ export function useAppState() {
       });
       return changed ? next : prev;
     });
-  }, [furnitureTemplates, furnitureLoading, furnitureError, setPlanPreviews]);
+  }, [furnitureTemplates, furnitureLoading, furnitureError, setPlanPreviews, resolveFurnitureTemplateForPreviewByArticle]);
+
+  const refreshPlanCatalogs = useCallback(async () => {
+    try {
+      const [catalog, sections, articles] = await Promise.all([
+        OrderService.getPlanCatalog().catch(() => []),
+        OrderService.getSectionCatalog().catch(() => []),
+        OrderService.getSectionArticles().catch(() => []),
+      ]);
+      setPlanCatalogRows(Array.isArray(catalog) ? catalog : []);
+      setSectionCatalogRows(Array.isArray(sections) ? sections : []);
+      setSectionArticleRows(Array.isArray(articles) ? articles : []);
+    } catch (_) {
+      // Best-effort refresh; do not block the UI.
+    }
+  }, [setPlanCatalogRows, setSectionCatalogRows, setSectionArticleRows]);
 
   const {
     handlePlanSectionChange,
     handlePlanArticleChange,
-    openCreatePlanDialog,
+    openCreatePlanDialog: _openCreatePlanDialog,
     closeCreatePlanDialog,
     saveCreatePlanDialog,
     previewCreatePlanDialog,
@@ -566,6 +608,12 @@ export function useAppState() {
     syncPlanCellToGoogleSheet,
     load,
   });
+
+  const openCreatePlanDialog = useCallback(async () => {
+    // Ensure catalog dropdowns see latest manual items/sections.
+    await refreshPlanCatalogs();
+    _openCreatePlanDialog();
+  }, [_openCreatePlanDialog, refreshPlanCatalogs]);
 
   const {
     strapOptionsByProduct,
@@ -1167,6 +1215,7 @@ export function useAppState() {
     sendableSelectedCount,
     selectedShipmentStockCheck,
     strapCalculation,
+    selectedItemVariants: _selectedItemVariants,
   } = useShipmentSelectionStats({
     selectedShipments,
     strapItems,
@@ -1374,6 +1423,47 @@ export function useAppState() {
     }
   }, [canOperateProduction, setActionLoading, setError, load, denyActionByRole, syncPlanCellToGoogleSheet]);
 
+  const createFurniturePlanOrder = useCallback(async (payload) => {
+    if (!canOperateProduction) {
+      denyActionByRole("Недостаточно прав для изменения плана.");
+      return;
+    }
+    const week = String(payload?.week || "").trim();
+    const item = String(payload?.item || "").trim();
+    const article = String(payload?.article || "").trim();
+    const material = String(payload?.material || "").trim();
+    const qty = Number(payload?.qty || 0);
+    const qrQty = Number(payload?.qrQty || 0);
+    if (!week) {
+      setError("Укажите номер плана.");
+      return;
+    }
+    if (!item || !material || !(qty > 0)) {
+      setError("Заполните поля заказа: изделие, материал и количество.");
+      return;
+    }
+    setActionLoading("furniture:create-plan");
+    setError("");
+    try {
+      const request = {
+        sectionName: "Основная мебель",
+        item: embedPlanItemArticle(item, article, qrQty),
+        material,
+        week,
+        qty,
+        article,
+      };
+      await OrderService.createShipmentPlanCell(request);
+      void syncPlanCellToGoogleSheet(request);
+      await load();
+    } catch (e) {
+      setError(toUserError(e));
+      throw e;
+    } finally {
+      setActionLoading("");
+    }
+  }, [canOperateProduction, setActionLoading, setError, load, denyActionByRole, syncPlanCellToGoogleSheet]);
+
   const previewSelectedShipmentPlan = useCallback(async () => {
     const current = selectedShipmentsRef.current;
     if (!current.length) return;
@@ -1400,7 +1490,7 @@ export function useAppState() {
       const enrichPreview = (preview, shipmentRow) => {
         const withFurniture = enrichPreviewFromFurniture(preview, {
           furnitureTemplates,
-          resolveFurnitureTemplateForPreview,
+          resolveFurnitureTemplateForPreview: resolveFurnitureTemplateForPreviewByArticle,
           buildPreviewRowsFromFurnitureTemplate,
           normalizeFurnitureKey,
           furnitureLoading,
@@ -1753,6 +1843,7 @@ export function useAppState() {
     furnitureShowFormulas, setFurnitureShowFormulas,
     furnitureArticleRows, setFurnitureArticleRows,
     furnitureDetailArticleRows, setFurnitureDetailArticleRows,
+    furnitureCustomTemplates, setFurnitureCustomTemplates,
     furnitureSelectedProduct, setFurnitureSelectedProduct,
     furnitureSelectedQty, setFurnitureSelectedQty,
 
@@ -1771,6 +1862,7 @@ export function useAppState() {
     furnitureSelectedTemplate,
     furnitureQtyNumber,
     furnitureGeneratedDetails,
+    furnitureArticleSearchRows,
     strapOptionsByProduct,
     strapProductBySizeToken,
     strapProductsByArticleCode,
@@ -1827,6 +1919,8 @@ export function useAppState() {
     deleteStatsOrder,
     toggleShipmentSelection,
     createShelfPlanOrder,
+    createFurniturePlanOrder,
+    refreshPlanCatalogs,
     previewSelectedShipmentPlan,
     exportSelectedShipmentToExcel,
     importShipmentPlanFromExcelFile,

@@ -71,6 +71,21 @@ export class OrderService {
     return await callBackend("webGetSectionArticles");
   }
 
+  static async getFurnitureCustomTemplates() {
+    return await callBackend("webGetFurnitureCustomTemplates");
+  }
+
+  static async upsertFurnitureCustomTemplate(productName, details) {
+    return await callBackend("webUpsertFurnitureCustomTemplate", {
+      p_product_name: productName,
+      p_details: details,
+    });
+  }
+
+  static async upsertItemArticleMap(payload) {
+    return await callBackend("webUpsertItemArticleMap", payload);
+  }
+
   static async getArticlesForImport() {
     return await callBackend("webGetArticlesForImport");
   }
@@ -279,7 +294,7 @@ export class OrderService {
    * Загружает все данные для вкладки "Отгрузка" одним вызовом.
    */
   static async loadShipmentDomainData() {
-    const [board, table, catalog, sections, articles, detailArticles, stock, orders] =
+    const [board, table, catalog, sections, articles, detailArticles, customTemplates, stock, orders] =
       await Promise.all([
         this.getShipmentBoard().catch(() => null),
         this.getShipmentTable().catch(() => null),
@@ -287,10 +302,11 @@ export class OrderService {
         this.getSectionCatalog().catch(() => []),
         this.getSectionArticles().catch(() => []),
         this.getFurnitureDetailArticles().catch(() => []),
+        this.getFurnitureCustomTemplates().catch(() => []),
         this.getMaterialsStock().catch(() => []),
         this.getAllOrders().catch(() => []),
       ]);
-    return { board, table, catalog, sections, articles, detailArticles, stock, orders };
+    return { board, table, catalog, sections, articles, detailArticles, customTemplates, stock, orders };
   }
 
   /**
@@ -310,10 +326,11 @@ export class OrderService {
    * Загружает все данные для вкладки "Мебель".
    */
   static async loadFurnitureDomainData() {
-    const [articles, detailArticles] = await Promise.all([
+    const [articles, detailArticles, customTemplates] = await Promise.all([
       this.getFurnitureProductArticles().catch(() => []),
       this.getFurnitureDetailArticles().catch(() => []),
+      this.getFurnitureCustomTemplates().catch(() => []),
     ]);
-    return { articles, detailArticles };
+    return { articles, detailArticles, customTemplates };
   }
 }

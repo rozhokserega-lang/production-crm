@@ -15,3 +15,6 @@ dist/
 Thumbs.db
 *.log
 supabase/.temp/
+
+# Local error artifacts
+sync_plan_error.json

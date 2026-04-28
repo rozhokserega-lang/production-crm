@@ -2,6 +2,7 @@ import { ErrorProvider } from "../contexts/ErrorContext";
 import { ShipmentDataProvider } from "../contexts/ShipmentDataContext";
 import { WarehouseDataProvider } from "../contexts/WarehouseDataContext";
 import { FurnitureDataProvider } from "../contexts/FurnitureDataContext";
+import { ErrorBoundary } from "./ErrorBoundary";
 
 /**
  * Обёртка всех контекст-провайдеров приложения.
@@ -11,13 +12,15 @@ import { FurnitureDataProvider } from "../contexts/FurnitureDataContext";
 export function AppProviders({ children }) {
   return (
     <ErrorProvider>
-      <FurnitureDataProvider>
-        <WarehouseDataProvider>
-          <ShipmentDataProvider>
-            {children}
-          </ShipmentDataProvider>
-        </WarehouseDataProvider>
-      </FurnitureDataProvider>
+      <ErrorBoundary>
+        <FurnitureDataProvider>
+          <WarehouseDataProvider>
+            <ShipmentDataProvider>
+              {children}
+            </ShipmentDataProvider>
+          </WarehouseDataProvider>
+        </FurnitureDataProvider>
+      </ErrorBoundary>
     </ErrorProvider>
   );
 }

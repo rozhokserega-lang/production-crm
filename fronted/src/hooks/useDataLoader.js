@@ -14,6 +14,7 @@ export function useDataLoader({
   setSectionArticleRows,
   setShipmentOrders,
   setFurnitureDetailArticleRows,
+  setFurnitureCustomTemplates,
   setMaterialsStockRows,
   setLeftoversRows,
   setLeftoversHistoryRows,
@@ -78,6 +79,9 @@ export function useDataLoader({
         setSectionArticleRows(shipmentPayload?.sectionArticleRows || []);
         setShipmentOrders(shipmentPayload?.shipmentOrders || []);
         setFurnitureDetailArticleRows(shipmentPayload?.furnitureDetailArticleRows || []);
+        if (typeof setFurnitureCustomTemplates === "function") {
+          setFurnitureCustomTemplates(shipmentPayload?.furnitureCustomTemplates || []);
+        }
         setMaterialsStockRows(shipmentPayload?.materialsStockRows || []);
         setShipmentBoard(normalizeShipmentBoard(data));
       } else if (view === "sheetMirror") {
@@ -108,6 +112,9 @@ export function useDataLoader({
       } else if (view === "furniture") {
         setFurnitureArticleRows(furniturePayload?.furnitureArticleRows || []);
         setFurnitureDetailArticleRows(furniturePayload?.furnitureDetailArticleRows || []);
+        if (typeof setFurnitureCustomTemplates === "function") {
+          setFurnitureCustomTemplates(furniturePayload?.furnitureCustomTemplates || []);
+        }
         setRows(Array.isArray(data) ? data : []);
       } else {
         setRows(Array.isArray(data) ? data : []);

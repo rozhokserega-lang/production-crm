@@ -317,6 +317,12 @@ export async function loadShipmentDomainData({
     furnitureDetailArticleRows = Array.isArray(detailArticles) ? detailArticles : [];
   } catch (_) {}
 
+  let furnitureCustomTemplates = [];
+  try {
+    const templates = await callBackend("webGetFurnitureCustomTemplates");
+    furnitureCustomTemplates = Array.isArray(templates) ? templates : [];
+  } catch (_) {}
+
   let materialsStockRows = [];
   try {
     const stockData = await callBackend("webGetMaterialsStock");
@@ -330,6 +336,7 @@ export async function loadShipmentDomainData({
     sectionArticleRows,
     shipmentOrders,
     furnitureDetailArticleRows,
+    furnitureCustomTemplates,
     materialsStockRows,
   };
 }
@@ -428,10 +435,17 @@ export async function loadFurnitureDomainData({ callBackend }) {
     furnitureDetailArticleRows = Array.isArray(detailArticles) ? detailArticles : [];
   } catch (_) {}
 
+  let furnitureCustomTemplates = [];
+  try {
+    const templates = await callBackend("webGetFurnitureCustomTemplates");
+    furnitureCustomTemplates = Array.isArray(templates) ? templates : [];
+  } catch (_) {}
+
   return {
     data: [],
     furnitureArticleRows,
     furnitureDetailArticleRows,
+    furnitureCustomTemplates,
   };
 }
 

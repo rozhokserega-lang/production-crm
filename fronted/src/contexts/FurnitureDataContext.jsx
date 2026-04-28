@@ -10,6 +10,7 @@ export function FurnitureDataProvider({ children }) {
   const [furnitureShowFormulas, setFurnitureShowFormulas] = useState(false);
   const [furnitureArticleRows, setFurnitureArticleRows] = useState([]);
   const [furnitureDetailArticleRows, setFurnitureDetailArticleRows] = useState([]);
+  const [furnitureCustomTemplates, setFurnitureCustomTemplates] = useState([]);
   const [furnitureSelectedProduct, setFurnitureSelectedProduct] = useState("");
   const [furnitureSelectedQty, setFurnitureSelectedQty] = useState("1");
 
@@ -30,6 +31,8 @@ export function FurnitureDataProvider({ children }) {
         setFurnitureArticleRows,
         furnitureDetailArticleRows,
         setFurnitureDetailArticleRows,
+        furnitureCustomTemplates,
+        setFurnitureCustomTemplates,
         furnitureSelectedProduct,
         setFurnitureSelectedProduct,
         furnitureSelectedQty,

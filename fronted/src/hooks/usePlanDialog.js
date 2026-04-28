@@ -189,7 +189,10 @@ export function usePlanDialog({
     const week = String(planWeek || "").trim();
     const qty = Number(String(planQty || "").replace(",", "."));
     const selectedCatalogArticle = String(
-      sectionArticles.find((x) => x.itemName === planArticle)?.article || "",
+      (sectionArticles || []).find((x) => x.itemName === planArticle && String(x.material || "").trim() === String(planMaterial || "").trim())
+        ?.article ||
+      (sectionArticles || []).find((x) => x.itemName === planArticle)?.article ||
+      "",
     ).trim();
     if (!item) {
       setError("Выберите материал для изделия.");

@@ -298,6 +298,34 @@ export function buildPreviewRowsFromFurnitureTemplate(template, orderQty) {
   const qtyNum = Number(orderQty || 0);
   const baseQty = Number(template?.baseQty || 0) > 0 ? Number(template.baseQty) : 1;
   if (!(qtyNum > 0) || !Array.isArray(template?.details)) return [];
+  const sizeFromName = (() => {
+    const m = String(template?.productName || "").match(/(\d{2,4})\s*[_xх×]\s*(\d{2,4})/i);
+    if (!m) return null;
+    const a = Number(m[1]);
+    const b = Number(m[2]);
+    if (!(a > 0) || !(b > 0)) return null;
+    return { len: Math.max(a, b), dep: Math.min(a, b) };
+  })();
+  const patchDetailNameByProductSize = (detailName) => {
+    const raw = String(detailName || "").trim();
+    if (!raw || !sizeFromName?.len) return raw;
+    // If a detail has a large size token (like крышка/полка), align its main dimension
+    // with the product length from the item name. Do not touch small side pieces.
+    return raw.replace(/(\d{2,4})\s*[_xх×]\s*(\d{2,4})/gi, (full, aRaw, bRaw) => {
+      const a = Number(aRaw);
+      const b = Number(bRaw);
+      if (!(a > 0) || !(b > 0)) return full;
+      const maxDim = Math.max(a, b);
+      const minDim = Math.min(a, b);
+      if (maxDim < 500) return full; // likely боковина/стойка/etc
+      const nextMax = sizeFromName.len;
+      // preserve the smaller dimension as-is (depth-like or height-like)
+      const next = a >= b ? `${nextMax}_${minDim}` : `${minDim}_${nextMax}`;
+      // keep the original separator style
+      const sep = String(full).includes("x") ? "x" : String(full).includes("х") ? "х" : String(full).includes("×") ? "×" : "_";
+      return next.replace("_", sep);
+    });
+  };
   const productKey = String(template?.productName || "")
     .toLowerCase()
     .replace(/[ё]/g, "е")
@@ -313,7 +341,7 @@ export function buildPreviewRowsFromFurnitureTemplate(template, orderQty) {
       const raw = perUnit > 0 ? perUnit * qtyNum : 0;
       const rounded = Math.round(raw * 1000) / 1000;
       const normalizedQty = Number.isInteger(rounded) ? String(Math.trunc(rounded)) : String(rounded).replace(".", ",");
-      const partName = String(d?.detailName || "").trim();
+      const partName = patchDetailNameByProductSize(String(d?.detailName || "").trim());
       return {
         part: partName,
         qty: normalizedQty,
