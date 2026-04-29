@@ -40,6 +40,8 @@ export function FurnitureView({
   const [editingExisting, setEditingExisting] = useState(false);
   const [catalogArticlesForImport, setCatalogArticlesForImport] = useState([]);
   const [catalogArticlesLoading, setCatalogArticlesLoading] = useState(false);
+  const [catalogArticleByArticle, setCatalogArticleByArticle] = useState({});
+  const [catalogArticleByArticleLoading, setCatalogArticleByArticleLoading] = useState({});
 
   function makeVariantRow(article = "", color = "") {
     return {
@@ -124,11 +126,43 @@ export function FurnitureView({
     }
   }
 
+  async function ensureCatalogArticleByArticleLoaded(articleRaw) {
+    const key = String(articleRaw || "").trim().toUpperCase();
+    if (!key) return null;
+    if (catalogArticleByArticleLoading[key]) return catalogArticleByArticle[key] || null;
+    if (catalogArticleByArticle[key]) return catalogArticleByArticle[key] || null;
+
+    setCatalogArticleByArticleLoading((prev) => ({ ...prev, [key]: true }));
+    try {
+      const rows = await callBackend("webGetItemArticleMapByArticle", { p_article: key });
+      const first = Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
+      setCatalogArticleByArticle((prev) => ({ ...prev, [key]: first }));
+      return first;
+    } catch (_) {
+      setCatalogArticleByArticle((prev) => ({ ...prev, [key]: null }));
+      return null;
+    } finally {
+      setCatalogArticleByArticleLoading((prev) => ({ ...prev, [key]: false }));
+    }
+  }
+
   useEffect(() => {
     if (!createOpen) return;
     if (!canOperateProduction || typeof callBackend !== "function") return;
     void ensureCatalogArticlesForImportLoaded();
   }, [createOpen, canOperateProduction, callBackend]); // uses cached ensure() logic
+
+  // If variants are pre-filled (e.g. when opening an existing mapping),
+  // ensure we also fetch "by article" hints for those SKUs.
+  useEffect(() => {
+    if (!createOpen) return;
+    (Array.isArray(createVariants) ? createVariants : []).forEach((v) => {
+      const key = String(v?.article || "").trim().toUpperCase();
+      if (!key || key.length < 4) return;
+      void ensureCatalogArticleByArticleLoaded(key);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [createOpen, createVariants]);
 
   useEffect(() => {
     if (!createOpen) return;
@@ -274,15 +308,36 @@ export function FurnitureView({
           .filter((x) => x.article),
       );
 
-      // 1) Add/update to plan catalog (only for articles that are NOT already present).
-      // Articles already in catalog (xlsx) can not be re-inserted via webUpsertItemArticleMapVariants
-      // because of the unique constraint (article). We skip those to avoid "already exists" errors.
-      const variantsToUpsert = variants.filter((v) => {
+      // 1) Add/update to plan catalog.
+      // We must skip articles that already exist in catalog (xlsx) because item_article_map has a unique constraint on `article`
+      // and web_upsert_item_article_map_variants throws:
+      // "article ... already exists in catalog (source=...)"
+      //
+      // NOTE: web_get_articles_for_import may ignore rows with NULL section_name/table_color,
+      // so we do an additional lookup by article for the "missing in catalog" case.
+      const variantsToUpsert = [];
+      for (const v of variants) {
         const article = String(v?.article || "").trim().toUpperCase();
-        return article && !existingByArticle.has(article);
-      });
+        if (!article) continue;
+        if (existingByArticle.has(article)) continue;
 
-      if (variantsToUpsert.length) {
+        // Extra existence check (handles xlsx rows with NULL section_name/table_color).
+        let existingRow = null;
+        try {
+          const rows = await callBackend("webGetItemArticleMapByArticle", { p_article: article });
+          existingRow = Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
+        } catch (_) {
+          existingRow = null;
+        }
+
+        // If article exists in non-manual catalog, skip to avoid unique conflict.
+        if (existingRow && String(existingRow.source || "").trim() && String(existingRow.source || "").trim() !== "manual") {
+          continue;
+        }
+        variantsToUpsert.push(v);
+      }
+
+      if (variantsToUpsert.length > 0) {
         await callBackend("webUpsertItemArticleMapVariants", {
           p_section_name: section,
           p_item_name: name,
@@ -581,6 +636,8 @@ export function FurnitureView({
                                     (r) => String(r?.article || "").trim().toUpperCase() === article,
                                   )
                                 : null;
+                              const hitByArticle = catalogArticleByArticle[article] || null;
+                              const resolvedHit = hit || hitByArticle;
 
                               return (
                                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -591,8 +648,16 @@ export function FurnitureView({
                                       setCreateVariants((prev) =>
                                         (prev || []).map((x) => (x.id === v.id ? { ...x, article: val } : x)),
                                       );
+                                      const key = String(val || "").trim().toUpperCase();
                                       if (
-                                        String(val || "").trim() &&
+                                        key.length >= 4 &&
+                                        !catalogArticleByArticleLoading[key] &&
+                                        !catalogArticleByArticle[key]
+                                      ) {
+                                        void ensureCatalogArticleByArticleLoaded(val);
+                                      }
+                                      if (
+                                        key.trim().length > 0 &&
                                         !catalogArticlesLoading &&
                                         (!Array.isArray(catalogArticlesForImport) || catalogArticlesForImport.length === 0)
                                       ) {
@@ -603,34 +668,41 @@ export function FurnitureView({
                                     style={{
                                       width: "100%",
                                       minHeight: 34,
-                                      border: hit ? "2px solid #60a5fa" : "1px solid #cbd5e1",
+                                      border: resolvedHit ? "2px solid #60a5fa" : "1px solid #cbd5e1",
                                       borderRadius: 10,
                                       padding: "6px 10px",
                                       fontSize: 14,
                                       boxSizing: "border-box",
                                       fontFamily: "monospace",
-                                      background: hit ? "#eff6ff" : "#fff",
+                                      background: resolvedHit ? "#eff6ff" : "#fff",
                                     }}
                                   />
 
-                                  {hit && (
+                                  {resolvedHit && (
                                     <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                                       <div style={{ fontSize: 11, color: "#1d4ed8", fontWeight: 900 }}>
-                                        В базе: {String(hit.item_name || "").trim() || "-"}
+                                        В базе: {String(resolvedHit.item_name || "").trim() || "-"}
                                       </div>
                                       <div style={{ fontSize: 11, color: "#0f172a" }}>
-                                        Цвет/материал: <b>{String(hit.material || "").trim()}</b>
+                                        Цвет/материал: <b>{String(resolvedHit.material || "").trim()}</b>
                                       </div>
                                       <button
                                         type="button"
                                         onClick={() => {
                                           setCreateError("");
                                           setCreateOk("");
-                                          setCreateName(String(hit.item_name || "").trim());
-                                          setCreateSection(String(hit.section_name || "").trim());
+                                          setCreateName(String(resolvedHit.item_name || "").trim());
+                                          if (String(resolvedHit.section_name || "").trim()) {
+                                            setCreateSection(String(resolvedHit.section_name || "").trim());
+                                          }
                                           setCreateVariants((prev) =>
                                             (prev || []).map((x) =>
-                                              x.id === v.id ? { ...x, color: String(hit.material || "").trim() } : x,
+                                              x.id === v.id
+                                                ? {
+                                                    ...x,
+                                                    color: String(resolvedHit.material || "").trim() || String(x.color || "").trim(),
+                                                  }
+                                                : x,
                                             ),
                                           );
                                         }}

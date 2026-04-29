@@ -248,6 +248,7 @@ const RPC_MAP = {
   webUpsertFurnitureCustomTemplate: "web_upsert_furniture_custom_template",
   webUpsertItemArticleMap: "web_upsert_item_article_map",
   webUpsertItemArticleMapVariants: "web_upsert_item_article_map_variants",
+  webGetItemArticleMapByArticle: "web_get_item_article_map_by_article",
   webGetManualItemArticleVariants: "web_get_manual_item_article_variants",
   webGetMetalForFurniture: "web_get_metal_for_furniture",
   webGetMetalStock: "web_get_metal_stock",
