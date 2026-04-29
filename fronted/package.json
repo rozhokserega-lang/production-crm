@@ -10,7 +10,7 @@
     "smoke:rpc": "node ./scripts/rpc-smoke.mjs",
     "test": "vitest",
     "test:run": "vitest run",
-    "typecheck": "node -e \"console.log('TypeScript typecheck is disabled for this branch.');\"",
+    "typecheck:disabled": "node -e \"console.log('TypeScript typecheck is disabled for this branch.');\"",
     "build:safe": "vite build",
     "lint": "eslint . --ext js,jsx",
     "lint:fix": "eslint . --ext js,jsx --fix"

@@ -4,12 +4,14 @@ on:
   push:
     branches:
       - test
+      - crm
     paths:
       - "fronted/**"
       - ".github/workflows/test-branch-ci.yml"
   pull_request:
     branches:
       - test
+      - crm
     paths:
       - "fronted/**"
       - ".github/workflows/test-branch-ci.yml"
@@ -34,9 +36,6 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
-
-      - name: Type check
-        run: npm run typecheck
 
       - name: Lint
         run: npm run lint
