@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { OrderService } from "../services/orderService";
 
 const CRM_ROLES = ["viewer", "operator", "manager", "admin"];
 
@@ -80,7 +81,6 @@ function normalizeAuditLog(payload) {
  *
  * @param {Object} options
  * @param {string} options.view — текущий view
- * @param {Function} options.callBackend — функция вызова бэкенда
  * @param {Function} options.toUserError — нормализатор ошибок
  * @param {boolean} options.authEnabled — разрешена ли аутентификация
  * @param {Function} options.load — функция перезагрузки данных
@@ -98,7 +98,6 @@ function normalizeAuditLog(payload) {
  */
 export function useCrmRole({
   view,
-  callBackend,
   toUserError,
   authEnabled: _authEnabled,
   load: _load,
@@ -128,13 +127,13 @@ export function useCrmRole({
     let cancelled = false;
     async function loadCrmRole() {
       try {
-        const strictPayload = await callBackend("webGetCrmAuthStrict");
+        const strictPayload = await OrderService.getCrmAuthStrict();
         if (!cancelled) setCrmAuthStrict(parseStrictModeResponse(strictPayload));
       } catch (_) {
         if (!cancelled) setCrmAuthStrict(false);
       }
       try {
-        const rolePayload = await callBackend("webGetMyRole");
+        const rolePayload = await OrderService.getMyRole();
         const role = normalizeCrmRole(parseCrmRoleResponse(rolePayload));
         if (!cancelled) setCrmRole(role);
       } catch (_) {
@@ -145,20 +144,20 @@ export function useCrmRole({
     return () => {
       cancelled = true;
     };
-  }, [authUser?.id, callBackend]);
+  }, [authUser?.id]);
 
   const loadCrmUsers = useCallback(async () => {
     if (!canAdminSettings) return;
     setCrmUsersLoading(true);
     try {
-      const payload = await callBackend("webListCrmUserRoles");
+      const payload = await OrderService.listCrmUserRoles();
       setCrmUsers(normalizeCrmUsers(payload));
     } catch (e) {
       setError(toUserError(e));
     } finally {
       setCrmUsersLoading(false);
     }
-  }, [callBackend, canAdminSettings, setError, toUserError]);
+  }, [canAdminSettings, setError, toUserError]);
 
   const loadAuditLog = useCallback(async (next = {}) => {
     if (!canAdminSettings) return;
@@ -169,7 +168,7 @@ export function useCrmRole({
     setAuditLoading(true);
     setAuditError("");
     try {
-      const payload = await callBackend("webGetAuditLog", {
+      const payload = await OrderService.getAuditLog({
         action: requestedAction || null,
         entity: requestedEntity || null,
         limit: requestedLimit,
@@ -185,7 +184,7 @@ export function useCrmRole({
     } finally {
       setAuditLoading(false);
     }
-  }, [callBackend, canAdminSettings, toUserError]);
+  }, [canAdminSettings, toUserError]);
 
   useEffect(() => {
     if (view !== "admin" || !canAdminSettings) return;
@@ -205,9 +204,9 @@ export function useCrmRole({
     setCrmAuthStrictSaving(true);
     setError("");
     try {
-      const result = await callBackend("webSetCrmAuthStrict", { enabled: next });
+      const result = await OrderService.setCrmAuthStrict(next);
       setCrmAuthStrict(parseStrictModeResponse(result));
-      const rolePayload = await callBackend("webGetMyRole").catch(() => null);
+      const rolePayload = await OrderService.getMyRole().catch(() => null);
       if (rolePayload != null) setCrmRole(normalizeCrmRole(parseCrmRoleResponse(rolePayload)));
     } catch (e) {
       setError(toUserError(e));
@@ -221,7 +220,7 @@ export function useCrmRole({
     setCrmUsersSaving(userId);
     setError("");
     try {
-      await callBackend("webSetCrmUserRole", { userId, role });
+      await OrderService.setCrmUserRole(userId, role);
       await loadCrmUsers();
     } catch (e) {
       setError(toUserError(e));
@@ -237,7 +236,7 @@ export function useCrmRole({
     setCrmUsersSaving(userId);
     setError("");
     try {
-      await callBackend("webRemoveCrmUserRole", { userId });
+      await OrderService.removeCrmUserRole(userId);
       await loadCrmUsers();
     } catch (e) {
       setError(toUserError(e));
@@ -256,11 +255,7 @@ export function useCrmRole({
     setCrmUsersSaving(userId);
     setError("");
     try {
-      await callBackend("webSetCrmUserRole", {
-        userId,
-        role: newCrmUserRole,
-        note: newCrmUserNote,
-      });
+      await OrderService.setCrmUserRole(userId, newCrmUserRole, newCrmUserNote);
       setNewCrmUserId("");
       setNewCrmUserRole("viewer");
       setNewCrmUserNote("");

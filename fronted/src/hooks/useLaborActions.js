@@ -1,6 +1,7 @@
 import { useCallback, useRef } from "react";
 import * as XLSX from "xlsx";
 import { extractErrorMessage } from "../app/errorCatalogHelpers";
+import { OrderService } from "../services/orderService";
 import {
   buildLaborFactPayload,
   formatLaborImportError,
@@ -18,7 +19,6 @@ export function useLaborActions({
   setActionLoading,
   canOperateProduction,
   denyActionByRole,
-  callBackend,
   load,
   setLaborImportedRows,
   setLaborSaveSelected,
@@ -105,7 +105,7 @@ export function useLaborActions({
       setLaborSavingByKey((prev) => ({ ...prev, [key]: true }));
       setError("");
       try {
-        await callBackend("webUpsertLaborFact", buildLaborFactPayload(row));
+        await OrderService.upsertLaborFact(buildLaborFactPayload(row));
         setLaborSavedByKey((prev) => ({ ...prev, [key]: true }));
         setLaborSaveSelected((prev) => ({ ...prev, [key]: false }));
         setLaborImportedRows((prev) => markLaborImportRowSaved(prev, key));
@@ -117,7 +117,6 @@ export function useLaborActions({
       }
     },
     [
-      callBackend,
       canOperateProduction,
       denyActionByRole,
       load,

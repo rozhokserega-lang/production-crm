@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { OrderService } from "../services/orderService";
 
 function resolveFurnitureArticle(itemName, directArticle, articleLookupByItemKey, normalizeFurnitureKey) {
   const direct = String(directArticle || "").trim();
@@ -22,7 +23,6 @@ function resolveFurnitureArticle(itemName, directArticle, articleLookupByItemKey
 
 export function useMetalState({
   view,
-  callBackend,
   setLoading,
   setError,
   toUserError,
@@ -43,7 +43,7 @@ export function useMetalState({
   });
 
   const loadMetalStock = useCallback(async () => {
-    const payload = await callBackend("webGetMetalStock", {});
+    const payload = await OrderService.getMetalStock();
     const list = Array.isArray(payload) ? payload : [];
     setMetalStockRows(
       list.map((row) => ({
@@ -53,12 +53,12 @@ export function useMetalState({
         qty_reserved: Number(row?.qty_reserved || 0),
       })),
     );
-  }, [callBackend]);
+  }, []);
 
   const loadMetalQueue = useCallback(async () => {
     setMetalQueueLoading(true);
     try {
-      const payload = await callBackend("webGetMetalWorkQueue", {});
+      const payload = await OrderService.getMetalWorkQueue();
       const list = Array.isArray(payload) ? payload : [];
       setMetalQueueRows(
         list.map((row) => ({
@@ -86,7 +86,7 @@ export function useMetalState({
     } finally {
       setMetalQueueLoading(false);
     }
-  }, [callBackend]);
+  }, []);
 
   const updateMetalQueueStatus = useCallback(
     async (id, status) => {
@@ -95,7 +95,7 @@ export function useMetalState({
       setMetalQueueUpdatingId(queueId);
       setError("");
       try {
-        await callBackend("webSetMetalWorkQueueStatus", { id: queueId, status });
+        await OrderService.setMetalWorkQueueStatus(queueId, status);
         await loadMetalQueue();
       } catch (e) {
         setError(toUserError(e));
@@ -103,7 +103,7 @@ export function useMetalState({
         setMetalQueueUpdatingId(0);
       }
     },
-    [callBackend, loadMetalQueue, setError, toUserError],
+    [loadMetalQueue, setError, toUserError],
   );
 
   const adjustMetalStock = useCallback(
@@ -117,11 +117,11 @@ export function useMetalState({
       setMetalSavingArticle(article);
       setError("");
       try {
-        await callBackend("webSetMetalStock", {
-          metalArticle: article,
-          metalName: String(metalName || currentRow?.metal_name || "").trim(),
-          qtyAvailable: nextQty,
-        });
+        await OrderService.setMetalStock(
+          article,
+          String(metalName || currentRow?.metal_name || "").trim(),
+          nextQty,
+        );
         await loadMetalStock();
       } catch (e) {
         setError(toUserError(e));
@@ -129,7 +129,7 @@ export function useMetalState({
         setMetalSavingArticle("");
       }
     },
-    [callBackend, loadMetalStock, metalStockRows, setError, setMetalSavingArticle, toUserError],
+    [loadMetalStock, metalStockRows, setError, setMetalSavingArticle, toUserError],
   );
 
   useEffect(() => {
@@ -179,10 +179,10 @@ export function useMetalState({
       setSelectedShipmentMetal((prev) => ({ ...prev, loading: true, missingItems: uniqueMissingItems }));
       try {
         const [stockPayload, furnitureMetalRowsList] = await Promise.all([
-          callBackend("webGetMetalStock", {}),
+          OrderService.getMetalStock(),
           Promise.all(
             [...qtyByFurnitureArticle.keys()].map((article) =>
-              callBackend("webGetMetalForFurniture", { furnitureArticle: article }),
+              OrderService.getMetalForFurniture(article),
             ),
           ),
         ]);
@@ -238,7 +238,7 @@ export function useMetalState({
     return () => {
       cancelled = true;
     };
-  }, [view, selectedShipments, articleLookupByItemKey, normalizeFurnitureKey, callBackend]);
+  }, [view, selectedShipments, articleLookupByItemKey, normalizeFurnitureKey]);
 
   return {
     metalStockRows,

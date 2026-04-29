@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { buildLaborFactPayload } from "../app/laborImportHelpers";
 import { STRAP_OPTIONS } from "../app/appConstants";
+import { OrderService } from "../services/orderService";
 
 function formatHhMm(totalMin) {
   const safe = Math.max(0, Number(totalMin || 0));
@@ -75,7 +76,6 @@ export const LaborView = memo(function LaborView({
   laborSavingByKey,
   laborSavedByKey,
   saveImportedLaborRowToDb,
-  callBackend,
   setError,
   loading,
   canAdminSettings = false,
@@ -101,12 +101,11 @@ export const LaborView = memo(function LaborView({
   const [laborAdminSavingKey, setLaborAdminSavingKey] = useState("");
   const saveLaborMinutes = useCallback(
     async (row, updates) => {
-      if (!callBackend) return;
       const key = `${String(row?.orderId || "").trim()}::${String(row?.item || "").trim()}`;
       setLaborAdminSavingKey(key);
       if (setError) setError("");
       try {
-        await callBackend("webUpsertLaborFact", buildLaborFactPayload({ ...row, ...updates }));
+        await OrderService.upsertLaborFact(buildLaborFactPayload({ ...row, ...updates }));
         await load();
       } catch (e) {
         if (setError) setError(String(e?.message || e || "Не удалось сохранить трудоемкость"));
@@ -114,7 +113,7 @@ export const LaborView = memo(function LaborView({
         setLaborAdminSavingKey("");
       }
     },
-    [callBackend, load, setError],
+    [load, setError],
   );
 
   const [manualLaborOpen, setManualLaborOpen] = useState(false);
@@ -165,15 +164,13 @@ export const LaborView = memo(function LaborView({
   }, [manualLaborOpenNonce]);
 
   const saveManualLaborRow = useCallback(async () => {
-    if (!callBackend) return;
     const orderId = String(manualOrderId || "").trim();
     const item = String(manualItem || "").trim();
     if (!orderId || !item) return;
     setManualSaving(true);
     if (setError) setError("");
     try {
-      await callBackend(
-        "webUpsertLaborFact",
+      await OrderService.upsertLaborFact(
         buildLaborFactPayload({
           orderId,
           item,
@@ -194,7 +191,6 @@ export const LaborView = memo(function LaborView({
       setManualSaving(false);
     }
   }, [
-    callBackend,
     load,
     manualAssembly,
     manualItem,
@@ -238,11 +234,10 @@ export const LaborView = memo(function LaborView({
   }, [kromkaPosts, prasPosts]);
 
   useEffect(() => {
-    if (!callBackend) return;
     let cancelled = false;
     (async () => {
       try {
-        const rows = await callBackend("webGetLaborKits", {});
+        const rows = await OrderService.getLaborKits();
         if (cancelled) return;
         const normalized = (Array.isArray(rows) ? rows : [])
           .map((k) => ({
@@ -274,7 +269,7 @@ export const LaborView = memo(function LaborView({
     return () => {
       cancelled = true;
     };
-  }, [callBackend, setError]);
+  }, [setError]);
 
   const plannerGroups = useMemo(
     () => laborPlannerRows.map((r) => String(r.group || "").trim()).filter(Boolean),
@@ -362,10 +357,9 @@ export const LaborView = memo(function LaborView({
   };
 
   const saveKitToDb = async (kit) => {
-    if (!callBackend) return;
     setKitSavingId(kit.id);
     try {
-      const payload = await callBackend("webUpsertLaborKit", {
+      const payload = await OrderService.upsertLaborKit({
         id: kit.dbId || null,
         name: kit.name,
         items: kit.items,
@@ -383,10 +377,10 @@ export const LaborView = memo(function LaborView({
   };
 
   const removeSavedKit = async (kit) => {
-    if (kit.dbId && callBackend) {
+    if (kit.dbId) {
       setKitDeletingId(kit.id);
       try {
-        await callBackend("webDeleteLaborKit", { id: kit.dbId });
+        await OrderService.deleteLaborKit(kit.dbId);
       } catch (e) {
         if (setError) setError(String(e?.message || e || "Не удалось удалить комплект"));
         setKitDeletingId("");
@@ -433,7 +427,7 @@ export const LaborView = memo(function LaborView({
                   {canAdminSettings ? (
                     <LaborRowMinutesAdmin
                       row={r}
-                      disabled={loading || !callBackend || laborAdminSavingKey === `${String(r?.orderId || "").trim()}::${String(r?.item || "").trim()}`}
+                      disabled={loading || laborAdminSavingKey === `${String(r?.orderId || "").trim()}::${String(r?.item || "").trim()}`}
                       onSave={(u) => void saveLaborMinutes(r, u)}
                     />
                   ) : (

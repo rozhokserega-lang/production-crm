@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import ShelfCalculator from "../components/ShelfCalculator";
+import { OrderService } from "../services/orderService";
 
 export function FurnitureView({
   furnitureLoading,
@@ -19,7 +20,6 @@ export function FurnitureView({
   createFurniturePlanOrder,
   furnitureArticleSearchRows,
   furnitureCustomTemplates,
-  callBackend,
   load,
   refreshPlanCatalogs,
 }) {
@@ -108,13 +108,13 @@ export function FurnitureView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [createOpen, createDetailsNonce, editingExisting]);
 
-  async function ensureCatalogArticlesForImportLoaded() {
-    if (!canOperateProduction || typeof callBackend !== "function") return [];
+  const ensureCatalogArticlesForImportLoaded = useCallback(async () => {
+    if (!canOperateProduction) return [];
     if (catalogArticlesLoading) return catalogArticlesForImport || [];
     if (Array.isArray(catalogArticlesForImport) && catalogArticlesForImport.length > 0) return catalogArticlesForImport;
     setCatalogArticlesLoading(true);
     try {
-      const rows = await callBackend("webGetArticlesForImport");
+      const rows = await OrderService.getArticlesForImport();
       const next = Array.isArray(rows) ? rows : [];
       setCatalogArticlesForImport(next);
       return next;
@@ -124,7 +124,7 @@ export function FurnitureView({
     } finally {
       setCatalogArticlesLoading(false);
     }
-  }
+  }, [canOperateProduction, catalogArticlesLoading, catalogArticlesForImport]);
 
   async function ensureCatalogArticleByArticleLoaded(articleRaw) {
     const key = String(articleRaw || "").trim().toUpperCase();
@@ -134,7 +134,7 @@ export function FurnitureView({
 
     setCatalogArticleByArticleLoading((prev) => ({ ...prev, [key]: true }));
     try {
-      const rows = await callBackend("webGetItemArticleMapByArticle", { p_article: key });
+      const rows = await OrderService.getItemArticleMapByArticle(key);
       const first = Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
       setCatalogArticleByArticle((prev) => ({ ...prev, [key]: first }));
       return first;
@@ -148,9 +148,9 @@ export function FurnitureView({
 
   useEffect(() => {
     if (!createOpen) return;
-    if (!canOperateProduction || typeof callBackend !== "function") return;
+    if (!canOperateProduction) return;
     void ensureCatalogArticlesForImportLoaded();
-  }, [createOpen, canOperateProduction, callBackend]); // uses cached ensure() logic
+  }, [createOpen, canOperateProduction, ensureCatalogArticlesForImportLoaded]); // uses cached ensure() logic
 
   // If variants are pre-filled (e.g. when opening an existing mapping),
   // ensure we also fetch "by article" hints for those SKUs.
@@ -167,13 +167,12 @@ export function FurnitureView({
   useEffect(() => {
     if (!createOpen) return;
     if (!editingExisting) return;
-    if (typeof callBackend !== "function") return;
     const itemName = String(createName || "").trim();
     if (!itemName) return;
     let cancelled = false;
     (async () => {
       try {
-        const all = await callBackend("webGetManualItemArticleVariants", { p_item_name: itemName });
+        const all = await OrderService.getManualItemArticleVariants(itemName);
         const rows = Array.isArray(all) ? all : [];
         const matched = rows
           .map((r) => ({
@@ -254,7 +253,7 @@ export function FurnitureView({
   }
 
   async function saveNewFurnitureToCatalog() {
-    if (!canOperateProduction || typeof callBackend !== "function") return;
+    if (!canOperateProduction) return;
     const section = String(createSection || "").trim() || "Прочее";
     const name = String(createName || "").trim();
     const variants = (Array.isArray(createVariants) ? createVariants : [])
@@ -296,7 +295,7 @@ export function FurnitureView({
       let catalog = Array.isArray(catalogArticlesForImport) ? catalogArticlesForImport : [];
       if (!Array.isArray(catalog) || catalog.length === 0) {
         try {
-          const rows = await callBackend("webGetArticlesForImport");
+          const rows = await OrderService.getArticlesForImport();
           catalog = Array.isArray(rows) ? rows : [];
         } catch (_) {
           catalog = [];
@@ -309,12 +308,6 @@ export function FurnitureView({
       );
 
       // 1) Add/update to plan catalog.
-      // We must skip articles that already exist in catalog (xlsx) because item_article_map has a unique constraint on `article`
-      // and web_upsert_item_article_map_variants throws:
-      // "article ... already exists in catalog (source=...)"
-      //
-      // NOTE: web_get_articles_for_import may ignore rows with NULL section_name/table_color,
-      // so we do an additional lookup by article for the "missing in catalog" case.
       const variantsToUpsert = [];
       for (const v of variants) {
         const article = String(v?.article || "").trim().toUpperCase();
@@ -324,7 +317,7 @@ export function FurnitureView({
         // Extra existence check (handles xlsx rows with NULL section_name/table_color).
         let existingRow = null;
         try {
-          const rows = await callBackend("webGetItemArticleMapByArticle", { p_article: article });
+          const rows = await OrderService.getItemArticleMapByArticle(article);
           existingRow = Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
         } catch (_) {
           existingRow = null;
@@ -334,24 +327,18 @@ export function FurnitureView({
         if (existingRow && String(existingRow.source || "").trim() && String(existingRow.source || "").trim() !== "manual") {
           continue;
         }
+
+        const color = String(v?.color || "").trim();
+        if (!color) continue;
         variantsToUpsert.push(v);
       }
 
       if (variantsToUpsert.length > 0) {
-        await callBackend("webUpsertItemArticleMapVariants", {
-          p_section_name: section,
-          p_item_name: name,
-          p_variants: variantsToUpsert,
-          p_sort_order: 999,
-        });
+        await OrderService.upsertItemArticleMapVariants(section, name, variantsToUpsert, 999);
       }
 
       // 2) Save composition as a custom template (so it can be used inside furniture constructor / previews)
-      await callBackend("webUpsertFurnitureCustomTemplate", {
-        p_product_name: name,
-        p_details: normalizedDetails,
-        p_kits_per_sheet: kitsPerSheet,
-      });
+      await OrderService.upsertFurnitureCustomTemplate(name, normalizedDetails, kitsPerSheet);
 
       setCreateOk("Готово: изделие сохранено и появится в 'Добавить новый план'.");
       setCreateOpen(false);

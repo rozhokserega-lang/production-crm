@@ -427,7 +427,6 @@ export function useAppState() {
     createCrmUserRole,
   } = useCrmRole({
     view,
-    callBackend,
     toUserError,
     authEnabled,
     load,
@@ -478,7 +477,7 @@ export function useAppState() {
     weeks,
     sectionOptions,
     sectionArticles,
-    selectedItemVariants,
+    selectedItemVariants: _selectedPlanItemVariants,
     articleLookupByItemKey,
     resolvedPlanItem,
   } = useShipmentPlanningDerivedData({
@@ -533,7 +532,7 @@ export function useAppState() {
       }
     }
     return resolveFurnitureTemplateForPreview(preview, list);
-  }, [sectionArticleRows, normalizeFurnitureKey]);
+  }, [sectionArticleRows]);
 
   // If the user opens preview very early, templates may still be loading and
   // previews will contain only the backend placeholder row. Once templates are ready,
@@ -796,7 +795,6 @@ export function useAppState() {
   } = useWorkSchedule({
     canAdminSettings,
     view,
-    callBackend,
     setError,
     toUserError,
   });
@@ -890,7 +888,6 @@ export function useAppState() {
     adjustMetalStock,
   } = useMetalState({
     view,
-    callBackend,
     setLoading,
     setError,
     toUserError,
@@ -1490,7 +1487,6 @@ export function useAppState() {
     denyActionByRole,
     syncPlanCellToGoogleSheet,
     sectionArticleRows,
-    normalizeFurnitureKey,
   ]);
 
   const previewSelectedShipmentPlan = useCallback(async () => {
@@ -1600,6 +1596,7 @@ export function useAppState() {
     furnitureError,
     furnitureLoading,
     furnitureTemplates,
+    resolveFurnitureTemplateForPreviewByArticle,
     setActionLoading,
     setError,
     setPlanPreviews,
@@ -1740,7 +1737,6 @@ export function useAppState() {
     setActionLoading,
     canOperateProduction,
     denyActionByRole,
-    callBackend,
     load,
     setLaborImportedRows,
     setLaborSaveSelected,

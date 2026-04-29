@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef } from "react";
+import { OrderService } from "../services/orderService";
 
 export function useDataLoader({
   view,
@@ -57,12 +58,12 @@ export function useDataLoader({
       } else if (view === "overview") {
         data = await loadOrdersDomainData({ view, callBackend });
       } else if (view === "sheetMirror") {
-        data = await callBackend("webGetSheetOrdersMirror", { p_sheet_gid: SHEET_MIRROR_GID });
+        data = await OrderService.getSheetOrdersMirror(SHEET_MIRROR_GID);
       } else if (view === "warehouse") {
         warehousePayload = await loadWarehouseDomainData({ callBackend });
         data = warehousePayload.data;
       } else if (view === "labor") {
-        data = await callBackend("webGetLaborTable");
+        data = await OrderService.getLaborTable();
       } else if (view === "stats") {
         data = await loadOrdersDomainData({ view, callBackend });
       } else if (view === "furniture") {
@@ -103,7 +104,7 @@ export function useDataLoader({
         }
         if (view === "workshop") {
           try {
-            const boardData = await callBackend("webGetShipmentBoard");
+            const boardData = await OrderService.getShipmentBoard();
             setShipmentBoard(normalizeShipmentBoard(boardData));
           } catch (_) {
             // keep previous shipment board snapshot
@@ -140,6 +141,7 @@ export function useDataLoader({
     normalizeShipmentBoard,
     setError,
     setFurnitureArticleRows,
+    setFurnitureCustomTemplates,
     setFurnitureDetailArticleRows,
     setLaborRows,
     setLeftoversHistoryRows,

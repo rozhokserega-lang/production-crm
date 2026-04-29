@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
+import { OrderService } from "../services/orderService";
 
 const WEEK_DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 
-export function useWorkSchedule({ canAdminSettings, view, callBackend, setError, toUserError }) {
+export function useWorkSchedule({ canAdminSettings, view, setError, toUserError }) {
   const [workScheduleLoading, setWorkScheduleLoading] = useState(false);
   const [workScheduleSaving, setWorkScheduleSaving] = useState(false);
   const [workSchedule, setWorkSchedule] = useState({
@@ -53,21 +54,21 @@ export function useWorkSchedule({ canAdminSettings, view, callBackend, setError,
     if (!canAdminSettings) return;
     setWorkScheduleLoading(true);
     try {
-      const payload = await callBackend("webGetWorkSchedule");
+      const payload = await OrderService.getWorkSchedule();
       setWorkSchedule(normalizeWorkSchedule(payload));
     } catch (e) {
       setError(toUserError(e));
     } finally {
       setWorkScheduleLoading(false);
     }
-  }, [callBackend, canAdminSettings, normalizeWorkSchedule, setError, toUserError]);
+  }, [canAdminSettings, normalizeWorkSchedule, setError, toUserError]);
 
   const saveWorkSchedule = useCallback(async () => {
     if (!canAdminSettings || workScheduleSaving) return;
     setWorkScheduleSaving(true);
     setError("");
     try {
-      const payload = await callBackend("webSetWorkSchedule", {
+      const payload = await OrderService.setWorkSchedule({
         hoursPerDay: workSchedule.hoursPerDay,
         workingDays: workSchedule.workingDays,
         workStart: workSchedule.workStart,
@@ -82,7 +83,6 @@ export function useWorkSchedule({ canAdminSettings, view, callBackend, setError,
       setWorkScheduleSaving(false);
     }
   }, [
-    callBackend,
     canAdminSettings,
     normalizeWorkSchedule,
     setError,

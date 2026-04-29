@@ -251,37 +251,36 @@ export function isOrdersDomainView(view) {
   return !["shipment", "sheetMirror", "warehouse", "labor", "furniture", "metal"].includes(String(view || ""));
 }
 
-export async function loadOrdersDomainData({ view, callBackend }) {
+export async function loadOrdersDomainData({ view }) {
   if (view === "overview") {
-    return callBackend("webGetOrdersAll");
+    return OrderService.getAllOrders();
   }
   if (view === "stats") {
     try {
-      return await callBackend("webGetOrderStats");
+      return await OrderService.getOrderStats();
     } catch (_) {
-      return callBackend("webGetOrdersAll");
+      return OrderService.getAllOrders();
     }
   }
   // Для согласованности с "Обзор заказов" всегда берем полный список
   // и уже на фронте раскладываем по табам этапов.
-  return callBackend("webGetOrdersAll");
+  return OrderService.getAllOrders();
 }
 
 export async function loadShipmentDomainData({
-  callBackend,
   normalizeShipmentBoard,
   mergeShipmentBoardWithTable,
   normalizeOrder,
 }) {
   let boardData;
   try {
-    boardData = await callBackend("webGetShipmentBoard");
+    boardData = await OrderService.getShipmentBoard();
   } catch (_) {
-    boardData = await callBackend("webGetShipmentTable");
+    boardData = await OrderService.getShipmentTable();
   }
   let data = normalizeShipmentBoard(boardData);
   try {
-    const tableData = await callBackend("webGetShipmentTable");
+    const tableData = await OrderService.getShipmentTable();
     data = mergeShipmentBoardWithTable(data, tableData);
   } catch (_) {
     // keep shipment board data if table snapshot is unavailable
@@ -289,43 +288,43 @@ export async function loadShipmentDomainData({
 
   let planCatalogRows = [];
   try {
-    const catalogData = await callBackend("webGetPlanCatalog");
+    const catalogData = await OrderService.getPlanCatalog();
     planCatalogRows = Array.isArray(catalogData) ? catalogData : [];
   } catch (_) {}
 
   let sectionCatalogRows = [];
   try {
-    const sectionsData = await callBackend("webGetSectionCatalog");
+    const sectionsData = await OrderService.getSectionCatalog();
     sectionCatalogRows = Array.isArray(sectionsData) ? sectionsData : [];
   } catch (_) {}
 
   let sectionArticleRows = [];
   try {
-    const articlesData = await callBackend("webGetSectionArticles");
+    const articlesData = await OrderService.getSectionArticles();
     sectionArticleRows = Array.isArray(articlesData) ? articlesData : [];
   } catch (_) {}
 
   let shipmentOrders = [];
   try {
-    const shipmentOrdersData = await callBackend("webGetOrdersAll");
+    const shipmentOrdersData = await OrderService.getAllOrders();
     shipmentOrders = Array.isArray(shipmentOrdersData) ? shipmentOrdersData.map(normalizeOrder) : [];
   } catch (_) {}
 
   let furnitureDetailArticleRows = [];
   try {
-    const detailArticles = await callBackend("webGetFurnitureDetailArticles");
+    const detailArticles = await OrderService.getFurnitureDetailArticles();
     furnitureDetailArticleRows = Array.isArray(detailArticles) ? detailArticles : [];
   } catch (_) {}
 
   let furnitureCustomTemplates = [];
   try {
-    const templates = await callBackend("webGetFurnitureCustomTemplates");
+    const templates = await OrderService.getFurnitureCustomTemplates();
     furnitureCustomTemplates = Array.isArray(templates) ? templates : [];
   } catch (_) {}
 
   let materialsStockRows = [];
   try {
-    const stockData = await callBackend("webGetMaterialsStock");
+    const stockData = await OrderService.getMaterialsStock();
     materialsStockRows = Array.isArray(stockData) ? stockData : [];
   } catch (_) {}
 
@@ -341,26 +340,26 @@ export async function loadShipmentDomainData({
   };
 }
 
-export async function loadWarehouseDomainData({ callBackend }) {
-  const data = await callBackend("webGetMaterialsStock");
+export async function loadWarehouseDomainData() {
+  const data = await OrderService.getMaterialsStock();
   let leftoversRows = [];
   let leftoversHistoryRows = [];
   let consumeHistoryRows = [];
   let pilkaDoneHistoryRows = [];
   try {
-    const leftoversData = await callBackend("webGetLeftovers");
+    const leftoversData = await OrderService.getLeftovers();
     leftoversRows = Array.isArray(leftoversData) ? leftoversData : [];
   } catch (_) {}
   try {
-    const leftoversHistoryData = await callBackend("webGetLeftoversHistory", { limit: 500 });
+    const leftoversHistoryData = await OrderService.getLeftoversHistory(500);
     leftoversHistoryRows = Array.isArray(leftoversHistoryData) ? leftoversHistoryData : [];
   } catch (_) {}
   try {
-    const consumeHistoryData = await callBackend("webGetConsumeHistory", { limit: 300 });
+    const consumeHistoryData = await OrderService.getConsumeHistory(300);
     consumeHistoryRows = Array.isArray(consumeHistoryData) ? consumeHistoryData : [];
   } catch (_) {}
   try {
-    const auditData = await callBackend("webGetAuditLog", {
+    const auditData = await OrderService.getAuditLog({
       limit: 1000,
       offset: 0,
       action: "set_stage",
@@ -383,7 +382,7 @@ export async function loadWarehouseDomainData({ callBackend }) {
     });
   } catch (_) {}
   try {
-    const ordersData = await callBackend("webGetOrdersAll");
+    const ordersData = await OrderService.getAllOrders();
     const rows = Array.isArray(ordersData) ? ordersData : [];
     const existingIds = new Set(
       pilkaDoneHistoryRows
@@ -422,22 +421,22 @@ export async function loadWarehouseDomainData({ callBackend }) {
   };
 }
 
-export async function loadFurnitureDomainData({ callBackend }) {
+export async function loadFurnitureDomainData() {
   let furnitureArticleRows = [];
   try {
-    const mappingData = await callBackend("webGetFurnitureProductArticles");
+    const mappingData = await OrderService.getFurnitureProductArticles();
     furnitureArticleRows = Array.isArray(mappingData) ? mappingData : [];
   } catch (_) {}
 
   let furnitureDetailArticleRows = [];
   try {
-    const detailArticles = await callBackend("webGetFurnitureDetailArticles");
+    const detailArticles = await OrderService.getFurnitureDetailArticles();
     furnitureDetailArticleRows = Array.isArray(detailArticles) ? detailArticles : [];
   } catch (_) {}
 
   let furnitureCustomTemplates = [];
   try {
-    const templates = await callBackend("webGetFurnitureCustomTemplates");
+    const templates = await OrderService.getFurnitureCustomTemplates();
     furnitureCustomTemplates = Array.isArray(templates) ? templates : [];
   } catch (_) {}
 

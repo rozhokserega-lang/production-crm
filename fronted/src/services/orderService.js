@@ -75,15 +75,33 @@ export class OrderService {
     return await callBackend("webGetFurnitureCustomTemplates");
   }
 
-  static async upsertFurnitureCustomTemplate(productName, details) {
+  static async upsertFurnitureCustomTemplate(productName, details, kitsPerSheet = 0) {
     return await callBackend("webUpsertFurnitureCustomTemplate", {
       p_product_name: productName,
       p_details: details,
+      p_kits_per_sheet: kitsPerSheet,
     });
   }
 
   static async upsertItemArticleMap(payload) {
     return await callBackend("webUpsertItemArticleMap", payload);
+  }
+
+  static async getItemArticleMapByArticle(article) {
+    return await callBackend("webGetItemArticleMapByArticle", { p_article: article });
+  }
+
+  static async getManualItemArticleVariants(itemName) {
+    return await callBackend("webGetManualItemArticleVariants", { p_item_name: itemName });
+  }
+
+  static async upsertItemArticleMapVariants(sectionName, itemName, variants, sortOrder = 999) {
+    return await callBackend("webUpsertItemArticleMapVariants", {
+      p_section_name: sectionName,
+      p_item_name: itemName,
+      p_variants: variants,
+      p_sort_order: sortOrder,
+    });
   }
 
   static async getArticlesForImport() {
