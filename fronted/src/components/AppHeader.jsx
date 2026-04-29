@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+
 export function AppHeader({
   authEnabled,
   authUserLabel,
@@ -15,10 +17,33 @@ export function AppHeader({
   toggleCrmAuthStrict,
   crmAuthStrictSaving,
 }) {
+  const [themeMode, setThemeMode] = useState(() => {
+    if (typeof window === "undefined") return "classic";
+    const saved = String(window.localStorage.getItem("crm_ui_theme") || "").trim();
+    return saved === "tech-dark" ? "tech-dark" : "classic";
+  });
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    document.documentElement.setAttribute("data-theme", themeMode);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("crm_ui_theme", themeMode);
+    }
+  }, [themeMode]);
+
+  const isTechDark = themeMode === "tech-dark";
   return (
     <header className="top">
       <h1>Управление производственными заказами</h1>
       <div className="top-actions">
+        <button
+          type="button"
+          className="mini tab theme-toggle"
+          onClick={() => setThemeMode(isTechDark ? "classic" : "tech-dark")}
+          title="Переключить визуальный режим интерфейса"
+        >
+          {isTechDark ? "Тема: Classic" : "Тема: Tech Dark"}
+        </button>
         {authEnabled && (
           <div className="auth-controls">
             {authUserLabel ? (
