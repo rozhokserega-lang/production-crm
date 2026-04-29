@@ -107,6 +107,26 @@ cp -r dist/* /var/www/crm-test/
 systemctl reload nginx
 ```
 
+## RPC Smoke (CI and local)
+
+The workflow `test-branch-ci.yml` runs `npm run smoke:rpc` only when both secrets are present:
+
+- `STAGING_SUPABASE_URL`
+- `STAGING_SUPABASE_ANON_KEY`
+
+Local run from `fronted/`:
+
+```bash
+npm run smoke:rpc
+```
+
+The script accepts either:
+
+- `SUPABASE_URL` + `SUPABASE_ANON_KEY`, or
+- `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY`
+
+You can put these values into `fronted/.env.local` (not committed) for local smoke checks.
+
 ## Quick Troubleshooting
 
 - Белый экран, в консоли `Unexpected token '<'`:
