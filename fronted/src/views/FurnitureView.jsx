@@ -39,6 +39,7 @@ export function FurnitureView({
   const [createDetailsNonce, setCreateDetailsNonce] = useState(0);
   const [editingExisting, setEditingExisting] = useState(false);
   const [catalogArticlesForImport, setCatalogArticlesForImport] = useState([]);
+  const [catalogArticlesLoading, setCatalogArticlesLoading] = useState(false);
 
   function makeVariantRow(article = "", color = "") {
     return {
@@ -105,28 +106,29 @@ export function FurnitureView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [createOpen, createDetailsNonce, editingExisting]);
 
+  async function ensureCatalogArticlesForImportLoaded() {
+    if (!canOperateProduction || typeof callBackend !== "function") return [];
+    if (catalogArticlesLoading) return catalogArticlesForImport || [];
+    if (Array.isArray(catalogArticlesForImport) && catalogArticlesForImport.length > 0) return catalogArticlesForImport;
+    setCatalogArticlesLoading(true);
+    try {
+      const rows = await callBackend("webGetArticlesForImport");
+      const next = Array.isArray(rows) ? rows : [];
+      setCatalogArticlesForImport(next);
+      return next;
+    } catch (_) {
+      setCatalogArticlesForImport([]);
+      return [];
+    } finally {
+      setCatalogArticlesLoading(false);
+    }
+  }
+
   useEffect(() => {
     if (!createOpen) return;
     if (!canOperateProduction || typeof callBackend !== "function") return;
-    if (Array.isArray(catalogArticlesForImport) && catalogArticlesForImport.length > 0) return;
-
-    let cancelled = false;
-    (async () => {
-      try {
-        const rows = await callBackend("webGetArticlesForImport");
-        if (cancelled) return;
-        setCatalogArticlesForImport(Array.isArray(rows) ? rows : []);
-      } catch (_) {
-        // If catalog lookup fails, keep UX alive; save will still work for new articles.
-        if (cancelled) return;
-        setCatalogArticlesForImport([]);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [createOpen, canOperateProduction, callBackend, catalogArticlesForImport]);
+    void ensureCatalogArticlesForImportLoaded();
+  }, [createOpen, canOperateProduction, callBackend]); // uses cached ensure() logic
 
   useEffect(() => {
     if (!createOpen) return;
@@ -268,7 +270,7 @@ export function FurnitureView({
       }
       const existingByArticle = new Map(
         catalog
-          .map((r) => ({ article: String(r?.article || "").trim(), row: r }))
+          .map((r) => ({ article: String(r?.article || "").trim().toUpperCase(), row: r }))
           .filter((x) => x.article),
       );
 
@@ -276,7 +278,7 @@ export function FurnitureView({
       // Articles already in catalog (xlsx) can not be re-inserted via webUpsertItemArticleMapVariants
       // because of the unique constraint (article). We skip those to avoid "already exists" errors.
       const variantsToUpsert = variants.filter((v) => {
-        const article = String(v?.article || "").trim();
+        const article = String(v?.article || "").trim().toUpperCase();
         return article && !existingByArticle.has(article);
       });
 
@@ -573,10 +575,10 @@ export function FurnitureView({
                             }}
                           >
                             {(() => {
-                              const article = String(v?.article || "").trim();
+                              const article = String(v?.article || "").trim().toUpperCase();
                               const hit = Array.isArray(catalogArticlesForImport)
                                 ? catalogArticlesForImport.find(
-                                    (r) => String(r?.article || "").trim() === article,
+                                    (r) => String(r?.article || "").trim().toUpperCase() === article,
                                   )
                                 : null;
 
@@ -589,6 +591,13 @@ export function FurnitureView({
                                       setCreateVariants((prev) =>
                                         (prev || []).map((x) => (x.id === v.id ? { ...x, article: val } : x)),
                                       );
+                                      if (
+                                        String(val || "").trim() &&
+                                        !catalogArticlesLoading &&
+                                        (!Array.isArray(catalogArticlesForImport) || catalogArticlesForImport.length === 0)
+                                      ) {
+                                        void ensureCatalogArticlesForImportLoaded();
+                                      }
                                     }}
                                     placeholder="GX..."
                                     style={{
