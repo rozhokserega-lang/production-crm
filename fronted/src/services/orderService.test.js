@@ -63,4 +63,75 @@ describe("OrderService", () => {
     expect(callBackend).toHaveBeenNthCalledWith(2, "webGetShipmentTable");
     expect(result).toEqual([{ row: 1 }]);
   });
+
+  it("calls list metal process catalog RPC", async () => {
+    callBackend.mockResolvedValueOnce([]);
+
+    await OrderService.listMetalProcessCatalog(true);
+
+    expect(callBackend).toHaveBeenCalledWith("webListMetalProcessCatalog", { activeOnly: true });
+  });
+
+  it("sends payload for create metal process item", async () => {
+    callBackend.mockResolvedValueOnce({ id: 1 });
+
+    await OrderService.createMetalProcessItem({
+      article: "M-001",
+      name: "Опора",
+      week: "18",
+      qty: 4,
+    });
+
+    expect(callBackend).toHaveBeenCalledWith("webCreateMetalProcessItem", {
+      article: "M-001",
+      name: "Опора",
+      week: "18",
+      qty: 4,
+    });
+  });
+
+  it("sends payload for stage transition action", async () => {
+    callBackend.mockResolvedValueOnce({ ok: true });
+
+    await OrderService.transitionMetalProcessStage(33, "pause");
+
+    expect(callBackend).toHaveBeenCalledWith("webTransitionMetalProcessStage", {
+      id: 33,
+      action: "pause",
+      startStage: null,
+    });
+  });
+
+  it("passes start stage when launching planned item", async () => {
+    callBackend.mockResolvedValueOnce({ ok: true });
+
+    await OrderService.transitionMetalProcessStage(41, "start", "saw");
+
+    expect(callBackend).toHaveBeenCalledWith("webTransitionMetalProcessStage", {
+      id: 41,
+      action: "start",
+      startStage: "saw",
+    });
+  });
+
+  it("sends payload for metal process operator comment", async () => {
+    callBackend.mockResolvedValueOnce({ ok: true });
+
+    await OrderService.setMetalProcessComment(17, "Проверить кромку перед сваркой");
+
+    expect(callBackend).toHaveBeenCalledWith("webSetMetalProcessComment", {
+      id: 17,
+      comment: "Проверить кромку перед сваркой",
+    });
+  });
+
+  it("sends payload for deleting metal process item", async () => {
+    callBackend.mockResolvedValueOnce({ ok: true });
+
+    await OrderService.deleteMetalProcessItem(41);
+
+    expect(callBackend).toHaveBeenCalledWith("webDeleteMetalProcessItem", {
+      id: 41,
+    });
+  });
 });

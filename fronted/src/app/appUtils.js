@@ -118,6 +118,17 @@ export function resolveDefaultConsumeSheetsFromBoard(order, shipmentBoard) {
 
 export function normalizeShipmentBoard(data) {
   if (data && Array.isArray(data.sections)) return applyStorageAutoCutToBoard(data);
+  // Some RPC/proxy combinations return board as [{ sections: [...] }].
+  // Support this payload shape to avoid rendering an empty shipment board.
+  if (
+    Array.isArray(data) &&
+    data.length === 1 &&
+    data[0] &&
+    typeof data[0] === "object" &&
+    Array.isArray(data[0].sections)
+  ) {
+    return applyStorageAutoCutToBoard(data[0]);
+  }
   if (!Array.isArray(data)) return { sections: [] };
   const sectionMap = new Map();
   data.forEach((row, idx) => {

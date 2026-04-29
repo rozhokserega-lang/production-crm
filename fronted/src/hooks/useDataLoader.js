@@ -69,6 +69,8 @@ export function useDataLoader({
       } else if (view === "furniture") {
         furniturePayload = await loadFurnitureDomainData({ callBackend });
         data = furniturePayload.data;
+      } else if (view === "metalProcess") {
+        data = [];
       } else {
         data = await loadOrdersDomainData({ view, callBackend });
       }
@@ -117,6 +119,8 @@ export function useDataLoader({
           setFurnitureCustomTemplates(furniturePayload?.furnitureCustomTemplates || []);
         }
         setRows(Array.isArray(data) ? data : []);
+      } else if (view === "metalProcess") {
+        setRows([]);
       } else {
         setRows(Array.isArray(data) ? data : []);
       }

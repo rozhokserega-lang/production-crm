@@ -1,6 +1,7 @@
 import { useAppState } from "./hooks/useAppState";
 import { useState } from "react";
 import { AppHeader } from "./components/AppHeader";
+import { DomainDrawer } from "./components/DomainDrawer";
 import { ViewSwitcher } from "./components/ViewSwitcher";
 import { KpiGrid } from "./components/KpiGrid";
 import { ViewControls } from "./components/ViewControls";
@@ -18,6 +19,7 @@ import { StatsView } from "./views/StatsView";
 import { SheetMirrorView } from "./views/SheetMirrorView";
 import { FurnitureView } from "./views/FurnitureView";
 import { MetalView } from "./views/MetalView";
+import { MetalProcessView } from "./views/MetalProcessView";
 import {
   CRM_ROLES,
   CRM_ROLE_LABELS,
@@ -65,6 +67,7 @@ import {
 
 export default function App() {
   const [manualLaborOpenNonce, setManualLaborOpenNonce] = useState(0);
+  const [domainDrawerOpen, setDomainDrawerOpen] = useState(false);
   const openManualLaborDialog = () => setManualLaborOpenNonce((x) => x + 1);
 
   const {
@@ -218,6 +221,16 @@ export default function App() {
     metalSavingArticle,
     selectedShipmentMetal,
     adjustMetalStock,
+    metalProcessRows,
+    metalProcessCatalogRows,
+    metalProcessLoading,
+    metalProcessActionKey,
+    metalProcessDraft,
+    setMetalProcessDraft,
+    createMetalProcessPlanItem,
+    transitionMetalProcessStage,
+    saveMetalProcessComment,
+    deleteMetalProcessItem,
     shipmentOrderMaps,
     runAction,
     isActionPending,
@@ -316,99 +329,108 @@ export default function App() {
         toggleCrmAuthStrict={toggleCrmAuthStrict}
         crmAuthStrictSaving={crmAuthStrictSaving}
       />
+      <DomainDrawer open={domainDrawerOpen} setOpen={setDomainDrawerOpen} view={view} setView={setView} />
 
-      <ViewSwitcher
-        view={view}
-        setView={setView}
-        setTab={setTab}
-        canAdminSettings={canAdminSettings}
-      />
+      {view !== "metalProcess" && (
+        <ViewSwitcher
+          view={view}
+          setView={setView}
+          setTab={setTab}
+          canAdminSettings={canAdminSettings}
+        />
+      )}
 
-      <KpiGrid
-        view={view}
-        shipmentKpi={shipmentKpi}
-        overviewSubView={overviewSubView}
-        overviewShippedOnly={overviewShippedOnly}
-        filtered={filtered}
-        statusClass={statusClass}
-        laborKpi={laborKpi}
-        kpi={kpi}
-      />
+      {view !== "metalProcess" && (
+        <KpiGrid
+          view={view}
+          shipmentKpi={shipmentKpi}
+          overviewSubView={overviewSubView}
+          overviewShippedOnly={overviewShippedOnly}
+          filtered={filtered}
+          statusClass={statusClass}
+          laborKpi={laborKpi}
+          kpi={kpi}
+        />
+      )}
 
-      <ViewControls
-        view={view}
-        overviewSubView={overviewSubView}
-        setOverviewSubView={setOverviewSubView}
-        tab={tab}
-        setTab={setTab}
-        warehouseSubView={warehouseSubView}
-        setWarehouseSubView={setWarehouseSubView}
-        laborSubView={laborSubView}
-        setLaborSubView={setLaborSubView}
-        query={query}
-        setQuery={setQuery}
-        weekFilter={weekFilter}
-        setWeekFilter={setWeekFilter}
-        weeks={weeks}
-        statsSort={statsSort}
-        setStatsSort={setStatsSort}
-        shipmentSort={shipmentSort}
-        setShipmentSort={setShipmentSort}
-        shipmentViewMode={shipmentViewMode}
-        setShipmentViewMode={setShipmentViewMode}
-        laborSort={laborSort}
-        setLaborSort={setLaborSort}
-        showAwaiting={showAwaiting}
-        setShowAwaiting={setShowAwaiting}
-        showOnPilka={showOnPilka}
-        setShowOnPilka={setShowOnPilka}
-        showOnKromka={showOnKromka}
-        setShowOnKromka={setShowOnKromka}
-        showOnPras={showOnPras}
-        setShowOnPras={setShowOnPras}
-        showReadyAssembly={showReadyAssembly}
-        setShowReadyAssembly={setShowReadyAssembly}
-        showAwaitShipment={showAwaitShipment}
-        setShowAwaitShipment={setShowAwaitShipment}
-        showShipped={showShipped}
-        setShowShipped={setShowShipped}
-        resetShipmentFilters={resetShipmentFilters}
-        canOperateProduction={canOperateProduction}
-        openStrapDialog={openStrapDialog}
-        openCreatePlanDialog={openCreatePlanDialog}
-        selectedShipments={selectedShipments}
-        exportSelectedShipmentToExcel={exportSelectedShipmentToExcel}
-        importPlanFileRef={importPlanFileRef}
-        actionLoading={actionLoading}
-        importShipmentPlanFromExcelFile={importShipmentPlanFromExcelFile}
-        warehouseSyncLoading={warehouseSyncLoading}
-        loading={loading}
-        syncWarehouseFromGoogleSheet={syncWarehouseFromGoogleSheet}
-        leftoversSyncLoading={leftoversSyncLoading}
-        syncLeftoversToGoogleSheet={syncLeftoversToGoogleSheet}
-        warehouseOrderPlanRows={warehouseOrderPlanRows}
-        printWarehouseOrderPlanPdf={printWarehouseOrderPlanPdf}
-        exportLaborTotalToExcel={exportLaborTotalToExcel}
-        laborTableRows={laborTableRows}
-        importLaborFileRef={importLaborFileRef}
-        importLaborTotalFromExcelFile={importLaborTotalFromExcelFile}
-        laborImportedRows={laborImportedRows}
-        setLaborImportedRows={setLaborImportedRows}
-        setLaborSaveSelected={setLaborSaveSelected}
-        setLaborSavingByKey={setLaborSavingByKey}
-        setLaborSavedByKey={setLaborSavedByKey}
-        importMetalFileRef={importMetalFileRef}
-        importMetalFromExcelFile={importMetalFromExcelFile}
-        canAdminSettings={canAdminSettings}
-        openManualLaborDialog={openManualLaborDialog}
-      />
+      {view !== "metalProcess" && (
+        <ViewControls
+          view={view}
+          overviewSubView={overviewSubView}
+          setOverviewSubView={setOverviewSubView}
+          tab={tab}
+          setTab={setTab}
+          warehouseSubView={warehouseSubView}
+          setWarehouseSubView={setWarehouseSubView}
+          laborSubView={laborSubView}
+          setLaborSubView={setLaborSubView}
+          query={query}
+          setQuery={setQuery}
+          weekFilter={weekFilter}
+          setWeekFilter={setWeekFilter}
+          weeks={weeks}
+          statsSort={statsSort}
+          setStatsSort={setStatsSort}
+          shipmentSort={shipmentSort}
+          setShipmentSort={setShipmentSort}
+          shipmentViewMode={shipmentViewMode}
+          setShipmentViewMode={setShipmentViewMode}
+          laborSort={laborSort}
+          setLaborSort={setLaborSort}
+          showAwaiting={showAwaiting}
+          setShowAwaiting={setShowAwaiting}
+          showOnPilka={showOnPilka}
+          setShowOnPilka={setShowOnPilka}
+          showOnKromka={showOnKromka}
+          setShowOnKromka={setShowOnKromka}
+          showOnPras={showOnPras}
+          setShowOnPras={setShowOnPras}
+          showReadyAssembly={showReadyAssembly}
+          setShowReadyAssembly={setShowReadyAssembly}
+          showAwaitShipment={showAwaitShipment}
+          setShowAwaitShipment={setShowAwaitShipment}
+          showShipped={showShipped}
+          setShowShipped={setShowShipped}
+          resetShipmentFilters={resetShipmentFilters}
+          canOperateProduction={canOperateProduction}
+          openStrapDialog={openStrapDialog}
+          openCreatePlanDialog={openCreatePlanDialog}
+          selectedShipments={selectedShipments}
+          exportSelectedShipmentToExcel={exportSelectedShipmentToExcel}
+          importPlanFileRef={importPlanFileRef}
+          actionLoading={actionLoading}
+          importShipmentPlanFromExcelFile={importShipmentPlanFromExcelFile}
+          warehouseSyncLoading={warehouseSyncLoading}
+          loading={loading}
+          syncWarehouseFromGoogleSheet={syncWarehouseFromGoogleSheet}
+          leftoversSyncLoading={leftoversSyncLoading}
+          syncLeftoversToGoogleSheet={syncLeftoversToGoogleSheet}
+          warehouseOrderPlanRows={warehouseOrderPlanRows}
+          printWarehouseOrderPlanPdf={printWarehouseOrderPlanPdf}
+          exportLaborTotalToExcel={exportLaborTotalToExcel}
+          laborTableRows={laborTableRows}
+          importLaborFileRef={importLaborFileRef}
+          importLaborTotalFromExcelFile={importLaborTotalFromExcelFile}
+          laborImportedRows={laborImportedRows}
+          setLaborImportedRows={setLaborImportedRows}
+          setLaborSaveSelected={setLaborSaveSelected}
+          setLaborSavingByKey={setLaborSavingByKey}
+          setLaborSavedByKey={setLaborSavedByKey}
+          importMetalFileRef={importMetalFileRef}
+          importMetalFromExcelFile={importMetalFromExcelFile}
+          canAdminSettings={canAdminSettings}
+          openManualLaborDialog={openManualLaborDialog}
+        />
+      )}
 
       {!isOnline && (
         <div className="network-banner" role="status">
           Нет подключения к интернету. Данные могут быть устаревшими.
         </div>
       )}
-      {error && <div className="error">{error}</div>}
+      {String(error || "").trim() && String(error || "").trim().toLowerCase() !== "null" && (
+        <div className="error">{error}</div>
+      )}
 
       <section className="cards">
         {view === "shipment" && (
@@ -484,7 +506,6 @@ export default function App() {
             laborSavingByKey={laborSavingByKey}
             laborSavedByKey={laborSavedByKey}
             saveImportedLaborRowToDb={saveImportedLaborRowToDb}
-            callBackend={callBackend}
             setError={setError}
             loading={loading}
             canAdminSettings={canAdminSettings}
@@ -518,6 +539,22 @@ export default function App() {
             canOperateProduction={canOperateProduction}
             savingKey={metalSavingArticle}
             onAdjustStock={adjustMetalStock}
+          />
+        )}
+        {view === "metalProcess" && (
+          <MetalProcessView
+            loading={metalProcessLoading}
+            canOperateProduction={canOperateProduction}
+            canManageOrders={canManageOrders}
+            metalProcessRows={metalProcessRows}
+            metalProcessCatalogRows={metalProcessCatalogRows}
+            metalProcessDraft={metalProcessDraft}
+            setMetalProcessDraft={setMetalProcessDraft}
+            createMetalProcessPlanItem={createMetalProcessPlanItem}
+            transitionMetalProcessStage={transitionMetalProcessStage}
+            saveMetalProcessComment={saveMetalProcessComment}
+            deleteMetalProcessItem={deleteMetalProcessItem}
+            metalProcessActionKey={metalProcessActionKey}
           />
         )}
         {view === "stats" && (
@@ -710,6 +747,7 @@ export default function App() {
         onSave={saveCreatePlanDialog}
         onPreview={previewCreatePlanDialog}
         onClose={closeCreatePlanDialog}
+        refreshPlanCatalogs={refreshPlanCatalogs}
       />
     </div>
   );

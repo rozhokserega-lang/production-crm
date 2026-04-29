@@ -127,6 +127,11 @@ The script accepts either:
 
 You can put these values into `fronted/.env.local` (not committed) for local smoke checks.
 
+Smoke now also verifies new metal-process RPC endpoints:
+
+- `web_list_metal_catalog`
+- `web_list_metal_work_items`
+
 ## Quick Troubleshooting
 
 - Белый экран, в консоли `Unexpected token '<'`:

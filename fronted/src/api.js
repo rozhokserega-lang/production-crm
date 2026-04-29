@@ -88,6 +88,13 @@ function getSupabaseRpcBaseUrl() {
   return getSupabaseBaseUrl();
 }
 
+function getSupabaseRpcBaseUrls() {
+  const proxy = String(SUPABASE_PROXY_URL || "").trim().replace(/\/$/, "");
+  const direct = getSupabaseBaseUrl();
+  const candidates = [proxy, direct].filter(Boolean);
+  return Array.from(new Set(candidates));
+}
+
 export function getSupabaseAuthSession() {
   return supabaseAuthSession;
 }
@@ -256,6 +263,13 @@ const RPC_MAP = {
   webGetMetalWorkQueue: "web_get_metal_work_queue",
   webEnqueueMetalWorkOrder: "web_enqueue_metal_work_order",
   webSetMetalWorkQueueStatus: "web_set_metal_work_queue_status",
+  webListMetalProcessCatalog: "web_list_metal_catalog",
+  webUpsertMetalProcessCatalogItem: "web_upsert_metal_catalog_item",
+  webListMetalProcessItems: "web_list_metal_work_items",
+  webCreateMetalProcessItem: "web_create_metal_work_item",
+  webTransitionMetalProcessStage: "web_transition_metal_stage",
+  webSetMetalProcessComment: "web_set_metal_work_item_comment",
+  webDeleteMetalProcessItem: "web_delete_metal_work_item",
   webGetLeftovers: "web_get_leftovers",
   webGetLeftoversHistory: "web_get_leftovers_history",
   webGetLaborTable: "web_get_labor_table",
@@ -379,6 +393,14 @@ function buildRpcPayload(action, payload = {}) {
       p_article: String(payload.article || payload.productArticle || payload.p_article || "").trim() || null,
     };
   }
+  if (action === "webDeleteShipmentPlanCell") {
+    const row = payload.p_row ?? payload.row;
+    const col = payload.p_col ?? payload.col;
+    return {
+      p_row: row != null ? String(row) : null,
+      p_col: col != null ? String(col) : null,
+    };
+  }
   if (action === "webDeleteOrderById") {
     return {
       p_order_id: String(payload.orderId || payload.p_order_id || "").trim(),
@@ -430,6 +452,49 @@ function buildRpcPayload(action, payload = {}) {
     return {
       p_id: Number(payload.id || payload.p_id || 0),
       p_status: String(payload.status || payload.p_status || "").trim(),
+    };
+  }
+  if (action === "webListMetalProcessCatalog") {
+    return {
+      p_active_only: payload.activeOnly == null ? true : Boolean(payload.activeOnly),
+    };
+  }
+  if (action === "webUpsertMetalProcessCatalogItem") {
+    return {
+      p_article: String(payload.article || payload.p_article || "").trim().toUpperCase(),
+      p_name: String(payload.name || payload.p_name || "").trim(),
+      p_is_active: payload.isActive == null ? true : Boolean(payload.isActive),
+    };
+  }
+  if (action === "webListMetalProcessItems") {
+    return {
+      p_status: String(payload.status || payload.p_status || "").trim() || null,
+    };
+  }
+  if (action === "webCreateMetalProcessItem") {
+    return {
+      p_article: String(payload.article || payload.p_article || "").trim().toUpperCase(),
+      p_name: String(payload.name || payload.p_name || "").trim() || null,
+      p_week: String(payload.week || payload.p_week || "").trim() || null,
+      p_qty: Number(payload.qty || payload.p_qty || 0),
+    };
+  }
+  if (action === "webTransitionMetalProcessStage") {
+    return {
+      p_item_id: Number(payload.id || payload.p_item_id || 0),
+      p_action: String(payload.action || payload.p_action || "").trim().toLowerCase(),
+      p_start_stage: String(payload.startStage || payload.p_start_stage || "").trim().toLowerCase() || null,
+    };
+  }
+  if (action === "webSetMetalProcessComment") {
+    return {
+      p_item_id: Number(payload.id || payload.p_item_id || 0),
+      p_comment: String(payload.comment || payload.p_comment || ""),
+    };
+  }
+  if (action === "webDeleteMetalProcessItem") {
+    return {
+      p_item_id: Number(payload.id || payload.p_item_id || 0),
     };
   }
   if (action === "webUpsertItemColorMap") {
@@ -514,9 +579,9 @@ export async function supabaseCall(action, payload = {}) {
   if (!rpcName) {
     throw new Error(`Supabase RPC не настроен для action: ${action}`);
   }
-  const url = `${getSupabaseRpcBaseUrl()}/rest/v1/rpc/${rpcName}`;
   const body = buildRpcPayload(action, payload);
-  const callWithToken = async (bearerToken) => {
+  const callWithToken = async (rpcBaseUrl, bearerToken) => {
+    const url = `${rpcBaseUrl}/rest/v1/rpc/${rpcName}`;
     const res = await fetch(url, {
       method: "POST",
       headers: {
@@ -539,24 +604,33 @@ export async function supabaseCall(action, payload = {}) {
   const currentToken = getSupabaseAccessToken();
   let res;
   let json;
-  try {
-    ({ res, json } = await callWithToken(currentToken));
-  } catch (error) {
-    throw normalizeApiError(error);
-  }
-  if (!res.ok && currentToken && isJwtExpiredError(json)) {
-    // Stored session can silently expire; fall back to anon flow and keep UI alive.
-    persistSupabaseSession(null);
+  const rpcBases = getSupabaseRpcBaseUrls();
+  let lastNetworkError = null;
+  for (const rpcBase of rpcBases) {
     try {
-      ({ res, json } = await callWithToken(""));
+      ({ res, json } = await callWithToken(rpcBase, currentToken));
+      if (!res.ok && currentToken && isJwtExpiredError(json)) {
+        // Stored session can silently expire; fall back to anon flow and keep UI alive.
+        persistSupabaseSession(null);
+        ({ res, json } = await callWithToken(rpcBase, ""));
+      }
+      if (!res.ok) {
+        throw new Error(typeof json === "string" ? json : JSON.stringify(json));
+      }
+      return json;
     } catch (error) {
-      throw normalizeApiError(error);
+      const normalized = normalizeApiError(error);
+      if (normalized?.isNetworkError === true) {
+        lastNetworkError = normalized;
+        continue;
+      }
+      throw normalized;
     }
   }
-  if (!res.ok) {
-    throw new Error(typeof json === "string" ? json : JSON.stringify(json));
+  if (lastNetworkError) {
+    throw lastNetworkError;
   }
-  return json;
+  throw new Error("NETWORK_UNAVAILABLE");
 }
 
 function isJwtExpiredError(payload) {

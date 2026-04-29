@@ -1,3 +1,5 @@
+import { useEffect } from "react";
+
 export function PlanDialog({
   isOpen,
   planSection,
@@ -18,7 +20,15 @@ export function PlanDialog({
   onSave,
   onPreview,
   onClose,
+  refreshPlanCatalogs,
 }) {
+  useEffect(() => {
+    // Keep dropdown options in sync with DB changes (e.g. new sections/items created in FurnitureView).
+    if (!isOpen) return;
+    if (typeof refreshPlanCatalogs !== "function") return;
+    void refreshPlanCatalogs();
+  }, [isOpen, refreshPlanCatalogs]);
+
   if (!isOpen) return null;
 
   const variants = Array.isArray(selectedItemVariants) ? selectedItemVariants : [];

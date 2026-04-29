@@ -252,6 +252,34 @@ export class OrderService {
     return await callBackend("webSetMetalWorkQueueStatus", { id, status });
   }
 
+  static async listMetalProcessCatalog(activeOnly = true) {
+    return await callBackend("webListMetalProcessCatalog", { activeOnly });
+  }
+
+  static async upsertMetalProcessCatalogItem(article, name, isActive = true) {
+    return await callBackend("webUpsertMetalProcessCatalogItem", { article, name, isActive });
+  }
+
+  static async listMetalProcessItems(status = null) {
+    return await callBackend("webListMetalProcessItems", { status });
+  }
+
+  static async createMetalProcessItem({ article, name, week, qty }) {
+    return await callBackend("webCreateMetalProcessItem", { article, name, week, qty });
+  }
+
+  static async transitionMetalProcessStage(id, action, startStage = null) {
+    return await callBackend("webTransitionMetalProcessStage", { id, action, startStage });
+  }
+
+  static async setMetalProcessComment(id, comment) {
+    return await callBackend("webSetMetalProcessComment", { id, comment });
+  }
+
+  static async deleteMetalProcessItem(id) {
+    return await callBackend("webDeleteMetalProcessItem", { id });
+  }
+
   // ==================== График работы ====================
 
   static async getWorkSchedule() {

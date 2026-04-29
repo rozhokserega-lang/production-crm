@@ -76,6 +76,45 @@ body {
   min-width: 130px;
 }
 
+.domain-drawer {
+  position: fixed;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 260px;
+  z-index: 40;
+  transform: translateX(calc(-100% + 20px));
+  transition: transform 0.22s ease;
+  background: var(--bg-surface);
+  border-right: 1px solid var(--border-main);
+  box-shadow: 18px 0 35px rgba(2, 8, 23, 0.16);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 18px 12px;
+}
+
+.domain-drawer.open {
+  transform: translateX(0);
+}
+
+.domain-drawer__head {
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-soft);
+  margin: 2px 2px 8px;
+}
+
+.domain-drawer__head-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
 :root[data-theme="tech-dark"] .top h1 {
   background: linear-gradient(90deg, #dbeafe 0%, #a5b4fc 45%, #c4b5fd 100%);
   -webkit-background-clip: text;
@@ -483,6 +522,252 @@ button:disabled {
 .cards {
   display: grid;
   gap: 10px;
+}
+
+.metal-process-root {
+  display: grid;
+  gap: 12px;
+}
+
+.metal-process-form {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 8px;
+  align-items: center;
+}
+
+.metal-process-field {
+  min-width: 0;
+}
+
+.metal-process-field--catalog {
+  grid-column: span 4;
+}
+
+.metal-process-field--search {
+  grid-column: span 2;
+}
+
+.metal-process-field--article {
+  grid-column: span 2;
+}
+
+.metal-process-field--name {
+  grid-column: span 2;
+}
+
+.metal-process-field--week {
+  grid-column: span 1;
+}
+
+.metal-process-field--qty {
+  grid-column: span 1;
+}
+
+.metal-process-field--submit {
+  grid-column: span 2;
+  width: 100%;
+}
+
+.metal-process-kanban {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.metal-process-column {
+  border: 1px solid var(--border-main);
+  background: var(--bg-surface-soft);
+  border-radius: 10px;
+  min-height: 220px;
+  display: flex;
+  flex-direction: column;
+}
+
+.metal-process-column__head {
+  padding: 10px;
+  border-bottom: 1px solid var(--border-main);
+  font-weight: 800;
+}
+
+.metal-process-column__body {
+  padding: 8px;
+  display: grid;
+  gap: 8px;
+}
+
+.metal-process-card {
+  border: 1px solid #d5dfec;
+  border-left: 3px solid #94a3b8;
+  border-radius: 10px;
+  background: var(--bg-surface);
+  padding: 10px;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.05);
+}
+
+.metal-process-card.lane-laser {
+  border-left-color: #0284c7;
+}
+
+.metal-process-card.lane-saw {
+  border-left-color: #0ea5a4;
+}
+
+.metal-process-card.lane-bending {
+  border-left-color: #f59e0b;
+}
+
+.metal-process-card.lane-welding {
+  border-left-color: #fb7185;
+}
+
+.metal-process-card.lane-painting {
+  border-left-color: #7c3aed;
+}
+
+.metal-process-card__id {
+  font-weight: 800;
+  font-size: 22px;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+}
+
+.metal-process-card__item {
+  margin-top: 3px;
+  font-size: 15px;
+  line-height: 1.25;
+}
+
+.metal-process-card__sub {
+  margin-top: 5px;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.metal-process-card__meta {
+  margin-top: 6px;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.metal-process-card__stage {
+  margin-top: 6px;
+  display: inline-block;
+  width: fit-content;
+  font-size: 12px;
+  font-weight: 600;
+  color: #334155;
+  background: #f1f5f9;
+  border: 1px solid #dbe3ef;
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+
+.metal-process-card__status,
+.metal-process-card__next,
+.metal-process-card__time {
+  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.metal-process-card__comment {
+  margin-top: 6px;
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.metal-process-production-list {
+  display: grid;
+  gap: 10px;
+}
+
+.metal-process-stats {
+  display: grid;
+  gap: 10px;
+}
+
+.metal-process-stats__kpi {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 8px;
+}
+
+.metal-process-stats__kpi .kpi {
+  border: 1px solid var(--border-main);
+  background: var(--bg-surface);
+  border-radius: 10px;
+  padding: 8px 10px;
+  display: grid;
+  gap: 4px;
+}
+
+.metal-process-stats__kpi .kpi span {
+  font-size: 12px;
+  color: var(--text-soft);
+}
+
+@media (max-width: 1200px) {
+  .metal-process-form {
+    grid-template-columns: repeat(8, minmax(0, 1fr));
+  }
+
+  .metal-process-field--catalog {
+    grid-column: span 4;
+  }
+
+  .metal-process-field--search {
+    grid-column: span 2;
+  }
+
+  .metal-process-field--article {
+    grid-column: span 2;
+  }
+
+  .metal-process-field--name {
+    grid-column: span 3;
+  }
+
+  .metal-process-field--week {
+    grid-column: span 1;
+  }
+
+  .metal-process-field--qty {
+    grid-column: span 1;
+  }
+
+  .metal-process-field--submit {
+    grid-column: span 3;
+  }
+}
+
+@media (max-width: 820px) {
+  .metal-process-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .metal-process-field--catalog,
+  .metal-process-field--search,
+  .metal-process-field--article,
+  .metal-process-field--name {
+    grid-column: 1 / -1;
+  }
+
+  .metal-process-field--week,
+  .metal-process-field--qty {
+    grid-column: span 1;
+  }
+
+  .metal-process-field--submit {
+    grid-column: 1 / -1;
+  }
 }
 
 .overview-board {

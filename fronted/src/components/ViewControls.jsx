@@ -189,15 +189,20 @@ export function ViewControls({
           <button type="button" className="tab active">Наличие</button>
         </div>
       )}
+      {view === "metalProcess" && (
+        <div className="tabs tabs--overview-sub">
+          <button type="button" className="tab active">Металл-процесс</button>
+        </div>
+      )}
       <div className="filters">
-        {view !== "furniture" && (
+        {view !== "furniture" && view !== "metalProcess" && (
           <input
             placeholder={view === "shipment" ? "Поиск отгрузки: название или ID" : view === "warehouse" ? (warehouseSubView === "leftovers" ? "Поиск по цвету или размеру" : warehouseSubView === "history" ? "Поиск: заказ, материал, комментарий" : "Поиск материала") : view === "metal" ? "Поиск по артикулу или названию металла" : "Поиск по названию или ID"}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
         )}
-        {view !== "warehouse" && view !== "furniture" && view !== "metal" && !(view === "labor" && laborSubView === "stages") && (
+        {view !== "warehouse" && view !== "furniture" && view !== "metal" && view !== "metalProcess" && !(view === "labor" && laborSubView === "stages") && (
           <select value={weekFilter} onChange={(e) => setWeekFilter(e.target.value)}>
             <option value="all">Все недели</option>
             {weeks.map((w) => <option key={w} value={w}>Неделя {w}</option>)}

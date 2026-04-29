@@ -73,6 +73,7 @@ import { useConsumeDialog } from "./useConsumeDialog";
 import { usePlanDialog } from "./usePlanDialog";
 import { useStrapDialog } from "./useStrapDialog";
 import { useMetalState } from "./useMetalState";
+import { useMetalProcessState } from "./useMetalProcessState";
 import { useEdgeSync } from "./useEdgeSync";
 import { useWorkSchedule } from "./useWorkSchedule";
 import { useError } from "../contexts/ErrorContext";
@@ -859,6 +860,25 @@ export function useAppState() {
     selectedShipments,
     articleLookupByItemKey,
     normalizeFurnitureKey,
+  });
+  const {
+    metalProcessRows,
+    metalProcessCatalogRows,
+    metalProcessLoading,
+    metalProcessActionKey,
+    metalProcessDraft,
+    setMetalProcessDraft,
+    loadMetalProcessData,
+    createMetalProcessPlanItem,
+    transitionMetalProcessStage,
+    saveMetalProcessComment,
+    deleteMetalProcessItem,
+  } = useMetalProcessState({
+    view,
+    canOperateProduction,
+    canManageOrders,
+    setError,
+    toUserError,
   });
 
   const { shipmentOrderMaps, orderIndexById } = useShipmentOrderIndexes({
@@ -1867,8 +1887,15 @@ export function useAppState() {
     metalStockRows,
     metalSavingArticle, setMetalSavingArticle,
     selectedShipmentMetal,
+    metalProcessRows,
+    metalProcessCatalogRows,
+    metalProcessLoading,
+    metalProcessActionKey,
+    metalProcessDraft,
+    setMetalProcessDraft,
     loadMetalStock,
     loadMetalQueue,
+    loadMetalProcessData,
     adjustMetalStock,
     shipmentOrderMaps,
     orderIndexById,
@@ -1910,6 +1937,9 @@ export function useAppState() {
     toggleShipmentSelection,
     createShelfPlanOrder,
     createFurniturePlanOrder,
+    createMetalProcessPlanItem,
+    saveMetalProcessComment,
+    deleteMetalProcessItem,
     refreshPlanCatalogs,
     previewSelectedShipmentPlan,
     exportSelectedShipmentToExcel,
@@ -1932,6 +1962,7 @@ export function useAppState() {
     previewCreatePlanDialog,
     openStrapDialog,
     saveStrapDialog,
+    transitionMetalProcessStage,
 
     // Labor actions
     importLaborFileRef,

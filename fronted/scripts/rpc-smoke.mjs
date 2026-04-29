@@ -53,6 +53,8 @@ const requiredRpcs = [
   "web_get_orders_kromka",
   "web_get_orders_pras",
   "web_get_labor_table",
+  "web_list_metal_catalog",
+  "web_list_metal_work_items",
 ];
 
 function sleep(ms) {
