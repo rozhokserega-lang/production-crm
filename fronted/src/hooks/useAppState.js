@@ -26,9 +26,6 @@ import {
 } from "../utils/shipmentUtils";
 import {
   buildFurnitureTemplates,
-  canonicalStrapProductName,
-  extractDetailSizeToken,
-  isStrapVirtualRowId,
   normalizeFurnitureKey,
   normalizeStrapProductKey,
   resolveStrapMaterialByProduct,
@@ -94,59 +91,24 @@ import {
   statusClass,
 } from "../app/statusHelpers";
 import {
-  embedPlanItemArticle,
-  extractPlanItemArticle,
   getMaterialLabel,
-  getPlanPreviewArticleCode,
 } from "../app/orderHelpers";
-import {
-  resolvePlanPreviewArticleByName,
-} from "../app/planPreviewHelpers";
 import {
   extractErrorMessage,
   toUserError,
 } from "../app/errorCatalogHelpers";
 import {
-  isShipmentCellMissingError,
   normalizeOrder,
 } from "../app/rowHelpers";
 import {
-  buildShipmentCellAttempts,
-  runShipmentCellActionWithFallback,
-} from "../app/shipmentActionHelpers";
-import {
-  getStatsDeleteActionKey,
-  resolveStatsOrderSourceCell,
-} from "../app/statsDeleteHelpers";
-import {
-  buildStrapPreviewPlans,
   remapStrapDraftByOptions,
 } from "../app/shipmentDialogHelpers";
-import {
-  buildShipmentPreviewPlans,
-  enrichPreviewFromFurniture,
-  enrichPreviewWithStrapProduct,
-} from "../app/shipmentPreviewHelpers";
-import {
-  applyImportPlanRows,
-  buildImportArticleMap,
-  buildShipmentExportRows,
-  formatImportShipmentPartialError,
-  formatShipmentImportError,
-  formatShipmentExportPartialError,
-  getImportPlanNoValidRowsError,
-  getShipmentExportNoArticlesError,
-  loadImportCatalogRows,
-  parseImportPlanRows,
-} from "../app/shipmentExportHelpers";
-import {
-  formatMetalImportError,
-  getMetalImportNoValidRowsError,
-  parseMetalImportRows,
-} from "../app/metalImportHelpers";
+import { useShipmentActions } from "./useShipmentActions";
+import { useFurnitureActions } from "./useFurnitureActions";
+import { useOrderMgmtActions } from "./useOrderMgmtActions";
+import { useWarehouseActions } from "./useWarehouseActions";
 import {
   buildPreviewRowsFromFurnitureTemplate,
-  formatDateTimeForPrint,
   getColorGroup,
   getWeekday,
   isDone,
@@ -221,11 +183,7 @@ export function useAppState() {
   const [statsSort, setStatsSort] = useState("stage");
   const [actionLoading, setActionLoading] = useState("");
   const [orderDrawerId, setOrderDrawerId] = useState("");
-  const selectedShipmentsRef = useRef(selectedShipments);
   const rowsRef = useRef(rows);
-  useEffect(() => {
-    selectedShipmentsRef.current = selectedShipments;
-  }, [selectedShipments]);
   useEffect(() => {
     rowsRef.current = rows;
   }, [rows]);
@@ -339,8 +297,6 @@ export function useAppState() {
     furnitureSelectedQty,
     setFurnitureSelectedQty,
   } = useFurnitureData();
-  const importPlanFileRef = useRef(null);
-  const importMetalFileRef = useRef(null);
   const authEnabled = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
   const isActionPending = useCallback((key) => pendingStageActionKeys.has(key), [pendingStageActionKeys]);
 
@@ -622,7 +578,6 @@ export function useAppState() {
     load,
   });
 
-  const [adminCommentSaving, setAdminCommentSaving] = useState(false);
   const crmRoleLabel = CRM_ROLE_LABELS[crmRole] || CRM_ROLE_LABELS.viewer;
   const authUserLabel = String(authUser?.email || authUser?.phone || authUser?.id || "").trim();
 
@@ -803,47 +758,6 @@ export function useAppState() {
     if (view !== "warehouse") setWarehouseSubView("sheets");
   }, [view]);
 
-  async function overrideOrderStageFromDrawer(orderId, stage, status) {
-    if (!canAdminSettings) {
-      denyActionByRole("Только администратор может вручную менять этап из канбана.");
-      return;
-    }
-    const stageKey = String(stage || "").trim().toLowerCase();
-    const statusKey = String(status || "").trim().toLowerCase();
-    const stageMap = {
-      pilka: {
-        in_work: "webSetPilkaInWork",
-        done: "webSetPilkaDone",
-        pause: "webSetPilkaPause",
-        wait: "webSetPilkaWait",
-      },
-      kromka: {
-        in_work: "webSetKromkaInWork",
-        done: "webSetKromkaDone",
-        pause: "webSetKromkaPause",
-        wait: "webSetKromkaWait",
-      },
-      pras: {
-        in_work: "webSetPrasInWork",
-        done: "webSetPrasDone",
-        pause: "webSetPrasPause",
-        wait: "webSetPrasWait",
-      },
-    };
-    const action = stageMap[stageKey]?.[statusKey];
-    if (!action) {
-      setError("Некорректная комбинация этапа и статуса.");
-      return;
-    }
-    setError("");
-    try {
-      await OrderService.updateOrderStage(orderId, action);
-      await load();
-    } catch (e) {
-      setError(toUserError(e));
-    }
-  }
-
   const {
     metalStockRows,
     metalSavingArticle,
@@ -959,23 +873,21 @@ export function useAppState() {
     orderDrawerId,
   });
 
-  const saveOrderAdminComment = useCallback(
-    async (text) => {
-      const id = String(orderDrawerId || "").trim();
-      if (!id || !canAdminSettings) return;
-      setAdminCommentSaving(true);
-      setError("");
-      try {
-        await OrderService.setOrderAdminComment(id, text);
-        await load();
-      } catch (e) {
-        setError(toUserError(e));
-      } finally {
-        setAdminCommentSaving(false);
-      }
-    },
-    [orderDrawerId, canAdminSettings, load, setError],
-  );
+  const {
+    adminCommentSaving,
+    saveOrderAdminComment,
+    deleteStatsOrder,
+    overrideOrderStageFromDrawer,
+  } = useOrderMgmtActions({
+    canAdminSettings,
+    canManageOrders,
+    denyActionByRole,
+    setActionLoading,
+    setError,
+    load,
+    orderDrawerId,
+    rowsRef,
+  });
 
   useEffect(() => {
     if (view !== "overview") setOrderDrawerId("");
@@ -1107,65 +1019,10 @@ export function useAppState() {
     normalizeFurnitureKey,
   });
 
-  const printWarehouseOrderPlanPdf = useCallback(() => {
-    const rows = warehouseOrderPlanRows;
-    if (!rows.length) {
-      setError("Дефицита материалов нет — заказывать нечего.");
-      return;
-    }
-    const now = new Date().toLocaleString("ru-RU", { timeZone: "Europe/Moscow" });
-    const htmlRows = rows
-      .map(
-        (r, idx) => `
-          <tr>
-            <td>${idx + 1}</td>
-            <td>${String(r.material || "")}</td>
-            <td>${r.needed}</td>
-            <td>${r.available}</td>
-            <td><b>${r.toOrder}</b></td>
-          </tr>`,
-      )
-      .join("");
-    const popup = window.open("", "_blank");
-    if (!popup) {
-      setError("Не удалось открыть окно печати. Разреши pop-up для сайта.");
-      return;
-    }
-    popup.document.write(`<!doctype html>
-<html lang="ru">
-<head>
-  <meta charset="utf-8" />
-  <title>Что заказать (склад)</title>
-  <style>
-    body { font-family: Arial, sans-serif; padding: 20px; color: #0f172a; }
-    h1 { margin: 0 0 8px; font-size: 22px; }
-    .meta { margin: 0 0 16px; color: #334155; font-size: 13px; }
-    table { width: 100%; border-collapse: collapse; }
-    th, td { border: 1px solid #cbd5e1; padding: 8px; font-size: 13px; text-align: left; }
-    th { background: #f1f5f9; }
-  </style>
-</head>
-<body>
-  <h1>Лист заказа материалов</h1>
-  <div class="meta">Сформировано: ${now}</div>
-  <table>
-    <thead>
-      <tr>
-        <th>#</th>
-        <th>Материал</th>
-        <th>Нужно для плана</th>
-        <th>В наличии</th>
-        <th>Заказать</th>
-      </tr>
-    </thead>
-    <tbody>${htmlRows}</tbody>
-  </table>
-</body>
-</html>`);
-    popup.document.close();
-    popup.focus();
-    popup.print();
-  }, [warehouseOrderPlanRows, setError]);
+  const { printWarehouseOrderPlanPdf } = useWarehouseActions({
+    warehouseOrderPlanRows,
+    setError,
+  });
   const { laborTableRows, laborOrdersRows } = useLaborDerivedData({
     view,
     filtered,
@@ -1207,155 +1064,38 @@ export function useAppState() {
     strapSheetWidth: STRAP_SHEET_WIDTH,
     strapSheetHeight: STRAP_SHEET_HEIGHT,
   });
-  const sendSelectedShipmentToWork = useCallback(async () => {
-    if (!canOperateProduction) {
-      denyActionByRole("Недостаточно прав для отправки заказов в работу.");
-      return;
-    }
-    const current = selectedShipmentsRef.current;
-    if (!current.length) return;
-    const sendable = current.filter((s) => !!s.canSendToWork);
-    if (!sendable.length) {
-      setError("Среди выбранных ячеек нет доступных для отправки в работу.");
-      return;
-    }
-    setActionLoading("shipment:bulk");
-    setError("");
-    try {
-      const metalDeficits = (selectedShipmentMetal.rows || []).filter((x) => Number(x.deficitQty || 0) > 0);
-      const hasMetalDeficit = metalDeficits.length > 0;
-      if (hasMetalDeficit) {
-        for (const s of sendable) {
-          await OrderService.enqueueMetalWorkOrder({
-            sourceRow: s.row,
-            sourceCol: s.col,
-            item: s.item,
-            week: s.week,
-            qty: Number(s.qty || 0),
-            reason: "Нехватка металла при отправке в работу",
-            shortage: metalDeficits.map((d) => ({
-              metalArticle: d.metalArticle,
-              metalName: d.metalName,
-              deficitQty: d.deficitQty,
-              neededQty: d.neededQty,
-              qtyAvailable: d.qtyAvailable,
-            })),
-          });
-        }
-      }
-      for (const s of sendable) {
-        const attempts = buildShipmentCellAttempts(s);
-        await runShipmentCellActionWithFallback({
-          actionFn: (params) => OrderService.sendShipmentToWork(params.row, params.col),
-          attempts,
-          isMissingError: isShipmentCellMissingError,
-          requestBuilder: (p) => ({ row: p.row, col: p.col }),
-        });
-      }
-      setPlanPreviews([]);
-      setSelectedShipments([]);
-      await load();
-      if (hasMetalDeficit) {
-        setError("Заказы отправлены в работу. Позиции по нехватке металла добавлены в очередь 'Металл в работу'.");
-        if (view === "metal") {
-          await loadMetalQueue();
-        }
-      }
-    } catch (e) {
-      setError(toUserError(e));
-    } finally {
-      setActionLoading("");
-    }
-  }, [canOperateProduction, selectedShipmentMetal, setActionLoading, setError, setPlanPreviews, setSelectedShipments, load, view, loadMetalQueue, denyActionByRole]);
+  const {
+    importPlanFileRef,
+    sendSelectedShipmentToWork,
+    deleteSelectedShipmentPlan,
+    toggleShipmentSelection,
+    previewSelectedShipmentPlan,
+    exportSelectedShipmentToExcel,
+    importShipmentPlanFromExcelFile,
+  } = useShipmentActions({
+    canOperateProduction,
+    canManageOrders,
+    denyActionByRole,
+    selectedShipments,
+    setSelectedShipments,
+    setPlanPreviews,
+    setActionLoading,
+    setError,
+    load,
+    view,
+    loadMetalQueue,
+    selectedShipmentMetal,
+    sectionArticleRows,
+    articleLookupByItemKey,
+    furnitureTemplates,
+    furnitureLoading,
+    furnitureError,
+    resolveFurnitureTemplateForPreviewByArticle,
+    strapProductBySizeToken,
+    strapProductsByArticleCode,
+    strapTargetProduct,
+  });
 
-  const deleteSelectedShipmentPlan = useCallback(async () => {
-    if (!canManageOrders) {
-      denyActionByRole("Недостаточно прав для удаления позиций из плана.");
-      return;
-    }
-    const current = selectedShipmentsRef.current;
-    if (!current.length) return;
-    const deletable = current.filter((s) => !!s.canSendToWork);
-    if (!deletable.length) {
-      setError("Среди выбранных ячеек нет доступных для удаления из плана.");
-      return;
-    }
-    const ok = window.confirm(`Удалить ${deletable.length} поз. из плана? Это действие необратимо.`);
-    if (!ok) return;
-    setActionLoading("shipment:delete");
-    setError("");
-    try {
-      for (const s of deletable) {
-        const attempts = buildShipmentCellAttempts(s);
-        await runShipmentCellActionWithFallback({
-          actionFn: (params) => OrderService.deleteShipmentPlanCell({ p_row: params.p_row, p_col: params.p_col, row: params.p_row, col: params.p_col }),
-          attempts,
-          isMissingError: isShipmentCellMissingError,
-          requestBuilder: (p) => ({ p_row: p.row, p_col: p.col }),
-        });
-      }
-      setPlanPreviews([]);
-      setSelectedShipments([]);
-      await load();
-    } catch (e) {
-      setError(toUserError(e));
-    } finally {
-      setActionLoading("");
-    }
-  }, [canManageOrders, setActionLoading, setError, setPlanPreviews, setSelectedShipments, load, denyActionByRole]);
-
-  const deleteStatsOrder = useCallback(async (order) => {
-    if (!canManageOrders) {
-      denyActionByRole("Недостаточно прав для удаления заказов.");
-      return;
-    }
-    const orderId = String(order?.orderId || order?.order_id || "").trim();
-    if (!orderId) {
-      setError("Для этого заказа не найден orderId.");
-      return;
-    }
-    const ok = window.confirm(
-      `Удалить заказ ${orderId || ""} из плана? Действие необратимо.`
-    );
-    if (!ok) return;
-    const currentRows = rowsRef.current;
-    const actionKey = getStatsDeleteActionKey(order, currentRows);
-    setActionLoading(actionKey);
-    setError("");
-    try {
-      try {
-        await OrderService.deleteOrder(orderId);
-      } catch (deleteByOrderErr) {
-        const msg = String(deleteByOrderErr?.message || deleteByOrderErr || "");
-        const missingAction =
-          msg.includes("не настроен для action") ||
-          msg.includes("Unknown action") ||
-          msg.includes("not configured");
-        if (!missingAction) throw deleteByOrderErr;
-        const source = await resolveStatsOrderSourceCell(order, currentRows);
-        const sourceRow = source.row;
-        const sourceCol = source.col;
-        if (!sourceRow || !sourceCol) {
-          setError("Для этого заказа не найдена привязка к ячейке плана (row/col).");
-          return;
-        }
-        await OrderService.deleteShipmentPlanCell({ p_row: sourceRow, p_col: sourceCol, row: sourceRow, col: sourceCol });
-      }
-      await load();
-    } catch (e) {
-      setError(toUserError(e));
-    } finally {
-      setActionLoading("");
-    }
-  }, [canManageOrders, setActionLoading, setError, load, denyActionByRole]);
-
-  const toggleShipmentSelection = useCallback((payload) => {
-    setSelectedShipments((prev) => {
-      const exists = prev.some((s) => s.row === payload.row && s.col === payload.col);
-      if (exists) return prev.filter((s) => !(s.row === payload.row && s.col === payload.col));
-      return [...prev, payload];
-    });
-  }, [setSelectedShipments]);
 
   useEffect(() => {
     if (!strapDialogOpen) return;
@@ -1365,349 +1105,21 @@ export function useAppState() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [strapDialogOpen, strapTargetProduct, strapOptionsForSelectedProduct.join("|")]);
 
-  const createShelfPlanOrder = useCallback(async (payload) => {
-    if (!canOperateProduction) {
-      denyActionByRole("Недостаточно прав для изменения плана.");
-      return;
-    }
-    const week = String(payload?.week || "").trim();
-    const item = String(payload?.item || "").trim();
-    const article = String(payload?.article || "").trim();
-    const material = String(payload?.material || "").trim();
-    const qty = Number(payload?.qty || 0);
-    const qrQty = Number(payload?.qrQty || 0);
-    if (!week) {
-      setError("Укажите номер плана.");
-      return;
-    }
-    if (!item || !material || !(qty > 0)) {
-      setError("Заполните поля заказа полок: изделие, материал и количество.");
-      return;
-    }
-    setActionLoading("shelf:create-plan");
-    setError("");
-    try {
-      const request = {
-        sectionName: "Система хранения",
-        item: embedPlanItemArticle(item, article, qrQty),
-        material,
-        week,
-        qty,
-        article,
-      };
-      await OrderService.createShipmentPlanCell(request);
-      void syncPlanCellToGoogleSheet(request);
-      await load();
-    } catch (e) {
-      setError(toUserError(e));
-      throw e;
-    } finally {
-      setActionLoading("");
-    }
-  }, [canOperateProduction, setActionLoading, setError, load, denyActionByRole, syncPlanCellToGoogleSheet]);
-
-  const createFurniturePlanOrder = useCallback(async (payload) => {
-    if (!canOperateProduction) {
-      denyActionByRole("Недостаточно прав для изменения плана.");
-      return;
-    }
-    const week = String(payload?.week || "").trim();
-    const item = String(payload?.item || "").trim();
-    const article = String(payload?.article || "").trim();
-    const material = String(payload?.material || "").trim();
-    const qty = Number(payload?.qty || 0);
-    const qrQty = Number(payload?.qrQty || 0);
-    if (!week) {
-      setError("Укажите номер плана.");
-      return;
-    }
-    if (!item || !material || !(qty > 0)) {
-      setError("Заполните поля заказа: изделие, материал и количество.");
-      return;
-    }
-    setActionLoading("furniture:create-plan");
-    setError("");
-    try {
-      const norm = (v) => normalizeFurnitureKey(v);
-      const itemKey = norm(item);
-      const materialKey = norm(material);
-      const resolvedArticle = article || String(
-        (Array.isArray(sectionArticleRows) ? sectionArticleRows : []).find((row) => {
-          const sectionName = String(row?.section_name || row?.sectionName || "").trim();
-          const sectionKey = norm(sectionName);
-          if (!(sectionKey.includes("основная") && sectionKey.includes("мебел"))) return false;
-          const itemName = String(row?.item_name || row?.itemName || "").trim();
-          const itemRowKey = norm(itemName);
-          if (!(itemRowKey && (itemKey === itemRowKey || itemKey.includes(itemRowKey) || itemRowKey.includes(itemKey)))) {
-            return false;
-          }
-          const rowMaterial = String(row?.material || row?.table_color || row?.tableColor || "").trim();
-          const rowMaterialKey = norm(rowMaterial);
-          if (!materialKey || !rowMaterialKey) return true;
-          return materialKey === rowMaterialKey || materialKey.includes(rowMaterialKey) || rowMaterialKey.includes(materialKey);
-        })?.article || ""
-      ).trim();
-      const request = {
-        sectionName: "Основная мебель",
-        item: embedPlanItemArticle(item, resolvedArticle, qrQty),
-        material,
-        week,
-        qty,
-        article: resolvedArticle,
-      };
-      await OrderService.createShipmentPlanCell(request);
-      void syncPlanCellToGoogleSheet(request);
-      await load();
-    } catch (e) {
-      setError(toUserError(e));
-      throw e;
-    } finally {
-      setActionLoading("");
-    }
-  }, [
+  const {
+    importMetalFileRef,
+    createShelfPlanOrder,
+    createFurniturePlanOrder,
+    importMetalFromExcelFile,
+  } = useFurnitureActions({
     canOperateProduction,
+    denyActionByRole,
     setActionLoading,
     setError,
     load,
-    denyActionByRole,
-    syncPlanCellToGoogleSheet,
     sectionArticleRows,
-  ]);
-
-  const previewSelectedShipmentPlan = useCallback(async () => {
-    const current = selectedShipmentsRef.current;
-    if (!current.length) return;
-    const strapSelections = current.filter((s) => isStrapVirtualRowId(s.row));
-    const shipmentSelections = current.filter((s) => !isStrapVirtualRowId(s.row));
-    setActionLoading("preview:batch");
-    setError("");
-    try {
-      const generatedAt = formatDateTimeForPrint(new Date());
-      const strapPreviews = buildStrapPreviewPlans(strapSelections, generatedAt);
-      let shipmentTableBySource = new Map();
-      try {
-        const tableRows = await OrderService.getShipmentTable();
-        const list = Array.isArray(tableRows) ? tableRows : [];
-        shipmentTableBySource = new Map(
-          list.map((row) => [
-            `${String(row?.source_row_id || row?.sourceRowId || "").trim()}|${String(row?.source_col_id || row?.sourceColId || "").trim()}`,
-            row,
-          ]),
-        );
-      } catch (_) {
-        shipmentTableBySource = new Map();
-      }
-      const enrichPreview = (preview, shipmentRow) => {
-        const withFurniture = enrichPreviewFromFurniture(preview, {
-          furnitureTemplates,
-          resolveFurnitureTemplateForPreview: resolveFurnitureTemplateForPreviewByArticle,
-          buildPreviewRowsFromFurnitureTemplate,
-          normalizeFurnitureKey,
-          furnitureLoading,
-          furnitureError,
-        });
-        const withStrapProduct = enrichPreviewWithStrapProduct(withFurniture, shipmentRow, {
-          canonicalStrapProductName,
-          normalizeFurnitureKey,
-          getPlanPreviewArticleCode,
-          resolvePlanPreviewArticleByName,
-          articleLookupByItemKey,
-          strapProductsByArticleCode,
-          normalizeStrapProductKey,
-          extractDetailSizeToken,
-          strapProductBySizeToken,
-          strapTargetProduct,
-        });
-        const sourceKey = `${String(shipmentRow?.row || "").trim()}|${String(shipmentRow?.col || "").trim()}`;
-        const sourceRowFromTable = shipmentTableBySource.get(sourceKey) || null;
-        const articleFromTable = String(
-          sourceRowFromTable?.product_article ||
-            sourceRowFromTable?.productArticle ||
-          sourceRowFromTable?.article_code ||
-            sourceRowFromTable?.articleCode ||
-            sourceRowFromTable?.article ||
-            sourceRowFromTable?.mapped_article_code ||
-            sourceRowFromTable?.mappedArticleCode ||
-            "",
-        ).trim();
-        const explicitArticle = String(
-          shipmentRow?.productArticle ||
-            extractPlanItemArticle(shipmentRow?.sourceItem || shipmentRow?.item || "") ||
-            articleFromTable ||
-            extractPlanItemArticle(sourceRowFromTable?.item || "") ||
-            "",
-        ).trim();
-        if (!explicitArticle) return withStrapProduct;
-        if (getPlanPreviewArticleCode(withStrapProduct)) return withStrapProduct;
-        return {
-          ...withStrapProduct,
-          article: explicitArticle,
-        };
-      };
-      if (shipmentSelections.length === 0) {
-        setPlanPreviews(strapPreviews);
-        return;
-      }
-      if (shipmentSelections.length === 1) {
-        const s = shipmentSelections[0];
-        const preview = await OrderService.previewPlanFromShipment(s.row, s.col);
-        const enriched = preview ? enrichPreview({ ...preview, _key: `${s.row}-${s.col}` }, s) : null;
-        const plans = enriched ? [enriched] : [];
-        plans.push(...strapPreviews);
-        setPlanPreviews(plans);
-      } else {
-        const { plans = [], failedCount = 0, batchError } = await buildShipmentPreviewPlans(shipmentSelections, {
-          enrichPreview,
-        });
-        if (failedCount > 0) {
-          setError(
-            `Часть предпросмотров не построена (${failedCount} шт). ` +
-            `Причина: ${extractErrorMessage(batchError)}`
-          );
-        }
-        if (!plans.length && strapPreviews.length === 0) {
-          throw new Error("Не удалось построить предпросмотр ни для одной выбранной позиции.");
-        }
-        plans.push(...strapPreviews);
-        setPlanPreviews(plans);
-      }
-    } catch (e) {
-      setError(toUserError(e));
-    } finally {
-      setActionLoading("");
-    }
-  }, [
-    articleLookupByItemKey,
-    furnitureError,
-    furnitureLoading,
-    furnitureTemplates,
-    resolveFurnitureTemplateForPreviewByArticle,
-    setActionLoading,
-    setError,
-    setPlanPreviews,
-    strapProductBySizeToken,
-    strapProductsByArticleCode,
-    strapTargetProduct,
-  ]);
-
-  const exportSelectedShipmentToExcel = useCallback(() => {
-    const current = selectedShipmentsRef.current;
-    if (!current.length) return;
-    const planNumberRaw = window.prompt("Введите номер плана для экспорта:", String(current[0]?.week || ""));
-    if (planNumberRaw == null) return;
-    const planNumber = String(planNumberRaw || "").trim();
-    if (!planNumber) {
-      setError("Укажите номер плана.");
-      return;
-    }
-
-    const { rows, missingItems } = buildShipmentExportRows(current, {
-      articleLookupByItemKey,
-      normalizeItemKey: normalizeFurnitureKey,
-    });
-    if (!rows.length) {
-      setError(getShipmentExportNoArticlesError());
-      return;
-    }
-
-    const ws = XLSX.utils.aoa_to_sheet(rows);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "План");
-    XLSX.writeFile(wb, `План_${planNumber}.xlsx`);
-
-    if (missingItems.length > 0) {
-      setError(formatShipmentExportPartialError(missingItems.length));
-    } else {
-      setError("");
-    }
-  }, [articleLookupByItemKey, setError]);
-
-  const importShipmentPlanFromExcelFile = useCallback(async (file) => {
-    if (!canOperateProduction) {
-      denyActionByRole("Недостаточно прав для импорта плана.");
-      return;
-    }
-    if (!file) return;
-    const planNumberRaw = window.prompt("Введите номер плана для импорта:", "");
-    if (planNumberRaw == null) return;
-    const planNumber = String(planNumberRaw || "").trim();
-    if (!planNumber) {
-      setError("Укажите номер плана.");
-      return;
-    }
-
-    setActionLoading("shipment:import");
-    setError("");
-    try {
-      const buf = await file.arrayBuffer();
-      const wb = XLSX.read(buf, { type: "array" });
-      const firstSheet = String(wb?.SheetNames?.[0] || "");
-      if (!firstSheet) throw new Error("В файле не найден лист.");
-      const ws = wb.Sheets[firstSheet];
-      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: "" });
-      const importRows = parseImportPlanRows(rows);
-      if (!importRows.length) {
-        throw new Error(getImportPlanNoValidRowsError());
-      }
-
-      const importCatalogRows = await loadImportCatalogRows({
-        sectionArticleRows,
-      });
-
-      const articleMap = buildImportArticleMap(importCatalogRows);
-
-      const { imported, missing, marked } = await applyImportPlanRows(importRows, articleMap, {
-        planNumber,
-        markMissingAsPlanRows: true,
-      });
-
-      await load();
-      if (missing.length > 0) {
-        setError(formatImportShipmentPartialError(imported, missing, marked));
-      }
-    } catch (e) {
-      setError(formatShipmentImportError(extractErrorMessage(e)));
-    } finally {
-      setActionLoading("");
-      if (importPlanFileRef.current) importPlanFileRef.current.value = "";
-    }
-  }, [canOperateProduction, sectionArticleRows, setActionLoading, setError, load, importPlanFileRef, denyActionByRole]);
-
-  const importMetalFromExcelFile = useCallback(async (file) => {
-    if (!file) return;
-    if (!canOperateProduction) {
-      denyActionByRole("Недостаточно прав для импорта остатков металла.");
-      return;
-    }
-    setActionLoading("metal:import");
-    setError("");
-    try {
-      const buf = await file.arrayBuffer();
-      const wb = XLSX.read(buf, { type: "array" });
-      const firstSheet = String(wb?.SheetNames?.[0] || "");
-      if (!firstSheet) throw new Error("В файле не найден лист.");
-      const ws = wb.Sheets[firstSheet];
-      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: "" });
-      if (!rows.length) throw new Error("Файл пустой.");
-
-      const importedRows = parseMetalImportRows(rows);
-      if (!importedRows.length) {
-        throw new Error(getMetalImportNoValidRowsError());
-      }
-
-      for (const row of importedRows) {
-        await OrderService.setMetalStock(row.metalArticle, row.metalName, row.qtyAvailable);
-      }
-
-      await loadMetalStock();
-      setError(`Импортировано позиций металла: ${importedRows.length}.`);
-    } catch (e) {
-      setError(formatMetalImportError(extractErrorMessage(e)));
-    } finally {
-      setActionLoading("");
-      if (importMetalFileRef.current) importMetalFileRef.current.value = "";
-    }
-  }, [canOperateProduction, setActionLoading, setError, loadMetalStock, importMetalFileRef, denyActionByRole]);
+    syncPlanCellToGoogleSheet,
+    loadMetalStock,
+  });
 
   const {
     importLaborFileRef,
