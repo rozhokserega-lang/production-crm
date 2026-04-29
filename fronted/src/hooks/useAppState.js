@@ -31,7 +31,6 @@ import {
   isStrapVirtualRowId,
   normalizeFurnitureKey,
   normalizeStrapProductKey,
-  resolveFurnitureTemplateForPreview,
   resolveStrapMaterialByProduct,
   strapNameToOrderItem,
 } from "../utils/furnitureUtils";
@@ -66,6 +65,7 @@ import { useShipmentPlanningDerivedData } from "./useShipmentPlanningDerivedData
 import { useShipmentOrderIndexes } from "./useShipmentOrderIndexes";
 import { useCommonDerivedData } from "./useCommonDerivedData";
 import { useShipmentBoardRenderDerived } from "./useShipmentBoardRenderDerived";
+import { useFurniturePreviewSync } from "./useFurniturePreviewSync";
 import { useLaborState } from "./useLaborState";
 import { useLaborActions } from "./useLaborActions";
 import { useStageActions } from "./useStageActions";
@@ -513,50 +513,15 @@ export function useAppState() {
     furnitureArticleRows,
   });
 
-  const resolveFurnitureTemplateForPreviewByArticle = useCallback((preview, templates) => {
-    const list = Array.isArray(templates) ? templates : [];
-    if (!preview || list.length === 0) return null;
-    const article = String(preview?.article || "").trim();
-    if (article) {
-      const row = (sectionArticleRows || []).find((x) => String(x?.article || "").trim() === article) || null;
-      const itemName = String(row?.item_name || row?.itemName || "").trim();
-      if (itemName) {
-        const key = normalizeFurnitureKey(itemName);
-        const byExact = list.find((t) => normalizeFurnitureKey(t?.productName || "") === key);
-        if (byExact) return byExact;
-        const byContains = list.find((t) => {
-          const k = normalizeFurnitureKey(t?.productName || "");
-          return k && (key.includes(k) || k.includes(key));
-        });
-        if (byContains) return byContains;
-      }
-    }
-    return resolveFurnitureTemplateForPreview(preview, list);
-  }, [sectionArticleRows]);
-
-  // If the user opens preview very early, templates may still be loading and
-  // previews will contain only the backend placeholder row. Once templates are ready,
-  // expand existing previews in-place.
-  useEffect(() => {
-    if (!Array.isArray(furnitureTemplates) || furnitureTemplates.length === 0) return;
-    setPlanPreviews((prev) => {
-      if (!Array.isArray(prev) || prev.length === 0) return prev;
-      let changed = false;
-      const next = prev.map((p) => {
-        const enriched = enrichPreviewFromFurniture(p, {
-          furnitureTemplates,
-          resolveFurnitureTemplateForPreview: resolveFurnitureTemplateForPreviewByArticle,
-          buildPreviewRowsFromFurnitureTemplate,
-          normalizeFurnitureKey,
-          furnitureLoading,
-          furnitureError,
-        });
-        if (enriched !== p) changed = true;
-        return enriched;
-      });
-      return changed ? next : prev;
-    });
-  }, [furnitureTemplates, furnitureLoading, furnitureError, setPlanPreviews, resolveFurnitureTemplateForPreviewByArticle]);
+  const { resolveFurnitureTemplateForPreviewByArticle } = useFurniturePreviewSync({
+    sectionArticleRows,
+    furnitureTemplates,
+    furnitureLoading,
+    furnitureError,
+    setPlanPreviews,
+    buildPreviewRowsFromFurnitureTemplate,
+    normalizeFurnitureKey,
+  });
 
   const refreshPlanCatalogs = useCallback(async () => {
     try {
