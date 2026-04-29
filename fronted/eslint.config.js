@@ -69,4 +69,40 @@ export default [
       ],
     },
   },
+  {
+    files: ["src/views/**/*.{js,jsx}", "src/components/**/*.{js,jsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "../api",
+              importNames: ["callBackend"],
+              message:
+                "Не импортируйте callBackend напрямую в view/component. Используйте сервисный слой (src/services/orderService.js).",
+            },
+            {
+              name: "../api.js",
+              importNames: ["callBackend"],
+              message:
+                "Не импортируйте callBackend напрямую в view/component. Используйте сервисный слой (src/services/orderService.js).",
+            },
+            {
+              name: "../../api",
+              importNames: ["callBackend"],
+              message:
+                "Не импортируйте callBackend напрямую в view/component. Используйте сервисный слой (src/services/orderService.js).",
+            },
+            {
+              name: "../../api.js",
+              importNames: ["callBackend"],
+              message:
+                "Не импортируйте callBackend напрямую в view/component. Используйте сервисный слой (src/services/orderService.js).",
+            },
+          ],
+        },
+      ],
+    },
+  },
 ];
