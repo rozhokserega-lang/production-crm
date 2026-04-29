@@ -38,6 +38,7 @@ export function FurnitureView({
   const [createDetails, setCreateDetails] = useState([]);
   const [createDetailsNonce, setCreateDetailsNonce] = useState(0);
   const [editingExisting, setEditingExisting] = useState(false);
+  const [catalogArticlesForImport, setCatalogArticlesForImport] = useState([]);
 
   function makeVariantRow(article = "", color = "") {
     return {
@@ -103,6 +104,29 @@ export function FurnitureView({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [createOpen, createDetailsNonce, editingExisting]);
+
+  useEffect(() => {
+    if (!createOpen) return;
+    if (!canOperateProduction || typeof callBackend !== "function") return;
+    if (Array.isArray(catalogArticlesForImport) && catalogArticlesForImport.length > 0) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const rows = await callBackend("webGetArticlesForImport");
+        if (cancelled) return;
+        setCatalogArticlesForImport(Array.isArray(rows) ? rows : []);
+      } catch (_) {
+        // If catalog lookup fails, keep UX alive; save will still work for new articles.
+        if (cancelled) return;
+        setCatalogArticlesForImport([]);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [createOpen, canOperateProduction, callBackend, catalogArticlesForImport]);
 
   useEffect(() => {
     if (!createOpen) return;
@@ -231,13 +255,39 @@ export function FurnitureView({
     setCreateError("");
     setCreateOk("");
     try {
-      // 1) Add to plan catalog (so it appears in 'Добавить новый план')
-      await callBackend("webUpsertItemArticleMapVariants", {
-        p_section_name: section,
-        p_item_name: name,
-        p_variants: variants,
-        p_sort_order: 999,
+      // Guard against race-condition: user can click "Сохранить" before catalogArticlesForImport has loaded.
+      // In that case fetch it right here to reliably filter existing articles.
+      let catalog = Array.isArray(catalogArticlesForImport) ? catalogArticlesForImport : [];
+      if (!Array.isArray(catalog) || catalog.length === 0) {
+        try {
+          const rows = await callBackend("webGetArticlesForImport");
+          catalog = Array.isArray(rows) ? rows : [];
+        } catch (_) {
+          catalog = [];
+        }
+      }
+      const existingByArticle = new Map(
+        catalog
+          .map((r) => ({ article: String(r?.article || "").trim(), row: r }))
+          .filter((x) => x.article),
+      );
+
+      // 1) Add/update to plan catalog (only for articles that are NOT already present).
+      // Articles already in catalog (xlsx) can not be re-inserted via webUpsertItemArticleMapVariants
+      // because of the unique constraint (article). We skip those to avoid "already exists" errors.
+      const variantsToUpsert = variants.filter((v) => {
+        const article = String(v?.article || "").trim();
+        return article && !existingByArticle.has(article);
       });
+
+      if (variantsToUpsert.length) {
+        await callBackend("webUpsertItemArticleMapVariants", {
+          p_section_name: section,
+          p_item_name: name,
+          p_variants: variantsToUpsert,
+          p_sort_order: 999,
+        });
+      }
 
       // 2) Save composition as a custom template (so it can be used inside furniture constructor / previews)
       await callBackend("webUpsertFurnitureCustomTemplate", {
@@ -522,26 +572,78 @@ export function FurnitureView({
                               alignItems: "center",
                             }}
                           >
-                            <input
-                              value={String(v.article || "")}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                setCreateVariants((prev) =>
-                                  (prev || []).map((x) => (x.id === v.id ? { ...x, article: val } : x)),
-                                );
-                              }}
-                              placeholder="GX..."
-                              style={{
-                                width: "100%",
-                                minHeight: 34,
-                                border: "1px solid #cbd5e1",
-                                borderRadius: 10,
-                                padding: "6px 10px",
-                                fontSize: 14,
-                                boxSizing: "border-box",
-                                fontFamily: "monospace",
-                              }}
-                            />
+                            {(() => {
+                              const article = String(v?.article || "").trim();
+                              const hit = Array.isArray(catalogArticlesForImport)
+                                ? catalogArticlesForImport.find(
+                                    (r) => String(r?.article || "").trim() === article,
+                                  )
+                                : null;
+
+                              return (
+                                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                                  <input
+                                    value={String(v.article || "")}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      setCreateVariants((prev) =>
+                                        (prev || []).map((x) => (x.id === v.id ? { ...x, article: val } : x)),
+                                      );
+                                    }}
+                                    placeholder="GX..."
+                                    style={{
+                                      width: "100%",
+                                      minHeight: 34,
+                                      border: hit ? "2px solid #60a5fa" : "1px solid #cbd5e1",
+                                      borderRadius: 10,
+                                      padding: "6px 10px",
+                                      fontSize: 14,
+                                      boxSizing: "border-box",
+                                      fontFamily: "monospace",
+                                      background: hit ? "#eff6ff" : "#fff",
+                                    }}
+                                  />
+
+                                  {hit && (
+                                    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                                      <div style={{ fontSize: 11, color: "#1d4ed8", fontWeight: 900 }}>
+                                        В базе: {String(hit.item_name || "").trim() || "-"}
+                                      </div>
+                                      <div style={{ fontSize: 11, color: "#0f172a" }}>
+                                        Цвет/материал: <b>{String(hit.material || "").trim()}</b>
+                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setCreateError("");
+                                          setCreateOk("");
+                                          setCreateName(String(hit.item_name || "").trim());
+                                          setCreateSection(String(hit.section_name || "").trim());
+                                          setCreateVariants((prev) =>
+                                            (prev || []).map((x) =>
+                                              x.id === v.id ? { ...x, color: String(hit.material || "").trim() } : x,
+                                            ),
+                                          );
+                                        }}
+                                        style={{
+                                          minHeight: 24,
+                                          borderRadius: 8,
+                                          border: "1px solid #93c5fd",
+                                          background: "#fff",
+                                          color: "#1e40af",
+                                          fontWeight: 900,
+                                          cursor: "pointer",
+                                          padding: "0 8px",
+                                          fontSize: 11,
+                                        }}
+                                      >
+                                        Подставить
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })()}
                             <input
                               value={String(v.color || "")}
                               onChange={(e) => {

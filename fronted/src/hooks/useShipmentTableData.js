@@ -55,8 +55,9 @@ export function useShipmentTableData({
           const qty = Number(c.qty || 0);
           const sheetsRaw = Number(c.sheetsNeeded || 0);
           const outputRaw = Number(c.outputPerSheet || 0);
-          const isMainFurniture = n(section.name || "").includes("основная мебель");
-          const fallbackOutput = isMainFurniture && !(outputRaw > 0)
+          // If backend did not store per-sheet output, try to derive it from constructor templates
+          // (kits_per_sheet) using the item name and material.
+          const fallbackOutput = !(outputRaw > 0)
             ? resolveKitsPerSheet(it.item, it.material || "")
             : 0;
           const outputPerSheet = outputRaw > 0 ? outputRaw : fallbackOutput;

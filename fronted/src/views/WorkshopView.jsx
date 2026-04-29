@@ -46,11 +46,9 @@ export const WorkshopView = memo(function WorkshopView({
         const normalize = (v) =>
           typeof normalizeFurnitureKey === "function" ? normalizeFurnitureKey(v) : String(v || "").toLowerCase().trim();
 
-        // Fallback for "Основная мебель": use kits_per_sheet from constructor templates when backend stored 0.
+        // Fallback: for any order which has a custom template with kits_per_sheet, use it to
+        // derive sheets when backend stored 0.
         const fallbackMainFurnitureSheets = (() => {
-          const sections = String(o.sectionName || "").toLowerCase();
-          const isMain = sections.includes("основная") && sections.includes("мебел");
-          if (!isMain) return 0;
           const kitsList = Array.isArray(furnitureCustomTemplates) ? furnitureCustomTemplates : [];
           if (!kitsList.length) return 0;
           const itemKey = normalize(rawItem);
