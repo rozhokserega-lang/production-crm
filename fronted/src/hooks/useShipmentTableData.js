@@ -11,9 +11,39 @@ export function useShipmentTableData({
   stageLabel,
   normalizeFurnitureKey,
   hiddenShipmentGroups,
+  furnitureCustomTemplates,
 }) {
   const shipmentTableRows = useMemo(() => {
     if (view !== "shipment") return [];
+    const n = (v) => (typeof normalizeFurnitureKey === "function" ? normalizeFurnitureKey(v) : String(v || "").toLowerCase().trim());
+    const templates = Array.isArray(furnitureCustomTemplates) ? furnitureCustomTemplates : [];
+    const resolveKitsPerSheet = (itemName, materialName = "") => {
+      const rawItem = stripPlanItemMeta(String(itemName || "")).trim();
+      if (!rawItem) return 0;
+      const itemKey = n(rawItem);
+      const materialKey = n(materialName);
+      const list = templates.map((t) => ({
+        name: String(t?.product_name || t?.productName || "").trim(),
+        kits: Number(t?.kits_per_sheet ?? t?.kitsPerSheet ?? 0) || 0,
+      }));
+      const byExact = list.find((x) => n(x.name) === itemKey && x.kits > 0);
+      if (byExact) return byExact.kits;
+      const byContains = list.find((x) => {
+        const key = n(x.name);
+        return key && x.kits > 0 && (itemKey.includes(key) || key.includes(itemKey));
+      });
+      if (byContains) return byContains.kits;
+      if (materialKey) {
+        const parts = rawItem.split(".").map((x) => String(x || "").trim()).filter(Boolean);
+        if (parts.length >= 2 && n(parts[parts.length - 1]) === materialKey) {
+          const noMaterial = parts.slice(0, -1).join(". ");
+          const nm = n(noMaterial);
+          const byBase = list.find((x) => n(x.name) === nm && x.kits > 0);
+          if (byBase) return byBase.kits;
+        }
+      }
+      return 0;
+    };
     const rowsFlat = [];
     shipmentRenderSections.forEach((section) => {
       (section.items || []).forEach((it) => {
@@ -22,6 +52,19 @@ export function useShipmentTableData({
           const sourceCol = c.sourceColId != null ? String(c.sourceColId) : String(c.col);
           const stageKey = getShipmentStageKey(c, sourceRow, shipmentOrderMaps, it.item);
           const displayBg = stageBg(stageKey, c.bg || "#ffffff");
+          const qty = Number(c.qty || 0);
+          const sheetsRaw = Number(c.sheetsNeeded || 0);
+          const outputRaw = Number(c.outputPerSheet || 0);
+          const isMainFurniture = n(section.name || "").includes("основная мебель");
+          const fallbackOutput = isMainFurniture && !(outputRaw > 0)
+            ? resolveKitsPerSheet(it.item, it.material || "")
+            : 0;
+          const outputPerSheet = outputRaw > 0 ? outputRaw : fallbackOutput;
+          const sheets = sheetsRaw > 0
+            ? sheetsRaw
+            : outputPerSheet > 0 && qty > 0
+              ? Math.ceil(qty / outputPerSheet)
+              : 0;
           rowsFlat.push({
             key: `${sourceRow}-${sourceCol}`,
             section: section.name,
@@ -33,9 +76,9 @@ export function useShipmentTableData({
             strapProduct: String(it.strapProduct || ""),
             material: it.material || "",
             week: c.week || "-",
-            qty: Number(c.qty || 0),
-            sheets: Number(c.sheetsNeeded || 0),
-            outputPerSheet: Number(c.outputPerSheet || 0),
+            qty,
+            sheets,
+            outputPerSheet,
             availableSheets: Number(c.availableSheets || 0),
             bg: displayBg,
             status: stageLabel(stageKey),
@@ -57,6 +100,8 @@ export function useShipmentTableData({
     getShipmentStageKey,
     stageBg,
     stageLabel,
+    normalizeFurnitureKey,
+    furnitureCustomTemplates,
   ]);
 
   const shipmentMaterialBalance = useMemo(() => {

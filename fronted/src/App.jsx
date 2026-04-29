@@ -621,6 +621,8 @@ export default function App() {
             setExecutorByOrder={setExecutorByOrder}
             executorOptions={executorOptions}
             getMaterialLabel={getMaterialLabel}
+            furnitureCustomTemplates={furnitureCustomTemplates}
+            normalizeFurnitureKey={normalizeFurnitureKey}
           />
         )}
       </section>

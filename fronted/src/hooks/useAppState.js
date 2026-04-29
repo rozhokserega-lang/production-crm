@@ -1116,6 +1116,7 @@ export function useAppState() {
     stageLabel,
     normalizeFurnitureKey,
     hiddenShipmentGroups,
+    furnitureCustomTemplates,
   });
   const warehouseOrderPlanRows = useWarehouseOrderPlanRows({
     shipmentBoard,
@@ -1445,13 +1446,32 @@ export function useAppState() {
     setActionLoading("furniture:create-plan");
     setError("");
     try {
+      const norm = (v) => normalizeFurnitureKey(v);
+      const itemKey = norm(item);
+      const materialKey = norm(material);
+      const resolvedArticle = article || String(
+        (Array.isArray(sectionArticleRows) ? sectionArticleRows : []).find((row) => {
+          const sectionName = String(row?.section_name || row?.sectionName || "").trim();
+          const sectionKey = norm(sectionName);
+          if (!(sectionKey.includes("основная") && sectionKey.includes("мебел"))) return false;
+          const itemName = String(row?.item_name || row?.itemName || "").trim();
+          const itemRowKey = norm(itemName);
+          if (!(itemRowKey && (itemKey === itemRowKey || itemKey.includes(itemRowKey) || itemRowKey.includes(itemKey)))) {
+            return false;
+          }
+          const rowMaterial = String(row?.material || row?.table_color || row?.tableColor || "").trim();
+          const rowMaterialKey = norm(rowMaterial);
+          if (!materialKey || !rowMaterialKey) return true;
+          return materialKey === rowMaterialKey || materialKey.includes(rowMaterialKey) || rowMaterialKey.includes(materialKey);
+        })?.article || ""
+      ).trim();
       const request = {
         sectionName: "Основная мебель",
-        item: embedPlanItemArticle(item, article, qrQty),
+        item: embedPlanItemArticle(item, resolvedArticle, qrQty),
         material,
         week,
         qty,
-        article,
+        article: resolvedArticle,
       };
       await OrderService.createShipmentPlanCell(request);
       void syncPlanCellToGoogleSheet(request);
@@ -1462,7 +1482,16 @@ export function useAppState() {
     } finally {
       setActionLoading("");
     }
-  }, [canOperateProduction, setActionLoading, setError, load, denyActionByRole, syncPlanCellToGoogleSheet]);
+  }, [
+    canOperateProduction,
+    setActionLoading,
+    setError,
+    load,
+    denyActionByRole,
+    syncPlanCellToGoogleSheet,
+    sectionArticleRows,
+    normalizeFurnitureKey,
+  ]);
 
   const previewSelectedShipmentPlan = useCallback(async () => {
     const current = selectedShipmentsRef.current;

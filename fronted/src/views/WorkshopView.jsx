@@ -1,5 +1,6 @@
 import { memo } from "react";
 import { KROMKA_EXECUTORS, PRAS_EXECUTORS } from "../config";
+import { stripPlanItemMeta } from "../app/orderHelpers";
 
 export const WorkshopView = memo(function WorkshopView({
   workshopRows,
@@ -21,6 +22,8 @@ export const WorkshopView = memo(function WorkshopView({
   setExecutorByOrder,
   executorOptions,
   getMaterialLabel,
+  furnitureCustomTemplates,
+  normalizeFurnitureKey,
 }) {
   const kromkaOptions = Array.isArray(executorOptions?.kromka) && executorOptions.kromka.length > 0
     ? executorOptions.kromka
@@ -36,8 +39,36 @@ export const WorkshopView = memo(function WorkshopView({
       {workshopRows.map((o) => {
         const orderId = String(o.orderId || o.order_id || "");
         const isPaused = (status) => /пауза/i.test(String(status || ""));
-        const displaySheetsNeeded =
+        const rawItem = stripPlanItemMeta(String(o.item || ""));
+        const baseDisplaySheetsNeeded =
           resolveDefaultConsumeSheets(o, shipmentOrders) || resolveDefaultConsumeSheetsFromBoard(o, shipmentBoard);
+
+        const normalize = (v) =>
+          typeof normalizeFurnitureKey === "function" ? normalizeFurnitureKey(v) : String(v || "").toLowerCase().trim();
+
+        // Fallback for "Основная мебель": use kits_per_sheet from constructor templates when backend stored 0.
+        const fallbackMainFurnitureSheets = (() => {
+          const sections = String(o.sectionName || "").toLowerCase();
+          const isMain = sections.includes("основная") && sections.includes("мебел");
+          if (!isMain) return 0;
+          const kitsList = Array.isArray(furnitureCustomTemplates) ? furnitureCustomTemplates : [];
+          if (!kitsList.length) return 0;
+          const itemKey = normalize(rawItem);
+          if (!itemKey) return 0;
+          const tpl =
+            kitsList.find((t) => normalize(String(t.product_name || t.productName || "")) === itemKey) ||
+            kitsList.find((t) => {
+              const k = normalize(String(t.product_name || t.productName || ""));
+              return k && (itemKey.includes(k) || k.includes(itemKey));
+            }) ||
+            null;
+          const kitsPerSheet = Number(tpl?.kits_per_sheet ?? tpl?.kitsPerSheet ?? 0) || 0;
+          const qty = Number(o.qty || 0) || 0;
+          if (!(kitsPerSheet > 0) || !(qty > 0)) return 0;
+          return Math.ceil(qty / kitsPerSheet);
+        })();
+
+        const displaySheetsNeeded = Number(baseDisplaySheetsNeeded || 0) > 0 ? baseDisplaySheetsNeeded : fallbackMainFurnitureSheets;
         const displayMaterial = String(o.material || o.colorName || "").trim() || "Материал не указан";
         const adminNote = String(o.adminComment ?? o.admin_comment ?? "").trim();
 
