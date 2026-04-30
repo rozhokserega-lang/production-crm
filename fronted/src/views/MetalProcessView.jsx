@@ -432,14 +432,15 @@ export function MetalProcessView({
   const startFromPlan = async (rowId, stage) => {
     await transitionMetalProcessStage(rowId, "start", stage);
   };
-  const printPlanRow = (row) => {
+  const openPlanPreview = (row) => {
     const article = String(row?.article || "").trim();
     const name = String(row?.name || "").trim();
     const qty = String(row?.qty ?? "").trim();
     const week = String(row?.week || "").trim();
     const generatedAt = new Date();
     const title = `План металла${article ? ` — ${article}` : ""}`;
-    const popup = window.open("", "_blank", "noopener,noreferrer,width=900,height=700");
+    // NOTE: `noreferrer` breaks access to popup.document in some browsers → blank window.
+    const popup = window.open("", "_blank", "width=900,height=700");
     if (!popup) return;
     popup.document.open();
     popup.document.write(`<!doctype html>
@@ -459,7 +460,10 @@ export function MetalProcessView({
     .lbl { color: #374151; font-weight: 700; }
     .val { font-weight: 800; }
     .qty { font-size: 44px; font-weight: 900; letter-spacing: 0.02em; }
-    .foot { margin-top: 14px; font-size: 11px; color: #6b7280; }
+    .actions { display: flex; gap: 10px; margin-top: 14px; }
+    .btn { border: 1px solid #2b2b2b; background: #fff; padding: 8px 12px; border-radius: 10px; font-weight: 800; cursor: pointer; }
+    .btn.primary { background: #0f766e; border-color: #0f766e; color: #fff; }
+    .btn:active { transform: translateY(1px); }
   </style>
 </head>
 <body>
@@ -472,18 +476,15 @@ export function MetalProcessView({
     <div class="row"><div class="lbl">Артикул</div><div class="val">${(article || "—").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div></div>
     <div class="row"><div class="lbl">Количество</div><div class="qty">${(qty || "—").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div></div>
     ${week ? `<div class="row"><div class="lbl">Неделя</div><div class="val">${week.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div></div>` : ""}
-    <div class="foot">Печать плана металла</div>
+    <div class="actions">
+      <button class="btn primary" onclick="window.print()">Печать</button>
+      <button class="btn" onclick="window.close()">Закрыть</button>
+    </div>
   </div>
-  <script>
-    window.addEventListener('load', () => {
-      setTimeout(() => {
-        window.print();
-      }, 50);
-    });
-  </script>
 </body>
 </html>`);
     popup.document.close();
+    try { popup.focus(); } catch (_) { /* ignore */ }
   };
   const removeDoneItem = async (rowId) => {
     if (!canManageOrders) return;
@@ -674,16 +675,21 @@ export function MetalProcessView({
                               type="button"
                               className="mini"
                               style={{ marginLeft: 8 }}
-                              onClick={() => printPlanRow(row)}
-                              title="Печать: изделие / артикул / количество"
+                              onClick={() => openPlanPreview(row)}
+                              title="Просмотр: изделие / артикул / количество"
                             >
-                              Печать
+                              Просмотр
                             </button>
                           </>
                         ) : (
-                          <span className="empty" style={{ margin: 0, padding: "2px 8px" }}>
-                            В процессе
-                          </span>
+                          <button
+                            type="button"
+                            className="mini"
+                            onClick={() => openPlanPreview(row)}
+                            title="Просмотр: изделие / артикул / количество"
+                          >
+                            Просмотр
+                          </button>
                         )}
                       </td>
                     </tr>
