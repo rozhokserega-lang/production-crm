@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 const STAGE_LABELS = {
@@ -327,6 +327,8 @@ export function MetalProcessView({
   const [catalogEditArticle, setCatalogEditArticle] = useState(null);
   const [catalogTableSearch, setCatalogTableSearch] = useState("");
   const [doneDialog, setDoneDialog] = useState({ open: false, row: null, doneQty: "", note: "" });
+  const catalogEditorRef = useRef(null);
+  const catalogArticleInputRef = useRef(null);
   const options = useMemo(
     () => (Array.isArray(metalProcessCatalogRows) ? metalProcessCatalogRows : []),
     [metalProcessCatalogRows],
@@ -1080,6 +1082,18 @@ export function MetalProcessView({
               ? row.stageRoute
               : ["laser", "bending", "welding", "painting"],
           });
+          requestAnimationFrame(() => {
+            try {
+              catalogEditorRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+            } catch (_) {
+              /* ignore */
+            }
+            try {
+              catalogArticleInputRef.current?.focus();
+            } catch (_) {
+              /* ignore */
+            }
+          });
         };
         const cancelEdit = () => {
           setCatalogEditArticle(null);
@@ -1123,13 +1137,14 @@ export function MetalProcessView({
             </div>
 
             {isEditing && (
-              <div className="catalog-edit-card">
+              <div className="catalog-edit-card" ref={catalogEditorRef}>
                 <div style={{ fontWeight: 700, marginBottom: 8 }}>
                   {isNewMode ? "Новое изделие" : `Редактирование: ${catalogEditArticle}`}
                 </div>
                 <div className="catalog-edit-row">
                   <label className="catalog-edit-label">Артикул</label>
                   <input
+                    ref={catalogArticleInputRef}
                     className="metal-process-field"
                     placeholder="Артикул (заглавными)"
                     value={catalogForm.article}

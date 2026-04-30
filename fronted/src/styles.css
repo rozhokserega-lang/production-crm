@@ -2383,6 +2383,26 @@ button:disabled {
     display: none !important;
   }
 
+  /* Metal plan print: only the header, centered (no detail table). */
+  .metal-plan-print .plan-table {
+    display: none !important;
+  }
+
+  .metal-plan-print .print-plan-page {
+    margin: 0 auto !important;
+  }
+
+  .metal-plan-print .plan-head-grid {
+    grid-template-columns: 1fr !important;
+    justify-items: center;
+    text-align: center;
+  }
+
+  .metal-plan-print .plan-right-meta {
+    grid-template-rows: auto !important;
+    justify-items: center;
+  }
+
   .print-plan-page {
     page-break-after: always;
     break-after: page;
