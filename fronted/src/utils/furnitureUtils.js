@@ -17,6 +17,9 @@ export function normalizeFurnitureKey(v) {
   return String(v || "")
     .toLowerCase()
     .replace(/[ё]/g, "е")
+    // Unify unit suffixes so group keys don't split (e.g. "750" vs "750 мм").
+    .replace(/\b(\d+)\s*(мм|mm)\b/gu, "$1")
+    .replace(/\b(мм|mm)\b/gu, " ")
     .replace(/[^\p{L}\p{N}\s]/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
