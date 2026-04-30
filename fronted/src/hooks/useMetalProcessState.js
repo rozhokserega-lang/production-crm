@@ -6,11 +6,20 @@ function parseQty(value) {
   return Number.isFinite(n) ? n : 0;
 }
 
+const DEFAULT_ROUTE = ["laser", "bending", "welding", "painting"];
+const VALID_STAGES = ["laser", "saw", "bending", "welding", "painting"];
+
 function mapCatalogRow(row) {
+  const rawRoute = row?.stage_route ?? row?.stageRoute;
+  const stageRoute =
+    Array.isArray(rawRoute) && rawRoute.length > 0
+      ? rawRoute.filter((s) => VALID_STAGES.includes(s))
+      : DEFAULT_ROUTE;
   return {
     article: String(row?.article || row?.metal_article || "").trim(),
     name: String(row?.name || row?.metal_name || "").trim(),
     isActive: Boolean(row?.is_active ?? row?.isActive ?? true),
+    stageRoute: stageRoute.length > 0 ? stageRoute : DEFAULT_ROUTE,
   };
 }
 
@@ -24,7 +33,7 @@ function buildCatalogFromMetalStock(rows) {
     const key = `${article}|||${name}`.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
-    result.push({ article, name, isActive: true });
+    result.push({ article, name, isActive: true, stageRoute: DEFAULT_ROUTE });
   }
   result.sort((a, b) => String(a.article).localeCompare(String(b.article), "ru"));
   return result;
@@ -40,7 +49,14 @@ function mergeCatalogRows(primaryRows, fallbackRows) {
     const key = `${article}|||${name}`.toLowerCase();
     if (seen.has(key)) return;
     seen.add(key);
-    out.push({ article, name, isActive: row?.isActive !== false });
+    out.push({
+      article,
+      name,
+      isActive: row?.isActive !== false,
+      stageRoute: Array.isArray(row?.stageRoute) && row.stageRoute.length > 0
+        ? row.stageRoute
+        : DEFAULT_ROUTE,
+    });
   };
   for (const row of Array.isArray(primaryRows) ? primaryRows : []) pushUnique(row);
   for (const row of Array.isArray(fallbackRows) ? fallbackRows : []) pushUnique(row);
@@ -85,6 +101,7 @@ export function useMetalProcessState({
   const [metalProcessRows, setMetalProcessRows] = useState([]);
   const [metalProcessCatalogRows, setMetalProcessCatalogRows] = useState([]);
   const [metalProcessLoading, setMetalProcessLoading] = useState(false);
+  const [metalProcessCatalogLoading, setMetalProcessCatalogLoading] = useState(false);
   const [metalProcessActionKey, setMetalProcessActionKey] = useState("");
   const [metalProcessDraft, setMetalProcessDraft] = useState({
     article: "",
@@ -209,10 +226,44 @@ export function useMetalProcessState({
     }
   }, [canManageOrders, explainRpcMissing, loadMetalProcessData, setError]);
 
+  const upsertMetalCatalogItem = useCallback(async (article, name, stageRoute, isActive = true) => {
+    if (!canManageOrders) return;
+    const key = `catalog:upsert:${article}`;
+    setMetalProcessActionKey(key);
+    setMetalProcessCatalogLoading(true);
+    setError("");
+    try {
+      await OrderService.upsertMetalProcessCatalogItem(article, name, isActive, stageRoute);
+      await loadMetalProcessData();
+    } catch (e) {
+      setError(explainRpcMissing(e));
+    } finally {
+      setMetalProcessActionKey("");
+      setMetalProcessCatalogLoading(false);
+    }
+  }, [canManageOrders, explainRpcMissing, loadMetalProcessData, setError]);
+
+  const deleteMetalCatalogItem = useCallback(async (article) => {
+    if (!canManageOrders) return;
+    setMetalProcessActionKey(`catalog:delete:${article}`);
+    setMetalProcessCatalogLoading(true);
+    setError("");
+    try {
+      await OrderService.deleteMetalCatalogItem(article);
+      await loadMetalProcessData();
+    } catch (e) {
+      setError(explainRpcMissing(e));
+    } finally {
+      setMetalProcessActionKey("");
+      setMetalProcessCatalogLoading(false);
+    }
+  }, [canManageOrders, explainRpcMissing, loadMetalProcessData, setError]);
+
   return {
     metalProcessRows,
     metalProcessCatalogRows,
     metalProcessLoading,
+    metalProcessCatalogLoading,
     metalProcessActionKey,
     metalProcessDraft,
     setMetalProcessDraft,
@@ -221,5 +272,7 @@ export function useMetalProcessState({
     transitionMetalProcessStage,
     saveMetalProcessComment,
     deleteMetalProcessItem,
+    upsertMetalCatalogItem,
+    deleteMetalCatalogItem,
   };
 }

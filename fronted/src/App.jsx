@@ -1,5 +1,5 @@
 import { useAppState } from "./hooks/useAppState";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AppHeader } from "./components/AppHeader";
 import { DomainDrawer } from "./components/DomainDrawer";
 import { ViewSwitcher } from "./components/ViewSwitcher";
@@ -231,6 +231,9 @@ export default function App() {
     transitionMetalProcessStage,
     saveMetalProcessComment,
     deleteMetalProcessItem,
+    upsertMetalCatalogItem,
+    deleteMetalCatalogItem,
+    metalProcessCatalogLoading,
     shipmentOrderMaps,
     runAction,
     isActionPending,
@@ -309,6 +312,23 @@ export default function App() {
     executorByOrder, setExecutorByOrder,
     executorOptions,
   } = useAppState();
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const html = document.documentElement;
+    const body = document.body;
+    const clsMetal = "domain-metal-process";
+    const clsFurniture = "domain-furniture";
+    html.classList.remove(clsMetal, clsFurniture);
+    body.classList.remove(clsMetal, clsFurniture);
+    const cls = view === "metalProcess" ? clsMetal : clsFurniture;
+    html.classList.add(cls);
+    body.classList.add(cls);
+    return () => {
+      html.classList.remove(clsMetal, clsFurniture);
+      body.classList.remove(clsMetal, clsFurniture);
+    };
+  }, [view]);
 
   return (
     <div className="page">
@@ -544,6 +564,7 @@ export default function App() {
         {view === "metalProcess" && (
           <MetalProcessView
             loading={metalProcessLoading}
+            catalogLoading={metalProcessCatalogLoading}
             canOperateProduction={canOperateProduction}
             canManageOrders={canManageOrders}
             metalProcessRows={metalProcessRows}
@@ -554,6 +575,8 @@ export default function App() {
             transitionMetalProcessStage={transitionMetalProcessStage}
             saveMetalProcessComment={saveMetalProcessComment}
             deleteMetalProcessItem={deleteMetalProcessItem}
+            upsertMetalCatalogItem={upsertMetalCatalogItem}
+            deleteMetalCatalogItem={deleteMetalCatalogItem}
             metalProcessActionKey={metalProcessActionKey}
           />
         )}

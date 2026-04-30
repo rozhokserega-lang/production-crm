@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback } from "react";
 import {
+  CRM_SUPABASE_AUTH_STORAGE_KEY,
   getSupabaseAuthSession,
   getSupabaseAuthUser,
   supabaseSignInWithPassword,
   supabaseSignOut,
+  syncSupabaseSessionFromStorage,
 } from "../api";
 
 /**
@@ -44,6 +46,33 @@ export function useAuth({
     }
     setLoading(false);
   }, []);
+
+  /** RPC при истёкшем JWT чистит токен в api.js — синхронизируем форму входа и пользователя; иначе «Роль: админ» расходится с реальными правами. */
+  useEffect(() => {
+    function onSessionInvalidated() {
+      syncSupabaseSessionFromStorage();
+      setAuthUser(null);
+      setUser(null);
+      const msg = "Сессия истекла или недействительна. Войдите снова.";
+      if (setError) setError(msg);
+      else setErrorLocal(msg);
+    }
+    function onStorage(e) {
+      if (!e || e.storageArea !== window.localStorage) return;
+      if (e.key !== CRM_SUPABASE_AUTH_STORAGE_KEY && e.key != null) return;
+      syncSupabaseSessionFromStorage();
+      const session = getSupabaseAuthSession();
+      const nextUser = session ? getSupabaseAuthUser() : null;
+      setAuthUser(nextUser || null);
+      setUser(nextUser || null);
+    }
+    window.addEventListener("crm-supabase-session-invalidated", onSessionInvalidated);
+    window.addEventListener("storage", onStorage);
+    return () => {
+      window.removeEventListener("crm-supabase-session-invalidated", onSessionInvalidated);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, [setError]);
 
   /** Вход через Supabase (email + password) */
   const signInWithSupabase = useCallback(async () => {

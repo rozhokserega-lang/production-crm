@@ -25,13 +25,29 @@ function getStageSeconds(row, stageKey) {
   return 0;
 }
 
-function getNextStageLabel(stageKey) {
-  if (stageKey === "laser") return STAGE_LABELS.bending;
-  if (stageKey === "saw") return `${STAGE_LABELS.welding} -> ${STAGE_LABELS.painting}`;
-  if (stageKey === "bending") return STAGE_LABELS.welding;
-  if (stageKey === "welding") return STAGE_LABELS.painting;
-  if (stageKey === "painting") return "Завершение";
-  return "-";
+const DEFAULT_METAL_ROUTE = ["laser", "bending", "welding", "painting"];
+
+/** Catalog-aware route for row (fallback if article missing from catalog). */
+function resolveMetalRoute(row, catalogRows) {
+  const article = String(row?.article || "").trim().toUpperCase();
+  const list = Array.isArray(catalogRows) ? catalogRows : [];
+  const match = list.find((c) => String(c?.article || "").trim().toUpperCase() === article);
+  if (match && Array.isArray(match.stageRoute) && match.stageRoute.length > 0) {
+    return match.stageRoute;
+  }
+  const stage = String(row?.currentStage || "").toLowerCase();
+  if (stage === "saw") return ["saw", "welding", "painting"];
+  return [...DEFAULT_METAL_ROUTE];
+}
+
+/** Human-readable remaining stages after current (including immediate next). */
+function formatNextStagesLabel(route, currentStageKey) {
+  const routeArr = Array.isArray(route) && route.length > 0 ? route : DEFAULT_METAL_ROUTE;
+  const cur = String(currentStageKey || "").toLowerCase();
+  const idx = routeArr.indexOf(cur);
+  if (idx === -1) return "-";
+  if (idx >= routeArr.length - 1) return "Завершение";
+  return routeArr.slice(idx + 1).map((s) => STAGE_LABELS[s] || s).join(" → ");
 }
 
 function getQueuedStatusLabel(stageKey) {
@@ -58,14 +74,8 @@ function drawerDotClass(kind) {
   return "order-drawer__dot order-drawer__dot--wait";
 }
 
-function getMetalRoute(row) {
-  const stage = String(row?.currentStage || "").toLowerCase();
-  if (stage === "saw") return ["saw", "welding", "painting"];
-  return ["laser", "bending", "welding", "painting"];
-}
-
-function getRouteStepKind(row, stageKey) {
-  const route = getMetalRoute(row);
+function getRouteStepKind(row, stageKey, catalogRows) {
+  const route = resolveMetalRoute(row, catalogRows);
   const idx = route.indexOf(stageKey);
   if (idx === -1) return "wait";
   const currentStage = String(row?.currentStage || "").toLowerCase();
@@ -152,8 +162,139 @@ function matchesCatalogQuery(item, rawQuery) {
   );
 }
 
+const ALL_STAGES_ORDERED = ["laser", "saw", "bending", "welding", "painting"];
+
+const STAGE_COLORS = {
+  laser:    { bg: "#1a3a5c", border: "#3b82f6", text: "#93c5fd", icon: "⚡" },
+  saw:      { bg: "#1a2e1a", border: "#22c55e", text: "#86efac", icon: "🔩" },
+  bending:  { bg: "#2d1a3a", border: "#a855f7", text: "#d8b4fe", icon: "⚙️" },
+  welding:  { bg: "#3a2a1a", border: "#f97316", text: "#fdba74", icon: "🔥" },
+  painting: { bg: "#1a2a3a", border: "#06b6d4", text: "#67e8f9", icon: "🎨" },
+};
+
+function StageBadge({ stage, size = "md" }) {
+  const c = STAGE_COLORS[stage] || { bg: "#222", border: "#666", text: "#ccc", icon: "•" };
+  const label = STAGE_LABELS[stage] || stage;
+  return (
+    <span
+      className={`stage-badge stage-badge--${size}`}
+      style={{ background: c.bg, borderColor: c.border, color: c.text }}
+    >
+      <span className="stage-badge__icon">{c.icon}</span>
+      {label}
+    </span>
+  );
+}
+
+function RouteEditor({ value, onChange, disabled }) {
+  const route = Array.isArray(value) && value.length > 0 ? value : ["laser", "bending", "welding", "painting"];
+  const [dragSourceStage, setDragSourceStage] = useState(null);
+  const [dragOverIdx, setDragOverIdx] = useState(null);
+
+  const toggle = (stage) => {
+    if (disabled) return;
+    const idx = route.indexOf(stage);
+    if (idx === -1) {
+      const newRoute = ALL_STAGES_ORDERED.filter((s) => route.includes(s) || s === stage);
+      onChange(newRoute);
+    } else {
+      if (route.length <= 1) return;
+      onChange(route.filter((s) => s !== stage));
+    }
+  };
+
+  const handleDragStart = (stage) => {
+    setDragSourceStage(stage);
+  };
+
+  const handleDragOver = (e, idx) => {
+    e.preventDefault();
+    setDragOverIdx(idx);
+  };
+
+  const handleDrop = (e, toIdx) => {
+    e.preventDefault();
+    setDragOverIdx(null);
+    const fromStage = dragSourceStage;
+    setDragSourceStage(null);
+    if (!fromStage) return;
+    const fromIdx = route.indexOf(fromStage);
+    if (fromIdx === -1 || fromIdx === toIdx) return;
+    const next = [...route];
+    next.splice(fromIdx, 1);
+    next.splice(toIdx, 0, fromStage);
+    onChange(next);
+  };
+
+  const handleDragEnd = () => {
+    setDragSourceStage(null);
+    setDragOverIdx(null);
+  };
+
+  const unused = ALL_STAGES_ORDERED.filter((s) => !route.includes(s));
+
+  return (
+    <div className="route-editor">
+      <div className="route-editor__active-label">
+        Активные этапы — перетащите для изменения порядка:
+      </div>
+      <div className="route-editor__chain">
+        {route.map((stage, idx) => {
+          const c = STAGE_COLORS[stage] || { border: "#555" };
+          const isDragOver = dragOverIdx === idx && dragSourceStage !== stage;
+          return (
+            <div key={stage} className="route-editor__chain-step">
+              {idx > 0 && <span className="route-editor__chain-arrow">→</span>}
+              <div
+                className={`route-editor__item${isDragOver ? " route-editor__item--drop-target" : ""}`}
+                style={{ borderColor: c.border, cursor: disabled ? "default" : "grab" }}
+                draggable={!disabled}
+                onDragStart={() => handleDragStart(stage)}
+                onDragOver={(e) => handleDragOver(e, idx)}
+                onDrop={(e) => handleDrop(e, idx)}
+                onDragEnd={handleDragEnd}
+              >
+                <span className="route-editor__drag-handle" title="Перетащите для изменения порядка">⠿</span>
+                <span className="route-editor__step-num">{idx + 1}</span>
+                <StageBadge stage={stage} size="sm" />
+                <button
+                  type="button"
+                  className="route-editor__btn route-editor__btn--remove"
+                  title="Убрать из маршрута"
+                  disabled={disabled || route.length <= 1}
+                  onClick={() => toggle(stage)}
+                >✕</button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {unused.length > 0 && (
+        <div className="route-editor__unused">
+          <span className="route-editor__unused-label">Добавить этап:</span>
+          {unused.map((stage) => (
+            <button
+              key={stage}
+              type="button"
+              className="route-editor__btn route-editor__btn--add"
+              disabled={disabled}
+              onClick={() => toggle(stage)}
+              style={{ borderColor: STAGE_COLORS[stage]?.border, color: STAGE_COLORS[stage]?.text }}
+            >
+              {STAGE_COLORS[stage]?.icon} {STAGE_LABELS[stage]}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const EMPTY_CATALOG_FORM = { article: "", name: "", stageRoute: ["laser", "bending", "welding", "painting"] };
+
 export function MetalProcessView({
   loading,
+  catalogLoading,
   canOperateProduction,
   canManageOrders,
   metalProcessRows,
@@ -164,6 +305,8 @@ export function MetalProcessView({
   transitionMetalProcessStage,
   saveMetalProcessComment,
   deleteMetalProcessItem,
+  upsertMetalCatalogItem,
+  deleteMetalCatalogItem,
   metalProcessActionKey,
 }) {
   const [subView, setSubView] = useState("plan");
@@ -171,6 +314,9 @@ export function MetalProcessView({
   const [catalogSearchText, setCatalogSearchText] = useState("");
   const [commentDraftById, setCommentDraftById] = useState({});
   const [kanbanDrawerId, setKanbanDrawerId] = useState("");
+  const [catalogForm, setCatalogForm] = useState(EMPTY_CATALOG_FORM);
+  const [catalogEditArticle, setCatalogEditArticle] = useState(null);
+  const [catalogTableSearch, setCatalogTableSearch] = useState("");
   const options = useMemo(
     () => (Array.isArray(metalProcessCatalogRows) ? metalProcessCatalogRows : []),
     [metalProcessCatalogRows],
@@ -355,6 +501,15 @@ export function MetalProcessView({
         >
           Статистика
         </button>
+        {canManageOrders && (
+          <button
+            type="button"
+            className={subView === "catalog" ? "tab active" : "tab"}
+            onClick={() => setSubView("catalog")}
+          >
+            Каталог
+          </button>
+        )}
       </div>
 
       {subView === "plan" && (
@@ -438,6 +593,10 @@ export function MetalProcessView({
                 {planRows.map((row) => {
                   const rowKey = String(row.id);
                   const busy = metalProcessActionKey.startsWith(`row:${rowKey}:`);
+                  const catalogItem = options.find((c) => c.article === row.article);
+                  const firstStage = Array.isArray(catalogItem?.stageRoute) && catalogItem.stageRoute.length > 0
+                    ? catalogItem.stageRoute[0]
+                    : "laser";
                   return (
                     <tr key={`plan-${row.id}`}>
                       <td>{row.article || "-"}</td>
@@ -453,17 +612,10 @@ export function MetalProcessView({
                               type="button"
                               className="mini ok"
                               disabled={!canOperateProduction || busy}
-                              onClick={() => void startFromPlan(row.id, "laser")}
+                              onClick={() => void startFromPlan(row.id, firstStage)}
+                              title={`Первый этап: ${STAGE_LABELS[firstStage] || firstStage}`}
                             >
-                              {busy ? "Запуск..." : "В работу: Лазер"}
-                            </button>
-                            <button
-                              type="button"
-                              className="mini"
-                              disabled={!canOperateProduction || busy}
-                              onClick={() => void startFromPlan(row.id, "saw")}
-                            >
-                              {busy ? "Запуск..." : "В работу: Пила"}
+                              {busy ? "Запуск..." : `В работу → ${STAGE_LABELS[firstStage] || firstStage}`}
                             </button>
                           </>
                         ) : (
@@ -516,7 +668,9 @@ export function MetalProcessView({
                       <span>{getKanbanStatusLine(row, stageKey).icon}</span>
                       <span>{getKanbanStatusLine(row, stageKey).text}</span>
                     </div>
-                    <div className="metal-process-card__next">Следующий этап: {getNextStageLabel(stageKey)}</div>
+                    <div className="metal-process-card__next">
+                      Следующий этап: {formatNextStagesLabel(resolveMetalRoute(row, options), row.currentStage)}
+                    </div>
                     <div className="metal-process-card__time">Время: {formatStageTime(getStageSeconds(row, stageKey))}</div>
                     {String(row.operatorComment || "").trim() && (
                       <div className="metal-process-card__comment">Комментарий: {row.operatorComment}</div>
@@ -730,9 +884,197 @@ export function MetalProcessView({
           </div>
         </div>
       )}
-      <div className="empty">
-        Подсказка: в "Плане" выберите стартовый маршрут (Лазер или Пила), далее в "Производстве" отмечайте этапы кнопками Начать / Пауза / Готово.
+
+      {subView === "catalog" && canManageOrders && (() => {
+        const allCatalogRows = Array.isArray(metalProcessCatalogRows) ? metalProcessCatalogRows : [];
+        const filteredCatalogRows = catalogTableSearch.trim()
+          ? allCatalogRows.filter((x) => matchesCatalogQuery(x, catalogTableSearch))
+          : allCatalogRows;
+        const isEditing = catalogEditArticle !== null;
+        const isSaving = catalogLoading || metalProcessActionKey.startsWith("catalog:");
+        const startEdit = (row) => {
+          setCatalogEditArticle(row.article);
+          setCatalogForm({
+            article: row.article,
+            name: row.name,
+            stageRoute: Array.isArray(row.stageRoute) && row.stageRoute.length > 0
+              ? row.stageRoute
+              : ["laser", "bending", "welding", "painting"],
+          });
+        };
+        const cancelEdit = () => {
+          setCatalogEditArticle(null);
+          setCatalogForm(EMPTY_CATALOG_FORM);
+        };
+        const handleSave = async () => {
+          const article = String(catalogForm.article || "").trim().toUpperCase();
+          const name = String(catalogForm.name || "").trim();
+          if (!article || !name || !catalogForm.stageRoute.length) return;
+          await upsertMetalCatalogItem(article, name, catalogForm.stageRoute, true);
+          cancelEdit();
+        };
+        const handleDelete = async (row) => {
+          const ok = window.confirm(`Удалить артикул "${row.article} — ${row.name}"?\n\nНельзя удалить если есть активные задания в производстве.`);
+          if (!ok) return;
+          await deleteMetalCatalogItem(row.article);
+        };
+        const isNewMode = isEditing && catalogEditArticle === "__new__";
+        return (
+          <div className="sheet-table-wrap" style={{ padding: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14, flexWrap: "wrap" }}>
+              <span style={{ fontWeight: 800, fontSize: 15 }}>Каталог артикулов</span>
+              <input
+                className="metal-process-field"
+                style={{ flex: 1, minWidth: 160, maxWidth: 320 }}
+                placeholder="Поиск по артикулу или названию…"
+                value={catalogTableSearch}
+                onChange={(e) => setCatalogTableSearch(e.target.value)}
+              />
+              <button
+                type="button"
+                className="mini ok"
+                disabled={isSaving || isEditing}
+                onClick={() => {
+                  setCatalogEditArticle("__new__");
+                  setCatalogForm(EMPTY_CATALOG_FORM);
+                }}
+              >
+                + Добавить изделие
+              </button>
+            </div>
+
+            {isEditing && (
+              <div className="catalog-edit-card">
+                <div style={{ fontWeight: 700, marginBottom: 8 }}>
+                  {isNewMode ? "Новое изделие" : `Редактирование: ${catalogEditArticle}`}
+                </div>
+                <div className="catalog-edit-row">
+                  <label className="catalog-edit-label">Артикул</label>
+                  <input
+                    className="metal-process-field"
+                    placeholder="Артикул (заглавными)"
+                    value={catalogForm.article}
+                    disabled={!isNewMode}
+                    onChange={(e) => setCatalogForm((p) => ({ ...p, article: e.target.value }))}
+                    style={{ maxWidth: 220 }}
+                  />
+                </div>
+                <div className="catalog-edit-row">
+                  <label className="catalog-edit-label">Название</label>
+                  <input
+                    className="metal-process-field"
+                    placeholder="Название изделия"
+                    value={catalogForm.name}
+                    onChange={(e) => setCatalogForm((p) => ({ ...p, name: e.target.value }))}
+                    style={{ flex: 1 }}
+                  />
+                </div>
+                <div className="catalog-edit-row" style={{ alignItems: "flex-start" }}>
+                  <label className="catalog-edit-label" style={{ paddingTop: 4 }}>Маршрут</label>
+                  <RouteEditor
+                    value={catalogForm.stageRoute}
+                    onChange={(r) => setCatalogForm((p) => ({ ...p, stageRoute: r }))}
+                    disabled={isSaving}
+                  />
+                </div>
+                <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                  <button
+                    type="button"
+                    className="mini ok"
+                    disabled={
+                      isSaving ||
+                      !String(catalogForm.article || "").trim() ||
+                      !String(catalogForm.name || "").trim() ||
+                      !catalogForm.stageRoute.length
+                    }
+                    onClick={() => void handleSave()}
+                  >
+                    {isSaving ? "Сохранение…" : "Сохранить"}
+                  </button>
+                  <button type="button" className="mini" disabled={isSaving} onClick={cancelEdit}>
+                    Отмена
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {filteredCatalogRows.length === 0 ? (
+              <div className="empty" style={{ marginTop: 12 }}>
+                {catalogTableSearch.trim() ? "Ничего не найдено" : "Каталог пуст"}
+              </div>
+            ) : (
+              <table className="catalog-table" style={{ marginTop: 12 }}>
+                <thead>
+                  <tr>
+                    <th>Артикул</th>
+                    <th>Название</th>
+                    <th>Маршрут производства</th>
+                    <th style={{ width: 120 }}>Действия</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredCatalogRows.map((row, rowIdx) => {
+                    const route = Array.isArray(row.stageRoute) && row.stageRoute.length > 0
+                      ? row.stageRoute
+                      : ["laser", "bending", "welding", "painting"];
+                    const busyRow = metalProcessActionKey === `catalog:delete:${row.article}`;
+                    return (
+                      <tr key={row.article} className={catalogEditArticle === row.article ? "row--editing" : ""}>
+                        <td>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <span style={{ fontSize: 11, color: "var(--text-soft)", minWidth: 20, textAlign: "right" }}>
+                              {rowIdx + 1}
+                            </span>
+                            <code style={{ fontSize: 12, background: "var(--border-main)", color: "var(--text-main)", padding: "2px 7px", borderRadius: 4, letterSpacing: "0.02em" }}>
+                              {row.article}
+                            </code>
+                          </div>
+                        </td>
+                        <td style={{ fontWeight: 500 }}>{row.name}</td>
+                        <td>
+                          <div className="route-badge-row">
+                            {route.map((stage, idx) => (
+                              <span key={stage} className="route-badge">
+                                {idx > 0 && <span className="route-badge__arrow">→</span>}
+                                <StageBadge stage={stage} size="sm" />
+                              </span>
+                            ))}
+                          </div>
+                        </td>
+                        <td>
+                          <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                            <button
+                              type="button"
+                              className="mini"
+                              disabled={isSaving || isEditing}
+                              onClick={() => startEdit(row)}
+                            >
+                              Изменить
+                            </button>
+                            <button
+                              type="button"
+                              className="mini warn"
+                              disabled={isSaving || busyRow}
+                              onClick={() => void handleDelete(row)}
+                            >
+                              {busyRow ? "…" : "Удалить"}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
+        );
+      })()}
+
+      <div className="empty metal-process-hint">
+        Подсказка: запустите изделие в работу — первый этап берётся из маршрута каталога. Далее в «Производстве» отмечайте этапы кнопками Начать / Пауза / Готово.
       </div>
+
       {kanbanDrawerRow &&
         createPortal(
           <div className="order-drawer-root" role="dialog" aria-modal="true" aria-labelledby="metal-kanban-drawer-title">
@@ -777,10 +1119,10 @@ export function MetalProcessView({
               <div className="order-drawer__section">
                 <h3 className="order-drawer__h3">Производство</h3>
                 <div className="order-drawer__pipeline">
-                  {getMetalRoute(kanbanDrawerRow).map((stageKey) => (
-                    <div key={stageKey} className="order-drawer__pipe-step">
-                      <span className={drawerDotClass(getRouteStepKind(kanbanDrawerRow, stageKey))} />
-                      <span className="order-drawer__pipe-label">{STAGE_LABELS[stageKey] || stageKey}</span>
+                  {resolveMetalRoute(kanbanDrawerRow, options).map((pipeStageKey) => (
+                    <div key={pipeStageKey} className="order-drawer__pipe-step">
+                      <span className={drawerDotClass(getRouteStepKind(kanbanDrawerRow, pipeStageKey, options))} />
+                      <span className="order-drawer__pipe-label">{STAGE_LABELS[pipeStageKey] || pipeStageKey}</span>
                     </div>
                   ))}
                 </div>

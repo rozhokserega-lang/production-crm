@@ -256,8 +256,12 @@ export class OrderService {
     return await callBackend("webListMetalProcessCatalog", { activeOnly });
   }
 
-  static async upsertMetalProcessCatalogItem(article, name, isActive = true) {
-    return await callBackend("webUpsertMetalProcessCatalogItem", { article, name, isActive });
+  static async upsertMetalProcessCatalogItem(article, name, isActive = true, stageRoute = null) {
+    return await callBackend("webUpsertMetalProcessCatalogItem", { article, name, isActive, stageRoute });
+  }
+
+  static async deleteMetalCatalogItem(article) {
+    return await callBackend("webDeleteMetalCatalogItem", { article });
   }
 
   static async listMetalProcessItems(status = null) {

@@ -5,7 +5,9 @@ import {
   SUPABASE_PROXY_URL,
 } from "./config";
 
-const SUPABASE_AUTH_STORAGE_KEY = "crm_supabase_auth_session";
+export const CRM_SUPABASE_AUTH_STORAGE_KEY = "crm_supabase_auth_session";
+
+const SUPABASE_AUTH_STORAGE_KEY = CRM_SUPABASE_AUTH_STORAGE_KEY;
 
 const NETWORK_ERROR_HINTS = [
   "failed to fetch",
@@ -56,6 +58,23 @@ function readStoredSupabaseSession() {
 
 let supabaseAuthSession = readStoredSupabaseSession();
 let supabaseRealtimeClient = null;
+
+/** Перечитать сессию из localStorage (другая вкладка / внешняя очистка). */
+export function syncSupabaseSessionFromStorage() {
+  supabaseAuthSession = readStoredSupabaseSession();
+  if (supabaseRealtimeClient && supabaseAuthSession?.access_token) {
+    supabaseRealtimeClient.realtime.setAuth(supabaseAuthSession.access_token);
+  }
+}
+
+function dispatchSessionInvalidated(detail) {
+  if (typeof window === "undefined") return;
+  try {
+    window.dispatchEvent(new CustomEvent("crm-supabase-session-invalidated", { detail: detail || {} }));
+  } catch (_) {
+    /* ignore */
+  }
+}
 
 function persistSupabaseSession(session) {
   supabaseAuthSession = session && session.access_token ? session : null;
@@ -265,6 +284,7 @@ const RPC_MAP = {
   webSetMetalWorkQueueStatus: "web_set_metal_work_queue_status",
   webListMetalProcessCatalog: "web_list_metal_catalog",
   webUpsertMetalProcessCatalogItem: "web_upsert_metal_catalog_item",
+  webDeleteMetalCatalogItem: "web_delete_metal_catalog_item",
   webListMetalProcessItems: "web_list_metal_work_items",
   webCreateMetalProcessItem: "web_create_metal_work_item",
   webTransitionMetalProcessStage: "web_transition_metal_stage",
@@ -464,6 +484,12 @@ function buildRpcPayload(action, payload = {}) {
       p_article: String(payload.article || payload.p_article || "").trim().toUpperCase(),
       p_name: String(payload.name || payload.p_name || "").trim(),
       p_is_active: payload.isActive == null ? true : Boolean(payload.isActive),
+      p_stage_route: Array.isArray(payload.stageRoute) ? payload.stageRoute : null,
+    };
+  }
+  if (action === "webDeleteMetalCatalogItem") {
+    return {
+      p_article: String(payload.article || "").trim().toUpperCase(),
     };
   }
   if (action === "webListMetalProcessItems") {
@@ -609,9 +635,10 @@ export async function supabaseCall(action, payload = {}) {
   for (const rpcBase of rpcBases) {
     try {
       ({ res, json } = await callWithToken(rpcBase, currentToken));
-      if (!res.ok && currentToken && isJwtExpiredError(json)) {
-        // Stored session can silently expire; fall back to anon flow and keep UI alive.
+      if (!res.ok && currentToken && shouldRetryRpcWithoutExpiredJwt(json)) {
+        // Сессия протухла: убираем токен и синхронизируем UI — иначе бейдж роли расходится с фактическими RPC.
         persistSupabaseSession(null);
+        dispatchSessionInvalidated({ reason: "jwt-expired-or-invalid" });
         ({ res, json } = await callWithToken(rpcBase, ""));
       }
       if (!res.ok) {
@@ -633,15 +660,33 @@ export async function supabaseCall(action, payload = {}) {
   throw new Error("NETWORK_UNAVAILABLE");
 }
 
-function isJwtExpiredError(payload) {
+function shouldRetryRpcWithoutExpiredJwt(payload) {
   if (payload == null) return false;
-  if (typeof payload === "string") return payload.toLowerCase().includes("jwt expired");
-  const message = String(
-    payload?.message ||
-      payload?.error_description ||
-      payload?.error ||
-      payload?.msg ||
-      "",
-  ).toLowerCase();
-  return message.includes("jwt expired");
+  const raw =
+    typeof payload === "string"
+      ? payload
+      : JSON.stringify(
+          typeof payload === "object"
+            ? {
+                message: payload.message,
+                error_description: payload.error_description,
+                error: payload.error,
+                hint: payload.hint,
+                code: payload.code,
+              }
+            : payload,
+        );
+  const lower = raw.toLowerCase();
+  if (
+    lower.includes("jwt expired") ||
+    lower.includes("token expired") ||
+    lower.includes("invalid jwt") ||
+    lower.includes("invalid algorithm") ||
+    lower.includes("signature verification failed") ||
+    lower.includes("could not parse jwt")
+  ) {
+    return true;
+  }
+  const code = typeof payload === "object" && payload ? String(payload.code || "").toUpperCase() : "";
+  return code === "PGRST301" || code === "PGRST302";
 }

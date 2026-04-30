@@ -14,7 +14,12 @@ function parseCrmRoleResponse(payload) {
     const first = payload[0];
     if (typeof first === "string") return first;
     if (first && typeof first === "object") {
-      return first.web_effective_crm_role || first.role || first.crm_role || Object.values(first)[0];
+      return (
+        first.web_effective_crm_role ||
+        first.role ||
+        first.crm_role ||
+        ""
+      );
     }
   }
   if (payload && typeof payload === "object") {
@@ -145,6 +150,24 @@ export function useCrmRole({
       cancelled = true;
     };
   }, [authUser?.id]);
+
+  // При открытии админки заново спрашиваем сервер — кешированная роль могла устареть (JWT / строка в crm_user_roles).
+  useEffect(() => {
+    if (view !== "admin") return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const rolePayload = await OrderService.getMyRole();
+        const role = normalizeCrmRole(parseCrmRoleResponse(rolePayload));
+        if (!cancelled) setCrmRole(role);
+      } catch (_) {
+        if (!cancelled) setCrmRole("viewer");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [view]);
 
   const loadCrmUsers = useCallback(async () => {
     if (!canAdminSettings) return;
