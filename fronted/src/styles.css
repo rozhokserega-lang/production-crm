@@ -2374,6 +2374,15 @@ button:disabled {
     width: auto;
   }
 
+  /* Metal plan preview: print only the preview sheet. */
+  .metal-process-root .metal-plan-print {
+    display: block !important;
+  }
+
+  .metal-process-root > :not(.metal-plan-print) {
+    display: none !important;
+  }
+
   .print-plan-page {
     page-break-after: always;
     break-after: page;

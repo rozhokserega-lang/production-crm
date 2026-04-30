@@ -107,6 +107,15 @@ function formatPlanStatus(row) {
   return row?.stageStatus || row?.status || "-";
 }
 
+function escapeHtml(text) {
+  return String(text ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll("\"", "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
 function normalizeSearchText(value) {
   return String(value || "")
     .trim()
@@ -314,6 +323,7 @@ export function MetalProcessView({
   const [catalogSearchText, setCatalogSearchText] = useState("");
   const [commentDraftById, setCommentDraftById] = useState({});
   const [kanbanDrawerId, setKanbanDrawerId] = useState("");
+  const [planPreviewRow, setPlanPreviewRow] = useState(null);
   const [catalogForm, setCatalogForm] = useState(EMPTY_CATALOG_FORM);
   const [catalogEditArticle, setCatalogEditArticle] = useState(null);
   const [catalogTableSearch, setCatalogTableSearch] = useState("");
@@ -432,60 +442,9 @@ export function MetalProcessView({
   const startFromPlan = async (rowId, stage) => {
     await transitionMetalProcessStage(rowId, "start", stage);
   };
-  const openPlanPreview = (row) => {
-    const article = String(row?.article || "").trim();
-    const name = String(row?.name || "").trim();
-    const qty = String(row?.qty ?? "").trim();
-    const week = String(row?.week || "").trim();
-    const generatedAt = new Date();
-    const title = `План металла${article ? ` — ${article}` : ""}`;
-    // NOTE: `noreferrer` breaks access to popup.document in some browsers → blank window.
-    const popup = window.open("", "_blank", "width=900,height=700");
-    if (!popup) return;
-    popup.document.open();
-    popup.document.write(`<!doctype html>
-<html lang="ru">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>${title.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</title>
-  <style>
-    @page { size: A4; margin: 10mm; }
-    html, body { background: #fff; color: #111; font-family: Arial, sans-serif; }
-    * { box-shadow: none !important; text-shadow: none !important; filter: none !important; }
-    .wrap { border: 2px solid #2b2b2b; border-radius: 10px; padding: 14px 16px; }
-    .meta { display: flex; justify-content: space-between; font-size: 12px; color: #111827; margin-bottom: 10px; }
-    .h1 { font-size: 28px; font-weight: 800; margin: 0 0 6px; }
-    .row { display: grid; grid-template-columns: 160px 1fr; gap: 10px; margin-top: 10px; font-size: 18px; }
-    .lbl { color: #374151; font-weight: 700; }
-    .val { font-weight: 800; }
-    .qty { font-size: 44px; font-weight: 900; letter-spacing: 0.02em; }
-    .actions { display: flex; gap: 10px; margin-top: 14px; }
-    .btn { border: 1px solid #2b2b2b; background: #fff; padding: 8px 12px; border-radius: 10px; font-weight: 800; cursor: pointer; }
-    .btn.primary { background: #0f766e; border-color: #0f766e; color: #fff; }
-    .btn:active { transform: translateY(1px); }
-  </style>
-</head>
-<body>
-  <div class="wrap">
-    <div class="meta">
-      <span>${generatedAt.toLocaleString("ru-RU")}</span>
-      <span>Отгрузки CRM</span>
-    </div>
-    <div class="h1">${(name || "Металл").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div>
-    <div class="row"><div class="lbl">Артикул</div><div class="val">${(article || "—").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div></div>
-    <div class="row"><div class="lbl">Количество</div><div class="qty">${(qty || "—").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div></div>
-    ${week ? `<div class="row"><div class="lbl">Неделя</div><div class="val">${week.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div></div>` : ""}
-    <div class="actions">
-      <button class="btn primary" onclick="window.print()">Печать</button>
-      <button class="btn" onclick="window.close()">Закрыть</button>
-    </div>
-  </div>
-</body>
-</html>`);
-    popup.document.close();
-    try { popup.focus(); } catch (_) { /* ignore */ }
-  };
+  const openPlanPreview = (row) => setPlanPreviewRow(row || null);
+  const closePlanPreview = () => setPlanPreviewRow(null);
+  const printPlanPreview = () => window.print();
   const removeDoneItem = async (rowId) => {
     if (!canManageOrders) return;
     const ok = window.confirm("Удалить готовую позицию из metal-процесса? Действие необратимо.");
@@ -568,6 +527,58 @@ export function MetalProcessView({
 
       {subView === "plan" && (
         <div className="sheet-table-wrap" style={{ padding: 12 }}>
+          {planPreviewRow && (
+            <div className="print-area metal-plan-print" style={{ marginBottom: 12 }}>
+              <div className="print-plan-page">
+                <div className="plan-top-meta">
+                  <span>{new Date().toLocaleString("ru-RU")}</span>
+                  <span>Отгрузки CRM</span>
+                </div>
+                <div className="plan-head-grid">
+                  <div className="plan-yellow" style={{ background: "#fff" }}>
+                    <div className="name">{escapeHtml(planPreviewRow.name || "Металл")}</div>
+                    <div className="strap-target">Артикул: {escapeHtml(planPreviewRow.article || "—")}</div>
+                  </div>
+                  <div className="plan-right-meta">
+                    <div className="plan-number-box">
+                      <div>КОЛ-ВО</div>
+                      <div className="num">{escapeHtml(planPreviewRow.qty ?? "—")}</div>
+                    </div>
+                    <div className="plan-number-box">
+                      <div>ПЛАН</div>
+                      <div className="num">{escapeHtml(planPreviewRow.week || "—")}</div>
+                    </div>
+                  </div>
+                </div>
+                <table className="plan-table">
+                  <thead>
+                    <tr>
+                      <th className="w-model">Изделие</th>
+                      <th>Артикул</th>
+                      <th className="w-qty">Кол-во</th>
+                      <th className="w-qty">Неделя</th>
+                      <th>Статус</th>
+                      <th>Этап</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>{planPreviewRow.name || "—"}</td>
+                      <td>{planPreviewRow.article || "—"}</td>
+                      <td style={{ fontWeight: 900, textAlign: "center" }}>{planPreviewRow.qty ?? "—"}</td>
+                      <td style={{ textAlign: "center" }}>{planPreviewRow.week || "—"}</td>
+                      <td>{formatPlanStatus(planPreviewRow)}</td>
+                      <td>{getPlanStageLabel(planPreviewRow)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div className="actions" style={{ display: "flex", gap: 10, marginTop: 10 }}>
+                <button type="button" className="mini" onClick={printPlanPreview}>Печать</button>
+                <button type="button" className="mini" onClick={closePlanPreview}>Закрыть</button>
+              </div>
+            </div>
+          )}
           <div style={{ fontWeight: 800, marginBottom: 10 }}>Добавить план</div>
           <div className="metal-process-form">
             <input
