@@ -104,13 +104,21 @@ function getSupabaseBaseUrl() {
 function getSupabaseRpcBaseUrl() {
   const proxy = String(SUPABASE_PROXY_URL || "").trim().replace(/\/$/, "");
   if (proxy) return proxy;
+  if (typeof window !== "undefined") {
+    const origin = String(window.location?.origin || "").trim().replace(/\/$/, "");
+    if (origin) return `${origin}/supabase`;
+  }
   return getSupabaseBaseUrl();
 }
 
 function getSupabaseRpcBaseUrls() {
   const proxy = String(SUPABASE_PROXY_URL || "").trim().replace(/\/$/, "");
+  const originProxy =
+    typeof window !== "undefined"
+      ? String(window.location?.origin || "").trim().replace(/\/$/, "")
+      : "";
   const direct = getSupabaseBaseUrl();
-  const candidates = [proxy, direct].filter(Boolean);
+  const candidates = [proxy, originProxy ? `${originProxy}/supabase` : "", direct].filter(Boolean);
   return Array.from(new Set(candidates));
 }
 
