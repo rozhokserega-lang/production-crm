@@ -1,4 +1,5 @@
 export function DomainDrawer({ open, setOpen, view, setView }) {
+  const isFurnitureDomain = view !== "metalProcess";
   const goFurniture = () => {
     setView("shipment");
     setOpen(false);
@@ -20,7 +21,7 @@ export function DomainDrawer({ open, setOpen, view, setView }) {
         </div>
         <button
           type="button"
-          className={view === "furniture" ? "tab active" : "tab"}
+          className={isFurnitureDomain ? "tab active" : "tab"}
           onClick={goFurniture}
         >
           <span className="domain-drawer__icon" aria-hidden="true">🪑</span>
