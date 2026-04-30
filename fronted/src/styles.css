@@ -2329,6 +2329,11 @@ button:disabled {
     print-color-adjust: exact;
   }
 
+  /* Do not print placeholder/debug captions in plan preview. */
+  .plan-table caption {
+    display: none !important;
+  }
+
   .top,
   .view-switch,
   .tabs,
