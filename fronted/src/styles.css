@@ -2388,19 +2388,28 @@ button:disabled {
     display: none !important;
   }
 
+  /* Keep header layout like original (title + qty box on right),
+     but center the whole sheet on the page. */
+  .metal-plan-print {
+    margin: 0 auto !important;
+  }
+
   .metal-plan-print .print-plan-page {
+    width: 100% !important;
     margin: 0 auto !important;
   }
 
   .metal-plan-print .plan-head-grid {
-    grid-template-columns: 1fr !important;
-    justify-items: center;
-    text-align: center;
+    grid-template-columns: 1fr 170px !important;
+    gap: 8px !important;
+    justify-items: stretch;
+    text-align: left;
+    margin-left: auto;
+    margin-right: auto;
   }
 
   .metal-plan-print .plan-right-meta {
-    grid-template-rows: auto !important;
-    justify-items: center;
+    justify-items: stretch;
   }
 
   .print-plan-page {

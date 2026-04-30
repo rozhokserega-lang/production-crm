@@ -182,6 +182,8 @@ const STAGE_COLORS = {
   painting: { bg: "#1a2a3a", border: "#06b6d4", text: "#67e8f9", icon: "🎨" },
 };
 
+const WELDING_EXECUTORS = ["Сергей", "Иван", "Виталик", "Андрей"];
+
 function StageBadge({ stage, size = "md" }) {
   const c = STAGE_COLORS[stage] || { bg: "#222", border: "#666", text: "#ccc", icon: "•" };
   const label = STAGE_LABELS[stage] || stage;
@@ -326,7 +328,8 @@ export function MetalProcessView({
   const [catalogForm, setCatalogForm] = useState(EMPTY_CATALOG_FORM);
   const [catalogEditArticle, setCatalogEditArticle] = useState(null);
   const [catalogTableSearch, setCatalogTableSearch] = useState("");
-  const [doneDialog, setDoneDialog] = useState({ open: false, row: null, doneQty: "", note: "" });
+  const [doneDialog, setDoneDialog] = useState({ open: false, row: null, edit: false, doneQty: "", note: "" });
+  const [weldingDialog, setWeldingDialog] = useState({ open: false, row: null, executor: "" });
   const catalogEditorRef = useRef(null);
   const catalogArticleInputRef = useRef(null);
   const options = useMemo(
@@ -460,33 +463,60 @@ export function MetalProcessView({
     setDoneDialog({
       open: true,
       row,
+      edit: false,
       doneQty: String(remaining > 0 ? remaining : qty || ""),
       note: "",
     });
   };
 
   const closeDoneDialog = () => {
-    setDoneDialog({ open: false, row: null, doneQty: "", note: "" });
+    setDoneDialog({ open: false, row: null, edit: false, doneQty: "", note: "" });
   };
 
-  const submitDoneDialog = async () => {
+  const submitDoneDialog = async (forceAllDone = false) => {
     const row = doneDialog.row;
     if (!row) return;
     const qty = Number(row?.qty || 0);
     const doneAlready = Number(row?.stageDoneQty || 0);
     const remaining = Math.max(0, qty - doneAlready);
-    const doneQty = Number(String(doneDialog.doneQty || "").replace(",", "."));
+    const doneQty = forceAllDone
+      ? remaining
+      : Number(String(doneDialog.doneQty || "").replace(",", "."));
     if (!(doneQty >= 0) || !(doneQty <= remaining)) {
       window.alert(`Укажите выполненное кол-во от 0 до ${remaining}.`);
       return;
     }
     const note = String(doneDialog.note || "").trim();
-    if (doneQty < remaining && !note) {
+    if (!forceAllDone && doneQty < remaining && !note) {
       window.alert("Если выполнено не всё — укажите причину (комментарий).");
       return;
     }
     closeDoneDialog();
-    await transitionMetalProcessStage(row.id, "done", null, doneQty, note || null);
+    await transitionMetalProcessStage(row.id, "done", null, doneQty, forceAllDone ? null : (note || null));
+  };
+
+  const openWeldingExecutorDialog = (row) => {
+    setWeldingDialog({
+      open: true,
+      row,
+      executor: WELDING_EXECUTORS[0] || "",
+    });
+  };
+
+  const closeWeldingExecutorDialog = () => {
+    setWeldingDialog({ open: false, row: null, executor: "" });
+  };
+
+  const submitWeldingExecutorDialog = async () => {
+    const row = weldingDialog.row;
+    if (!row) return;
+    const executor = String(weldingDialog.executor || "").trim();
+    if (!executor) {
+      window.alert("Выберите сварщика.");
+      return;
+    }
+    closeWeldingExecutorDialog();
+    await transitionMetalProcessStage(row.id, "start", null, null, `Сварщик: ${executor}`);
   };
   const openPlanPreview = (row) => setPlanPreviewRow(row || null);
   const closePlanPreview = () => setPlanPreviewRow(null);
@@ -622,39 +652,88 @@ export function MetalProcessView({
         <div
           role="dialog"
           aria-modal="true"
-          className="modal-overlay"
+          className="dialog-backdrop"
           onMouseDown={(e) => {
             if (e.target === e.currentTarget) closeDoneDialog();
           }}
         >
-          <div className="modal" style={{ maxWidth: 520 }}>
+          <div className="dialog-card" style={{ maxWidth: 520 }}>
             <div style={{ fontWeight: 900, fontSize: 16, marginBottom: 8 }}>Завершить этап</div>
             <div style={{ color: "#475569", fontSize: 12, marginBottom: 12 }}>
               {doneDialog.row.name} — {doneDialog.row.article} (этап: {STAGE_LABELS[String(doneDialog.row.currentStage || "").toLowerCase()] || doneDialog.row.currentStage})
             </div>
-            <div style={{ display: "grid", gap: 8 }}>
-              <label style={{ display: "grid", gap: 6 }}>
-                <span style={{ fontSize: 12, fontWeight: 800 }}>Сколько выполнено на этом этапе</span>
-                <input
-                  value={doneDialog.doneQty}
-                  onChange={(e) => setDoneDialog((p) => ({ ...p, doneQty: e.target.value.replace(/[^0-9.,]/g, "") }))}
-                />
-              </label>
-              <label style={{ display: "grid", gap: 6 }}>
-                <span style={{ fontSize: 12, fontWeight: 800 }}>
-                  Причина (если выполнено не всё)
-                </span>
-                <textarea
-                  rows={3}
-                  value={doneDialog.note}
-                  onChange={(e) => setDoneDialog((p) => ({ ...p, note: e.target.value }))}
-                  placeholder="Например: не хватило материала / брак / поломка / нет людей..."
-                />
-              </label>
+            {!doneDialog.edit ? (
+              <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap", marginTop: 14 }}>
+                <button type="button" className="mini" onClick={closeDoneDialog}>Отмена</button>
+                <button type="button" className="mini" onClick={() => setDoneDialog((p) => ({ ...p, edit: true }))}>
+                  Изменить
+                </button>
+                <button type="button" className="mini ok" onClick={() => void submitDoneDialog(true)}>
+                  Всё сделано
+                </button>
+              </div>
+            ) : (
+              <>
+                <div style={{ display: "grid", gap: 8 }}>
+                  <label style={{ display: "grid", gap: 6 }}>
+                    <span style={{ fontSize: 12, fontWeight: 800 }}>Сколько выполнено на этом этапе</span>
+                    <input
+                      value={doneDialog.doneQty}
+                      onChange={(e) => setDoneDialog((p) => ({ ...p, doneQty: e.target.value.replace(/[^0-9.,]/g, "") }))}
+                    />
+                  </label>
+                  <label style={{ display: "grid", gap: 6 }}>
+                    <span style={{ fontSize: 12, fontWeight: 800 }}>
+                      Причина (если выполнено не всё)
+                    </span>
+                    <textarea
+                      rows={3}
+                      value={doneDialog.note}
+                      onChange={(e) => setDoneDialog((p) => ({ ...p, note: e.target.value }))}
+                      placeholder="Например: не хватило материала / брак / поломка / нет людей..."
+                    />
+                  </label>
+                </div>
+                <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap", marginTop: 14 }}>
+                  <button type="button" className="mini" onClick={closeDoneDialog}>Отмена</button>
+                  <button type="button" className="mini ok" onClick={() => void submitDoneDialog(false)}>Готово</button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>,
+        document.body,
+      )}
+
+      {weldingDialog.open && weldingDialog.row && createPortal(
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="dialog-backdrop"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) closeWeldingExecutorDialog();
+          }}
+        >
+          <div className="dialog-card" style={{ maxWidth: 520 }}>
+            <div style={{ fontWeight: 900, fontSize: 16, marginBottom: 8 }}>Сварка: выбрать сварщика</div>
+            <div style={{ color: "#475569", fontSize: 12, marginBottom: 12 }}>
+              {weldingDialog.row.name} — {weldingDialog.row.article}
             </div>
-            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 14 }}>
-              <button type="button" className="mini" onClick={closeDoneDialog}>Отмена</button>
-              <button type="button" className="mini ok" onClick={() => void submitDoneDialog()}>Готово</button>
+            <label style={{ display: "grid", gap: 6 }}>
+              <span style={{ fontSize: 12, fontWeight: 800 }}>Исполнитель</span>
+              <select
+                className="metal-process-field"
+                value={weldingDialog.executor}
+                onChange={(e) => setWeldingDialog((p) => ({ ...p, executor: e.target.value }))}
+              >
+                {WELDING_EXECUTORS.map((x) => (
+                  <option key={`welder-${x}`} value={x}>{x}</option>
+                ))}
+              </select>
+            </label>
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap", marginTop: 14 }}>
+              <button type="button" className="mini" onClick={closeWeldingExecutorDialog}>Отмена</button>
+              <button type="button" className="mini ok" onClick={() => void submitWeldingExecutorDialog()}>Начать</button>
             </div>
           </div>
         </div>,
@@ -920,6 +999,7 @@ export function MetalProcessView({
               const stageKey = String(row.currentStage || "");
               const stageSeconds = getStageSeconds(row, stageKey);
               const stageStatus = String(row.stageStatus || "").toLowerCase();
+              const isWelding = String(stageKey || "").toLowerCase() === "welding";
               return (
                 <article key={`prod-${row.id}`} className="card">
                   <div className="card__content">
@@ -951,7 +1031,18 @@ export function MetalProcessView({
                         type="button"
                         className="mini ghost"
                         disabled={!canOperateProduction || busy || productionTab === "done" || stageStatus === "in_progress"}
-                        onClick={() => transitionMetalProcessStage(row.id, stageStatus === "paused" ? "resume" : "start")}
+                        onClick={() => {
+                          if (!canOperateProduction || busy || productionTab === "done") return;
+                          if (stageStatus === "paused") {
+                            transitionMetalProcessStage(row.id, "resume");
+                            return;
+                          }
+                          if (isWelding) {
+                            openWeldingExecutorDialog(row);
+                            return;
+                          }
+                          transitionMetalProcessStage(row.id, "start");
+                        }}
                       >
                         {stageStatus === "paused" ? "Продолжить" : "Начать"}
                       </button>
@@ -1017,13 +1108,14 @@ export function MetalProcessView({
                   <th>Покраска</th>
                   <th>Итого</th>
                   <th>Статус</th>
+                  <th>Не хватило</th>
                   <th>Действие</th>
                 </tr>
               </thead>
               <tbody>
                 {statsRows.length === 0 && (
                   <tr>
-                    <td colSpan={10} className="empty">Пока нет данных по этапам.</td>
+                    <td colSpan={11} className="empty">Пока нет данных по этапам.</td>
                   </tr>
                 )}
                 {statsRows.map((row) => {
@@ -1041,6 +1133,7 @@ export function MetalProcessView({
                       <td>{formatStageTime(row.paintingSeconds)}</td>
                       <td><b>{formatStageTime(row.totalSeconds)}</b></td>
                       <td>{formatPlanStatus(row)}</td>
+                      <td>{Number(row.shortfallQty || 0) > 0 ? <b>{row.shortfallQty}</b> : "-"}</td>
                       <td>
                         {canDelete ? (
                           <button
@@ -1304,11 +1397,24 @@ export function MetalProcessView({
                 <h3 className="order-drawer__h3">Кратко</h3>
                 <ul className="order-drawer__meta">
                   <li><span>Артикул</span> <strong>{kanbanDrawerRow.article || "—"}</strong></li>
-                  <li><span>План</span> <strong>{kanbanDrawerRow.week || "—"}</strong></li>
                   <li><span>Кол-во</span> <strong>{kanbanDrawerRow.qty || 0}</strong></li>
+                  {Number(kanbanDrawerRow.shortfallQty || 0) > 0 && (
+                    <li><span>Не хватило</span> <strong>{kanbanDrawerRow.shortfallQty}</strong></li>
+                  )}
                   <li><span>Статус</span> <strong>{formatPlanStatus(kanbanDrawerRow)}</strong></li>
                 </ul>
               </div>
+              {String(kanbanDrawerRow.lastEventNote || "").trim() && (
+                <div className="order-drawer__section">
+                  <h3 className="order-drawer__h3">Причина / заметка</h3>
+                  <div style={{ fontSize: 13, color: "#0f172a", lineHeight: 1.35 }}>
+                    <div style={{ fontWeight: 800, marginBottom: 4 }}>
+                      Этап: {STAGE_LABELS[String(kanbanDrawerRow.lastEventStage || "").toLowerCase()] || kanbanDrawerRow.lastEventStage || "—"}
+                    </div>
+                    <div style={{ color: "#334155" }}>{String(kanbanDrawerRow.lastEventNote || "").trim()}</div>
+                  </div>
+                </div>
+              )}
 
               <div className="order-drawer__section">
                 <h3 className="order-drawer__h3">Производство</h3>
