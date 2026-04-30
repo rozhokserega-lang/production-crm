@@ -2405,6 +2405,11 @@ button:disabled {
     border-width: 1px;
   }
 
+  /* Printing: avoid large filled banner behind title. */
+  .plan-yellow {
+    background: #fff !important;
+  }
+
   .plan-yellow .name {
     font-size: 24px;
   }
