@@ -294,6 +294,7 @@ const RPC_MAP = {
   webUpsertMetalProcessCatalogItem: "web_upsert_metal_catalog_item",
   webDeleteMetalCatalogItem: "web_delete_metal_catalog_item",
   webListMetalProcessItems: "web_list_metal_work_items",
+  webListMetalStageEvents: "web_list_metal_stage_events",
   webCreateMetalProcessItem: "web_create_metal_work_item",
   webTransitionMetalProcessStage: "web_transition_metal_stage",
   webSetMetalProcessComment: "web_set_metal_work_item_comment",
@@ -503,6 +504,11 @@ function buildRpcPayload(action, payload = {}) {
   if (action === "webListMetalProcessItems") {
     return {
       p_status: String(payload.status || payload.p_status || "").trim() || null,
+    };
+  }
+  if (action === "webListMetalStageEvents") {
+    return {
+      p_item_id: Number(payload.id || payload.itemId || payload.p_item_id || 0),
     };
   }
   if (action === "webCreateMetalProcessItem") {

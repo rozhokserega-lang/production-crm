@@ -268,6 +268,10 @@ export class OrderService {
     return await callBackend("webListMetalProcessItems", { status });
   }
 
+  static async listMetalStageEvents(itemId) {
+    return await callBackend("webListMetalStageEvents", { id: itemId });
+  }
+
   static async createMetalProcessItem({ article, name, week, qty }) {
     return await callBackend("webCreateMetalProcessItem", { article, name, week, qty });
   }

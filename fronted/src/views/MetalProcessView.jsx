@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { OrderService } from "../services/orderService";
 
 const STAGE_LABELS = {
   laser: "Лазер",
@@ -330,6 +331,7 @@ export function MetalProcessView({
   const [catalogTableSearch, setCatalogTableSearch] = useState("");
   const [doneDialog, setDoneDialog] = useState({ open: false, row: null, edit: false, doneQty: "", note: "" });
   const [weldingDialog, setWeldingDialog] = useState({ open: false, row: null, executor: "" });
+  const [eventsDialog, setEventsDialog] = useState({ open: false, row: null, loading: false, error: "", events: [] });
   const catalogEditorRef = useRef(null);
   const catalogArticleInputRef = useRef(null);
   const options = useMemo(
@@ -517,6 +519,23 @@ export function MetalProcessView({
     }
     closeWeldingExecutorDialog();
     await transitionMetalProcessStage(row.id, "start", null, null, `Сварщик: ${executor}`);
+  };
+
+  const closeEventsDialog = () => {
+    setEventsDialog({ open: false, row: null, loading: false, error: "", events: [] });
+  };
+
+  const openEventsDialog = async (row) => {
+    const rowId = Number(row?.id || 0);
+    if (!(rowId > 0)) return;
+    setEventsDialog({ open: true, row, loading: true, error: "", events: [] });
+    try {
+      const list = await OrderService.listMetalStageEvents(rowId);
+      setEventsDialog((p) => ({ ...p, loading: false, events: Array.isArray(list) ? list : [] }));
+    } catch (e) {
+      const msg = String(e?.message || e || "Ошибка загрузки истории");
+      setEventsDialog((p) => ({ ...p, loading: false, error: msg }));
+    }
   };
   const openPlanPreview = (row) => setPlanPreviewRow(row || null);
   const closePlanPreview = () => setPlanPreviewRow(null);
@@ -735,6 +754,82 @@ export function MetalProcessView({
               <button type="button" className="mini" onClick={closeWeldingExecutorDialog}>Отмена</button>
               <button type="button" className="mini ok" onClick={() => void submitWeldingExecutorDialog()}>Начать</button>
             </div>
+          </div>
+        </div>,
+        document.body,
+      )}
+
+      {eventsDialog.open && eventsDialog.row && createPortal(
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="dialog-backdrop"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) closeEventsDialog();
+          }}
+        >
+          <div className="dialog-card" style={{ maxWidth: 820 }}>
+            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+              <div style={{ fontWeight: 900, fontSize: 16 }}>История этапов</div>
+              <button type="button" className="mini" onClick={closeEventsDialog}>Закрыть</button>
+            </div>
+            <div style={{ color: "#475569", fontSize: 12, marginTop: 6 }}>
+              {eventsDialog.row.name} — {eventsDialog.row.article}
+            </div>
+            {eventsDialog.loading ? (
+              <div className="empty" style={{ marginTop: 12 }}>Загрузка…</div>
+            ) : eventsDialog.error ? (
+              <div className="empty" style={{ marginTop: 12, color: "#b91c1c" }}>{eventsDialog.error}</div>
+            ) : (
+              <div style={{ marginTop: 12, overflow: "auto", maxHeight: "62vh" }}>
+                <table className="sheet-table">
+                  <thead>
+                    <tr>
+                      <th>Время</th>
+                      <th>Этап</th>
+                      <th>Действие</th>
+                      <th>Сделано</th>
+                      <th>Было → стало</th>
+                      <th>Не хватило</th>
+                      <th>Комментарий</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(eventsDialog.events || []).length === 0 ? (
+                      <tr><td colSpan={7} className="empty">Событий пока нет.</td></tr>
+                    ) : (
+                      (eventsDialog.events || []).map((ev) => {
+                        const stageKey = String(ev.stage || "").toLowerCase();
+                        const action = String(ev.action || "");
+                        const doneQty = ev.done_qty ?? ev.doneQty;
+                        const qtyBefore = ev.qty_before ?? ev.qtyBefore;
+                        const qtyAfter = ev.qty_after ?? ev.qtyAfter;
+                        const shortfall = ev.shortfall_added ?? ev.shortfallAdded;
+                        const note = String(ev.note || "").trim();
+                        const ts = ev.event_at || ev.eventAt;
+                        const timeLabel = ts ? new Date(ts).toLocaleString("ru-RU") : "-";
+                        const actionLabel =
+                          action === "start" ? "Начать" :
+                          action === "pause" ? "Пауза" :
+                          action === "resume" ? "Продолжить" :
+                          action === "done" ? "Готово" : action;
+                        return (
+                          <tr key={`ev-${ev.id}-${timeLabel}`}>
+                            <td style={{ whiteSpace: "nowrap" }}>{timeLabel}</td>
+                            <td>{STAGE_LABELS[stageKey] || stageKey || "-"}</td>
+                            <td>{actionLabel}</td>
+                            <td>{doneQty != null ? doneQty : "-"}</td>
+                            <td>{qtyBefore != null || qtyAfter != null ? `${qtyBefore ?? "-"} → ${qtyAfter ?? "-"}` : "-"}</td>
+                            <td>{Number(shortfall || 0) > 0 ? <b>{shortfall}</b> : "-"}</td>
+                            <td style={{ minWidth: 220 }}>{note || "-"}</td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </div>,
         document.body,
@@ -1135,6 +1230,15 @@ export function MetalProcessView({
                       <td>{formatPlanStatus(row)}</td>
                       <td>{Number(row.shortfallQty || 0) > 0 ? <b>{row.shortfallQty}</b> : "-"}</td>
                       <td>
+                        <button
+                          type="button"
+                          className="mini"
+                          disabled={busy}
+                          onClick={() => void openEventsDialog(row)}
+                          title="История этапов и причин"
+                        >
+                          История
+                        </button>
                         {canDelete ? (
                           <button
                             type="button"
