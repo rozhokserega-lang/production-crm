@@ -272,8 +272,8 @@ export class OrderService {
     return await callBackend("webCreateMetalProcessItem", { article, name, week, qty });
   }
 
-  static async transitionMetalProcessStage(id, action, startStage = null) {
-    return await callBackend("webTransitionMetalProcessStage", { id, action, startStage });
+  static async transitionMetalProcessStage(id, action, startStage = null, doneQty = null, note = null) {
+    return await callBackend("webTransitionMetalProcessStage", { id, action, startStage, doneQty, note });
   }
 
   static async setMetalProcessComment(id, comment) {

@@ -41,11 +41,12 @@ function resolveMetalRoute(row, catalogRows) {
 }
 
 /** Human-readable remaining stages after current (including immediate next). */
-function formatNextStagesLabel(route, currentStageKey) {
+function formatNextStagesLabel(route, currentStageKey, routeIdx = null) {
   const routeArr = Array.isArray(route) && route.length > 0 ? route : DEFAULT_METAL_ROUTE;
   const cur = String(currentStageKey || "").toLowerCase();
-  const idx = routeArr.indexOf(cur);
-  if (idx === -1) return "-";
+  const idxFromState = Number.isFinite(Number(routeIdx)) ? Number(routeIdx) : null;
+  const idx = idxFromState != null ? idxFromState : routeArr.indexOf(cur);
+  if (!(idx >= 0)) return "-";
   if (idx >= routeArr.length - 1) return "Завершение";
   return routeArr.slice(idx + 1).map((s) => STAGE_LABELS[s] || s).join(" → ");
 }
@@ -197,23 +198,26 @@ function StageBadge({ stage, size = "md" }) {
 
 function RouteEditor({ value, onChange, disabled }) {
   const route = Array.isArray(value) && value.length > 0 ? value : ["laser", "bending", "welding", "painting"];
-  const [dragSourceStage, setDragSourceStage] = useState(null);
+  const [dragSourceIdx, setDragSourceIdx] = useState(null);
   const [dragOverIdx, setDragOverIdx] = useState(null);
 
-  const toggle = (stage) => {
+  const addStage = (stage) => {
     if (disabled) return;
-    const idx = route.indexOf(stage);
-    if (idx === -1) {
-      const newRoute = ALL_STAGES_ORDERED.filter((s) => route.includes(s) || s === stage);
-      onChange(newRoute);
-    } else {
-      if (route.length <= 1) return;
-      onChange(route.filter((s) => s !== stage));
-    }
+    const next = [...route, stage];
+    onChange(next);
   };
 
-  const handleDragStart = (stage) => {
-    setDragSourceStage(stage);
+  const removeAt = (idx) => {
+    if (disabled) return;
+    if (!(idx >= 0 && idx < route.length)) return;
+    if (route.length <= 1) return;
+    const next = [...route];
+    next.splice(idx, 1);
+    onChange(next);
+  };
+
+  const handleDragStart = (idx) => {
+    setDragSourceIdx(idx);
   };
 
   const handleDragOver = (e, idx) => {
@@ -224,23 +228,20 @@ function RouteEditor({ value, onChange, disabled }) {
   const handleDrop = (e, toIdx) => {
     e.preventDefault();
     setDragOverIdx(null);
-    const fromStage = dragSourceStage;
-    setDragSourceStage(null);
-    if (!fromStage) return;
-    const fromIdx = route.indexOf(fromStage);
-    if (fromIdx === -1 || fromIdx === toIdx) return;
+    const fromIdx = dragSourceIdx;
+    setDragSourceIdx(null);
+    if (!(fromIdx >= 0)) return;
+    if (fromIdx === toIdx) return;
     const next = [...route];
-    next.splice(fromIdx, 1);
-    next.splice(toIdx, 0, fromStage);
+    const [moved] = next.splice(fromIdx, 1);
+    next.splice(toIdx, 0, moved);
     onChange(next);
   };
 
   const handleDragEnd = () => {
-    setDragSourceStage(null);
+    setDragSourceIdx(null);
     setDragOverIdx(null);
   };
-
-  const unused = ALL_STAGES_ORDERED.filter((s) => !route.includes(s));
 
   return (
     <div className="route-editor">
@@ -250,15 +251,15 @@ function RouteEditor({ value, onChange, disabled }) {
       <div className="route-editor__chain">
         {route.map((stage, idx) => {
           const c = STAGE_COLORS[stage] || { border: "#555" };
-          const isDragOver = dragOverIdx === idx && dragSourceStage !== stage;
+          const isDragOver = dragOverIdx === idx && dragSourceIdx !== idx;
           return (
-            <div key={stage} className="route-editor__chain-step">
+            <div key={`${stage}-${idx}`} className="route-editor__chain-step">
               {idx > 0 && <span className="route-editor__chain-arrow">→</span>}
               <div
                 className={`route-editor__item${isDragOver ? " route-editor__item--drop-target" : ""}`}
                 style={{ borderColor: c.border, cursor: disabled ? "default" : "grab" }}
                 draggable={!disabled}
-                onDragStart={() => handleDragStart(stage)}
+                onDragStart={() => handleDragStart(idx)}
                 onDragOver={(e) => handleDragOver(e, idx)}
                 onDrop={(e) => handleDrop(e, idx)}
                 onDragEnd={handleDragEnd}
@@ -271,30 +272,28 @@ function RouteEditor({ value, onChange, disabled }) {
                   className="route-editor__btn route-editor__btn--remove"
                   title="Убрать из маршрута"
                   disabled={disabled || route.length <= 1}
-                  onClick={() => toggle(stage)}
+                  onClick={() => removeAt(idx)}
                 >✕</button>
               </div>
             </div>
           );
         })}
       </div>
-      {unused.length > 0 && (
-        <div className="route-editor__unused">
-          <span className="route-editor__unused-label">Добавить этап:</span>
-          {unused.map((stage) => (
-            <button
-              key={stage}
-              type="button"
-              className="route-editor__btn route-editor__btn--add"
-              disabled={disabled}
-              onClick={() => toggle(stage)}
-              style={{ borderColor: STAGE_COLORS[stage]?.border, color: STAGE_COLORS[stage]?.text }}
-            >
-              {STAGE_COLORS[stage]?.icon} {STAGE_LABELS[stage]}
-            </button>
-          ))}
-        </div>
-      )}
+      <div className="route-editor__unused">
+        <span className="route-editor__unused-label">Добавить этап:</span>
+        {ALL_STAGES_ORDERED.map((stage) => (
+          <button
+            key={`add-${stage}`}
+            type="button"
+            className="route-editor__btn route-editor__btn--add"
+            disabled={disabled}
+            onClick={() => addStage(stage)}
+            style={{ borderColor: STAGE_COLORS[stage]?.border, color: STAGE_COLORS[stage]?.text }}
+          >
+            {STAGE_COLORS[stage]?.icon} {STAGE_LABELS[stage]}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -327,6 +326,7 @@ export function MetalProcessView({
   const [catalogForm, setCatalogForm] = useState(EMPTY_CATALOG_FORM);
   const [catalogEditArticle, setCatalogEditArticle] = useState(null);
   const [catalogTableSearch, setCatalogTableSearch] = useState("");
+  const [doneDialog, setDoneDialog] = useState({ open: false, row: null, doneQty: "", note: "" });
   const options = useMemo(
     () => (Array.isArray(metalProcessCatalogRows) ? metalProcessCatalogRows : []),
     [metalProcessCatalogRows],
@@ -442,6 +442,50 @@ export function MetalProcessView({
   const startFromPlan = async (rowId, stage) => {
     await transitionMetalProcessStage(rowId, "start", stage);
   };
+
+  const removePlanItem = async (row) => {
+    const rowId = Number(row?.id || 0);
+    if (!(rowId > 0)) return;
+    const ok = window.confirm(`Удалить заказ из плана?\n\n${row?.article || ""} — ${row?.name || ""}\nКол-во: ${row?.qty || 0}\n\nДействие необратимо.`);
+    if (!ok) return;
+    await deleteMetalProcessItem(rowId);
+  };
+
+  const openDoneDialog = (row) => {
+    const qty = Number(row?.qty || 0);
+    const doneAlready = Number(row?.stageDoneQty || 0);
+    const remaining = Math.max(0, qty - doneAlready);
+    setDoneDialog({
+      open: true,
+      row,
+      doneQty: String(remaining > 0 ? remaining : qty || ""),
+      note: "",
+    });
+  };
+
+  const closeDoneDialog = () => {
+    setDoneDialog({ open: false, row: null, doneQty: "", note: "" });
+  };
+
+  const submitDoneDialog = async () => {
+    const row = doneDialog.row;
+    if (!row) return;
+    const qty = Number(row?.qty || 0);
+    const doneAlready = Number(row?.stageDoneQty || 0);
+    const remaining = Math.max(0, qty - doneAlready);
+    const doneQty = Number(String(doneDialog.doneQty || "").replace(",", "."));
+    if (!(doneQty >= 0) || !(doneQty <= remaining)) {
+      window.alert(`Укажите выполненное кол-во от 0 до ${remaining}.`);
+      return;
+    }
+    const note = String(doneDialog.note || "").trim();
+    if (doneQty < remaining && !note) {
+      window.alert("Если выполнено не всё — укажите причину (комментарий).");
+      return;
+    }
+    closeDoneDialog();
+    await transitionMetalProcessStage(row.id, "done", null, doneQty, note || null);
+  };
   const openPlanPreview = (row) => setPlanPreviewRow(row || null);
   const closePlanPreview = () => setPlanPreviewRow(null);
   const printPlanPreview = () => window.print();
@@ -542,10 +586,6 @@ export function MetalProcessView({
                   <div>КОЛ-ВО</div>
                   <div className="num">{escapeHtml(planPreviewRow.qty ?? "—")}</div>
                 </div>
-                <div className="plan-number-box">
-                  <div>ПЛАН</div>
-                  <div className="num">{escapeHtml(planPreviewRow.week || "—")}</div>
-                </div>
               </div>
             </div>
             <table className="plan-table">
@@ -554,7 +594,6 @@ export function MetalProcessView({
                   <th className="w-model">Изделие</th>
                   <th>Артикул</th>
                   <th className="w-qty">Кол-во</th>
-                  <th className="w-qty">Неделя</th>
                   <th>Статус</th>
                   <th>Этап</th>
                 </tr>
@@ -564,7 +603,6 @@ export function MetalProcessView({
                   <td>{planPreviewRow.name || "—"}</td>
                   <td>{planPreviewRow.article || "—"}</td>
                   <td style={{ fontWeight: 900, textAlign: "center" }}>{planPreviewRow.qty ?? "—"}</td>
-                  <td style={{ textAlign: "center" }}>{planPreviewRow.week || "—"}</td>
                   <td>{formatPlanStatus(planPreviewRow)}</td>
                   <td>{getPlanStageLabel(planPreviewRow)}</td>
                 </tr>
@@ -576,6 +614,49 @@ export function MetalProcessView({
             <button type="button" className="mini" onClick={closePlanPreview}>Закрыть</button>
           </div>
         </div>
+      )}
+
+      {doneDialog.open && doneDialog.row && createPortal(
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="modal-overlay"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) closeDoneDialog();
+          }}
+        >
+          <div className="modal" style={{ maxWidth: 520 }}>
+            <div style={{ fontWeight: 900, fontSize: 16, marginBottom: 8 }}>Завершить этап</div>
+            <div style={{ color: "#475569", fontSize: 12, marginBottom: 12 }}>
+              {doneDialog.row.name} — {doneDialog.row.article} (этап: {STAGE_LABELS[String(doneDialog.row.currentStage || "").toLowerCase()] || doneDialog.row.currentStage})
+            </div>
+            <div style={{ display: "grid", gap: 8 }}>
+              <label style={{ display: "grid", gap: 6 }}>
+                <span style={{ fontSize: 12, fontWeight: 800 }}>Сколько выполнено на этом этапе</span>
+                <input
+                  value={doneDialog.doneQty}
+                  onChange={(e) => setDoneDialog((p) => ({ ...p, doneQty: e.target.value.replace(/[^0-9.,]/g, "") }))}
+                />
+              </label>
+              <label style={{ display: "grid", gap: 6 }}>
+                <span style={{ fontSize: 12, fontWeight: 800 }}>
+                  Причина (если выполнено не всё)
+                </span>
+                <textarea
+                  rows={3}
+                  value={doneDialog.note}
+                  onChange={(e) => setDoneDialog((p) => ({ ...p, note: e.target.value }))}
+                  placeholder="Например: не хватило материала / брак / поломка / нет людей..."
+                />
+              </label>
+            </div>
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 14 }}>
+              <button type="button" className="mini" onClick={closeDoneDialog}>Отмена</button>
+              <button type="button" className="mini ok" onClick={() => void submitDoneDialog()}>Готово</button>
+            </div>
+          </div>
+        </div>,
+        document.body,
       )}
 
       {subView === "plan" && (
@@ -613,14 +694,6 @@ export function MetalProcessView({
               onChange={(e) => setMetalProcessDraft((prev) => ({ ...prev, name: e.target.value }))}
             />
             <input
-              className="metal-process-field metal-process-field--week"
-              placeholder="Неделя"
-              value={metalProcessDraft.week}
-              onChange={(e) =>
-                setMetalProcessDraft((prev) => ({ ...prev, week: e.target.value.replace(/[^\d-]/g, "") }))
-              }
-            />
-            <input
               className="metal-process-field metal-process-field--qty"
               placeholder="Кол-во"
               value={metalProcessDraft.qty}
@@ -643,7 +716,6 @@ export function MetalProcessView({
                 <tr>
                   <th>Артикул</th>
                   <th>Название</th>
-                  <th>Неделя</th>
                   <th>Кол-во</th>
                   <th>Текущий этап</th>
                   <th>Статус</th>
@@ -653,7 +725,7 @@ export function MetalProcessView({
               <tbody>
                 {!loading && planRows.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="empty">План металла пока пуст.</td>
+                    <td colSpan={6} className="empty">План металла пока пуст.</td>
                   </tr>
                 )}
                 {planRows.map((row) => {
@@ -667,7 +739,6 @@ export function MetalProcessView({
                     <tr key={`plan-${row.id}`}>
                       <td>{row.article || "-"}</td>
                       <td>{row.name || "-"}</td>
-                      <td>{row.week || "-"}</td>
                       <td>{row.qty}</td>
                       <td>{getPlanStageLabel(row)}</td>
                       <td>{formatPlanStatus(row)}</td>
@@ -692,16 +763,42 @@ export function MetalProcessView({
                             >
                               Просмотр
                             </button>
+                            {canManageOrders && (
+                              <button
+                                type="button"
+                                className="mini warn"
+                                style={{ marginLeft: 8 }}
+                                disabled={busy}
+                                onClick={() => void removePlanItem(row)}
+                                title="Удалить заказ из плана"
+                              >
+                                {busy ? "…" : "Удалить"}
+                              </button>
+                            )}
                           </>
                         ) : (
-                          <button
-                            type="button"
-                            className="mini"
-                            onClick={() => openPlanPreview(row)}
-                            title="Просмотр: изделие / артикул / количество"
-                          >
-                            Просмотр
-                          </button>
+                          <>
+                            <button
+                              type="button"
+                              className="mini"
+                              onClick={() => openPlanPreview(row)}
+                              title="Просмотр: изделие / артикул / количество"
+                            >
+                              Просмотр
+                            </button>
+                            {canManageOrders && (
+                              <button
+                                type="button"
+                                className="mini warn"
+                                style={{ marginLeft: 8 }}
+                                disabled={busy}
+                                onClick={() => void removePlanItem(row)}
+                                title="Удалить заказ из плана"
+                              >
+                                {busy ? "…" : "Удалить"}
+                              </button>
+                            )}
+                          </>
                         )}
                       </td>
                     </tr>
@@ -749,7 +846,7 @@ export function MetalProcessView({
                       <span>{getKanbanStatusLine(row, stageKey).text}</span>
                     </div>
                     <div className="metal-process-card__next">
-                      Следующий этап: {formatNextStagesLabel(resolveMetalRoute(row, options), row.currentStage)}
+                      Следующий этап: {formatNextStagesLabel(resolveMetalRoute(row, options), row.currentStage, row.routeIdx)}
                     </div>
                     <div className="metal-process-card__time">Время: {formatStageTime(getStageSeconds(row, stageKey))}</div>
                     {String(row.operatorComment || "").trim() && (
@@ -865,7 +962,7 @@ export function MetalProcessView({
                           productionTab === "done" ||
                           (stageStatus !== "in_progress" && stageStatus !== "paused")
                         }
-                        onClick={() => transitionMetalProcessStage(row.id, "done")}
+                        onClick={() => openDoneDialog(row)}
                       >
                         Готово
                       </button>

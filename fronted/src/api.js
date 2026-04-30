@@ -104,21 +104,21 @@ function getSupabaseBaseUrl() {
 function getSupabaseRpcBaseUrl() {
   const proxy = String(SUPABASE_PROXY_URL || "").trim().replace(/\/$/, "");
   if (proxy) return proxy;
-  if (typeof window !== "undefined") {
-    const origin = String(window.location?.origin || "").trim().replace(/\/$/, "");
-    if (origin) return `${origin}/supabase`;
-  }
   return getSupabaseBaseUrl();
 }
 
 function getSupabaseRpcBaseUrls() {
   const proxy = String(SUPABASE_PROXY_URL || "").trim().replace(/\/$/, "");
-  const originProxy =
-    typeof window !== "undefined"
-      ? String(window.location?.origin || "").trim().replace(/\/$/, "")
-      : "";
+  const originProxy = typeof window !== "undefined"
+    ? String(window.location?.origin || "").trim().replace(/\/$/, "")
+    : "";
   const direct = getSupabaseBaseUrl();
-  const candidates = [proxy, originProxy ? `${originProxy}/supabase` : "", direct].filter(Boolean);
+  const sameOriginProxy = originProxy ? `${originProxy}/supabase` : "";
+  // Candidate order matters:
+  // - Prefer explicit proxy from env.
+  // - Then direct Supabase URL (works locally and in many deployments).
+  // - Same-origin proxy is a useful fallback, but may be missing on localhost or some prod setups (can be 404).
+  const candidates = [proxy, direct, sameOriginProxy].filter(Boolean);
   return Array.from(new Set(candidates));
 }
 
@@ -518,6 +518,11 @@ function buildRpcPayload(action, payload = {}) {
       p_item_id: Number(payload.id || payload.p_item_id || 0),
       p_action: String(payload.action || payload.p_action || "").trim().toLowerCase(),
       p_start_stage: String(payload.startStage || payload.p_start_stage || "").trim().toLowerCase() || null,
+      p_done_qty:
+        payload.doneQty == null || payload.doneQty === ""
+          ? null
+          : Number(String(payload.doneQty).replace(",", ".")),
+      p_note: String(payload.note || payload.p_note || "").trim() || null,
     };
   }
   if (action === "webSetMetalProcessComment") {
@@ -640,6 +645,7 @@ export async function supabaseCall(action, payload = {}) {
   let json;
   const rpcBases = getSupabaseRpcBaseUrls();
   let lastNetworkError = null;
+  let lastRetryableHttpError = null;
   for (const rpcBase of rpcBases) {
     try {
       ({ res, json } = await callWithToken(rpcBase, currentToken));
@@ -650,6 +656,13 @@ export async function supabaseCall(action, payload = {}) {
         ({ res, json } = await callWithToken(rpcBase, ""));
       }
       if (!res.ok) {
+        // Some deployments expose a same-origin proxy base that might be missing (404),
+        // or temporarily unhealthy (5xx). In that case, try the next candidate base.
+        const status = Number(res.status || 0);
+        if (status === 404 || status >= 500) {
+          lastRetryableHttpError = new Error(typeof json === "string" ? json : JSON.stringify(json));
+          continue;
+        }
         throw new Error(typeof json === "string" ? json : JSON.stringify(json));
       }
       return json;
@@ -664,6 +677,9 @@ export async function supabaseCall(action, payload = {}) {
   }
   if (lastNetworkError) {
     throw lastNetworkError;
+  }
+  if (lastRetryableHttpError) {
+    throw lastRetryableHttpError;
   }
   throw new Error("NETWORK_UNAVAILABLE");
 }

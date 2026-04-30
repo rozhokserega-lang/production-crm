@@ -65,6 +65,11 @@ function mergeCatalogRows(primaryRows, fallbackRows) {
 }
 
 function mapProcessRow(row) {
+  const rawRoute = row?.stage_route ?? row?.stageRoute;
+  const stageRoute =
+    Array.isArray(rawRoute) && rawRoute.length > 0
+      ? rawRoute.map((s) => String(s || "").trim().toLowerCase()).filter((s) => VALID_STAGES.includes(s))
+      : DEFAULT_ROUTE;
   return {
     id: Number(row?.id || 0),
     article: String(row?.article || "").trim(),
@@ -75,6 +80,9 @@ function mapProcessRow(row) {
     stageStatus: String(row?.stage_status || row?.stageStatus || ""),
     status: String(row?.status || ""),
     operatorComment: String(row?.operator_comment || row?.operatorComment || ""),
+    stageRoute: stageRoute.length > 0 ? stageRoute : DEFAULT_ROUTE,
+    routeIdx: Number(row?.route_idx ?? row?.routeIdx ?? 0) || 0,
+    stageDoneQty: Number(row?.stage_done_qty ?? row?.stageDoneQty ?? 0) || 0,
     laserSeconds: Number(row?.laser_seconds || row?.laserSeconds || 0),
     sawSeconds: Number(row?.saw_seconds || row?.sawSeconds || 0),
     bendingSeconds: Number(row?.bending_seconds || row?.bendingSeconds || 0),
@@ -106,7 +114,6 @@ export function useMetalProcessState({
   const [metalProcessDraft, setMetalProcessDraft] = useState({
     article: "",
     name: "",
-    week: "",
     qty: "1",
   });
 
@@ -155,10 +162,9 @@ export function useMetalProcessState({
     if (!canOperateProduction) return;
     const article = String(metalProcessDraft.article || "").trim().toUpperCase();
     const name = String(metalProcessDraft.name || "").trim();
-    const week = String(metalProcessDraft.week || "").trim();
     const qty = parseQty(metalProcessDraft.qty);
-    if (!article || !name || !week || !(qty > 0)) {
-      setError("Заполните артикул, название, неделю и количество > 0.");
+    if (!article || !name || !(qty > 0)) {
+      setError("Заполните артикул, название и количество > 0.");
       return;
     }
 
@@ -168,7 +174,7 @@ export function useMetalProcessState({
       await OrderService.createMetalProcessItem({
         article,
         name,
-        week,
+        week: null,
         qty,
       });
       setMetalProcessDraft((prev) => ({ ...prev, article: "", name: "", qty: "1" }));
@@ -180,14 +186,14 @@ export function useMetalProcessState({
     }
   }, [canOperateProduction, metalProcessDraft, setError, explainRpcMissing, loadMetalProcessData]);
 
-  const transitionMetalProcessStage = useCallback(async (id, action, startStage = null) => {
+  const transitionMetalProcessStage = useCallback(async (id, action, startStage = null, doneQty = null, note = null) => {
     if (!canOperateProduction) return;
     const rowId = Number(id || 0);
     if (!(rowId > 0)) return;
     setMetalProcessActionKey(`row:${rowId}:${action}`);
     setError("");
     try {
-      await OrderService.transitionMetalProcessStage(rowId, action, startStage);
+      await OrderService.transitionMetalProcessStage(rowId, action, startStage, doneQty, note);
       await loadMetalProcessData();
     } catch (e) {
       setError(explainRpcMissing(e));
