@@ -916,7 +916,7 @@ export function MetalProcessView({
         const handleDelete = async (row) => {
           const ok = window.confirm(`Удалить артикул "${row.article} — ${row.name}"?\n\nНельзя удалить если есть активные задания в производстве.`);
           if (!ok) return;
-          await deleteMetalCatalogItem(row.article);
+          await deleteMetalCatalogItem(row.article, row.name);
         };
         const isNewMode = isEditing && catalogEditArticle === "__new__";
         return (

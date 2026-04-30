@@ -243,7 +243,7 @@ export function useMetalProcessState({
     }
   }, [canManageOrders, explainRpcMissing, loadMetalProcessData, setError]);
 
-  const deleteMetalCatalogItem = useCallback(async (article) => {
+  const deleteMetalCatalogItem = useCallback(async (article, name) => {
     if (!canManageOrders) return;
     setMetalProcessActionKey(`catalog:delete:${article}`);
     setMetalProcessCatalogLoading(true);
@@ -252,6 +252,21 @@ export function useMetalProcessState({
       await OrderService.deleteMetalCatalogItem(article);
       await loadMetalProcessData();
     } catch (e) {
+      const msg = String(e?.message || e || "");
+      if (msg.includes("Артикул не найден в каталоге")) {
+        const fallbackArticle = String(article || "").trim().toUpperCase();
+        const fallbackName = String(name || "").trim();
+        if (fallbackArticle && fallbackName) {
+          try {
+            await OrderService.upsertMetalProcessCatalogItem(fallbackArticle, fallbackName, false, DEFAULT_ROUTE);
+            await loadMetalProcessData();
+            return;
+          } catch (e2) {
+            setError(explainRpcMissing(e2));
+            return;
+          }
+        }
+      }
       setError(explainRpcMissing(e));
     } finally {
       setMetalProcessActionKey("");
