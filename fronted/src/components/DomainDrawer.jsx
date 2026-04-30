@@ -23,6 +23,7 @@ export function DomainDrawer({ open, setOpen, view, setView }) {
           className={view === "furniture" ? "tab active" : "tab"}
           onClick={goFurniture}
         >
+          <span className="domain-drawer__icon" aria-hidden="true">🪑</span>
           Мебель
         </button>
         <button
@@ -30,7 +31,8 @@ export function DomainDrawer({ open, setOpen, view, setView }) {
           className={view === "metalProcess" ? "tab active" : "tab"}
           onClick={goMetalProcess}
         >
-          Металл-процесс
+          <span className="domain-drawer__icon" aria-hidden="true">⚙️</span>
+          Металл
         </button>
       </aside>
     </>

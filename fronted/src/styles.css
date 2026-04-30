@@ -116,6 +116,15 @@ body.domain-furniture {
   margin-bottom: 8px;
 }
 
+.domain-drawer__icon {
+  display: inline-flex;
+  width: 18px;
+  justify-content: center;
+  margin-right: 6px;
+  flex: 0 0 auto;
+  line-height: 1;
+}
+
 .top-actions {
   display: inline-flex;
   align-items: center;
