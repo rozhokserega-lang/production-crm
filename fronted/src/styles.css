@@ -2329,6 +2329,17 @@ button:disabled {
     print-color-adjust: exact;
   }
 
+  /* Hide the left domain drawer and remove app padding/margins. */
+  .domain-drawer {
+    display: none !important;
+  }
+
+  .page {
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
   /* Do not print placeholder/debug captions in plan preview. */
   .plan-table caption {
     display: none !important;
