@@ -525,60 +525,61 @@ export function MetalProcessView({
         )}
       </div>
 
-      {subView === "plan" && (
-        <div className="sheet-table-wrap" style={{ padding: 12 }}>
-          {planPreviewRow && (
-            <div className="print-area metal-plan-print" style={{ marginBottom: 12 }}>
-              <div className="print-plan-page">
-                <div className="plan-top-meta">
-                  <span>{new Date().toLocaleString("ru-RU")}</span>
-                  <span>Отгрузки CRM</span>
-                </div>
-                <div className="plan-head-grid">
-                  <div className="plan-yellow" style={{ background: "#fff" }}>
-                    <div className="name">{escapeHtml(planPreviewRow.name || "Металл")}</div>
-                    <div className="strap-target">Артикул: {escapeHtml(planPreviewRow.article || "—")}</div>
-                  </div>
-                  <div className="plan-right-meta">
-                    <div className="plan-number-box">
-                      <div>КОЛ-ВО</div>
-                      <div className="num">{escapeHtml(planPreviewRow.qty ?? "—")}</div>
-                    </div>
-                    <div className="plan-number-box">
-                      <div>ПЛАН</div>
-                      <div className="num">{escapeHtml(planPreviewRow.week || "—")}</div>
-                    </div>
-                  </div>
-                </div>
-                <table className="plan-table">
-                  <thead>
-                    <tr>
-                      <th className="w-model">Изделие</th>
-                      <th>Артикул</th>
-                      <th className="w-qty">Кол-во</th>
-                      <th className="w-qty">Неделя</th>
-                      <th>Статус</th>
-                      <th>Этап</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <td>{planPreviewRow.name || "—"}</td>
-                      <td>{planPreviewRow.article || "—"}</td>
-                      <td style={{ fontWeight: 900, textAlign: "center" }}>{planPreviewRow.qty ?? "—"}</td>
-                      <td style={{ textAlign: "center" }}>{planPreviewRow.week || "—"}</td>
-                      <td>{formatPlanStatus(planPreviewRow)}</td>
-                      <td>{getPlanStageLabel(planPreviewRow)}</td>
-                    </tr>
-                  </tbody>
-                </table>
+      {subView === "plan" && planPreviewRow && (
+        <div className="print-area metal-plan-print" style={{ marginBottom: 12 }}>
+          <div className="print-plan-page">
+            <div className="plan-top-meta">
+              <span>{new Date().toLocaleString("ru-RU")}</span>
+              <span>Отгрузки CRM</span>
+            </div>
+            <div className="plan-head-grid">
+              <div className="plan-yellow" style={{ background: "#fff" }}>
+                <div className="name">{escapeHtml(planPreviewRow.name || "Металл")}</div>
+                <div className="strap-target">Артикул: {escapeHtml(planPreviewRow.article || "—")}</div>
               </div>
-              <div className="actions" style={{ display: "flex", gap: 10, marginTop: 10 }}>
-                <button type="button" className="mini" onClick={printPlanPreview}>Печать</button>
-                <button type="button" className="mini" onClick={closePlanPreview}>Закрыть</button>
+              <div className="plan-right-meta">
+                <div className="plan-number-box">
+                  <div>КОЛ-ВО</div>
+                  <div className="num">{escapeHtml(planPreviewRow.qty ?? "—")}</div>
+                </div>
+                <div className="plan-number-box">
+                  <div>ПЛАН</div>
+                  <div className="num">{escapeHtml(planPreviewRow.week || "—")}</div>
+                </div>
               </div>
             </div>
-          )}
+            <table className="plan-table">
+              <thead>
+                <tr>
+                  <th className="w-model">Изделие</th>
+                  <th>Артикул</th>
+                  <th className="w-qty">Кол-во</th>
+                  <th className="w-qty">Неделя</th>
+                  <th>Статус</th>
+                  <th>Этап</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>{planPreviewRow.name || "—"}</td>
+                  <td>{planPreviewRow.article || "—"}</td>
+                  <td style={{ fontWeight: 900, textAlign: "center" }}>{planPreviewRow.qty ?? "—"}</td>
+                  <td style={{ textAlign: "center" }}>{planPreviewRow.week || "—"}</td>
+                  <td>{formatPlanStatus(planPreviewRow)}</td>
+                  <td>{getPlanStageLabel(planPreviewRow)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div className="actions" style={{ display: "flex", gap: 10, marginTop: 10 }}>
+            <button type="button" className="mini" onClick={printPlanPreview}>Печать</button>
+            <button type="button" className="mini" onClick={closePlanPreview}>Закрыть</button>
+          </div>
+        </div>
+      )}
+
+      {subView === "plan" && (
+        <div className="sheet-table-wrap" style={{ padding: 12 }}>
           <div style={{ fontWeight: 800, marginBottom: 10 }}>Добавить план</div>
           <div className="metal-process-form">
             <input

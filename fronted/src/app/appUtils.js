@@ -1,3 +1,5 @@
+import { normalizeFurnitureKey } from "../utils/furnitureUtils";
+
 const ACTION_OPTIMISTIC_MAP = {
   webSetPilkaInWork: {
     field: "pilkaStatus",
@@ -131,13 +133,34 @@ export function normalizeShipmentBoard(data) {
   }
   if (!Array.isArray(data)) return { sections: [] };
   const sectionMap = new Map();
+  const sectionTitles = new Map();
+
+  const pickPreferredSectionTitle = (a, b) => {
+    const sa = String(a || "").trim();
+    const sb = String(b || "").trim();
+    if (!sb) return sa;
+    if (!sa) return sb;
+    const aHasMm = /\bмм\b/i.test(sa) || /\bmm\b/i.test(sa);
+    const bHasMm = /\bмм\b/i.test(sb) || /\bmm\b/i.test(sb);
+    // Prefer titles without measurement units so groups don't show duplicates like "750" vs "750 мм".
+    if (aHasMm !== bHasMm) return aHasMm ? sb : sa;
+    // Otherwise prefer shorter/cleaner title.
+    if (sa.length !== sb.length) return sa.length < sb.length ? sa : sb;
+    return sa;
+  };
+
   data.forEach((row, idx) => {
-    const sectionName = String(row?.section_name || row?.sectionName || "Прочее").trim() || "Прочее";
+    const rawSectionName = String(row?.section_name || row?.sectionName || "Прочее").trim() || "Прочее";
+    const sectionKey = normalizeFurnitureKey(rawSectionName) || rawSectionName.toLowerCase();
+    const sectionName = sectionTitles.has(sectionKey)
+      ? pickPreferredSectionTitle(sectionTitles.get(sectionKey), rawSectionName)
+      : rawSectionName;
+    sectionTitles.set(sectionKey, sectionName);
     const itemName = String(row?.item || "").trim();
     if (!itemName) return;
-    if (!sectionMap.has(sectionName)) sectionMap.set(sectionName, new Map());
-    const itemMap = sectionMap.get(sectionName);
-    const rowKey = String(row?.row_ref || row?.rowRef || row?.source_row_id || `${sectionName}:${itemName}`);
+    if (!sectionMap.has(sectionKey)) sectionMap.set(sectionKey, new Map());
+    const itemMap = sectionMap.get(sectionKey);
+    const rowKey = String(row?.row_ref || row?.rowRef || row?.source_row_id || `${sectionKey}:${itemName}`);
     if (!itemMap.has(rowKey)) {
       const productArticle = String(
         row?.article_code || row?.articleCode || row?.article || row?.mapped_article_code || row?.mappedArticleCode || "",
@@ -179,8 +202,8 @@ export function normalizeShipmentBoard(data) {
       note: row?.note || "",
     });
   });
-  const sections = [...sectionMap.entries()].map(([name, items]) => ({
-    name,
+  const sections = [...sectionMap.entries()].map(([key, items]) => ({
+    name: sectionTitles.get(key) || String(key),
     items: [...items.values()],
   }));
   return applyStorageAutoCutToBoard({ sections });
