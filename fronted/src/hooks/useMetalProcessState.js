@@ -128,7 +128,9 @@ export function useMetalProcessState({
     setMetalProcessLoading(true);
     try {
       const [catalog, items] = await Promise.all([
-        OrderService.listMetalProcessCatalog().catch(() => null),
+        // Важно: грузим и неактивные строки, чтобы они подавляли "fallback" из остатков склада.
+        // В UI таблица каталога всё равно фильтрует только активные.
+        OrderService.listMetalProcessCatalog(false).catch(() => null),
         OrderService.listMetalProcessItems(),
       ]);
       const catalogRowsPrimary = Array.isArray(catalog) ? catalog.map(mapCatalogRow) : [];

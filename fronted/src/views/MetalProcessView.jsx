@@ -886,7 +886,9 @@ export function MetalProcessView({
       )}
 
       {subView === "catalog" && canManageOrders && (() => {
-        const allCatalogRows = Array.isArray(metalProcessCatalogRows) ? metalProcessCatalogRows : [];
+        const allCatalogRows = Array.isArray(metalProcessCatalogRows)
+          ? metalProcessCatalogRows.filter((x) => x?.isActive !== false)
+          : [];
         const filteredCatalogRows = catalogTableSearch.trim()
           ? allCatalogRows.filter((x) => matchesCatalogQuery(x, catalogTableSearch))
           : allCatalogRows;
@@ -914,7 +916,7 @@ export function MetalProcessView({
           cancelEdit();
         };
         const handleDelete = async (row) => {
-          const ok = window.confirm(`Удалить артикул "${row.article} — ${row.name}"?\n\nНельзя удалить если есть активные задания в производстве.`);
+          const ok = window.confirm(`Удалить артикул "${row.article} — ${row.name}"?\n\nЕсли по нему уже есть история производства, он будет скрыт из каталога.\nНельзя удалить, если есть активные задания в производстве.`);
           if (!ok) return;
           await deleteMetalCatalogItem(row.article, row.name);
         };
