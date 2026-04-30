@@ -763,12 +763,12 @@ export function MetalProcessView({
         <div
           role="dialog"
           aria-modal="true"
-          className="dialog-backdrop"
+          className="dialog-backdrop metal-events-dialog"
           onMouseDown={(e) => {
             if (e.target === e.currentTarget) closeEventsDialog();
           }}
         >
-          <div className="dialog-card" style={{ maxWidth: 820 }}>
+          <div className="dialog-card">
             <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
               <div style={{ fontWeight: 900, fontSize: 16 }}>История этапов</div>
               <button type="button" className="mini" onClick={closeEventsDialog}>Закрыть</button>
@@ -781,7 +781,7 @@ export function MetalProcessView({
             ) : eventsDialog.error ? (
               <div className="empty" style={{ marginTop: 12, color: "#b91c1c" }}>{eventsDialog.error}</div>
             ) : (
-              <div style={{ marginTop: 12, overflow: "auto", maxHeight: "62vh" }}>
+              <div style={{ marginTop: 12, overflow: "auto" }}>
                 <table className="sheet-table">
                   <thead>
                     <tr>

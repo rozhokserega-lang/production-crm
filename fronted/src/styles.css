@@ -2032,6 +2032,13 @@ button:disabled {
   box-shadow: 0 20px 40px rgba(15, 23, 42, 0.25);
 }
 
+/* Fullscreen-ish dialog for metal stage history. */
+.metal-events-dialog .dialog-card {
+  width: min(1200px, 98vw);
+  max-height: 92vh;
+  overflow: auto;
+}
+
 .strap-grid {
   display: grid;
   gap: 6px;

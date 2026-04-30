@@ -99,6 +99,8 @@ describe("OrderService", () => {
       id: 33,
       action: "pause",
       startStage: null,
+      doneQty: null,
+      note: null,
     });
   });
 
@@ -111,6 +113,8 @@ describe("OrderService", () => {
       id: 41,
       action: "start",
       startStage: "saw",
+      doneQty: null,
+      note: null,
     });
   });
 
