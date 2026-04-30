@@ -432,6 +432,59 @@ export function MetalProcessView({
   const startFromPlan = async (rowId, stage) => {
     await transitionMetalProcessStage(rowId, "start", stage);
   };
+  const printPlanRow = (row) => {
+    const article = String(row?.article || "").trim();
+    const name = String(row?.name || "").trim();
+    const qty = String(row?.qty ?? "").trim();
+    const week = String(row?.week || "").trim();
+    const generatedAt = new Date();
+    const title = `План металла${article ? ` — ${article}` : ""}`;
+    const popup = window.open("", "_blank", "noopener,noreferrer,width=900,height=700");
+    if (!popup) return;
+    popup.document.open();
+    popup.document.write(`<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>${title.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</title>
+  <style>
+    @page { size: A4; margin: 10mm; }
+    html, body { background: #fff; color: #111; font-family: Arial, sans-serif; }
+    * { box-shadow: none !important; text-shadow: none !important; filter: none !important; }
+    .wrap { border: 2px solid #2b2b2b; border-radius: 10px; padding: 14px 16px; }
+    .meta { display: flex; justify-content: space-between; font-size: 12px; color: #111827; margin-bottom: 10px; }
+    .h1 { font-size: 28px; font-weight: 800; margin: 0 0 6px; }
+    .row { display: grid; grid-template-columns: 160px 1fr; gap: 10px; margin-top: 10px; font-size: 18px; }
+    .lbl { color: #374151; font-weight: 700; }
+    .val { font-weight: 800; }
+    .qty { font-size: 44px; font-weight: 900; letter-spacing: 0.02em; }
+    .foot { margin-top: 14px; font-size: 11px; color: #6b7280; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="meta">
+      <span>${generatedAt.toLocaleString("ru-RU")}</span>
+      <span>Отгрузки CRM</span>
+    </div>
+    <div class="h1">${(name || "Металл").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div>
+    <div class="row"><div class="lbl">Артикул</div><div class="val">${(article || "—").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div></div>
+    <div class="row"><div class="lbl">Количество</div><div class="qty">${(qty || "—").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div></div>
+    ${week ? `<div class="row"><div class="lbl">Неделя</div><div class="val">${week.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div></div>` : ""}
+    <div class="foot">Печать плана металла</div>
+  </div>
+  <script>
+    window.addEventListener('load', () => {
+      setTimeout(() => {
+        window.print();
+      }, 50);
+    });
+  </script>
+</body>
+</html>`);
+    popup.document.close();
+  };
   const removeDoneItem = async (rowId) => {
     if (!canManageOrders) return;
     const ok = window.confirm("Удалить готовую позицию из metal-процесса? Действие необратимо.");
@@ -616,6 +669,15 @@ export function MetalProcessView({
                               title={`Первый этап: ${STAGE_LABELS[firstStage] || firstStage}`}
                             >
                               {busy ? "Запуск..." : `В работу → ${STAGE_LABELS[firstStage] || firstStage}`}
+                            </button>
+                            <button
+                              type="button"
+                              className="mini"
+                              style={{ marginLeft: 8 }}
+                              onClick={() => printPlanRow(row)}
+                              title="Печать: изделие / артикул / количество"
+                            >
+                              Печать
                             </button>
                           </>
                         ) : (
