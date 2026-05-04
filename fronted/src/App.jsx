@@ -217,6 +217,12 @@ export default function App() {
     setWorkSchedule,
     loadWorkSchedule,
     saveWorkSchedule,
+    consumeLogSheetName,
+    consumeLogSheetUpdatedAt,
+    consumeLogSheetLoading,
+    consumeLogSheetSaving,
+    loadConsumeLogSheetSetting,
+    saveConsumeLogSheetSetting,
     metalStockRows,
     metalSavingArticle,
     selectedShipmentMetal,
@@ -658,6 +664,12 @@ export default function App() {
             workScheduleSaving={workScheduleSaving}
             loadWorkSchedule={loadWorkSchedule}
             saveWorkSchedule={saveWorkSchedule}
+            consumeLogSheetName={consumeLogSheetName}
+            consumeLogSheetUpdatedAt={consumeLogSheetUpdatedAt}
+            consumeLogSheetLoading={consumeLogSheetLoading}
+            consumeLogSheetSaving={consumeLogSheetSaving}
+            loadConsumeLogSheetSetting={loadConsumeLogSheetSetting}
+            saveConsumeLogSheetSetting={saveConsumeLogSheetSetting}
           />
         )}
         {view === "workshop" && (

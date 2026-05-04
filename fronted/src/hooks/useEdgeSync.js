@@ -33,6 +33,7 @@ export function useEdgeSync({
   setWarehouseSyncLoading,
   setLeftoversSyncLoading,
   load,
+  consumeLogSheetName,
 }) {
   const notifyAssemblyReadyTelegram = useCallback(
     async (meta = {}) => {
@@ -118,7 +119,7 @@ export function useEdgeSync({
       try {
         await logConsumeToGoogleSheetEdge(baseUrl, token, {
           sheetId: WAREHOUSE_SYNC_SHEET_ID,
-          sheetName: CONSUME_LOG_SHEET_NAME,
+          sheetName: String(consumeLogSheetName || "").trim() || CONSUME_LOG_SHEET_NAME,
           orderId: String(meta.orderId || "").trim(),
           item: String(meta.item || "").trim(),
           material: String(meta.material || "").trim(),
@@ -129,7 +130,7 @@ export function useEdgeSync({
         // Best-effort sync to sheet should not block core consumption flow.
       }
     },
-    [],
+    [consumeLogSheetName],
   );
 
   const syncPlanCellToGoogleSheet = useCallback(

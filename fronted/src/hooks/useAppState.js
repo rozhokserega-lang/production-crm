@@ -79,6 +79,7 @@ import { useWarehouseData } from "../contexts/WarehouseDataContext";
 import { useFurnitureData } from "../contexts/FurnitureDataContext";
 import { OrderService } from "../services/orderService";
 import {
+  CONSUME_LOG_SHEET_NAME,
   CRM_ROLE_LABELS,
   DEFAULT_SHIPMENT_PREFS,
   STRAP_OPTIONS,
@@ -394,6 +395,54 @@ export function useAppState() {
   const canManageOrders = crmRole === "manager" || crmRole === "admin";
   const canAdminSettings = crmRole === "admin";
 
+  const [consumeLogSheetName, setConsumeLogSheetName] = useState(CONSUME_LOG_SHEET_NAME);
+  const [consumeLogSheetUpdatedAt, setConsumeLogSheetUpdatedAt] = useState("");
+  const [consumeLogSheetLoading, setConsumeLogSheetLoading] = useState(false);
+  const [consumeLogSheetSaving, setConsumeLogSheetSaving] = useState(false);
+
+  const loadConsumeLogSheetSetting = useCallback(async () => {
+    setConsumeLogSheetLoading(true);
+    try {
+      const raw = await OrderService.getConsumeLogSheetName();
+      const row = Array.isArray(raw) ? raw[0] : raw;
+      const name = String(row?.sheet_name ?? row?.sheetName ?? "").trim();
+      const at = String(row?.updated_at ?? row?.updatedAt ?? "").trim();
+      if (name) setConsumeLogSheetName(name);
+      setConsumeLogSheetUpdatedAt(at);
+    } catch (_) {
+      /* оставляем константу по умолчанию, если RPC ещё не задеплоен */
+    } finally {
+      setConsumeLogSheetLoading(false);
+    }
+  }, []);
+
+  const saveConsumeLogSheetSetting = useCallback(
+    async (sheetName) => {
+      if (!canAdminSettings) return;
+      setConsumeLogSheetSaving(true);
+      setError("");
+      try {
+        const raw = await OrderService.setConsumeLogSheetName(sheetName);
+        const row = Array.isArray(raw) ? raw[0] : raw;
+        const name = String(row?.sheet_name ?? row?.sheetName ?? "").trim();
+        const at = String(row?.updated_at ?? row?.updatedAt ?? "").trim();
+        if (name) setConsumeLogSheetName(name);
+        setConsumeLogSheetUpdatedAt(at);
+      } catch (e) {
+        setError(toUserError(e));
+      } finally {
+        setConsumeLogSheetSaving(false);
+      }
+    },
+    [canAdminSettings, setError],
+  );
+
+  useEffect(() => {
+    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return undefined;
+    loadConsumeLogSheetSetting();
+    return undefined;
+  }, [loadConsumeLogSheetSetting]);
+
   const {
     notifyAssemblyReadyTelegram,
     notifyFinalStageTelegram,
@@ -406,6 +455,7 @@ export function useAppState() {
     setWarehouseSyncLoading,
     setLeftoversSyncLoading,
     load,
+    consumeLogSheetName,
   });
 
   const {
@@ -1051,6 +1101,9 @@ export function useAppState() {
     leftoversHistoryRows,
     consumeHistoryRows,
     pilkaDoneHistoryRows,
+    shipmentOrders,
+    shipmentBoard,
+    furnitureCustomTemplates,
   });
 
   const {
@@ -1299,6 +1352,12 @@ export function useAppState() {
     setWorkSchedule,
     loadWorkSchedule,
     saveWorkSchedule,
+    consumeLogSheetName,
+    consumeLogSheetUpdatedAt,
+    consumeLogSheetLoading,
+    consumeLogSheetSaving,
+    loadConsumeLogSheetSetting,
+    saveConsumeLogSheetSetting,
     metalStockRows,
     metalSavingArticle, setMetalSavingArticle,
     selectedShipmentMetal,

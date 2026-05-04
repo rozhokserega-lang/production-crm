@@ -64,7 +64,8 @@ export const STRAP_SHEET_HEIGHT = 2070;
 export const WAREHOUSE_SYNC_SHEET_ID = "1SyFYOpXyHHMP31qYV5-XL8fINVUUDCrXIrewaZqkYkA";
 export const WAREHOUSE_SYNC_GID = "1501570173";
 export const LEFTOVERS_SYNC_GID = "762227238";
-export const CONSUME_LOG_SHEET_NAME = "расход апрель 2026";
+/** Значение по умолчанию и запасной вариант, если в браузере не задано своё имя вкладки. */
+export const CONSUME_LOG_SHEET_NAME = "расход май 2026";
 export const PLAN_SYNC_SHEET_ID = "1gRMs2AVxIXwmQLLnB2WIoRW7mPkGc9usyaUrXZAHuIs";
 export const PLAN_SYNC_GID = "1998084017";
 export const SHEET_MIRROR_GID = "1772676601";

@@ -111,11 +111,25 @@ export function useDashboardDerivedData({
       if (!grouped[lane]) grouped[lane] = [];
       grouped[lane].push(o);
     });
+    const statusForLane = (o, laneId) => {
+      if (laneId === "pilka") return String(o?.pilkaStatus || o?.pilka_status || o?.pilka || "");
+      if (laneId === "kromka") return String(o?.kromkaStatus || o?.kromka_status || o?.kromka || "");
+      if (laneId === "pras") return String(o?.prasStatus || o?.pras_status || o?.pras || "");
+      if (laneId === "workshop_complete" || laneId === "assembled") {
+        return String(o?.assemblyStatus || o?.assembly_status || "");
+      }
+      return String(o?.overallStatus || o?.overall_status || o?.overall || "");
+    };
     defs.forEach((d) => {
-      grouped[d.id].sort((a, b) => String(a.item || "").localeCompare(String(b.item || ""), "ru"));
+      grouped[d.id].sort((a, b) => {
+        const aw = isInWork(statusForLane(a, d.id)) ? 1 : 0;
+        const bw = isInWork(statusForLane(b, d.id)) ? 1 : 0;
+        if (aw !== bw) return bw - aw;
+        return String(a.item || "").localeCompare(String(b.item || ""), "ru");
+      });
     });
     return defs.map((d) => ({ ...d, items: grouped[d.id] || [] }));
-  }, [filtered, view, getOverviewLaneId]);
+  }, [filtered, view, getOverviewLaneId, isInWork]);
 
   const shipmentKpi = useMemo(() => {
     if (view !== "shipment") return { totalOrders: 0, totalQty: 0, readyAssembly: 0, assembled: 0 };

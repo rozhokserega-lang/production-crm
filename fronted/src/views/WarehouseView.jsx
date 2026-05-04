@@ -122,7 +122,15 @@ export const WarehouseView = memo(function WarehouseView({
                   </td>
                   <td>{r.orderId || "-"}</td>
                   <td>{r.material || "-"}</td>
-                  <td><b>{r.rowType === "consume" ? r.qtySheets : "-"}</b></td>
+                  <td>
+                    {r.rowType === "consume" ? (
+                      <b>{r.qtySheets}</b>
+                    ) : r.rowType === "pilka_done" && Number(r.expectedSheets) > 0 ? (
+                      <b className="warehouse-history__expected-sheets">{r.expectedSheets}</b>
+                    ) : (
+                      <b>—</b>
+                    )}
+                  </td>
                   <td><b>{r.rowType === "leftover" ? `${r.leftoversQty}${r.leftoverFormat ? ` (${r.leftoverFormat})` : ""}` : "-"}</b></td>
                   <td>{r.comment || "-"}</td>
                   <td>
@@ -132,10 +140,10 @@ export const WarehouseView = memo(function WarehouseView({
                         className="mini ok"
                         onClick={() =>
                           onManualConsume?.(r.orderId, {
-                            item: r.comment || "",
+                            item: String(r.orderItem || "").trim(),
                             material: r.material || "",
-                            defaultSheets: 1,
-                            week: "",
+                            defaultSheets: Number(r.expectedSheets) > 0 ? Number(r.expectedSheets) : 1,
+                            week: String(r.orderWeek || "").trim(),
                           })
                         }
                       >

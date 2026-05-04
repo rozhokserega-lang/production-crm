@@ -311,6 +311,8 @@ const RPC_MAP = {
   webGetCrmAuthStrict: "web_is_crm_auth_strict",
   webGetCrmExecutors: "web_get_crm_executors",
   webGetWorkSchedule: "web_get_work_schedule",
+  webGetConsumeLogSheetName: "web_get_consume_log_sheet_name",
+  webSetConsumeLogSheetName: "web_set_consume_log_sheet_name",
   webSetCrmAuthStrict: "web_set_crm_auth_strict",
   webSetWorkSchedule: "web_set_work_schedule",
   webListCrmUserRoles: "web_list_crm_user_roles",
@@ -579,6 +581,11 @@ function buildRpcPayload(action, payload = {}) {
   if (action === "webSetCrmAuthStrict") {
     return {
       p_enabled: Boolean(payload.enabled),
+    };
+  }
+  if (action === "webSetConsumeLogSheetName") {
+    return {
+      p_sheet_name: String(payload.sheetName ?? payload.p_sheet_name ?? "").trim(),
     };
   }
   if (action === "webSetWorkSchedule") {

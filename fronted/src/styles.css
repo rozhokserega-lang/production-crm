@@ -1019,6 +1019,30 @@ button:disabled {
   margin-bottom: 4px;
 }
 
+.admin-panel__consume-log {
+  align-items: flex-end;
+}
+
+.admin-panel__consume-log-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  min-width: min(100%, 320px);
+}
+
+.admin-panel__consume-log-field input {
+  padding: 8px 10px;
+  border: 1px solid var(--border-main);
+  border-radius: 8px;
+  font-size: 14px;
+  background: var(--bg-surface);
+}
+
+.warehouse-history__expected-sheets {
+  color: #b91c1c;
+}
+
 .empty.empty--hint {
   border-color: #bae6fd;
   background: #f0f9ff;
@@ -1182,6 +1206,29 @@ button:disabled {
   color: #334155;
   background: #e2e8f0;
   border-color: #cbd5e1;
+}
+
+.overview-card__lane-status {
+  margin-top: 6px;
+  font-size: var(--overview-meta-size);
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.overview-card__lane-status--work {
+  color: #15803d;
+}
+
+.overview-card__lane-status--pause {
+  color: #db2777;
+}
+
+.overview-card__lane-status--wait {
+  color: #2563eb;
+}
+
+.overview-card__lane-status--neutral {
+  color: #64748b;
 }
 
 .card {

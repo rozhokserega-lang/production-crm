@@ -96,6 +96,19 @@ export function useDataLoader({
         setConsumeHistoryRows(warehousePayload?.consumeHistoryRows || []);
         setPilkaDoneHistoryRows(warehousePayload?.pilkaDoneHistoryRows || []);
         setWarehouseRows(Array.isArray(data) ? data : []);
+        if (warehousePayload?.consumeResolveBoard != null) {
+          try {
+            setShipmentBoard(normalizeShipmentBoard(warehousePayload.consumeResolveBoard));
+          } catch (_) {
+            /* оставляем предыдущую доску */
+          }
+        }
+        if (Array.isArray(warehousePayload?.consumeResolveOrders)) {
+          setShipmentOrders(warehousePayload.consumeResolveOrders);
+        }
+        if (typeof setFurnitureCustomTemplates === "function" && Array.isArray(warehousePayload?.consumeResolveTemplates)) {
+          setFurnitureCustomTemplates(warehousePayload.consumeResolveTemplates);
+        }
       } else if (view === "labor") {
         setLaborRows(Array.isArray(data) ? data : []);
       } else if (isOrdersDomainView(view)) {

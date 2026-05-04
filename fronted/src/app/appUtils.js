@@ -118,6 +118,39 @@ export function resolveDefaultConsumeSheetsFromBoard(order, shipmentBoard) {
   return byRowWeek || byItemWeek || 0;
 }
 
+/**
+ * Сколько листов ожидается списать по заказу (как в диалоге после «Готово» на пиле).
+ */
+export function resolveExpectedConsumeSheets(order, opts = {}) {
+  const shipmentOrders = Array.isArray(opts.shipmentOrders) ? opts.shipmentOrders : [];
+  const shipmentBoard = opts.shipmentBoard || null;
+  const furnitureCustomTemplates = Array.isArray(opts.furnitureCustomTemplates) ? opts.furnitureCustomTemplates : [];
+  const normalize =
+    typeof opts.normalizeFurnitureKey === "function" ? opts.normalizeFurnitureKey : (v) => normalizeFurnitureKey(v);
+
+  let n = resolveDefaultConsumeSheets(order, shipmentOrders);
+  if (Number.isFinite(n) && n > 0) return n;
+  n = resolveDefaultConsumeSheetsFromBoard(order, shipmentBoard);
+  if (Number.isFinite(n) && n > 0) return n;
+
+  const kitsList = furnitureCustomTemplates;
+  if (!kitsList.length) return 0;
+  const rawItem = String(order?.item || "").trim();
+  const itemKey = normalize(rawItem);
+  if (!itemKey) return 0;
+  const tpl =
+    kitsList.find((t) => normalize(String(t.product_name || t.productName || "")) === itemKey) ||
+    kitsList.find((t) => {
+      const k = normalize(String(t.product_name || t.productName || ""));
+      return k && (itemKey.includes(k) || k.includes(itemKey));
+    }) ||
+    null;
+  const kitsPerSheet = Number(tpl?.kits_per_sheet ?? tpl?.kitsPerSheet ?? 0) || 0;
+  const qty = Number(order?.qty || 0) || 0;
+  if (!(kitsPerSheet > 0) || !(qty > 0)) return 0;
+  return Math.ceil(qty / kitsPerSheet);
+}
+
 export function normalizeShipmentBoard(data) {
   if (data && Array.isArray(data.sections)) return applyStorageAutoCutToBoard(data);
   // Some RPC/proxy combinations return board as [{ sections: [...] }].

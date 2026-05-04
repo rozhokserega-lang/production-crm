@@ -1,4 +1,5 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { CONSUME_LOG_SHEET_NAME } from "../app/appConstants";
 
 export function AdminView({
   canAdminSettings,
@@ -34,6 +35,12 @@ export function AdminView({
   workScheduleSaving,
   loadWorkSchedule,
   saveWorkSchedule,
+  consumeLogSheetName,
+  consumeLogSheetUpdatedAt,
+  consumeLogSheetLoading,
+  consumeLogSheetSaving,
+  loadConsumeLogSheetSetting,
+  saveConsumeLogSheetSetting,
 }) {
   const dayLabels = {
     mon: "Пн",
@@ -50,7 +57,12 @@ export function AdminView({
     if (!needle) return auditLog;
     return (auditLog || []).filter((row) => String(row?.entity || "").toLowerCase().includes(needle));
   }, [auditLog, auditEntity]);
-  
+
+  const [consumeLogDraft, setConsumeLogDraft] = useState(consumeLogSheetName);
+  useEffect(() => {
+    setConsumeLogDraft(consumeLogSheetName);
+  }, [consumeLogSheetName]);
+
   if (!canAdminSettings) return null;
 
   return (
@@ -128,6 +140,44 @@ export function AdminView({
           </table>
         </div>
       )}
+      <div className="admin-panel__head">
+        <div className="admin-panel__title">Лист расхода листов (Google)</div>
+        <button
+          type="button"
+          className="mini"
+          disabled={consumeLogSheetLoading || consumeLogSheetSaving}
+          onClick={loadConsumeLogSheetSetting}
+        >
+          {consumeLogSheetLoading ? "Обновляю..." : "Обновить"}
+        </button>
+      </div>
+      <div className="admin-panel__create admin-panel__consume-log">
+        <label className="admin-panel__consume-log-field">
+          <span className="admin-panel__schedule-label">Имя вкладки в книге склада (для всех пользователей)</span>
+          <input
+            type="text"
+            value={consumeLogDraft}
+            onChange={(e) => setConsumeLogDraft(e.target.value)}
+            disabled={consumeLogSheetSaving}
+            placeholder={CONSUME_LOG_SHEET_NAME}
+            spellCheck={false}
+            autoComplete="off"
+            title="Точное имя вкладки в той же Google-книге, что и склад. Сюда пишутся списания при «Готово» на пиле."
+          />
+        </label>
+        <button
+          type="button"
+          className="mini ok"
+          disabled={consumeLogSheetSaving}
+          onClick={() => saveConsumeLogSheetSetting(consumeLogDraft)}
+        >
+          {consumeLogSheetSaving ? "Сохраняю..." : "Сохранить"}
+        </button>
+      </div>
+      <div className="empty" style={{ marginBottom: 10 }}>
+        Активно для списаний: <b>{consumeLogSheetName}</b>.
+        {consumeLogSheetUpdatedAt ? ` Обновлено в базе: ${formatDateTimeRu(consumeLogSheetUpdatedAt)}.` : ""}
+      </div>
       <div className="admin-panel__head">
         <div className="admin-panel__title">Рабочий календарь</div>
         <button className="mini" disabled={workScheduleLoading || workScheduleSaving} onClick={loadWorkSchedule}>

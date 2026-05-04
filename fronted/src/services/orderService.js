@@ -298,6 +298,14 @@ export class OrderService {
     return await callBackend("webSetWorkSchedule", data);
   }
 
+  static async getConsumeLogSheetName() {
+    return await callBackend("webGetConsumeLogSheetName");
+  }
+
+  static async setConsumeLogSheetName(sheetName) {
+    return await callBackend("webSetConsumeLogSheetName", { sheetName });
+  }
+
   // ==================== Зеркало Google Sheets ====================
 
   static async getSheetOrdersMirror(sheetGid) {

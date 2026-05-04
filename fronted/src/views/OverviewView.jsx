@@ -64,6 +64,17 @@ export const OverviewView = memo(function OverviewView({
     return String(row?.overallStatus || row?.overall_status || row?.overall || "").trim();
   };
 
+  /** Текст и вариант раскраски строки статуса по колонке канбана. */
+  const getLaneStatusPresentation = (raw) => {
+    const t = String(raw || "").trim();
+    const lc = t.toLowerCase();
+    if (!t) return { text: "Ожидает", kind: "wait" };
+    if (lc.includes("в работе")) return { text: t, kind: "work" };
+    if (lc.includes("пауза")) return { text: t, kind: "pause" };
+    if (lc.includes("ожида")) return { text: t, kind: "wait" };
+    return { text: t, kind: "neutral" };
+  };
+
   return (
     <>
       {overviewSubView === "kanban" && (
@@ -81,6 +92,7 @@ export const OverviewView = memo(function OverviewView({
                     {col.items.map((o) => {
                       const orderId = String(o.orderId || o.order_id || "");
                       const { title, article } = splitTitleAndArticle(o);
+                      const laneStatus = getLaneStatusPresentation(readDetailedStatus(o, col.id));
                       const adminCommentMark = String(o.adminComment ?? o.admin_comment ?? "").trim();
                       const openDrawer = () => {
                         if (orderId && typeof onOpenOrderDrawer === "function") onOpenOrderDrawer(orderId);
@@ -109,9 +121,11 @@ export const OverviewView = memo(function OverviewView({
                             <span>Кол-во: {Number(o.qty || 0)}</span>
                           </div>
                           <div className={`overview-card__stage lane-${col.id}`}>{getStageLabel(o)}</div>
-                          {readDetailedStatus(o, col.id) ? (
-                            <div className="overview-card__meta">{readDetailedStatus(o, col.id)}</div>
-                          ) : null}
+                          <div
+                            className={`overview-card__lane-status overview-card__lane-status--${laneStatus.kind}`}
+                          >
+                            {laneStatus.text}
+                          </div>
                           {adminCommentMark ? (
                             <span
                               className="overview-card__admin-marker"

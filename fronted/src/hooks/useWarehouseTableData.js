@@ -1,4 +1,6 @@
 import { useMemo } from "react";
+import { normalizeFurnitureKey } from "../utils/furnitureUtils";
+import { resolveExpectedConsumeSheets } from "../app/appUtils";
 
 export function useWarehouseTableData({
   view,
@@ -8,6 +10,9 @@ export function useWarehouseTableData({
   leftoversHistoryRows,
   consumeHistoryRows,
   pilkaDoneHistoryRows,
+  shipmentOrders,
+  shipmentBoard,
+  furnitureCustomTemplates,
 }) {
   const warehouseTableRows = useMemo(() => {
     if (view !== "warehouse") return [];
@@ -84,12 +89,33 @@ export function useWarehouseTableData({
         x?.entity_id || x?.entityId || details?.order_id || details?.orderId || "",
       ).trim();
       if (!orderId || consumedOrderIds.has(orderId)) return;
+      const stubOrder = {
+        orderId,
+        order_id: orderId,
+        item: String(details?.item || ""),
+        material: String(details?.material || ""),
+        week: String(details?.week || ""),
+        qty: Number(details?.qty ?? 0),
+        sourceRowId: String(details?.source_row_id || details?.sourceRowId || ""),
+        source_row_id: String(details?.source_row_id || details?.sourceRowId || ""),
+        sheetsNeeded: Number(details?.sheets_needed ?? details?.sheetsNeeded ?? 0),
+        sheets_needed: Number(details?.sheets_needed ?? details?.sheetsNeeded ?? 0),
+      };
+      const expectedSheets = resolveExpectedConsumeSheets(stubOrder, {
+        shipmentOrders,
+        shipmentBoard,
+        furnitureCustomTemplates,
+        normalizeFurnitureKey,
+      });
       const next = {
         rowType: "pilka_done",
         moveId: String(x?.id || ""),
         createdAt: String(x?.created_at || x?.createdAt || ""),
         orderId,
         material: String(details?.material || ""),
+        orderItem: String(details?.item || ""),
+        orderWeek: String(details?.week || ""),
+        expectedSheets,
         qtySheets: 0,
         leftoversQty: 0,
         leftoverFormat: "",
@@ -112,7 +138,16 @@ export function useWarehouseTableData({
         );
       })
       .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
-  }, [consumeHistoryRows, leftoversHistoryRows, pilkaDoneHistoryRows, query, view]);
+  }, [
+    consumeHistoryRows,
+    furnitureCustomTemplates,
+    leftoversHistoryRows,
+    pilkaDoneHistoryRows,
+    query,
+    shipmentBoard,
+    shipmentOrders,
+    view,
+  ]);
 
   return {
     warehouseTableRows,

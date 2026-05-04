@@ -117,12 +117,12 @@ export function useWorkshopRows({
       return isInWork(o.pilkaStatus) || isInWork(o.kromkaStatus) || isInWork(o.prasStatus);
     };
     arr.sort((a, b) => {
-      const ap = isRowPaused(a) ? 1 : 0;
-      const bp = isRowPaused(b) ? 1 : 0;
-      if (ap !== bp) return bp - ap;
       const aw = isRowInWork(a) ? 1 : 0;
       const bw = isRowInWork(b) ? 1 : 0;
       if (aw !== bw) return bw - aw;
+      const ap = isRowPaused(a) ? 1 : 0;
+      const bp = isRowPaused(b) ? 1 : 0;
+      if (ap !== bp) return bp - ap;
       return String(a.item || "").localeCompare(String(b.item || ""), "ru");
     });
     return arr;
@@ -381,15 +381,16 @@ export async function loadWarehouseDomainData() {
       return stage === "pilka" && status === "done";
     });
   } catch (_) {}
+  let ordersSnapshot = [];
   try {
     const ordersData = await OrderService.getAllOrders();
-    const rows = Array.isArray(ordersData) ? ordersData : [];
+    ordersSnapshot = Array.isArray(ordersData) ? ordersData : [];
     const existingIds = new Set(
       pilkaDoneHistoryRows
         .map((row) => String(row?.entity_id || row?.entityId || "").trim())
         .filter(Boolean),
     );
-    const fallbackRows = rows
+    const fallbackRows = ordersSnapshot
       .filter((row) => {
         const orderId = String(row?.order_id || row?.orderId || "").trim();
         if (!orderId || existingIds.has(orderId)) return false;
@@ -406,11 +407,51 @@ export async function loadWarehouseDomainData() {
           status: "done",
           material: String(row?.material || "").trim(),
           item: String(row?.item || "").trim(),
+          week: String(row?.week || "").trim(),
+          qty: Number(row?.qty || 0),
+          source_row_id: String(row?.source_row_id || row?.sourceRowId || "").trim(),
+          sheets_needed: Number(row?.sheets_needed ?? row?.sheetsNeeded ?? 0),
           source: "orders_fallback",
         },
       }));
     pilkaDoneHistoryRows = [...pilkaDoneHistoryRows, ...fallbackRows];
   } catch (_) {}
+
+  const orderById = new Map(
+    ordersSnapshot
+      .map((o) => [String(o?.order_id || o?.orderId || "").trim(), o])
+      .filter(([id]) => Boolean(id)),
+  );
+  pilkaDoneHistoryRows = pilkaDoneHistoryRows.map((row) => {
+    const oid = String(row?.entity_id || row?.entityId || "").trim();
+    const o = orderById.get(oid);
+    if (!o || !row?.details || typeof row.details !== "object") return row;
+    const d = row.details;
+    const merged = {
+      ...d,
+      material: String(d.material || o.material || "").trim(),
+      item: String(d.item || o.item || "").trim(),
+      week: String(d.week || o.week || "").trim(),
+      qty: Number(d.qty ?? o.qty ?? 0),
+      source_row_id: String(d.source_row_id || d.sourceRowId || o.source_row_id || o.sourceRowId || "").trim(),
+      sheets_needed: Number(d.sheets_needed ?? d.sheetsNeeded ?? o.sheets_needed ?? o.sheetsNeeded ?? 0) || 0,
+    };
+    return { ...row, details: merged };
+  });
+
+  let consumeResolveBoard = null;
+  try {
+    consumeResolveBoard = await OrderService.getShipmentBoard();
+  } catch (_) {
+    /* без доски расчёт листов только из заказа / шаблонов */
+  }
+
+  let consumeResolveTemplates = [];
+  try {
+    const tpl = await OrderService.getFurnitureCustomTemplates();
+    consumeResolveTemplates = Array.isArray(tpl) ? tpl : [];
+  } catch (_) {}
+
   return {
     data,
     materialsStockRows: Array.isArray(data) ? data : [],
@@ -418,6 +459,9 @@ export async function loadWarehouseDomainData() {
     leftoversHistoryRows,
     consumeHistoryRows,
     pilkaDoneHistoryRows,
+    consumeResolveOrders: ordersSnapshot,
+    consumeResolveBoard,
+    consumeResolveTemplates,
   };
 }
 
