@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 import { OrderService } from "../services/orderService";
 import { buildPilkaDoneDialogInit } from "../app/runActionHelpers";
 import { extractErrorMessage } from "../app/errorCatalogHelpers";
@@ -38,6 +38,10 @@ export function useConsumeDialog({
   syncLeftoversToGoogleSheet,
   load,
 }) {
+  // Set of orderIds that have already been submitted for consumption in this session.
+  // Prevents duplicate edge function calls when load() triggers re-render.
+  const submittedOrderIdsRef = useRef(new Set());
+
   const closeConsumeDialog = useCallback(() => {
     setConsumeDialogOpen(false);
     setConsumeEditMode(false);
@@ -66,16 +70,27 @@ export function useConsumeDialog({
       }
       // consumeDialogData is passed in from the parent — it's the current value
       if (!consumeDialogData?.orderId) return;
+      const orderId = consumeDialogData.orderId;
       const material = String(materialRaw || "").trim();
       const qty = Number(String(qtyRaw || "").replace(",", "."));
       if (!material) return setConsumeError("Укажите материал");
       if (!isFinite(qty) || qty <= 0) return setConsumeError("Некорректное количество");
+
+      // Guard: prevent duplicate submission for the same orderId in this session.
+      // This avoids double-calling logConsumeToGoogleSheet when load() triggers re-render.
+      if (submittedOrderIdsRef.current.has(orderId)) {
+        console.warn(`[CRM] Duplicate consume submission blocked for order ${orderId}`);
+        closeConsumeDialog();
+        return;
+      }
+      submittedOrderIdsRef.current.add(orderId);
+
       setConsumeSaving(true);
       setConsumeError("");
       try {
-        await OrderService.consumeSheetsByOrderId(consumeDialogData.orderId, material, qty);
+        await OrderService.consumeSheetsByOrderId(orderId, material, qty);
         logConsumeToGoogleSheet({
-          orderId: consumeDialogData.orderId,
+          orderId,
           item: String(consumeDialogData.item || ""),
           material,
           week: String(consumeDialogData.week || ""),
@@ -88,7 +103,7 @@ export function useConsumeDialog({
         const consumeErrText = String(e?.message || e || "unknown");
         setConsumeError(consumeErrText);
         try {
-          await OrderService.logConsumeSheetsFailed(consumeDialogData.orderId, material, qty, consumeErrText);
+          await OrderService.logConsumeSheetsFailed(orderId, material, qty, consumeErrText);
         } catch (_) {
           // Audit logging must not block UI error handling.
         }

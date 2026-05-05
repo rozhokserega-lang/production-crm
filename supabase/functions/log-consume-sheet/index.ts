@@ -250,6 +250,24 @@ serve(async (req) => {
       existingNoteJson?.sheets?.[0]?.data?.[0]?.rowData?.[0]?.values?.[0]?.note || "",
     ).trim();
 
+    // Idempotency guard: skip if this orderId already has a note entry.
+    // Prevents double-counting when the frontend calls the edge function twice.
+    if (orderId && previousNote.includes(`OrderID: ${orderId}`)) {
+      console.warn(`[log-consume-sheet] Duplicate skipped for order ${orderId} at ${targetA1}`);
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          cell: targetA1,
+          previous: Number.isFinite(current) ? current : 0,
+          added: 0,
+          value: nextValue,
+          skipped: true,
+          reason: `OrderID ${orderId} already logged`,
+        }),
+        { status: 200, headers: CORS_HEADERS },
+      );
+    }
+
     const noteEntry = [
       `[${moscowTs()}] расход ${qty}`,
       `OrderID: ${orderId || "-"}`,
