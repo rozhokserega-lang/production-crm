@@ -393,6 +393,7 @@ export function useAppState() {
     authUser,
   });
   const canOperateProduction = crmRole === "operator" || crmRole === "manager" || crmRole === "admin";
+  const canOperateWarehouse = Boolean(authUser?.id) && (crmRole === "warehouse" || crmRole === "admin");
   const canManageOrders = crmRole === "manager" || crmRole === "admin";
   const canAdminSettings = crmRole === "admin";
 
@@ -466,6 +467,7 @@ export function useAppState() {
     openPilkaDoneConsumeDialogOnError,
   } = useConsumeDialog({
     canOperateProduction,
+    canOperateWarehouse,
     setError,
     consumeDialogData,
     setConsumeDialogOpen,
@@ -844,6 +846,7 @@ export function useAppState() {
   } = useMetalProcessState({
     view,
     canOperateProduction,
+    canOperateWarehouse,
     canManageOrders,
     setError,
     toUserError,

@@ -140,6 +140,7 @@ export function ViewControls({
   importMetalFromExcelFile,
   canAdminSettings,
   openManualLaborDialog,
+  canOperateWarehouse,
 }) {
   return (
     <section className="controls">
@@ -200,7 +201,7 @@ export function ViewControls({
           <button
             type="button"
             className="mini ok"
-            disabled={warehouseSyncLoading || loading}
+            disabled={warehouseSyncLoading || loading || !canOperateWarehouse}
             onClick={syncWarehouseFromGoogleSheet}
             title="Синхронизировать материалы из основной Google-таблицы склада"
           >
@@ -209,7 +210,7 @@ export function ViewControls({
           <button
             type="button"
             className="mini ok"
-            disabled={leftoversSyncLoading || loading}
+            disabled={leftoversSyncLoading || loading || !canOperateWarehouse}
             onClick={() => syncLeftoversToGoogleSheet()}
             title="Выгрузить остатки в лист 'Остатки' Google-таблицы"
           >
@@ -218,7 +219,7 @@ export function ViewControls({
           <button
             type="button"
             className="mini"
-            disabled={warehouseOrderPlanRows.length === 0}
+            disabled={warehouseOrderPlanRows.length === 0 || !canOperateWarehouse}
             onClick={printWarehouseOrderPlanPdf}
             title="Сформировать PDF, что нужно заказать для закрытия плана"
           >
