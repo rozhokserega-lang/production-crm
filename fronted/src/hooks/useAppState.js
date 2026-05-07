@@ -104,6 +104,7 @@ import {
 import {
   remapStrapDraftByOptions,
 } from "../app/shipmentDialogHelpers";
+import { matchesWeekFilter, weekFilterStorageKey } from "../app/weekFilterUtils";
 import { useShipmentActions } from "./useShipmentActions";
 import { useFurnitureActions } from "./useFurnitureActions";
 import { useOrderMgmtActions } from "./useOrderMgmtActions";
@@ -964,7 +965,7 @@ export function useAppState() {
     const stageSourceRows =
       laborSubView === "stages"
         ? (rows || []).filter((x) => {
-            const byWeek = weekFilter === "all" || String(x?.week || "") === weekFilter;
+            const byWeek = matchesWeekFilter(x?.week, weekFilter);
             if (!byWeek) return false;
             const q = String(query || "").trim().toLowerCase();
             const byQuery =
@@ -980,7 +981,7 @@ export function useAppState() {
       .map((x) => String(x?.orderId || x?.order_id || "").trim())
       .filter(Boolean);
     const uniqueIds = Array.from(new Set(ids)).sort();
-    const fetchKey = `${view}|${laborSubView}|${weekFilter}|${query}|${uniqueIds.join(",")}`;
+    const fetchKey = `${view}|${laborSubView}|${weekFilterStorageKey(weekFilter)}|${query}|${uniqueIds.join(",")}`;
     if (fetchKey === laborStageFetchKeyRef.current) {
       return () => {
         cancelled = true;

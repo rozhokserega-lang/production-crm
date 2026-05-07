@@ -1,3 +1,5 @@
+import { firstSelectedWeek } from "./weekFilterUtils";
+
 export function buildStrapDialogInit({
   strapItems = [],
   strapProductNames = [],
@@ -8,7 +10,7 @@ export function buildStrapDialogInit({
   normalizeProductKey,
 }) {
   const defaultProduct = strapItems[0]?.productName || strapProductNames[0] || "Обвязка";
-  const defaultWeek = weekFilter !== "all" ? String(weekFilter) : String(weeks[0] || "").trim();
+  const defaultWeek = firstSelectedWeek(weekFilter, weeks);
   const options = resolveStrapOptionsForProduct({
     strapOptionsByProduct,
     productName: defaultProduct,

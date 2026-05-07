@@ -1,5 +1,6 @@
 import { useMemo, useState, useCallback, useEffect } from "react";
 import { OrderService } from "../services/orderService";
+import { matchesWeekFilter } from "../app/weekFilterUtils";
 
 export function useOrders({
   autoLoad = true
@@ -157,7 +158,7 @@ export function useBaseOrderFilter({
     }
     return rows.filter((x) => {
       if (view === "stats") {
-        const byWeek = weekFilter === "all" || String(x.week || "") === weekFilter;
+        const byWeek = matchesWeekFilter(x.week, weekFilter);
         const byQuery =
           !q ||
           String(x.item || "").toLowerCase().includes(q) ||
@@ -185,7 +186,7 @@ export function useBaseOrderFilter({
         (storageLike &&
           (isObvyazkaSectionName(sectionName) || sourceRowId.startsWith("manual:") || hasArticleLikeCode(x)));
       if ((storageLike && !allowStorageLike) || isGarbageShipmentItemName(x.item)) return false;
-      const byWeek = weekFilter === "all" || String(x.week || "") === weekFilter;
+      const byWeek = matchesWeekFilter(x.week, weekFilter);
       const byQuery =
         !q ||
         String(x.item || "").toLowerCase().includes(q) ||
@@ -219,7 +220,7 @@ export function useLaborFilter({
   return useMemo(() => {
     const q = String(query || "").trim().toLowerCase();
     return laborRows.filter((x) => {
-      const byWeek = weekFilter === "all" || String(x.week || "") === weekFilter;
+      const byWeek = matchesWeekFilter(x.week, weekFilter);
       const byQuery =
         !q ||
         String(x.item || "").toLowerCase().includes(q) ||
@@ -524,7 +525,7 @@ export function useShipmentFilter({
             const stageKey = getShipmentStageKey(c, sourceRow, shipmentOrderMaps, it.item);
             return passesShipmentStageFilter(stageKey);
           });
-          const byWeek = weekFilter === "all" || visibleCells.some((c) => String(c.week || "") === weekFilter);
+          const byWeek = visibleCells.some((c) => matchesWeekFilter(c.week, weekFilter));
           const byQuery = !q || String(it.item || "").toLowerCase().includes(q);
           return byWeek && byQuery && visibleCells.length > 0;
         }),

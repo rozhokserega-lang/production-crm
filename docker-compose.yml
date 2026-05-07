@@ -1,0 +1,39 @@
+services:
+  web:
+    build:
+      context: ./fronted
+      dockerfile: Dockerfile
+      target: dev
+    container_name: production-crm-web
+    working_dir: /app
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./fronted:/app
+      - web_node_modules:/app/node_modules
+    environment:
+      CHOKIDAR_USEPOLLING: "true"
+      WATCHPACK_POLLING: "true"
+    command: sh -c "npm ci && npm run dev -- --host 0.0.0.0"
+
+  web-preview:
+    build:
+      context: ./fronted
+      dockerfile: Dockerfile
+      target: runtime
+      args:
+        VITE_BACKEND_PROVIDER: ${VITE_BACKEND_PROVIDER:-supabase}
+        VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:-}
+        VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY:-}
+        VITE_SUPABASE_PROXY_URL: ${VITE_SUPABASE_PROXY_URL:-}
+        VITE_SHEET_MIRROR_GID: ${VITE_SHEET_MIRROR_GID:-1772676601}
+        VITE_KROMKA_EXECUTORS: ${VITE_KROMKA_EXECUTORS:-}
+        VITE_PRAS_EXECUTORS: ${VITE_PRAS_EXECUTORS:-}
+    container_name: production-crm-web-preview
+    profiles:
+      - preview
+    ports:
+      - "8080:80"
+
+volumes:
+  web_node_modules:

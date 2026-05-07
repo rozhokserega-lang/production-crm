@@ -7,6 +7,7 @@ import {
 } from "../utils/furnitureUtils";
 import { getShipmentStageKey, normText, sectionSortKey } from "../utils/shipmentUtils";
 import { parseStrapSize } from "../app/appUtils";
+import { matchesWeekFilter } from "../app/weekFilterUtils";
 
 const SHIPMENT_SECTION_ORDER = [];
 const STRAP_SHEET_WIDTH = 2800;
@@ -46,7 +47,7 @@ export function useShipmentBoardRenderDerived({
       return (it?.cells || []).filter((c) => {
         const qtyOk = (Number(c.qty) || 0) > 0;
         if (!qtyOk) return false;
-        const byWeek = weekFilter === "all" || String(c.week || "") === weekFilter;
+        const byWeek = matchesWeekFilter(c.week, weekFilter);
         if (!byWeek) return false;
         const stageKey = getShipmentStageKey(c, sourceRow, shipmentOrderMaps, it.item);
         return passesShipmentStageFilter(stageKey);

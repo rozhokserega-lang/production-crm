@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { normalizeWeekFilter } from "../app/weekFilterUtils";
 
 export function useShipmentUiState(defaultPrefs) {
   const [selectedShipments, setSelectedShipments] = useState([]);
@@ -23,7 +24,8 @@ export function useShipmentUiState(defaultPrefs) {
       if (!raw) return;
       const prefs = JSON.parse(raw);
       if (prefs && typeof prefs === "object") {
-        if (typeof prefs.weekFilter === "string") setWeekFilter(prefs.weekFilter);
+        if (Array.isArray(prefs.weekFilter)) setWeekFilter(normalizeWeekFilter(prefs.weekFilter));
+        else if (typeof prefs.weekFilter === "string") setWeekFilter(prefs.weekFilter);
         if (typeof prefs.shipmentSort === "string") setShipmentSort(prefs.shipmentSort);
         if (typeof prefs.showAwaiting === "boolean") setShowAwaiting(prefs.showAwaiting);
         if (typeof prefs.showOnPilka === "boolean") setShowOnPilka(prefs.showOnPilka);
