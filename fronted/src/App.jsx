@@ -96,6 +96,7 @@ export default function App() {
     crmAuthStrict,
     crmAuthStrictSaving,
     canOperateProduction,
+    canOperateWarehouse,
     canManageOrders,
     canAdminSettings,
     crmUsers,
@@ -446,6 +447,7 @@ export default function App() {
           importMetalFromExcelFile={importMetalFromExcelFile}
           canAdminSettings={canAdminSettings}
           openManualLaborDialog={openManualLaborDialog}
+          canOperateWarehouse={canOperateWarehouse}
         />
       )}
 
@@ -547,7 +549,7 @@ export default function App() {
             consumeHistoryTableRows={consumeHistoryTableRows}
             warehouseOrderPlanRows={warehouseOrderPlanRows}
             loading={loading}
-            canOperateProduction={canOperateProduction}
+            canOperateWarehouse={canOperateWarehouse}
             onManualConsume={openPilkaDoneConsumeDialog}
           />
         )}

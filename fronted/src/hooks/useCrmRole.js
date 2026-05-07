@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { OrderService } from "../services/orderService";
 
-const CRM_ROLES = ["viewer", "operator", "manager", "admin"];
+const CRM_ROLES = ["viewer", "warehouse", "operator", "manager", "admin"];
 
 function normalizeCrmRole(rawRole) {
   const role = String(rawRole || "").trim().toLowerCase();

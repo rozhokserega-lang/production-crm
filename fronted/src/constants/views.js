@@ -18,9 +18,10 @@ export const TABS = [
   { id: "done", label: "Финал" },
 ];
 
-export const CRM_ROLES = ["viewer", "operator", "manager", "admin"];
+export const CRM_ROLES = ["viewer", "warehouse", "operator", "manager", "admin"];
 export const CRM_ROLE_LABELS = {
   viewer: "Наблюдатель",
+  warehouse: "Склад",
   operator: "Оператор",
   manager: "Менеджер",
   admin: "Админ",

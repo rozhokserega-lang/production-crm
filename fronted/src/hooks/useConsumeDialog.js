@@ -8,6 +8,7 @@ import { extractErrorMessage } from "../app/errorCatalogHelpers";
  *
  * @param {object} params
  * @param {boolean} params.canOperateProduction
+ * @param {boolean} [params.canOperateWarehouse]
  * @param {Function} params.setError
  * @param {object} params.consumeDialogData - current consume dialog data (from useShipmentDialogsState)
  * @param {Function} params.setConsumeDialogOpen
@@ -24,6 +25,7 @@ import { extractErrorMessage } from "../app/errorCatalogHelpers";
  */
 export function useConsumeDialog({
   canOperateProduction,
+  canOperateWarehouse = false,
   setError: _setError,
   consumeDialogData,
   setConsumeDialogOpen,
@@ -64,7 +66,7 @@ export function useConsumeDialog({
 
   const submitConsume = useCallback(
     async (materialRaw, qtyRaw) => {
-      if (!canOperateProduction) {
+      if (!canOperateProduction && !canOperateWarehouse) {
         setConsumeError("Недостаточно прав для списания листов.");
         return;
       }
@@ -113,6 +115,7 @@ export function useConsumeDialog({
     },
     [
       canOperateProduction,
+      canOperateWarehouse,
       consumeDialogData,
       setConsumeError,
       setConsumeSaving,

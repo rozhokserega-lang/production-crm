@@ -7,7 +7,7 @@ export const WarehouseView = memo(function WarehouseView({
   consumeHistoryTableRows,
   warehouseOrderPlanRows,
   loading,
-  canOperateProduction,
+  canOperateWarehouse,
   onManualConsume,
 }) {
   return (
@@ -134,7 +134,7 @@ export const WarehouseView = memo(function WarehouseView({
                   <td><b>{r.rowType === "leftover" ? `${r.leftoversQty}${r.leftoverFormat ? ` (${r.leftoverFormat})` : ""}` : "-"}</b></td>
                   <td>{r.comment || "-"}</td>
                   <td>
-                    {r.rowType === "pilka_done" && canOperateProduction ? (
+                    {r.rowType === "pilka_done" && canOperateWarehouse ? (
                       <button
                         type="button"
                         className="mini ok"
