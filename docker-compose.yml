@@ -6,6 +6,8 @@ services:
       target: dev
     container_name: production-crm-web
     working_dir: /app
+    env_file:
+      - ./fronted/.env.production
     ports:
       - "5173:5173"
     volumes:

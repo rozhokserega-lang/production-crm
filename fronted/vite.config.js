@@ -37,6 +37,7 @@ export default defineConfig(({ mode }) => {
     host: true,
     port: 5173,
     strictPort: false,
+    allowedHosts: ["crm-v175.ru", "www.crm-v175.ru"],
     ...(shouldUseLocalSupabaseProxy
       ? {
           proxy: {
@@ -53,6 +54,7 @@ export default defineConfig(({ mode }) => {
   preview: {
     port: 4173,
     host: true,
+    allowedHosts: ["crm-v175.ru", "www.crm-v175.ru"],
   },
   };
 });
