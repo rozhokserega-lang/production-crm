@@ -1,4 +1,80 @@
+﻿import { useEffect, useMemo, useRef, useState } from "react";
 import { TABS } from "../app/appConstants";
+import { normalizeWeekFilter } from "../app/weekFilterUtils";
+
+function WeekFilterDropdown({ value, onChange, weeks = [] }) {
+  const allWeeksLabel = "\u0412\u0441\u0435 \u043d\u0435\u0434\u0435\u043b\u0438";
+  const weekLabel = "\u041d\u0435\u0434\u0435\u043b\u044f";
+  const weeksLabel = "\u041d\u0435\u0434\u0435\u043b\u0438";
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef(null);
+  const selected = useMemo(() => normalizeWeekFilter(value), [value]);
+  const selectedSet = useMemo(() => new Set(selected), [selected]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    function onPointerDown(event) {
+      if (!rootRef.current || rootRef.current.contains(event.target)) return;
+      setOpen(false);
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [open]);
+
+  const setAll = () => onChange("all");
+  const toggleWeek = (week) => {
+    const key = String(week || "").trim();
+    if (!key) return;
+    const next = selectedSet.has(key)
+      ? selected.filter((x) => x !== key)
+      : [...selected, key].sort((a, b) => Number(a) - Number(b));
+    onChange(next.length ? next : "all");
+  };
+  const label = selected.length === 0
+    ? allWeeksLabel
+    : selected.length === 1
+      ? `${weekLabel} ${selected[0]}`
+      : `${weeksLabel}: ${selected.join(", ")}`;
+
+  return (
+    <div className="week-filter" ref={rootRef}>
+      <button
+        type="button"
+        className={`week-filter__button ${open ? "active" : ""}`}
+        onClick={() => setOpen((x) => !x)}
+      >
+        <span>{label}</span>
+        <span className="week-filter__chevron">v</span>
+      </button>
+      {open && (
+        <div className="week-filter__menu">
+          <button
+            type="button"
+            className={selected.length === 0 ? "week-filter__option active" : "week-filter__option"}
+            onClick={setAll}
+          >
+            {allWeeksLabel}
+          </button>
+          {weeks.map((week) => {
+            const key = String(week || "").trim();
+            const active = selectedSet.has(key);
+            return (
+              <button
+                key={key}
+                type="button"
+                className={active ? "week-filter__option active" : "week-filter__option"}
+                onClick={() => toggleWeek(key)}
+              >
+                <span className="week-filter__mark">{active ? "\u2713" : ""}</span>
+                <span>{weekLabel} {key}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function ViewControls({
   view,
@@ -19,8 +95,6 @@ export function ViewControls({
   setStatsSort,
   shipmentSort,
   setShipmentSort,
-  shipmentViewMode,
-  setShipmentViewMode,
   laborSort,
   setLaborSort,
   showAwaiting,
@@ -203,10 +277,9 @@ export function ViewControls({
           />
         )}
         {view !== "warehouse" && view !== "furniture" && view !== "metal" && view !== "metalProcess" && !(view === "labor" && laborSubView === "stages") && (
-          <select value={weekFilter} onChange={(e) => setWeekFilter(e.target.value)}>
-            <option value="all">Все недели</option>
-            {weeks.map((w) => <option key={w} value={w}>Неделя {w}</option>)}
-          </select>
+          <>
+          <WeekFilterDropdown value={weekFilter} onChange={setWeekFilter} weeks={weeks} />
+          </>
         )}
         {view === "stats" && (
           <select value={statsSort} onChange={(e) => setStatsSort(e.target.value)}>
@@ -221,12 +294,6 @@ export function ViewControls({
             <option value="name">Сортировка: по названию</option>
             <option value="week">Сортировка: по неделе плана</option>
             <option value="color">Сортировка: по цвету</option>
-          </select>
-        )}
-        {view === "shipment" && (
-          <select value={shipmentViewMode} onChange={(e) => setShipmentViewMode(e.target.value)}>
-            <option value="table">Вид: таблица</option>
-            <option value="cards">Вид: карточки</option>
           </select>
         )}
         {view === "labor" && laborSubView === "total" && (
@@ -397,3 +464,5 @@ export function ViewControls({
     </section>
   );
 }
+
+

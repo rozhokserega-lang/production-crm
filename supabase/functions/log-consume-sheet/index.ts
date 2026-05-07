@@ -213,30 +213,9 @@ serve(async (req) => {
     }
     if (materialRowIdx < 0) throw new Error(`Material row not found: ${material}`);
 
-    const currentRaw = grid[materialRowIdx]?.[dayColIdx];
-    const current = Number(currentRaw ?? 0);
-    const nextValue = (Number.isFinite(current) ? current : 0) + qty;
-
     const rowA1 = materialRowIdx + 1;
     const colA1 = toA1Column(dayColIdx + 1);
     const targetA1 = `${sheetA1}!${colA1}${rowA1}`;
-
-    const updateValueResp = await fetch(
-      `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}/values/${encodeURIComponent(targetA1)}?valueInputOption=USER_ENTERED`,
-      {
-        method: "PUT",
-        headers: { ...headers, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          range: targetA1,
-          majorDimension: "ROWS",
-          values: [[nextValue]],
-        }),
-      },
-    );
-    const updateValueJson = await updateValueResp.json().catch(() => ({}));
-    if (!updateValueResp.ok) {
-      throw new Error(`Failed to update cell value: ${JSON.stringify(updateValueJson)}`);
-    }
 
     const existingNoteResp = await fetch(
       `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}?ranges=${encodeURIComponent(targetA1)}&includeGridData=true&fields=sheets(data(rowData(values(note))))`,
@@ -254,18 +233,41 @@ serve(async (req) => {
     // Prevents double-counting when the frontend calls the edge function twice.
     if (orderId && previousNote.includes(`OrderID: ${orderId}`)) {
       console.warn(`[log-consume-sheet] Duplicate skipped for order ${orderId} at ${targetA1}`);
+      const currentRaw = grid[materialRowIdx]?.[dayColIdx];
+      const current = Number(currentRaw ?? 0);
       return new Response(
         JSON.stringify({
           ok: true,
           cell: targetA1,
           previous: Number.isFinite(current) ? current : 0,
           added: 0,
-          value: nextValue,
+          value: Number.isFinite(current) ? current : 0,
           skipped: true,
           reason: `OrderID ${orderId} already logged`,
         }),
         { status: 200, headers: CORS_HEADERS },
       );
+    }
+
+    const currentRaw = grid[materialRowIdx]?.[dayColIdx];
+    const current = Number(currentRaw ?? 0);
+    const nextValue = (Number.isFinite(current) ? current : 0) + qty;
+
+    const updateValueResp = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}/values/${encodeURIComponent(targetA1)}?valueInputOption=USER_ENTERED`,
+      {
+        method: "PUT",
+        headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          range: targetA1,
+          majorDimension: "ROWS",
+          values: [[nextValue]],
+        }),
+      },
+    );
+    const updateValueJson = await updateValueResp.json().catch(() => ({}));
+    if (!updateValueResp.ok) {
+      throw new Error(`Failed to update cell value: ${JSON.stringify(updateValueJson)}`);
     }
 
     const noteEntry = [

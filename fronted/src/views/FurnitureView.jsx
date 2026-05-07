@@ -20,6 +20,7 @@ export function FurnitureView({
   createFurniturePlanOrder,
   furnitureArticleSearchRows,
   furnitureCustomTemplates,
+  sectionCatalogRows,
   load,
   refreshPlanCatalogs,
 }) {
@@ -42,6 +43,14 @@ export function FurnitureView({
   const [catalogArticlesLoading, setCatalogArticlesLoading] = useState(false);
   const [catalogArticleByArticle, setCatalogArticleByArticle] = useState({});
   const [catalogArticleByArticleLoading, setCatalogArticleByArticleLoading] = useState({});
+
+  const existingSections = Array.from(
+    new Set(
+      (Array.isArray(sectionCatalogRows) ? sectionCatalogRows : [])
+        .map((r) => String(r.section_name || r.sectionName || "").trim())
+        .filter(Boolean),
+    ),
+  ).sort((a, b) => a.localeCompare(b, "ru"));
 
   function makeVariantRow(article = "", color = "") {
     return {
@@ -312,7 +321,7 @@ export function FurnitureView({
       for (const v of variants) {
         const article = String(v?.article || "").trim().toUpperCase();
         if (!article) continue;
-        if (existingByArticle.has(article)) continue;
+        const catalogRow = existingByArticle.get(article)?.row || null;
 
         // Extra existence check (handles xlsx rows with NULL section_name/table_color).
         let existingRow = null;
@@ -323,8 +332,16 @@ export function FurnitureView({
           existingRow = null;
         }
 
-        // If article exists in non-manual catalog, skip to avoid unique conflict.
-        if (existingRow && String(existingRow.source || "").trim() && String(existingRow.source || "").trim() !== "manual") {
+        // Allow reusing existing manual articles: backend RPC will reassign them to the selected section.
+        // Skip only immutable catalog rows (xlsx/system sources).
+        const source = String(
+          existingRow?.source || catalogRow?.source || "",
+        ).trim();
+        const existingSection = String(
+          existingRow?.section_name || existingRow?.sectionName || catalogRow?.section_name || catalogRow?.sectionName || "",
+        ).trim().toLowerCase().replace(/ё/g, "е");
+        const canReassignFromMisc = !existingSection || existingSection === "прочее";
+        if (source && source !== "manual" && !canReassignFromMisc) {
           continue;
         }
 
@@ -333,9 +350,13 @@ export function FurnitureView({
         variantsToUpsert.push(v);
       }
 
-      if (variantsToUpsert.length > 0) {
-        await OrderService.upsertItemArticleMapVariants(section, name, variantsToUpsert, 999);
+      if (variantsToUpsert.length === 0) {
+        throw new Error(
+          "Ни один артикул не обновлен в каталоге плана. " +
+          "Проверьте артикулы: они могут быть привязаны к защищенному источнику и недоступны для переноса через UI.",
+        );
       }
+      await OrderService.upsertItemArticleMapVariants(section, name, variantsToUpsert, 999);
 
       // 2) Save composition as a custom template (so it can be used inside furniture constructor / previews)
       await OrderService.upsertFurnitureCustomTemplate(name, normalizedDetails, kitsPerSheet);
@@ -354,6 +375,41 @@ export function FurnitureView({
       }
     } catch (e) {
       setCreateError(String(e?.message || e || "Ошибка сохранения"));
+    } finally {
+      setCreateSaving(false);
+    }
+  }
+
+  async function deleteExistingFurnitureFromCatalog() {
+    if (!canOperateProduction) return;
+    const name = String(createName || "").trim();
+    if (!name) return;
+    const ok = window.confirm(
+      `Удалить изделие "${name}" из конструктора? Это удалит шаблон и ручные привязки артикулов (manual) из каталога плана.`
+    );
+    if (!ok) return;
+
+    setCreateSaving(true);
+    setCreateError("");
+    setCreateOk("");
+    try {
+      await OrderService.deleteFurnitureCustomTemplate(name);
+      setCreateOk("Изделие удалено.");
+      setCreateOpen(false);
+      setEditingExisting(false);
+      setCreateName("");
+      setCreateVariants([]);
+      setCreateKitsPerSheet("");
+      setCreateDetails([]);
+      setCreateDetailsNonce((x) => x + 1);
+      if (typeof refreshPlanCatalogs === "function") {
+        try { await refreshPlanCatalogs(); } catch (_) {}
+      }
+      if (typeof load === "function") {
+        try { await load(); } catch (_) {}
+      }
+    } catch (e) {
+      setCreateError(String(e?.message || e || "Ошибка удаления изделия"));
     } finally {
       setCreateSaving(false);
     }
@@ -520,6 +576,7 @@ export function FurnitureView({
                         Секция
                       </div>
                       <input
+                        list="furniture-section-options"
                         value={createSection}
                         onChange={(e) => setCreateSection(e.target.value)}
                         placeholder="Прочее"
@@ -533,6 +590,11 @@ export function FurnitureView({
                           boxSizing: "border-box",
                         }}
                       />
+                      <datalist id="furniture-section-options">
+                        {existingSections.map((name) => (
+                          <option key={name} value={name} />
+                        ))}
+                      </datalist>
                     </div>
                   </div>
 
@@ -951,6 +1013,26 @@ export function FurnitureView({
                     >
                       {createSaving ? "Сохраняю..." : "Сохранить"}
                     </button>
+                    {editingExisting && (
+                      <button
+                        type="button"
+                        className="mini warn"
+                        onClick={deleteExistingFurnitureFromCatalog}
+                        disabled={createSaving}
+                        style={{
+                          minHeight: 38,
+                          borderRadius: 10,
+                          border: "1.5px solid #ef4444",
+                          background: "#fff",
+                          color: "#dc2626",
+                          fontWeight: 900,
+                          padding: "0 14px",
+                          cursor: "pointer",
+                        }}
+                      >
+                        Удалить изделие
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => setCreateOpen(false)}

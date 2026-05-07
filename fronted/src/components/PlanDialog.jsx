@@ -43,7 +43,7 @@ export function PlanDialog({
           Создаёт или обновляет позицию плана в отгрузке по неделе и изделию.
         </div>
         <div className="strap-grid">
-          <div className="strap-row" style={{ gridTemplateColumns: "170px 1fr" }}>
+          <div className="strap-row" style={{ gridTemplateColumns: "120px 1fr" }}>
             <label>Секция</label>
             <select value={planSection} onChange={(e) => onSectionChange(e.target.value)}>
               {sectionOptions.map((name) => (
@@ -51,7 +51,7 @@ export function PlanDialog({
               ))}
             </select>
           </div>
-          <div className="strap-row" style={{ gridTemplateColumns: "170px 1fr" }}>
+          <div className="strap-row" style={{ gridTemplateColumns: "120px 1fr" }}>
             <label>Артикул</label>
             <select value={planArticle} onChange={(e) => onArticleChange(e.target.value)}>
               {sectionArticles.length === 0 ? (
@@ -63,7 +63,7 @@ export function PlanDialog({
               )}
             </select>
           </div>
-          <div className="strap-row" style={{ gridTemplateColumns: "170px 1fr" }}>
+          <div className="strap-row" style={{ gridTemplateColumns: "120px 1fr" }}>
             <label>Материал</label>
             {canSelectMaterial ? (
               <select value={planMaterial} onChange={(e) => onMaterialChange?.(e.target.value)}>
@@ -75,11 +75,11 @@ export function PlanDialog({
               <input value={planMaterial} readOnly placeholder="Материал подставляется из артикула" />
             )}
           </div>
-          <div className="strap-row" style={{ gridTemplateColumns: "170px 1fr" }}>
+          <div className="strap-row" style={{ gridTemplateColumns: "120px 1fr" }}>
             <label>Неделя</label>
             <input value={planWeek} onChange={(e) => onPlanWeekChange(e.target.value)} placeholder="Например: 70" />
           </div>
-          <div className="strap-row" style={{ gridTemplateColumns: "170px 1fr" }}>
+          <div className="strap-row" style={{ gridTemplateColumns: "120px 1fr" }}>
             <label>Количество</label>
             <input inputMode="decimal" value={planQty} onChange={(e) => onPlanQtyChange(e.target.value)} placeholder="Например: 36" />
           </div>

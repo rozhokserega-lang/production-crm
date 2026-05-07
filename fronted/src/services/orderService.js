@@ -83,6 +83,12 @@ export class OrderService {
     });
   }
 
+  static async deleteFurnitureCustomTemplate(productName) {
+    return await callBackend("webDeleteFurnitureCustomTemplate", {
+      productName,
+    });
+  }
+
   static async upsertItemArticleMap(payload) {
     return await callBackend("webUpsertItemArticleMap", payload);
   }

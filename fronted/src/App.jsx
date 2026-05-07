@@ -624,6 +624,7 @@ export default function App() {
             createFurniturePlanOrder={createFurniturePlanOrder}
             furnitureArticleSearchRows={furnitureArticleSearchRows}
             furnitureCustomTemplates={furnitureCustomTemplates}
+            sectionCatalogRows={_sectionCatalogRows}
             callBackend={callBackend}
             load={load}
             refreshPlanCatalogs={refreshPlanCatalogs}
