@@ -1,7 +1,12 @@
 export function DomainDrawer({ open, setOpen, view, setView }) {
-  const isFurnitureDomain = view !== "metalProcess";
+  const isFurnitureDomain = view !== "metalProcess" && view !== "warehouse";
+  const isWarehouseDomain = view === "warehouse";
   const goFurniture = () => {
     setView("shipment");
+    setOpen(false);
+  };
+  const goWarehouse = () => {
+    setView("warehouse");
     setOpen(false);
   };
   const goMetalProcess = () => {
@@ -34,6 +39,14 @@ export function DomainDrawer({ open, setOpen, view, setView }) {
         >
           <span className="domain-drawer__icon" aria-hidden="true">⚙️</span>
           Металл
+        </button>
+        <button
+          type="button"
+          className={isWarehouseDomain ? "tab active" : "tab"}
+          onClick={goWarehouse}
+        >
+          <span className="domain-drawer__icon" aria-hidden="true">🏭</span>
+          Склад
         </button>
       </aside>
     </>
