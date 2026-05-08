@@ -871,6 +871,29 @@ export function useAppState() {
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Auto-seed Excel templates that have strap details into DB (ON CONFLICT DO NOTHING).
+  // This ensures workshop view can always load strap requirements from DB even before
+  // the user visits the Мебель tab. Runs once when the Excel workbook becomes available.
+  useEffect(() => {
+    if (!furnitureWorkbook || !furnitureActiveSheet) return;
+    const STRAP_RE = /\(\d{2,5}[_x]\d{2,5}\)/;
+    const templates = buildFurnitureTemplates(furnitureWorkbook, furnitureActiveSheet);
+    const toSeed = templates.filter(
+      (t) =>
+        t.productName &&
+        Array.isArray(t.details) &&
+        t.details.some((d) => STRAP_RE.test(String(d?.detailName || ""))),
+    );
+    toSeed.forEach((t) => {
+      callBackend("webSeedFurnitureStrapTemplate", {
+        productName: t.productName,
+        details: t.details,
+      }).catch(() => {/* best-effort, ignore errors */});
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [furnitureWorkbook, furnitureActiveSheet]);
+
   useEffect(() => {
     if (view !== "warehouse") setWarehouseSubView("sheets");
   }, [view]);

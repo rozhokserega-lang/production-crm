@@ -290,6 +290,7 @@ const RPC_MAP = {
   webGetFurnitureDetailArticles: "web_get_furniture_detail_articles",
   webGetFurnitureCustomTemplates: "web_get_furniture_custom_templates",
   webUpsertFurnitureCustomTemplate: "web_upsert_furniture_custom_template",
+  webSeedFurnitureStrapTemplate: "web_seed_furniture_strap_template",
   webDeleteFurnitureCustomTemplate: "web_delete_furniture_custom_template",
   webUpsertItemArticleMap: "web_upsert_item_article_map",
   webUpsertItemArticleMapVariants: "web_upsert_item_article_map_variants",
@@ -647,6 +648,12 @@ function buildRpcPayload(action, payload = {}) {
   if (action === "webDeleteFurnitureCustomTemplate") {
     return {
       p_product_name: String(payload.productName ?? payload.p_product_name ?? payload.product_name ?? "").trim(),
+    };
+  }
+  if (action === "webSeedFurnitureStrapTemplate") {
+    return {
+      p_product_name: String(payload.productName ?? payload.p_product_name ?? "").trim(),
+      p_details: payload.details ?? payload.p_details ?? [],
     };
   }
   return payload || {};
