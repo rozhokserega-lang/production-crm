@@ -1,5 +1,5 @@
 import { useAppState } from "./hooks/useAppState";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AppHeader } from "./components/AppHeader";
 import { DomainDrawer } from "./components/DomainDrawer";
 import { ViewSwitcher } from "./components/ViewSwitcher";
@@ -15,6 +15,7 @@ import { ShipmentView } from "./views/ShipmentView";
 import { OverviewView } from "./views/OverviewView";
 import { LaborView } from "./views/LaborView";
 import { WarehouseView } from "./views/WarehouseView";
+import { WarehouseMissingView } from "./views/WarehouseMissingView";
 import { StatsView } from "./views/StatsView";
 import { SheetMirrorView } from "./views/SheetMirrorView";
 import { FurnitureView } from "./views/FurnitureView";
@@ -65,9 +66,34 @@ import {
   resolveDefaultConsumeSheetsFromBoard,
 } from "./app/appUtils";
 
+const MISSING_STORAGE_KEY = "missingPartsOrders_v1";
+
+function readMissingOrdersFromStorage() {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(MISSING_STORAGE_KEY);
+    const parsed = JSON.parse(raw || "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+function writeMissingOrdersToStorage(rows) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(MISSING_STORAGE_KEY, JSON.stringify(Array.isArray(rows) ? rows : []));
+  } catch (_) {}
+}
+
 export default function App() {
   const [manualLaborOpenNonce, setManualLaborOpenNonce] = useState(0);
   const [domainDrawerOpen, setDomainDrawerOpen] = useState(false);
+  const [productColorMapRows, setProductColorMapRows] = useState([]);
+  const [packagingDialogOpen, setPackagingDialogOpen] = useState(false);
+  const [packagingOrders, setPackagingOrders] = useState([]);
+  const [packagingAcceptingId, setPackagingAcceptingId] = useState("");
+  const [showPackagingOnly, setShowPackagingOnly] = useState(false);
   const openManualLaborDialog = () => setManualLaborOpenNonce((x) => x + 1);
 
   const {
@@ -197,6 +223,7 @@ export default function App() {
     furnitureSelectedTemplate,
     furnitureQtyNumber,
     furnitureArticleSearchRows,
+    furnitureArticleGroups,
     furnitureCustomTemplates,
 
     // Refs
@@ -337,6 +364,100 @@ export default function App() {
     };
   }, [view]);
 
+  useEffect(() => {
+    if (view !== "warehouse") return;
+    if (!["sheets", "leftovers", "history"].includes(warehouseSubView)) {
+      setWarehouseSubView("sheets");
+    }
+  }, [view, warehouseSubView, setWarehouseSubView]);
+
+  useEffect(() => {
+    if (view !== "warehouseMissing") return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const rows = await callBackend("webGetProductColorMap");
+        if (cancelled) return;
+        setProductColorMapRows(Array.isArray(rows) ? rows : []);
+      } catch (_) {
+        if (cancelled) return;
+        setProductColorMapRows([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [view, callBackend]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const refresh = () => {
+      const rows = readMissingOrdersFromStorage();
+      const inbox = rows.filter((x) => x?.sentToWork === true && x?.packagingAccepted !== true);
+      setPackagingOrders(inbox);
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 2000);
+    const onStorage = () => refresh();
+    window.addEventListener("storage", onStorage);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, []);
+
+  async function acceptPackagingOrder(orderId) {
+    const allRows = readMissingOrdersFromStorage();
+    const order = allRows.find((x) => x?.id === orderId);
+    if (!order) return;
+    setPackagingAcceptingId(orderId);
+    try {
+      const itemLabel = String(order.product || "").trim() === "Прочее"
+        ? String(order.part || "").trim()
+        : `${String(order.product || "").trim()} — ${String(order.part || "").trim()}`;
+      await callBackend("webCreateShipmentPlanCell", {
+        sectionName: "Упаковка",
+        item: itemLabel,
+        material: String(order.color || "").trim() === "—" ? "" : String(order.color || "").trim(),
+        week: "X",
+        qty: Number(order.qty || 1) || 1,
+      });
+      const updated = allRows.map((x) =>
+        x?.id === orderId
+          ? { ...x, packagingAccepted: true, status: "🟢 Принят в работу", acceptedAt: new Date().toISOString() }
+          : x
+      );
+      writeMissingOrdersToStorage(updated);
+      setPackagingOrders(updated.filter((x) => x?.sentToWork === true && x?.packagingAccepted !== true));
+      await load();
+    } catch (e) {
+      setError(String(e?.message || e || "Не удалось принять заказ в упаковку"));
+    } finally {
+      setPackagingAcceptingId("");
+    }
+  }
+
+  const showMainTopPanels = view !== "metalProcess" && view !== "warehouseMissing";
+  const shipmentTableRowsForView = useMemo(
+    () =>
+      showPackagingOnly
+        ? shipmentTableRowsWithStockStatus.filter((row) => String(row.section || "").trim().toLowerCase() === "упаковка")
+        : shipmentTableRowsWithStockStatus,
+    [shipmentTableRowsWithStockStatus, showPackagingOnly],
+  );
+  const shipmentRenderSectionsForView = useMemo(
+    () =>
+      showPackagingOnly
+        ? shipmentRenderSections.filter((s) => String(s?.name || "").trim().toLowerCase() === "упаковка")
+        : shipmentRenderSections,
+    [shipmentRenderSections, showPackagingOnly],
+  );
+  const shipmentTableGroupNamesForView = useMemo(
+    () =>
+      showPackagingOnly
+        ? shipmentTableGroupNames.filter((name) => String(name || "").trim().toLowerCase() === "упаковка")
+        : shipmentTableGroupNames,
+    [shipmentTableGroupNames, showPackagingOnly],
+  );
+
   return (
     <div className="page">
       <AppHeader
@@ -358,7 +479,7 @@ export default function App() {
       />
       <DomainDrawer open={domainDrawerOpen} setOpen={setDomainDrawerOpen} view={view} setView={setView} />
 
-      {view !== "metalProcess" && (
+      {showMainTopPanels && (
         <ViewSwitcher
           view={view}
           setView={setView}
@@ -367,7 +488,7 @@ export default function App() {
         />
       )}
 
-      {view !== "metalProcess" && (
+      {showMainTopPanels && (
         <KpiGrid
           view={view}
           shipmentKpi={shipmentKpi}
@@ -380,7 +501,7 @@ export default function App() {
         />
       )}
 
-      {view !== "metalProcess" && (
+      {showMainTopPanels && (
         <ViewControls
           view={view}
           overviewSubView={overviewSubView}
@@ -418,7 +539,6 @@ export default function App() {
           setShowAwaitShipment={setShowAwaitShipment}
           showShipped={showShipped}
           setShowShipped={setShowShipped}
-          resetShipmentFilters={resetShipmentFilters}
           canOperateProduction={canOperateProduction}
           openStrapDialog={openStrapDialog}
           openCreatePlanDialog={openCreatePlanDialog}
@@ -447,6 +567,10 @@ export default function App() {
           importMetalFromExcelFile={importMetalFromExcelFile}
           canAdminSettings={canAdminSettings}
           openManualLaborDialog={openManualLaborDialog}
+          packagingInboxCount={packagingOrders.length}
+          openPackagingDialog={() => setPackagingDialogOpen(true)}
+          showPackagingOnly={showPackagingOnly}
+          setShowPackagingOnly={setShowPackagingOnly}
           canOperateWarehouse={canOperateWarehouse}
         />
       )}
@@ -479,14 +603,14 @@ export default function App() {
             filtered={filtered}
             loading={loading}
             shipmentViewMode={shipmentViewMode}
-            shipmentTableGroupNames={shipmentTableGroupNames}
+            shipmentTableGroupNames={shipmentTableGroupNamesForView}
             hiddenShipmentGroups={hiddenShipmentGroups}
             setHiddenShipmentGroups={setHiddenShipmentGroups}
-            shipmentTableRowsWithStockStatus={shipmentTableRowsWithStockStatus}
+            shipmentTableRowsWithStockStatus={shipmentTableRowsForView}
             getReadableTextColor={getReadableTextColor}
             getMaterialLabel={getMaterialLabel}
             toggleShipmentSelection={toggleShipmentSelection}
-            shipmentRenderSections={shipmentRenderSections}
+            shipmentRenderSections={shipmentRenderSectionsForView}
             toggleSectionCollapsed={toggleSectionCollapsed}
             isSectionCollapsed={isSectionCollapsed}
             sortItemsForShipment={sortItemsForShipment}
@@ -551,6 +675,20 @@ export default function App() {
             loading={loading}
             canOperateWarehouse={canOperateWarehouse}
             onManualConsume={openPilkaDoneConsumeDialog}
+            onSendMissingToWork={async ({ name, qty }) => {
+              await callBackend("webSendPlanksToWork", { items: [{ name, qty }] });
+            }}
+          />
+        )}
+        {view === "warehouseMissing" && (
+          <WarehouseMissingView
+            furnitureTemplates={furnitureTemplates}
+            furnitureArticleGroups={furnitureArticleGroups}
+            productColorMapRows={productColorMapRows}
+            sectionArticleRows={_sectionArticleRows}
+            materialsStockRows={_materialsStockRows}
+            formatProductName={furnitureProductLabel}
+            onSendMissingToWork={async () => {}}
           />
         )}
         {view === "metal" && (
@@ -707,6 +845,44 @@ export default function App() {
           style={{ left: `${hoverTip.x}px`, top: `${hoverTip.y}px` }}
         >
           {hoverTip.text}
+        </div>
+      )}
+      {packagingDialogOpen && (
+        <div className="dialog-backdrop">
+          <div className="dialog-card" style={{ maxWidth: 760, width: "95vw", maxHeight: "85vh", overflow: "auto" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+              <h3 style={{ margin: 0 }}>Упаковка — входящие заказы ({packagingOrders.length})</h3>
+              <button type="button" className="mini" onClick={() => setPackagingDialogOpen(false)}>Закрыть</button>
+            </div>
+            {packagingOrders.length === 0 ? (
+              <div className="empty">Новых заказов в упаковку нет.</div>
+            ) : (
+              <div style={{ display: "grid", gap: 10 }}>
+                {packagingOrders.map((o) => (
+                  <article key={o.id} className="card" style={{ padding: 10 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                      <strong>{o.product} — {o.part}</strong>
+                      <span>{o.qty} шт.</span>
+                    </div>
+                    <div style={{ marginTop: 6, color: "#64748b", fontSize: 13 }}>
+                      Материал: {o.color || "—"}
+                      {o.note ? ` | Примечание: ${o.note}` : ""}
+                    </div>
+                    <div style={{ marginTop: 8 }}>
+                      <button
+                        type="button"
+                        className="mini ok"
+                        disabled={packagingAcceptingId === o.id}
+                        onClick={() => acceptPackagingOrder(o.id)}
+                      >
+                        {packagingAcceptingId === o.id ? "Принимаю..." : "Принять в работу"}
+                      </button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
       <OrderDrawer

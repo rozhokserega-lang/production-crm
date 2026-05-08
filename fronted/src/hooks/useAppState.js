@@ -510,6 +510,7 @@ export function useAppState() {
     furnitureQtyNumber,
     furnitureGeneratedDetails,
     furnitureArticleSearchRows,
+    furnitureArticleGroups,
   } = useFurnitureDerivedData({
     view,
     query,
@@ -1345,6 +1346,7 @@ export function useAppState() {
     furnitureQtyNumber,
     furnitureGeneratedDetails,
     furnitureArticleSearchRows,
+    furnitureArticleGroups,
     strapOptionsByProduct,
     strapProductBySizeToken,
     strapProductsByArticleCode,

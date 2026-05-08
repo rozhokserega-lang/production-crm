@@ -1,12 +1,12 @@
 export function DomainDrawer({ open, setOpen, view, setView }) {
-  const isFurnitureDomain = view !== "metalProcess" && view !== "warehouse";
-  const isWarehouseDomain = view === "warehouse";
+  const isFurnitureDomain = view !== "metalProcess" && view !== "warehouseMissing";
+  const isWarehouseDomain = view === "warehouseMissing";
   const goFurniture = () => {
     setView("shipment");
     setOpen(false);
   };
   const goWarehouse = () => {
-    setView("warehouse");
+    setView("warehouseMissing");
     setOpen(false);
   };
   const goMetalProcess = () => {

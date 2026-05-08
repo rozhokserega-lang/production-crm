@@ -275,6 +275,7 @@ const RPC_MAP = {
   webGetConsumeHistory: "web_get_consume_history",
   webGetSectionCatalog: "web_get_section_catalog",
   webGetSectionArticles: "web_get_section_articles",
+  webGetProductColorMap: "web_get_product_color_map",
   webGetArticlesForImport: "web_get_articles_for_import",
   webGetFurnitureProductArticles: "web_get_furniture_product_articles",
   webGetFurnitureDetailArticles: "web_get_furniture_detail_articles",

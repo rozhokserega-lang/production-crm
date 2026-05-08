@@ -111,7 +111,6 @@ export function ViewControls({
   setShowAwaitShipment,
   showShipped,
   setShowShipped,
-  resetShipmentFilters,
   canOperateProduction,
   openStrapDialog,
   openCreatePlanDialog,
@@ -140,6 +139,8 @@ export function ViewControls({
   importMetalFromExcelFile,
   canAdminSettings,
   openManualLaborDialog,
+  packagingInboxCount,
+  openPackagingDialog,
   canOperateWarehouse,
 }) {
   return (
@@ -405,14 +406,19 @@ export function ViewControls({
               />
               <span>Отправленные</span>
             </label>
-            <button className="mini" onClick={resetShipmentFilters}>
-              Сброс фильтров
-            </button>
             <button className="mini" disabled={!canOperateProduction} onClick={openStrapDialog}>
               Добавить обвязку
             </button>
             <button className="mini ok" disabled={!canOperateProduction} onClick={openCreatePlanDialog}>
               Добавить план
+            </button>
+            <button
+              className="mini"
+              type="button"
+              onClick={openPackagingDialog}
+              title="Входящие заказы в секцию Упаковка"
+            >
+              Упаковка{Number(packagingInboxCount || 0) > 0 ? ` (${packagingInboxCount})` : ""}
             </button>
             <button
               className="mini"
