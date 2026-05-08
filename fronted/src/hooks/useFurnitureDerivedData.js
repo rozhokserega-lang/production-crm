@@ -55,10 +55,15 @@ export function useFurnitureDerivedData({
       }))
       .filter((t) => t.productName && Array.isArray(t.details) && t.details.length > 0);
 
-    const merged = [...base];
-    const existing = new Set(base.map((x) => String(x?.productName || "").trim()));
+    const customByName = new Map(custom.map((t) => [String(t.productName || "").trim(), t]));
+    const merged = base.map((t) => {
+      const name = String(t?.productName || "").trim();
+      return customByName.has(name) ? customByName.get(name) : t;
+    });
     custom.forEach((t) => {
-      if (!existing.has(t.productName)) merged.push(t);
+      if (!base.some((b) => String(b?.productName || "").trim() === t.productName)) {
+        merged.push(t);
+      }
     });
     return merged;
   }, [furnitureWorkbook, furnitureActiveSheet, furnitureCustomTemplates]);
