@@ -182,14 +182,16 @@ export const WarehouseMissingView = memo(function WarehouseMissingView({
         ))}
       </div>
 
-      <div className="tabs" style={{ marginBottom: 14 }}>
-        <button type="button" className={listView === "new" ? "tab active" : "tab"} onClick={() => setListView("new")}>
-          Новые ({orders.filter((o) => !o.sent_to_work).length})
-        </button>
-        <button type="button" className={listView === "all" ? "tab active" : "tab"} onClick={() => setListView("all")}>
-          Все заказы ({orders.length})
-        </button>
-        <button type="button" className="mini" onClick={loadOrders} disabled={loading} style={{ marginLeft: "auto" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, gap: 8, flexWrap: "wrap" }}>
+        <div className="tabs" style={{ margin: 0 }}>
+          <button type="button" className={listView === "new" ? "tab active" : "tab"} onClick={() => setListView("new")}>
+            Новые ({orders.filter((o) => !o.sent_to_work).length})
+          </button>
+          <button type="button" className={listView === "all" ? "tab active" : "tab"} onClick={() => setListView("all")}>
+            Все заказы ({orders.length})
+          </button>
+        </div>
+        <button type="button" className="mini" onClick={loadOrders} disabled={loading}>
           {loading ? "Загрузка..." : "↻ Обновить"}
         </button>
       </div>
