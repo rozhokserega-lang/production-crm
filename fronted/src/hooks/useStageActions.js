@@ -97,7 +97,11 @@ export function useStageActions({
           notifyAssemblyReadyTelegram(buildNotifyPayload(orderId, meta));
         }
         if (action === "webSetPrasDone" && meta.isStrapOrder && typeof openPrasDoneStrapDialog === "function") {
-          openPrasDoneStrapDialog(orderId, meta);
+          openPrasDoneStrapDialog(orderId, { ...meta, mode: "done" });
+          return;
+        }
+        if (action === "webSetPrasPause" && meta.isStrapOrder && typeof openPrasDoneStrapDialog === "function") {
+          openPrasDoneStrapDialog(orderId, { ...meta, mode: "pause" });
           return;
         }
         if (action === "webSetShippingDone" && meta.notifyOnFinalStage) {

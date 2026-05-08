@@ -518,13 +518,19 @@ export function useAppState() {
     setStrapDoneError("");
     try {
       const orderId = strapDoneDialogMeta?.orderId;
+      const mode = strapDoneDialogMeta?.mode || "done";
       await callBackend("webAddStrapStock", { strapType, color, qty });
-      // Strap orders stop at присадка — skip remaining stages so the order leaves the workshop view.
       if (orderId) {
-        await Promise.allSettled([
-          callBackend("webSetAssemblyDone", { orderId }),
-          callBackend("webSetShippingDone", { orderId }),
-        ]);
+        if (mode === "done") {
+          // Strap orders stop at присадка — skip remaining stages so the order leaves the workshop view.
+          await Promise.allSettled([
+            callBackend("webSetAssemblyDone", { orderId }),
+            callBackend("webSetShippingDone", { orderId }),
+          ]);
+        } else if (mode === "pause") {
+          // Subtract completed qty from the paused order.
+          await callBackend("webReduceOrderQty", { orderId, qtyDone: qty });
+        }
       }
       setStrapDoneDialogOpen(false);
       setStrapDoneDialogMeta(null);

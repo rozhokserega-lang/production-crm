@@ -271,7 +271,14 @@ export const WorkshopView = memo(function WorkshopView({
                     <button
                       className="mini warn"
                       disabled={isPending(`webSetPrasPause:${orderId}`) || prasDone || !prasInWork || !canOperateProduction}
-                      onClick={() => runAction("webSetPrasPause", orderId)}
+                      onClick={() =>
+                        runAction("webSetPrasPause", orderId, {}, {
+                          item: o.item,
+                          material: getMaterialLabel(o.item, o.material || o.colorName || ""),
+                          qty: o.qty,
+                          isStrapOrder: isStrapItem(o.item),
+                        })
+                      }
                     >
                       {tab === "pras" ? "Пауза" : "Присадка: Пауза"}
                     </button>

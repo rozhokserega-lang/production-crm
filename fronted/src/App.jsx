@@ -874,14 +874,18 @@ export default function App() {
         <div className="dialog-backdrop">
           <div className="dialog-card" style={{ maxWidth: 420, width: "95vw" }}>
             <h3 style={{ marginTop: 0, marginBottom: 12 }}>
-              Присадка завершена — обвязка
+              {strapDoneDialogMeta.mode === "pause"
+                ? "Пауза — обвязка"
+                : "Присадка завершена — обвязка"}
             </h3>
             <p style={{ margin: "0 0 4px", color: "#475569" }}>
               Тип: <strong>{strapDoneDialogMeta.item || "—"}</strong>
               {strapDoneDialogMeta.material ? ` / ${strapDoneDialogMeta.material}` : ""}
             </p>
             <p style={{ margin: "0 0 16px", color: "#64748b", fontSize: 13 }}>
-              Укажите количество планок обвязки, которые были присажены. Они будут зачислены на склад.
+              {strapDoneDialogMeta.mode === "pause"
+                ? "Сколько планок уже присажено? Они уйдут на склад, а количество заказа уменьшится на это число."
+                : "Укажите количество планок обвязки, которые были присажены. Они будут зачислены на склад."}
             </p>
             <label style={{ display: "block", marginBottom: 8, fontWeight: 500 }}>
               Количество планок:
