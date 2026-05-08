@@ -274,6 +274,15 @@ export function resolveFurnitureTemplateForPreview(preview, templates) {
     };
   };
 
+  // Exact match has highest priority: if a template name matches exactly, use it
+  // (this ensures custom-overridden templates are preferred over generic alias matches).
+  const byExact = list.find((t) => {
+    const key = normalizeFurnitureKey(t?.productName || "");
+    return key && candidates.some((c) => c === key);
+  });
+  if (byExact) return adjustTemplateByPreviewName(byExact);
+
+  // Alias match is second: handles cases like "siena", "авелла", "донини", etc.
   const aliasKey = resolveFurnitureAliasKey(candidates);
   if (aliasKey) {
     const byAlias = list.find((t) => normalizeFurnitureKey(t?.productName || "") === aliasKey);
@@ -284,12 +293,6 @@ export function resolveFurnitureTemplateForPreview(preview, templates) {
       if (avellaLite) return adjustTemplateByPreviewName(avellaLite);
     }
   }
-
-  const byExact = list.find((t) => {
-    const key = normalizeFurnitureKey(t?.productName || "");
-    return key && candidates.some((c) => c === key);
-  });
-  if (byExact) return adjustTemplateByPreviewName(byExact);
 
   const byContains = list.find((t) => {
     const key = normalizeFurnitureKey(t?.productName || "");
