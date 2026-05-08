@@ -37,6 +37,7 @@ export const WorkshopView = memo(function WorkshopView({
   executorOptions,
   getMaterialLabel,
   furnitureCustomTemplates,
+  furnitureTemplates,
   normalizeFurnitureKey,
   strapStock,
 }) {
@@ -65,17 +66,23 @@ export const WorkshopView = memo(function WorkshopView({
     return map;
   }, [strapStock]);
 
-  // Build template lookup: normalized item name → details[]
+  // Build template lookup from merged templates (Excel + DB), fallback to DB-only
+  // furnitureTemplates has { productName, details: [{ detailName, perUnit }] }
+  // furnitureCustomTemplates has { product_name, details: [{ detailName, perUnit }] }
   const templateByKey = useMemo(() => {
     const map = {};
-    (Array.isArray(furnitureCustomTemplates) ? furnitureCustomTemplates : []).forEach((t) => {
+    const merged = Array.isArray(furnitureTemplates) && furnitureTemplates.length > 0
+      ? furnitureTemplates
+      : (Array.isArray(furnitureCustomTemplates) ? furnitureCustomTemplates : []);
+    merged.forEach((t) => {
+      const name = String(t.productName || t.product_name || "").trim();
       const k = typeof normalizeFurnitureKey === "function"
-        ? normalizeFurnitureKey(String(t.product_name || t.productName || ""))
-        : String(t.product_name || t.productName || "").toLowerCase().trim();
+        ? normalizeFurnitureKey(name)
+        : name.toLowerCase();
       if (k) map[k] = t;
     });
     return map;
-  }, [furnitureCustomTemplates, normalizeFurnitureKey]);
+  }, [furnitureTemplates, furnitureCustomTemplates, normalizeFurnitureKey]);
 
   // Extract base product name before material part: "Тумба под ТВ Лофт. Дуб Коми" → "тумба под тв лофт"
   // and strip trailing size numbers: "тумба под тв лофт 180" → "тумба под тв лофт"

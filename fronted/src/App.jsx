@@ -821,6 +821,7 @@ export default function App() {
             executorOptions={executorOptions}
             getMaterialLabel={getMaterialLabel}
             furnitureCustomTemplates={furnitureCustomTemplates}
+            furnitureTemplates={furnitureTemplates}
             normalizeFurnitureKey={normalizeFurnitureKey}
             strapStock={strapStockGlobal}
           />
