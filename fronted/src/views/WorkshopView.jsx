@@ -1,6 +1,20 @@
-import { memo } from "react";
+import { memo, useMemo } from "react";
 import { KROMKA_EXECUTORS, PRAS_EXECUTORS } from "../config";
 import { stripPlanItemMeta } from "../app/orderHelpers";
+import { STRAP_OPTIONS } from "../constants/views";
+
+// Extract strap type code from STRAP_OPTIONS like "Обвязка (1158_50)" → "1158_50"
+const STRAP_TYPE_CODES = new Set(
+  STRAP_OPTIONS.map((opt) => {
+    const m = String(opt).match(/\((\d{2,5}[_x]\d{2,5})\)/);
+    return m ? m[1] : null;
+  }).filter(Boolean),
+);
+
+function extractStrapCode(detailName) {
+  const m = String(detailName || "").match(/\((\d{2,5}[_x]\d{2,5})\)/);
+  return m ? m[1] : null;
+}
 
 export const WorkshopView = memo(function WorkshopView({
   workshopRows,
@@ -24,6 +38,7 @@ export const WorkshopView = memo(function WorkshopView({
   getMaterialLabel,
   furnitureCustomTemplates,
   normalizeFurnitureKey,
+  strapStock,
 }) {
   const kromkaOptions = Array.isArray(executorOptions?.kromka) && executorOptions.kromka.length > 0
     ? executorOptions.kromka
@@ -38,6 +53,50 @@ export const WorkshopView = memo(function WorkshopView({
   const isStrapItem = (item) => {
     const s = String(item || "").trim();
     return s.includes("Планки обвязки") || /^\d{3,5}[_x]\d{2,5}$/.test(s);
+  };
+
+  // Build strap stock lookup: { "1158_50": 98, "316_167": 0, ... }
+  const strapStockByType = useMemo(() => {
+    const map = {};
+    (Array.isArray(strapStock) ? strapStock : []).forEach((s) => {
+      const key = String(s.strap_type || "").trim();
+      if (key) map[key] = (map[key] || 0) + Number(s.qty || 0);
+    });
+    return map;
+  }, [strapStock]);
+
+  // Build template lookup: normalized item name → details[]
+  const templateByKey = useMemo(() => {
+    const map = {};
+    (Array.isArray(furnitureCustomTemplates) ? furnitureCustomTemplates : []).forEach((t) => {
+      const k = typeof normalizeFurnitureKey === "function"
+        ? normalizeFurnitureKey(String(t.product_name || t.productName || ""))
+        : String(t.product_name || t.productName || "").toLowerCase().trim();
+      if (k) map[k] = t;
+    });
+    return map;
+  }, [furnitureCustomTemplates, normalizeFurnitureKey]);
+
+  // For a given order, calculate straps needed per strap type
+  const calcStrapNeeds = (rawItem, qty) => {
+    const itemKey = typeof normalizeFurnitureKey === "function"
+      ? normalizeFurnitureKey(rawItem)
+      : String(rawItem || "").toLowerCase().trim();
+    const tpl = templateByKey[itemKey]
+      || Object.entries(templateByKey).find(([k]) => k && (itemKey.includes(k) || k.includes(itemKey)))?.[1]
+      || null;
+    if (!tpl || !Array.isArray(tpl.details)) return [];
+    const orderQty = Number(qty || 0);
+    const needs = [];
+    tpl.details.forEach((d) => {
+      const code = extractStrapCode(d.detailName || d.detail_name || "");
+      if (!code || !STRAP_TYPE_CODES.has(code)) return;
+      const totalNeeded = (Number(d.perUnit || d.per_unit || 0)) * orderQty;
+      if (totalNeeded > 0) {
+        needs.push({ code, needed: totalNeeded, name: d.detailName || d.detail_name });
+      }
+    });
+    return needs;
   };
 
   return (
@@ -76,6 +135,9 @@ export const WorkshopView = memo(function WorkshopView({
         const displaySheetsNeeded = Number(baseDisplaySheetsNeeded || 0) > 0 ? baseDisplaySheetsNeeded : fallbackMainFurnitureSheets;
         const displayMaterial = String(o.material || o.colorName || "").trim() || "Материал не указан";
         const adminNote = String(o.adminComment ?? o.admin_comment ?? "").trim();
+
+        // Strap availability calculation (only for non-strap orders)
+        const strapNeeds = isStrapItem(rawItem) ? [] : calcStrapNeeds(rawItem, o.qty);
 
         const pilkaDone = isDone(o.pilkaStatus);
         const pilkaInWork = isInWork(o.pilkaStatus);
@@ -139,6 +201,27 @@ export const WorkshopView = memo(function WorkshopView({
                   <span>
                     Листы: {displayMaterial} ({Number(displaySheetsNeeded || 0)} шт)
                   </span>
+                  {strapNeeds.map(({ code, needed, name }) => {
+                    const available = strapStockByType[code] ?? 0;
+                    const enough = available >= needed;
+                    return (
+                      <span
+                        key={code}
+                        style={{
+                          color: enough ? "#166534" : "#9f1239",
+                          background: enough ? "#dcfce7" : "#fff1f2",
+                          border: `1px solid ${enough ? "#86efac" : "#fda4af"}`,
+                          borderRadius: 4,
+                          padding: "1px 6px",
+                          fontWeight: 600,
+                          fontSize: 12,
+                        }}
+                        title={`${name}: нужно ${needed}, в наличии ${available}`}
+                      >
+                        {name || code}: {available}/{needed}
+                      </span>
+                    );
+                  })}
                 </div>
               </div>
               {adminNote ? (

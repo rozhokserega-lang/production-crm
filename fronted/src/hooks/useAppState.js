@@ -242,6 +242,9 @@ export function useAppState() {
     setPlanSaving,
   } = useShipmentDialogsState(STRAP_OPTIONS);
 
+  // Global strap stock (for workshop availability check)
+  const [strapStockGlobal, setStrapStockGlobal] = useState([]);
+
   // Strap "Присадка: Готово" dialog state
   const [strapDoneDialogOpen, setStrapDoneDialogOpen] = useState(false);
   const [strapDoneDialogMeta, setStrapDoneDialogMeta] = useState(null);
@@ -936,6 +939,14 @@ export function useAppState() {
     openPrasDoneStrapDialog,
   });
 
+  // Load strap stock globally so WorkshopView can show strap availability
+  useEffect(() => {
+    callBackend("webGetStrapStock", {})
+      .then((data) => setStrapStockGlobal(Array.isArray(data) ? data : []))
+      .catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view]);
+
   const baseOrderFiltered = useBaseOrderFilter({
     rows,
     view,
@@ -1388,6 +1399,7 @@ export function useAppState() {
     furnitureArticleRows, setFurnitureArticleRows,
     furnitureDetailArticleRows, setFurnitureDetailArticleRows,
     furnitureCustomTemplates, setFurnitureCustomTemplates,
+    strapStockGlobal,
     furnitureSelectedProduct, setFurnitureSelectedProduct,
     furnitureSelectedQty, setFurnitureSelectedQty,
 

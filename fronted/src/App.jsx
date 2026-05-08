@@ -208,6 +208,7 @@ export default function App() {
     furnitureArticleSearchRows,
     furnitureArticleGroups,
     furnitureCustomTemplates,
+    strapStockGlobal,
 
     // Refs
     importPlanFileRef,
@@ -821,6 +822,7 @@ export default function App() {
             getMaterialLabel={getMaterialLabel}
             furnitureCustomTemplates={furnitureCustomTemplates}
             normalizeFurnitureKey={normalizeFurnitureKey}
+            strapStock={strapStockGlobal}
           />
         )}
       </section>
