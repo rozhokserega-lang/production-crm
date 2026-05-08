@@ -417,7 +417,7 @@ export default function App() {
     }
   }
 
-  const showMainTopPanels = view !== "metalProcess" && view !== "warehouseMissing" && view !== "strapStock";
+  const showMainTopPanels = view !== "metalProcess" && view !== "warehouseMissing";
   const shipmentTableRowsForView = useMemo(
     () =>
       showPackagingOnly
