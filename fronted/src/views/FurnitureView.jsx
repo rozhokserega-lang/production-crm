@@ -350,13 +350,9 @@ export function FurnitureView({
         variantsToUpsert.push(v);
       }
 
-      if (variantsToUpsert.length === 0) {
-        throw new Error(
-          "Ни один артикул не обновлен в каталоге плана. " +
-          "Проверьте артикулы: они могут быть привязаны к защищенному источнику и недоступны для переноса через UI.",
-        );
+      if (variantsToUpsert.length > 0) {
+        await OrderService.upsertItemArticleMapVariants(section, name, variantsToUpsert, 999);
       }
-      await OrderService.upsertItemArticleMapVariants(section, name, variantsToUpsert, 999);
 
       // 2) Save composition as a custom template (so it can be used inside furniture constructor / previews)
       await OrderService.upsertFurnitureCustomTemplate(name, normalizedDetails, kitsPerSheet);
