@@ -124,6 +124,15 @@ export function useDataLoader({
           } catch (_) {
             // keep previous shipment board snapshot
           }
+          // Load furniture custom templates for strap availability display
+          if (typeof setFurnitureCustomTemplates === "function") {
+            try {
+              const templates = await OrderService.getFurnitureCustomTemplates();
+              if (Array.isArray(templates)) setFurnitureCustomTemplates(templates);
+            } catch (_) {
+              // non-critical: strap availability display will be limited
+            }
+          }
         }
       } else if (view === "furniture") {
         setFurnitureArticleRows(furniturePayload?.furnitureArticleRows || []);
