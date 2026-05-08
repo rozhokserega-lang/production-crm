@@ -77,14 +77,39 @@ export const WorkshopView = memo(function WorkshopView({
     return map;
   }, [furnitureCustomTemplates, normalizeFurnitureKey]);
 
+  // Extract base product name before material part: "Тумба под ТВ Лофт. Дуб Коми" → "тумба под тв лофт"
+  // and strip trailing size numbers: "тумба под тв лофт 180" → "тумба под тв лофт"
+  const extractBaseKey = (name) => {
+    const norm = typeof normalizeFurnitureKey === "function"
+      ? normalizeFurnitureKey(name)
+      : String(name || "").toLowerCase().trim();
+    // Take part before ". " (material separator)
+    const base = norm.split(". ")[0].trim();
+    // Strip trailing size numbers like " 180", " 1800", " 750 мм" etc.
+    return base.replace(/\s*\d[\d\s.]*(?:мм)?$/, "").trim();
+  };
+
   // For a given order, calculate straps needed per strap type
   const calcStrapNeeds = (rawItem, qty) => {
     const itemKey = typeof normalizeFurnitureKey === "function"
       ? normalizeFurnitureKey(rawItem)
       : String(rawItem || "").toLowerCase().trim();
-    const tpl = templateByKey[itemKey]
-      || Object.entries(templateByKey).find(([k]) => k && (itemKey.includes(k) || k.includes(itemKey)))?.[1]
-      || null;
+    const orderBase = extractBaseKey(rawItem);
+
+    // 1. Exact match by full normalized name
+    let tpl = templateByKey[itemKey] || null;
+
+    // 2. Base-name match: order base starts with template base or vice versa
+    if (!tpl && orderBase.length >= 5) {
+      const entry = Object.entries(templateByKey).find(([, t]) => {
+        const tplBase = extractBaseKey(String(t.product_name || t.productName || ""));
+        return tplBase.length >= 5 && (
+          orderBase.startsWith(tplBase) || tplBase.startsWith(orderBase)
+        );
+      });
+      tpl = entry ? entry[1] : null;
+    }
+
     if (!tpl || !Array.isArray(tpl.details)) return [];
     const orderQty = Number(qty || 0);
     const needs = [];
