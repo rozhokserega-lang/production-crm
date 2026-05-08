@@ -1,22 +1,14 @@
-import { memo, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { PRODUCTS_CATALOG } from "../constants/missingParts";
 
-const STORAGE_KEY = "missingPartsOrders_v1";
 const OTHER_PRODUCT_KEY = "__OTHER__";
 const EXCLUDED_PRODUCT_PATTERNS = [
   /лофт/i,
   /системы\s*хранения/i,
 ];
 
-function loadSavedOrders() {
-  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"); } catch { return []; }
-}
-function persistOrders(orders) {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(orders)); } catch {}
-}
-
 export const WarehouseMissingView = memo(function WarehouseMissingView({
-  onSendMissingToWork,
+  callBackend,
   furnitureTemplates,
   furnitureArticleGroups,
   productColorMapRows,
@@ -24,24 +16,30 @@ export const WarehouseMissingView = memo(function WarehouseMissingView({
   materialsStockRows,
   formatProductName,
 }) {
-  const [missingOrders, setMissingOrders] = useState(loadSavedOrders);
-  const [missingListView, setMissingListView] = useState("new");
+  const [orders, setOrders] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [sendingId, setSendingId] = useState(null);
+  const [listView, setListView] = useState("new");
   const [form, setForm] = useState({
     open: false, step: 1,
     product: "", part: "", qty: "1", color: "", note: "",
   });
-  const [sendingId, setSendingId] = useState(null);
 
-  function updateOrders(orders) {
-    setMissingOrders(orders);
-    persistOrders(orders);
-  }
-  function openForm() {
-    setForm({ open: true, step: 1, product: "", part: "", qty: "1", color: "", note: "" });
-  }
-  function closeForm() { setForm((f) => ({ ...f, open: false })); }
-  function nextStep() { setForm((f) => ({ ...f, step: f.step + 1 })); }
-  function prevStep() { setForm((f) => ({ ...f, step: Math.max(1, f.step - 1) })); }
+  const loadOrders = useCallback(async () => {
+    setLoading(true);
+    try {
+      const rows = await callBackend("webGetReplacementOrders");
+      setOrders(Array.isArray(rows) ? rows : []);
+    } catch (_) {
+      setOrders([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [callBackend]);
+
+  useEffect(() => {
+    loadOrders();
+  }, [loadOrders]);
 
   const productsCatalog = useMemo(() => {
     const templates = Array.isArray(furnitureTemplates) ? furnitureTemplates : [];
@@ -108,42 +106,47 @@ export const WarehouseMissingView = memo(function WarehouseMissingView({
     [productsCatalog],
   );
 
-  function submitOrder() {
+  function openForm() {
+    setForm({ open: true, step: 1, product: "", part: "", qty: "1", color: "", note: "" });
+  }
+  function closeForm() { setForm((f) => ({ ...f, open: false })); }
+  function nextStep() { setForm((f) => ({ ...f, step: f.step + 1 })); }
+  function prevStep() { setForm((f) => ({ ...f, step: Math.max(1, f.step - 1) })); }
+
+  async function submitOrder() {
     const partDef = (productsCatalog[form.product] || []).find((p) => p.name === form.part);
     const isOther = form.product === OTHER_PRODUCT_KEY;
-    const order = {
-      id: `RPL-${Date.now()}`,
-      createdAt: new Date().toLocaleString("ru-RU"),
-      product: isOther ? "Прочее" : form.product,
-      part: form.part,
-      qty: Number(form.qty) || 1,
-      color: isOther ? (form.color || "Не указан") : (partDef?.hasColor ? (form.color || "Не указан") : "—"),
-      note: form.note,
-      status: "🟡 Новый",
-      sentToWork: false,
+    const id = `RPL-${Date.now()}`;
+    const payload = {
+      p_id: id,
+      p_product: isOther ? "Прочее" : form.product,
+      p_part: form.part,
+      p_qty: Number(form.qty) || 1,
+      p_color: isOther ? (form.color || "") : (partDef?.hasColor ? (form.color || "") : "—"),
+      p_note: form.note,
     };
-    updateOrders([order, ...missingOrders]);
-    closeForm();
-    setMissingListView("all");
+    try {
+      await callBackend("webCreateReplacementOrder", payload);
+      closeForm();
+      setListView("all");
+      await loadOrders();
+    } catch (_) {}
   }
 
   async function sendToWork(orderId) {
-    const order = missingOrders.find((o) => o.id === orderId);
-    if (!order) return;
     setSendingId(orderId);
     try {
-      const label = `${order.product} / ${order.part}${order.color !== "—" ? ` / ${order.color}` : ""}`;
-      await onSendMissingToWork?.({ name: label, qty: order.qty });
-      const updated = missingOrders.map((o) =>
-        o.id === orderId ? { ...o, status: "🟣 В упаковке", sentToWork: true, packagingAccepted: false } : o
-      );
-      updateOrders(updated);
+      await callBackend("webSendReplacementOrderToWork", { p_id: orderId });
+      await loadOrders();
     } catch (_) {}
     setSendingId(null);
   }
 
-  function deleteOrder(orderId) {
-    updateOrders(missingOrders.filter((o) => o.id !== orderId));
+  async function deleteOrder(orderId) {
+    try {
+      await callBackend("webDeleteReplacementOrder", { p_id: orderId });
+      await loadOrders();
+    } catch (_) {}
   }
 
   const partDef = form.product
@@ -151,6 +154,10 @@ export const WarehouseMissingView = memo(function WarehouseMissingView({
     : null;
   const isOther = form.product === OTHER_PRODUCT_KEY;
   const step3Valid = form.qty && Number(form.qty) >= 1 && (isOther ? Boolean(String(form.color || "").trim()) : (!partDef?.hasColor || form.color));
+
+  const displayOrders = listView === "new"
+    ? orders.filter((o) => !o.sent_to_work)
+    : orders;
 
   return (
     <div className="warehouse-view">
@@ -176,42 +183,43 @@ export const WarehouseMissingView = memo(function WarehouseMissingView({
       </div>
 
       <div className="tabs" style={{ marginBottom: 14 }}>
-        <button type="button" className={missingListView === "new" ? "tab active" : "tab"} onClick={() => setMissingListView("new")}>
-          Новые ({missingOrders.filter((o) => !o.sentToWork).length})
+        <button type="button" className={listView === "new" ? "tab active" : "tab"} onClick={() => setListView("new")}>
+          Новые ({orders.filter((o) => !o.sent_to_work).length})
         </button>
-        <button type="button" className={missingListView === "all" ? "tab active" : "tab"} onClick={() => setMissingListView("all")}>
-          Все заказы ({missingOrders.length})
+        <button type="button" className={listView === "all" ? "tab active" : "tab"} onClick={() => setListView("all")}>
+          Все заказы ({orders.length})
+        </button>
+        <button type="button" className="mini" onClick={loadOrders} disabled={loading} style={{ marginLeft: "auto" }}>
+          {loading ? "Загрузка..." : "↻ Обновить"}
         </button>
       </div>
 
-      {(() => {
-        const list = missingListView === "new" ? missingOrders.filter((o) => !o.sentToWork) : missingOrders;
-        if (!list.length) {
-          return (
-            <div className="warehouse-empty">
-              <div style={{ fontSize: 40, marginBottom: 8 }}>{missingListView === "new" ? "✅" : "📦"}</div>
-              <div>{missingListView === "new" ? "Нет новых заказов на замену" : "Нет заказов на замену деталей"}</div>
-              <div style={{ color: "#6b7280", fontSize: 13, marginTop: 4 }}>Нажмите «+ Создать заказ» чтобы добавить</div>
-            </div>
-          );
-        }
-        return list.map((o) => (
-          <article key={o.id} className={`card missing-order-card ${o.sentToWork ? "done" : ""}`}>
+      {loading && orders.length === 0 ? (
+        <div className="warehouse-empty" style={{ fontSize: 14, color: "#6b7280" }}>Загрузка...</div>
+      ) : displayOrders.length === 0 ? (
+        <div className="warehouse-empty">
+          <div style={{ fontSize: 40, marginBottom: 8 }}>{listView === "new" ? "✅" : "📦"}</div>
+          <div>{listView === "new" ? "Нет новых заказов на замену" : "Нет заказов на замену деталей"}</div>
+          <div style={{ color: "#6b7280", fontSize: 13, marginTop: 4 }}>Нажмите «+ Создать заказ» чтобы добавить</div>
+        </div>
+      ) : (
+        displayOrders.map((o) => (
+          <article key={o.id} className={`card missing-order-card ${o.sent_to_work ? "done" : ""}`}>
             <div className="line1">
               <strong>{o.product} — {o.part}</strong>
               <span className="badge">{o.status}</span>
             </div>
             <div className="line2">
-              {o.color !== "—" && <span>🎨 {o.color}</span>}
+              {o.color && o.color !== "—" && <span>🎨 {o.color}</span>}
               <span>📦 {o.qty} шт.</span>
             </div>
             {o.note && <div style={{ fontSize: 12, color: "#6b7280", paddingTop: 2 }}>💬 {o.note}</div>}
             <div className="line2" style={{ color: "#9ca3af", fontSize: 11 }}>
               <span>ID: {o.id}</span>
-              <span>{o.createdAt}</span>
+              <span>{new Date(o.created_at).toLocaleString("ru-RU")}</span>
             </div>
             <div className="actions">
-              {!o.sentToWork && (
+              {!o.sent_to_work && (
                 <button type="button" className="mini ok" disabled={sendingId === o.id} onClick={() => sendToWork(o.id)}>
                   {sendingId === o.id ? "Отправляю..." : "▶ Отправить в работу"}
                 </button>
@@ -219,8 +227,8 @@ export const WarehouseMissingView = memo(function WarehouseMissingView({
               <button type="button" className="mini warn" onClick={() => deleteOrder(o.id)}>Удалить</button>
             </div>
           </article>
-        ));
-      })()}
+        ))
+      )}
 
       {form.open && (
         <div className="dialog-backdrop">
@@ -334,7 +342,7 @@ export const WarehouseMissingView = memo(function WarehouseMissingView({
                 <h3 style={{ margin: "0 0 4px" }}>Шаг 4: Подтверждение</h3>
                 <p style={{ margin: "0 0 14px", color: "#6b7280", fontSize: 13 }}>Проверьте данные перед созданием заказа</p>
                 <div className="missing-confirm-table">
-                  <div className="confirm-row"><span>Изделие:</span><strong>{form.product}</strong></div>
+                  <div className="confirm-row"><span>Изделие:</span><strong>{form.product === OTHER_PRODUCT_KEY ? "Прочее" : form.product}</strong></div>
                   <div className="confirm-row"><span>Деталь:</span><strong>{form.part}</strong></div>
                   <div className="confirm-row"><span>Количество:</span><strong>{form.qty} шт.</strong></div>
                   {form.color && <div className="confirm-row"><span>Цвет:</span><strong>{form.color}</strong></div>}

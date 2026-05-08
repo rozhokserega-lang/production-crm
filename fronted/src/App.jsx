@@ -1,5 +1,5 @@
 import { useAppState } from "./hooks/useAppState";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppHeader } from "./components/AppHeader";
 import { DomainDrawer } from "./components/DomainDrawer";
 import { ViewSwitcher } from "./components/ViewSwitcher";
@@ -66,25 +66,6 @@ import {
   resolveDefaultConsumeSheetsFromBoard,
 } from "./app/appUtils";
 
-const MISSING_STORAGE_KEY = "missingPartsOrders_v1";
-
-function readMissingOrdersFromStorage() {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = window.localStorage.getItem(MISSING_STORAGE_KEY);
-    const parsed = JSON.parse(raw || "[]");
-    return Array.isArray(parsed) ? parsed : [];
-  } catch (_) {
-    return [];
-  }
-}
-
-function writeMissingOrdersToStorage(rows) {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(MISSING_STORAGE_KEY, JSON.stringify(Array.isArray(rows) ? rows : []));
-  } catch (_) {}
-}
 
 export default function App() {
   const [manualLaborOpenNonce, setManualLaborOpenNonce] = useState(0);
@@ -94,6 +75,7 @@ export default function App() {
   const [packagingOrders, setPackagingOrders] = useState([]);
   const [packagingAcceptingId, setPackagingAcceptingId] = useState("");
   const [showPackagingOnly, setShowPackagingOnly] = useState(false);
+  const [packagingLoading, setPackagingLoading] = useState(false);
   const openManualLaborDialog = () => setManualLaborOpenNonce((x) => x + 1);
 
   const {
@@ -387,26 +369,24 @@ export default function App() {
     return () => { cancelled = true; };
   }, [view, callBackend]);
 
-  useEffect(() => {
-    if (typeof window === "undefined") return undefined;
-    const refresh = () => {
-      const rows = readMissingOrdersFromStorage();
-      const inbox = rows.filter((x) => x?.sentToWork === true && x?.packagingAccepted !== true);
+  const refreshPackagingOrders = useCallback(async () => {
+    try {
+      const rows = await callBackend("webGetReplacementOrders");
+      const inbox = (Array.isArray(rows) ? rows : []).filter(
+        (x) => x?.sent_to_work === true && x?.packaging_accepted !== true,
+      );
       setPackagingOrders(inbox);
-    };
-    refresh();
-    const timer = window.setInterval(refresh, 2000);
-    const onStorage = () => refresh();
-    window.addEventListener("storage", onStorage);
-    return () => {
-      window.clearInterval(timer);
-      window.removeEventListener("storage", onStorage);
-    };
-  }, []);
+    } catch (_) {}
+  }, [callBackend]);
+
+  useEffect(() => {
+    refreshPackagingOrders();
+    const timer = window.setInterval(refreshPackagingOrders, 30000);
+    return () => window.clearInterval(timer);
+  }, [refreshPackagingOrders]);
 
   async function acceptPackagingOrder(orderId) {
-    const allRows = readMissingOrdersFromStorage();
-    const order = allRows.find((x) => x?.id === orderId);
+    const order = packagingOrders.find((x) => x?.id === orderId);
     if (!order) return;
     setPackagingAcceptingId(orderId);
     try {
@@ -420,14 +400,8 @@ export default function App() {
         week: "X",
         qty: Number(order.qty || 1) || 1,
       });
-      const updated = allRows.map((x) =>
-        x?.id === orderId
-          ? { ...x, packagingAccepted: true, status: "🟢 Принят в работу", acceptedAt: new Date().toISOString() }
-          : x
-      );
-      writeMissingOrdersToStorage(updated);
-      setPackagingOrders(updated.filter((x) => x?.sentToWork === true && x?.packagingAccepted !== true));
-      await load();
+      await callBackend("webAcceptReplacementOrderPackaging", { p_id: orderId });
+      await Promise.all([refreshPackagingOrders(), load()]);
     } catch (e) {
       setError(String(e?.message || e || "Не удалось принять заказ в упаковку"));
     } finally {
@@ -682,13 +656,13 @@ export default function App() {
         )}
         {view === "warehouseMissing" && (
           <WarehouseMissingView
+            callBackend={callBackend}
             furnitureTemplates={furnitureTemplates}
             furnitureArticleGroups={furnitureArticleGroups}
             productColorMapRows={productColorMapRows}
             sectionArticleRows={_sectionArticleRows}
             materialsStockRows={_materialsStockRows}
             formatProductName={furnitureProductLabel}
-            onSendMissingToWork={async () => {}}
           />
         )}
         {view === "metal" && (
