@@ -517,7 +517,15 @@ export function useAppState() {
     setStrapDoneSaving(true);
     setStrapDoneError("");
     try {
+      const orderId = strapDoneDialogMeta?.orderId;
       await callBackend("webAddStrapStock", { strapType, color, qty });
+      // Strap orders stop at присадка — skip remaining stages so the order leaves the workshop view.
+      if (orderId) {
+        await Promise.allSettled([
+          callBackend("webSetAssemblyDone", { orderId }),
+          callBackend("webSetShippingDone", { orderId }),
+        ]);
+      }
       setStrapDoneDialogOpen(false);
       setStrapDoneDialogMeta(null);
       setStrapDoneQtyInput("");
@@ -527,7 +535,7 @@ export function useAppState() {
     } finally {
       setStrapDoneSaving(false);
     }
-  }, [load]);
+  }, [strapDoneDialogMeta, load]);
 
   const {
     weeks,

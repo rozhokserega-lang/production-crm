@@ -287,11 +287,6 @@ export function resolveFurnitureTemplateForPreview(preview, templates) {
   if (aliasKey) {
     const byAlias = list.find((t) => normalizeFurnitureKey(t?.productName || "") === aliasKey);
     if (byAlias) return adjustTemplateByPreviewName(byAlias);
-    // Business fallback: when "Авелла" template is missing, use "Авелла Лайт" details.
-    if (aliasKey === "авелла") {
-      const avellaLite = list.find((t) => normalizeFurnitureKey(t?.productName || "") === "авелла лайт");
-      if (avellaLite) return adjustTemplateByPreviewName(avellaLite);
-    }
   }
 
   const byContains = list.find((t) => {
