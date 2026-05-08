@@ -16,6 +16,7 @@ import { OverviewView } from "./views/OverviewView";
 import { LaborView } from "./views/LaborView";
 import { WarehouseView } from "./views/WarehouseView";
 import { WarehouseMissingView } from "./views/WarehouseMissingView";
+import { StrapStockView } from "./views/StrapStockView";
 import { StatsView } from "./views/StatsView";
 import { SheetMirrorView } from "./views/SheetMirrorView";
 import { FurnitureView } from "./views/FurnitureView";
@@ -303,6 +304,13 @@ export default function App() {
     submitConsume,
     openPilkaDoneConsumeDialog,
     openPilkaDoneConsumeDialogOnError: _openPilkaDoneConsumeDialogOnError,
+    strapDoneDialogOpen,
+    strapDoneDialogMeta,
+    strapDoneQtyInput, setStrapDoneQtyInput,
+    strapDoneError,
+    strapDoneSaving,
+    closeStrapDoneDialog,
+    submitStrapDone,
     handlePlanSectionChange,
     handlePlanArticleChange,
     openCreatePlanDialog,
@@ -409,7 +417,7 @@ export default function App() {
     }
   }
 
-  const showMainTopPanels = view !== "metalProcess" && view !== "warehouseMissing";
+  const showMainTopPanels = view !== "metalProcess" && view !== "warehouseMissing" && view !== "strapStock";
   const shipmentTableRowsForView = useMemo(
     () =>
       showPackagingOnly
@@ -665,6 +673,9 @@ export default function App() {
             formatProductName={furnitureProductLabel}
           />
         )}
+        {view === "strapStock" && (
+          <StrapStockView callBackend={callBackend} />
+        )}
         {view === "metal" && (
           <MetalView
             rows={metalStockRows.filter((row) => {
@@ -856,6 +867,71 @@ export default function App() {
                 ))}
               </div>
             )}
+          </div>
+        </div>
+      )}
+      {strapDoneDialogOpen && strapDoneDialogMeta && (
+        <div className="dialog-backdrop">
+          <div className="dialog-card" style={{ maxWidth: 420, width: "95vw" }}>
+            <h3 style={{ marginTop: 0, marginBottom: 12 }}>
+              Присадка завершена — обвязка
+            </h3>
+            <p style={{ margin: "0 0 4px", color: "#475569" }}>
+              Тип: <strong>{strapDoneDialogMeta.item || "—"}</strong>
+              {strapDoneDialogMeta.material ? ` / ${strapDoneDialogMeta.material}` : ""}
+            </p>
+            <p style={{ margin: "0 0 16px", color: "#64748b", fontSize: 13 }}>
+              Укажите количество планок обвязки, которые были присажены. Они будут зачислены на склад.
+            </p>
+            <label style={{ display: "block", marginBottom: 8, fontWeight: 500 }}>
+              Количество планок:
+              <input
+                type="number"
+                min={1}
+                className="strap-qty-dialog-input"
+                style={{ display: "block", width: "100%", marginTop: 6, padding: "6px 10px", fontSize: 16, borderRadius: 6, border: "1px solid #cbd5e1", boxSizing: "border-box" }}
+                value={strapDoneQtyInput}
+                onChange={(e) => setStrapDoneQtyInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    submitStrapDone(
+                      String(strapDoneDialogMeta.item || ""),
+                      String(strapDoneDialogMeta.material || ""),
+                      strapDoneQtyInput
+                    );
+                  }
+                  if (e.key === "Escape") closeStrapDoneDialog();
+                }}
+                autoFocus
+              />
+            </label>
+            {strapDoneError && (
+              <div style={{ color: "#ef4444", marginBottom: 10, fontSize: 13 }}>{strapDoneError}</div>
+            )}
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 16 }}>
+              <button
+                type="button"
+                className="mini ghost"
+                onClick={closeStrapDoneDialog}
+                disabled={strapDoneSaving}
+              >
+                Пропустить
+              </button>
+              <button
+                type="button"
+                className="mini ok"
+                disabled={strapDoneSaving || !strapDoneQtyInput}
+                onClick={() =>
+                  submitStrapDone(
+                    String(strapDoneDialogMeta.item || ""),
+                    String(strapDoneDialogMeta.material || ""),
+                    strapDoneQtyInput
+                  )
+                }
+              >
+                {strapDoneSaving ? "Сохраняю..." : "Зачислить на склад"}
+              </button>
+            </div>
           </div>
         </div>
       )}

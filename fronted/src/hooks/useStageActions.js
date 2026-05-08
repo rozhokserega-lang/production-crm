@@ -33,6 +33,7 @@ export function useStageActions({
   notifyFinalStageTelegram,
   openPilkaDoneConsumeDialog,
   openPilkaDoneConsumeDialogOnError,
+  openPrasDoneStrapDialog,
 }) {
   const stageActionSeqRef = useRef(new Map());
 
@@ -95,6 +96,10 @@ export function useStageActions({
         if (action === "webSetPrasDone" && meta.notifyOnAssembly) {
           notifyAssemblyReadyTelegram(buildNotifyPayload(orderId, meta));
         }
+        if (action === "webSetPrasDone" && meta.isStrapOrder && typeof openPrasDoneStrapDialog === "function") {
+          openPrasDoneStrapDialog(orderId, meta);
+          return;
+        }
         if (action === "webSetShippingDone" && meta.notifyOnFinalStage) {
           notifyFinalStageTelegram(buildNotifyPayload(orderId, meta));
         }
@@ -152,6 +157,7 @@ export function useStageActions({
       notifyFinalStageTelegram,
       openPilkaDoneConsumeDialog,
       openPilkaDoneConsumeDialogOnError,
+      openPrasDoneStrapDialog,
     ],
   );
 

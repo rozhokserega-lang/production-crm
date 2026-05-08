@@ -276,6 +276,9 @@ const RPC_MAP = {
   webGetSectionCatalog: "web_get_section_catalog",
   webGetSectionArticles: "web_get_section_articles",
   webGetProductColorMap: "web_get_product_color_map",
+  webGetStrapStock: "web_get_strap_stock",
+  webAddStrapStock: "web_add_strap_stock",
+  webSetStrapStock: "web_set_strap_stock",
   webGetReplacementOrders: "web_get_replacement_orders",
   webCreateReplacementOrder: "web_create_replacement_order",
   webSendReplacementOrderToWork: "web_send_replacement_order_to_work",
@@ -625,6 +628,13 @@ function buildRpcPayload(action, payload = {}) {
       p_offset: Number(payload.offset || payload.p_offset || 0),
       p_action: String(payload.action || payload.p_action || "").trim() || null,
       p_entity: String(payload.entity || payload.p_entity || "").trim() || null,
+    };
+  }
+  if (action === "webAddStrapStock" || action === "webSetStrapStock") {
+    return {
+      p_strap_type: String(payload.strapType || payload.p_strap_type || "").trim(),
+      p_color: String(payload.color || payload.p_color || "").trim(),
+      p_qty: Number(payload.qty || payload.p_qty || 0),
     };
   }
   if (action === "webDeleteFurnitureCustomTemplate") {

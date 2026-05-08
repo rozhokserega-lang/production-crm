@@ -33,6 +33,13 @@ export const WorkshopView = memo(function WorkshopView({
     : PRAS_EXECUTORS;
   const isPending = (key) => (typeof isActionPending === "function" ? isActionPending(key) : actionLoading === key);
 
+  // Detect strap orders by item name pattern (size codes like "1000_80", "316_167")
+  // or by "Планки обвязки" prefix used in some order types.
+  const isStrapItem = (item) => {
+    const s = String(item || "").trim();
+    return s.includes("Планки обвязки") || /^\d{3,5}[_x]\d{2,5}$/.test(s);
+  };
+
   return (
     <>
       {!workshopRows.length && !loading && <div className="empty">Нет заказов</div>}
@@ -255,6 +262,7 @@ export const WorkshopView = memo(function WorkshopView({
                           week: o.week,
                           qty: o.qty,
                           executor: executorByOrder[orderId] || o.prasExecutor || "",
+                          isStrapOrder: isStrapItem(o.item),
                         })
                       }
                     >

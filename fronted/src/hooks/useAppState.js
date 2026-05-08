@@ -241,6 +241,14 @@ export function useAppState() {
     planSaving,
     setPlanSaving,
   } = useShipmentDialogsState(STRAP_OPTIONS);
+
+  // Strap "Присадка: Готово" dialog state
+  const [strapDoneDialogOpen, setStrapDoneDialogOpen] = useState(false);
+  const [strapDoneDialogMeta, setStrapDoneDialogMeta] = useState(null);
+  const [strapDoneQtyInput, setStrapDoneQtyInput] = useState("");
+  const [strapDoneError, setStrapDoneError] = useState("");
+  const [strapDoneSaving, setStrapDoneSaving] = useState(false);
+
   const {
     laborSort,
     setLaborSort,
@@ -482,6 +490,44 @@ export function useAppState() {
     syncLeftoversToGoogleSheet,
     load,
   });
+
+  const openPrasDoneStrapDialog = useCallback((orderId, meta = {}) => {
+    setStrapDoneDialogMeta({ orderId, ...meta });
+    setStrapDoneQtyInput(String(meta.qty || ""));
+    setStrapDoneError("");
+    setStrapDoneSaving(false);
+    setStrapDoneDialogOpen(true);
+  }, []);
+
+  const closeStrapDoneDialog = useCallback(() => {
+    setStrapDoneDialogOpen(false);
+    setStrapDoneDialogMeta(null);
+    setStrapDoneQtyInput("");
+    setStrapDoneError("");
+    setStrapDoneSaving(false);
+    void load();
+  }, [load]);
+
+  const submitStrapDone = useCallback(async (strapType, color, qtyRaw) => {
+    const qty = parseInt(String(qtyRaw || "").replace(",", "."), 10);
+    if (!Number.isFinite(qty) || qty <= 0) {
+      setStrapDoneError("Введите количество планок (целое число > 0)");
+      return;
+    }
+    setStrapDoneSaving(true);
+    setStrapDoneError("");
+    try {
+      await callBackend("webAddStrapStock", { strapType, color, qty });
+      setStrapDoneDialogOpen(false);
+      setStrapDoneDialogMeta(null);
+      setStrapDoneQtyInput("");
+      void load();
+    } catch (e) {
+      setStrapDoneError(String(e?.message || e || "Ошибка сохранения"));
+    } finally {
+      setStrapDoneSaving(false);
+    }
+  }, [load]);
 
   const {
     weeks,
@@ -873,6 +919,7 @@ export function useAppState() {
     notifyFinalStageTelegram,
     openPilkaDoneConsumeDialog,
     openPilkaDoneConsumeDialogOnError,
+    openPrasDoneStrapDialog,
   });
 
   const baseOrderFiltered = useBaseOrderFilter({
@@ -1437,6 +1484,13 @@ export function useAppState() {
     submitConsume,
     openPilkaDoneConsumeDialog,
     openPilkaDoneConsumeDialogOnError,
+    strapDoneDialogOpen,
+    strapDoneDialogMeta,
+    strapDoneQtyInput, setStrapDoneQtyInput,
+    strapDoneError,
+    strapDoneSaving,
+    closeStrapDoneDialog,
+    submitStrapDone,
     handlePlanSectionChange,
     handlePlanArticleChange,
     openCreatePlanDialog,
