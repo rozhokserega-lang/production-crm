@@ -221,21 +221,47 @@ body.domain-furniture {
   transform: translateX(0);
 }
 
+.domain-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 59;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(15, 23, 42, 0.42);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.domain-drawer__head-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+  width: 100%;
+}
+
 .domain-drawer__head {
   font-size: 12px;
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--text-soft);
-  margin: 2px 2px 8px;
+  flex: 1;
+  min-width: 0;
+  margin: 2px 0 0;
 }
 
-.domain-drawer__head-row {
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 8px;
-  margin-bottom: 8px;
+.domain-drawer__close {
+  display: none;
+}
+
+.domain-drawer-mobile-trigger {
+  display: none;
 }
 
 .domain-drawer__icon {
@@ -1939,6 +1965,8 @@ button:disabled {
   font-weight: 700;
   letter-spacing: 0.01em;
   border-top: 2px solid #c5d1e3;
+  padding: 2px 10px;
+  line-height: 1.25;
 }
 
 .shipment-plan-group-toggle {
@@ -1951,8 +1979,9 @@ button:disabled {
   display: grid;
   grid-template-columns: 18px 1fr 18px;
   align-items: center;
-  gap: 6px;
-  padding: 2px 0;
+  gap: 4px;
+  min-height: 0;
+  padding: 0;
 }
 
 .shipment-plan-group-marker {
@@ -2487,6 +2516,61 @@ button:disabled {
   body {
     padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px));
   }
+
+  .domain-drawer {
+    z-index: 60;
+  }
+
+  .domain-drawer-backdrop {
+    z-index: 59;
+  }
+
+  .domain-drawer__close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border-radius: 10px;
+    border: 1px solid #c8dae8;
+    background: #fff;
+    font-size: 24px;
+    line-height: 1;
+    color: #334155;
+    cursor: pointer;
+    box-shadow: none;
+  }
+
+  .domain-drawer-mobile-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    position: fixed;
+    left: max(12px, env(safe-area-inset-left, 0px));
+    bottom: calc(56px + env(safe-area-inset-bottom, 0px) + 12px);
+    z-index: 52;
+    padding: 10px 16px 10px 14px;
+    border-radius: 999px;
+    border: 1px solid #c8dae8;
+    background: #fff;
+    box-shadow: 0 4px 18px rgba(15, 23, 42, 0.16);
+    font-size: 13px;
+    font-weight: 700;
+    color: #0f172a;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .domain-drawer-mobile-trigger__icon {
+    font-size: 16px;
+    line-height: 1;
+    opacity: 0.85;
+  }
+
+  .domain-drawer-mobile-trigger__text {
+    line-height: 1;
+  }
 }
 
 @media (max-width: 900px) {
@@ -2720,7 +2804,10 @@ button:disabled {
   }
 
   /* Hide the left domain drawer and remove app padding/margins. */
-  .domain-drawer {
+  .domain-drawer,
+  .domain-drawer-backdrop,
+  .domain-drawer-mobile-trigger,
+  .mobile-bottom-bar {
     display: none !important;
   }
 
@@ -3586,10 +3673,14 @@ button:hover {
   background: #edf2f7;
   color: #111827;
   border-top: 1px solid #cbd5e1;
+  padding: 2px 10px;
+  line-height: 1.25;
 }
 
 .shipment-plan-group-toggle {
-  min-height: 32px;
+  min-height: 0;
+  padding: 0;
+  gap: 4px;
 }
 
 .shipment-plan-group-toggle:hover {
@@ -3601,6 +3692,22 @@ button:hover {
 
 .shipment-plan-group-title {
   font-weight: 800;
+}
+
+/* Свернутые группы в таблице отгрузки — чуть отличимы от раскрытых */
+.shipment-plan-group-row--collapsed td {
+  background: #dbe4ee;
+  border-top: 1px dashed #94a3b8;
+  color: #475569;
+}
+
+.shipment-plan-group-row--collapsed .shipment-plan-group-marker {
+  color: #64748b;
+}
+
+.shipment-plan-group-row--collapsed .shipment-plan-group-title {
+  color: #475569;
+  font-weight: 700;
 }
 
 .card.shortage-row,
@@ -3932,3 +4039,82 @@ button:hover {
   outline: none;
 }
 .strap-stock-qty-input:focus { box-shadow: 0 0 0 2px #c7d2fe; }
+
+/* ========== Мобильный UI (≤600px), после max-width:900px — перебивает отступы .page и т.д. ========== */
+@media (max-width: 600px) {
+  .page {
+    padding-top: max(10px, env(safe-area-inset-top, 0px));
+    padding-left: max(10px, env(safe-area-inset-left, 0px));
+    padding-right: max(10px, env(safe-area-inset-right, 0px));
+    padding-bottom: 14px;
+  }
+
+  h1 {
+    font-size: clamp(17px, 4.5vw, 20px);
+    line-height: 1.22;
+    letter-spacing: -0.02em;
+  }
+
+  .top {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    min-height: 0;
+  }
+
+  .top-actions {
+    justify-content: flex-start;
+  }
+
+  /* Одна «полоса» вкладок с свайпом вместо высокой колонки кнопок */
+  .view-switch {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x proximity;
+    gap: 6px;
+    margin: 6px -8px 10px;
+    padding: 4px 10px 10px;
+    scrollbar-width: thin;
+  }
+
+  .view-switch .tab {
+    flex: 0 0 auto;
+    scroll-snap-align: start;
+    min-height: 42px;
+    padding: 8px 11px;
+    font-size: 12px;
+  }
+
+  .view-switch__icon {
+    font-size: 13px;
+    margin-right: 3px;
+  }
+
+  .kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin: 6px 0 10px;
+  }
+
+  .kpi {
+    min-height: 44px;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    row-gap: 2px;
+  }
+
+  .sheet-table-wrap {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+    border-radius: 10px;
+  }
+
+  /* На тач-экранах убираем «подпрыгивание» от hover */
+  button:hover {
+    transform: none;
+  }
+}

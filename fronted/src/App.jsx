@@ -461,6 +461,18 @@ export default function App() {
         toggleCrmAuthStrict={toggleCrmAuthStrict}
         crmAuthStrictSaving={crmAuthStrictSaving}
       />
+      <button
+        type="button"
+        className="domain-drawer-mobile-trigger"
+        onClick={() => setDomainDrawerOpen(true)}
+        aria-label="Открыть панель режима работы: мебель, металл, склад"
+        title="Режим работы"
+      >
+        <span className="domain-drawer-mobile-trigger__icon" aria-hidden>
+          ☰
+        </span>
+        <span className="domain-drawer-mobile-trigger__text">Режим</span>
+      </button>
       <DomainDrawer open={domainDrawerOpen} setOpen={setDomainDrawerOpen} view={view} setView={setView} />
 
       {showMainTopPanels && (

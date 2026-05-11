@@ -6,16 +6,18 @@
 #   ./scripts/deploy-frontend-vps.sh
 #
 # Переопределение путей и ветки:
-#   REPO_DIR=/opt/apps/production-crm GIT_BRANCH=test WEB_ROOT=/var/www/crm-test ./scripts/deploy-frontend-vps.sh
+#   Продакшен (crm-v175.ru, статика в nginx): WEB_ROOT=/var/www/crm-v175/current GIT_BRANCH=crm
+#   Старый staging по IP: WEB_ROOT=/var/www/crm-test GIT_BRANCH=test
+#   REPO_DIR=/opt/apps/production-crm WEB_ROOT=/var/www/crm-v175/current GIT_BRANCH=crm ./scripts/deploy-frontend-vps.sh
 #
 # Требования: git, node/npm в PATH; для /var/www обычно нужен root или sudo.
 
 set -euo pipefail
 
 : "${REPO_DIR:=/opt/apps/production-crm}"
-: "${GIT_BRANCH:=test}"
+: "${GIT_BRANCH:=crm}"
 : "${GIT_REMOTE:=origin}"
-: "${WEB_ROOT:=/var/www/crm-test}"
+: "${WEB_ROOT:=/var/www/crm-v175/current}"
 : "${FRONTEND_REL:=fronted}"
 : "${REQUIRE_PROXY:=1}"
 : "${EXPECTED_SUPABASE_URL:=https://supabase-proxy.crm-v175.ru}"

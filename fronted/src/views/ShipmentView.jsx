@@ -382,7 +382,10 @@ export const ShipmentView = memo(function ShipmentView({
                       (row) => String(row.section || "Прочее") === groupName
                     );
                     const rows = [
-                      <tr key={`section-${groupName}`} className="shipment-plan-group-row">
+                      <tr
+                        key={`section-${groupName}`}
+                        className={`shipment-plan-group-row${hidden ? " shipment-plan-group-row--collapsed" : ""}`}
+                      >
                         <td colSpan={7}>
                           <button
                             type="button"
