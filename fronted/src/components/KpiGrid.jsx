@@ -1,5 +1,19 @@
 import { OVERVIEW_POST_PRODUCTION_LANE_IDS, getOverviewLaneId } from "../orderPipeline";
 
+function KpiCard({ label, value, delta, deltaDir }) {
+  return (
+    <div className="kpi">
+      <span>{label}</span>
+      <b>{value}</b>
+      {delta != null && (
+        <div className={`kpi__delta${deltaDir === "up" ? " kpi__delta--up" : deltaDir === "down" ? " kpi__delta--down" : ""}`}>
+          {delta}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function KpiGrid({
   view,
   shipmentKpi,
@@ -10,74 +24,101 @@ export function KpiGrid({
   laborKpi,
   kpi,
 }) {
+  if (view === "shipment") {
+    const readyPct = shipmentKpi.totalOrders > 0
+      ? Math.round((shipmentKpi.readyAssembly / shipmentKpi.totalOrders) * 100) : 0;
+    const inWorkPct = shipmentKpi.totalOrders > 0
+      ? Math.round((shipmentKpi.assembled / shipmentKpi.totalOrders) * 100) : 0;
+    return (
+      <section className="kpi-grid">
+        <KpiCard label="Заказов" value={shipmentKpi.totalOrders} />
+        <KpiCard label="Кол-во (шт)" value={shipmentKpi.totalQty} />
+        <KpiCard label="К отправке в работу" value={shipmentKpi.readyAssembly}
+          delta={shipmentKpi.totalOrders > 0 ? `${readyPct}% от всех` : null}
+          deltaDir={readyPct > 50 ? "up" : null} />
+        <KpiCard label="Отправлено в цех" value={shipmentKpi.assembled}
+          delta={shipmentKpi.totalOrders > 0 ? `${inWorkPct}% в работе` : null}
+          deltaDir={inWorkPct > 0 ? "up" : null} />
+      </section>
+    );
+  }
+
+  if (view === "overview" && overviewSubView === "shipped") {
+    const totalQty = overviewShippedOnly.reduce((s, x) => s + (Number(x.qty) || 0), 0);
+    return (
+      <section className="kpi-grid">
+        <KpiCard label="Отгружено заказов" value={overviewShippedOnly.length} />
+        <KpiCard label="Суммарно шт" value={totalQty}
+          delta={overviewShippedOnly.length > 0 ? `~${Math.round(totalQty / overviewShippedOnly.length)} шт/заказ` : null} />
+      </section>
+    );
+  }
+
+  if (view === "overview") {
+    const inProduction = filtered.filter(
+      (x) => !OVERVIEW_POST_PRODUCTION_LANE_IDS.includes(getOverviewLaneId(x))
+    ).length;
+    const paused = filtered.filter((x) => statusClass(x) === "pause").length;
+    const readyToShip = filtered.filter((x) => getOverviewLaneId(x) === "ready_to_ship").length;
+    const shipped = filtered.filter((x) => getOverviewLaneId(x) === "shipped").length;
+    const pausedPct = inProduction > 0 ? Math.round((paused / inProduction) * 100) : 0;
+    return (
+      <section className="kpi-grid">
+        <KpiCard label="Всего заказов" value={filtered.length} />
+        <KpiCard label="В производстве" value={inProduction}
+          delta={filtered.length > 0 ? `${Math.round((inProduction / filtered.length) * 100)}% от всех` : null} />
+        <KpiCard label="На паузе" value={paused}
+          delta={paused > 0 ? `${pausedPct}% в цехе` : "всё в работе"}
+          deltaDir={paused > 0 ? "down" : "up"} />
+        <KpiCard label="Отправка" value={readyToShip} />
+        <KpiCard label="Отгружено" value={shipped} />
+      </section>
+    );
+  }
+
+  if (view === "labor") {
+    return (
+      <section className="kpi-grid">
+        <KpiCard label="Заказов" value={laborKpi.totalOrders} />
+        <KpiCard label="Общее время" value={Math.round(laborKpi.totalMinutes)}
+          delta={`~${Math.round(laborKpi.totalMinutes / 60)} ч`} />
+        <KpiCard label="Всего изделий" value={Math.round(laborKpi.totalQty)} />
+        <KpiCard label="Среднее / заказ" value={Math.round(laborKpi.avgPerOrder)} delta="мин/заказ" />
+      </section>
+    );
+  }
+
+  if (view === "workshop") {
+    const donePct = kpi.total > 0 ? Math.round((kpi.done / kpi.total) * 100) : 0;
+    return (
+      <section className="kpi-grid">
+        <KpiCard label="Всего" value={kpi.total} />
+        <KpiCard label="В работе" value={kpi.work}
+          delta={kpi.total > 0 ? `${Math.round((kpi.work / kpi.total) * 100)}% загрузка` : null}
+          deltaDir={kpi.work > 0 ? "up" : null} />
+        <KpiCard label="На паузе" value={kpi.paused}
+          delta={kpi.paused > 0 ? "нужно внимания" : "всё ОК"}
+          deltaDir={kpi.paused > 0 ? "down" : "up"} />
+        <KpiCard label="Собрано" value={kpi.done}
+          delta={kpi.total > 0 ? `${donePct}% готово` : null}
+          deltaDir={donePct >= 50 ? "up" : null} />
+      </section>
+    );
+  }
+
+  const donePct = kpi.total > 0 ? Math.round((kpi.done / kpi.total) * 100) : 0;
   return (
     <section className="kpi-grid">
-      {view === "shipment" ? (
-        <>
-          <div className="kpi"><span>Заказов</span><b>{shipmentKpi.totalOrders}</b></div>
-          <div className="kpi"><span>Кол-во (шт)</span><b>{shipmentKpi.totalQty}</b></div>
-          <div className="kpi"><span>К отправке в работу</span><b>{shipmentKpi.readyAssembly}</b></div>
-          <div className="kpi"><span>Отправлено в цех</span><b>{shipmentKpi.assembled}</b></div>
-        </>
-      ) : view === "overview" && overviewSubView === "shipped" ? (
-        <>
-          <div className="kpi">
-            <span>Отгружено заказов</span>
-            <b>{overviewShippedOnly.length}</b>
-          </div>
-          <div className="kpi">
-            <span>Суммарно шт</span>
-            <b>{overviewShippedOnly.reduce((s, x) => s + (Number(x.qty) || 0), 0)}</b>
-          </div>
-        </>
-      ) : view === "overview" ? (
-        <>
-          <div className="kpi"><span>Всего заказов</span><b>{filtered.length}</b></div>
-          <div className="kpi">
-            <span>В производстве</span>
-            <b>
-              {
-                filtered.filter(
-                  (x) => !OVERVIEW_POST_PRODUCTION_LANE_IDS.includes(getOverviewLaneId(x))
-                ).length
-              }
-            </b>
-          </div>
-          <div className="kpi"><span>На паузе</span><b>{filtered.filter((x) => statusClass(x) === "pause").length}</b></div>
-          <div className="kpi">
-            <span>Отправка</span>
-            <b>{filtered.filter((x) => getOverviewLaneId(x) === "ready_to_ship").length}</b>
-          </div>
-          <div className="kpi">
-            <span>Отгружено</span>
-            <b>{filtered.filter((x) => getOverviewLaneId(x) === "shipped").length}</b>
-          </div>
-        </>
-      ) : view === "labor" ? (
-        <>
-          <div className="kpi"><span>Заказов</span><b>{laborKpi.totalOrders}</b></div>
-          <div className="kpi"><span>Общее время (мин)</span><b>{Math.round(laborKpi.totalMinutes)}</b></div>
-          <div className="kpi"><span>Всего изделий</span><b>{Math.round(laborKpi.totalQty)}</b></div>
-          <div className="kpi"><span>Среднее / заказ (мин)</span><b>{Math.round(laborKpi.avgPerOrder)}</b></div>
-        </>
-      ) : view === "workshop" ? (
-        <>
-          <div className="kpi"><span>Всего</span><b>{kpi.total}</b></div>
-          <div className="kpi"><span>В работе</span><b>{kpi.work}</b></div>
-          <div className="kpi"><span>На паузе</span><b>{kpi.paused}</b></div>
-          <div className="kpi"><span>Собрано</span><b>{kpi.done}</b></div>
-        </>
-      ) : (
-        <>
-          <div className="kpi"><span>Всего</span><b>{kpi.total}</b></div>
-          <div className="kpi"><span>В работе</span><b>{kpi.work}</b></div>
-          <div className="kpi"><span>На паузе</span><b>{kpi.paused}</b></div>
-          <div className="kpi">
-            <span>Собрано и отгрузка</span>
-            <b>{kpi.done}</b>
-          </div>
-        </>
-      )}
+      <KpiCard label="Всего" value={kpi.total} />
+      <KpiCard label="В работе" value={kpi.work}
+        delta={kpi.total > 0 ? `${Math.round((kpi.work / kpi.total) * 100)}%` : null}
+        deltaDir={kpi.work > 0 ? "up" : null} />
+      <KpiCard label="На паузе" value={kpi.paused}
+        delta={kpi.paused > 0 ? "нужно внимания" : "всё ОК"}
+        deltaDir={kpi.paused > 0 ? "down" : "up"} />
+      <KpiCard label="Собрано и отгрузка" value={kpi.done}
+        delta={kpi.total > 0 ? `${donePct}% готово` : null}
+        deltaDir={donePct >= 50 ? "up" : null} />
     </section>
   );
 }

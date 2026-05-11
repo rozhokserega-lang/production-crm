@@ -593,7 +593,7 @@ export const ShipmentView = memo(function ShipmentView({
           </div>
         ))}
       </div>
-      {!isPlanPreviewOpen && <aside className="shipment-actions-pane">
+      <aside className="shipment-actions-pane">
         {selectedShipments.length > 0 && (
           <div className="shipment-toolbar shipment-toolbar--side">
             <div className="shipment-toolbar__summary">
@@ -640,7 +640,7 @@ export const ShipmentView = memo(function ShipmentView({
             </div>
           </div>
         )}
-      </aside>}
+      </aside>
     </div>
   );
 });

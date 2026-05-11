@@ -2,6 +2,27 @@ import { memo, useMemo } from "react";
 import { KROMKA_EXECUTORS, PRAS_EXECUTORS } from "../config";
 import { stripPlanItemMeta } from "../app/orderHelpers";
 import { STRAP_OPTIONS } from "../constants/views";
+import { resolvePipelineStage, getOrderStageDisplayLabel } from "../orderPipeline";
+
+const STAGE_PILL_CLASS = {
+  pilka:            "stage-pill stage-pill--pilka",
+  kromka:           "stage-pill stage-pill--kromka",
+  pras:             "stage-pill stage-pill--pras",
+  workshop_complete:"stage-pill stage-pill--complete",
+  assembled:        "stage-pill stage-pill--assembled",
+  ready_to_ship:    "stage-pill stage-pill--ready",
+  shipped:          "stage-pill stage-pill--shipped",
+};
+
+const STAGE_ICON = {
+  pilka:            "🪚",
+  kromka:           "✂",
+  pras:             "⚙",
+  workshop_complete:"✓",
+  assembled:        "📦",
+  ready_to_ship:    "🚚",
+  shipped:          "✅",
+};
 
 // Extract strap type code from STRAP_OPTIONS like "Обвязка (1158_50)" → "1158_50"
 const STRAP_TYPE_CODES = new Set(
@@ -207,6 +228,11 @@ export const WorkshopView = memo(function WorkshopView({
         if (isPaused(o.assemblyStatus)) pauseLabels.push("Сборка");
         const hasPause = pauseLabels.length > 0;
 
+        const pipelineStage = resolvePipelineStage(o);
+        const stageLabel = getOrderStageDisplayLabel(o);
+        const stagePillClass = STAGE_PILL_CLASS[pipelineStage] || "stage-pill stage-pill--pilka";
+        const stageIcon = STAGE_ICON[pipelineStage] || "🪚";
+
         return (
           <article key={orderId || `${o.item}-${o.row}`} className={`card ${statusClass(o)}`}>
             <div className="card__content">
@@ -214,6 +240,7 @@ export const WorkshopView = memo(function WorkshopView({
                 <div className="line1">
                   <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                     <strong>{o.item}</strong>
+                    <span className={stagePillClass}>{stageIcon} {stageLabel}</span>
                     <span className="badge meta-inline">План: {o.week || "-"}</span>
                     <span className="badge meta-inline">Кол-во: {o.qty || 0}</span>
                     {hasPause && (
@@ -273,7 +300,7 @@ export const WorkshopView = memo(function WorkshopView({
                       disabled={isPending(`webSetPilkaInWork:${orderId}`) || pilkaDone || pilkaInWork || !canOperateProduction}
                       onClick={() => runAction("webSetPilkaInWork", orderId, {})}
                     >
-                      {tab === "pilka" ? "Начать" : "Пила: Начать"}
+                      ▶ {tab === "pilka" ? "Начать" : "Пила: Начать"}
                     </button>
                     <button
                       className="mini ok"
@@ -287,14 +314,14 @@ export const WorkshopView = memo(function WorkshopView({
                         })
                       }
                     >
-                      {tab === "pilka" ? "Готово" : "Пила: Готово"}
+                      ✓ {tab === "pilka" ? "Готово" : "Пила: Готово"}
                     </button>
                     <button
                       className="mini warn"
                       disabled={isPending(`webSetPilkaPause:${orderId}`) || pilkaDone || !pilkaInWork || !canOperateProduction}
                       onClick={() => runAction("webSetPilkaPause", orderId)}
                     >
-                      {tab === "pilka" ? "Пауза" : "Пила: Пауза"}
+                      ⏸ {tab === "pilka" ? "Пауза" : "Пила: Пауза"}
                     </button>
                   </>
                 )}
@@ -322,21 +349,21 @@ export const WorkshopView = memo(function WorkshopView({
                         })
                       }
                     >
-                      {tab === "kromka" ? "Начать" : "Кромка: Начать"}
+                      ▶ {tab === "kromka" ? "Начать" : "Кромка: Начать"}
                     </button>
                     <button
                       className="mini ok"
                       disabled={isPending(`webSetKromkaDone:${orderId}`) || kromkaDone || !kromkaInWork || !canOperateProduction}
                       onClick={() => runAction("webSetKromkaDone", orderId)}
                     >
-                      {tab === "kromka" ? "Готово" : "Кромка: Готово"}
+                      ✓ {tab === "kromka" ? "Готово" : "Кромка: Готово"}
                     </button>
                     <button
                       className="mini warn"
                       disabled={isPending(`webSetKromkaPause:${orderId}`) || kromkaDone || !kromkaInWork || !canOperateProduction}
                       onClick={() => runAction("webSetKromkaPause", orderId)}
                     >
-                      {tab === "kromka" ? "Пауза" : "Кромка: Пауза"}
+                      ⏸ {tab === "kromka" ? "Пауза" : "Кромка: Пауза"}
                     </button>
                   </>
                 )}
@@ -364,7 +391,7 @@ export const WorkshopView = memo(function WorkshopView({
                         })
                       }
                     >
-                      {tab === "pras" ? "Начать" : "Присадка: Начать"}
+                      ▶ {tab === "pras" ? "Начать" : "Присадка: Начать"}
                     </button>
                     <button
                       className="mini ok"
@@ -381,7 +408,7 @@ export const WorkshopView = memo(function WorkshopView({
                         })
                       }
                     >
-                      {tab === "pras" ? "Готово" : "Присадка: Готово"}
+                      ✓ {tab === "pras" ? "Готово" : "Присадка: Готово"}
                     </button>
                     <button
                       className="mini warn"
@@ -395,7 +422,7 @@ export const WorkshopView = memo(function WorkshopView({
                         })
                       }
                     >
-                      {tab === "pras" ? "Пауза" : "Присадка: Пауза"}
+                      ⏸ {tab === "pras" ? "Пауза" : "Присадка: Пауза"}
                     </button>
                   </>
                 )}
@@ -405,7 +432,7 @@ export const WorkshopView = memo(function WorkshopView({
                     disabled={isPending(`webSetAssemblyDone:${orderId}`) || assemblyDone || !canOperateProduction}
                     onClick={() => runAction("webSetAssemblyDone", orderId)}
                   >
-                    {tab === "assembly" ? "Готово" : "Сборка: Готово"}
+                    ✓ {tab === "assembly" ? "Готово" : "Сборка: Готово"}
                   </button>
                 )}
                 {showDone && (
@@ -423,7 +450,7 @@ export const WorkshopView = memo(function WorkshopView({
                       })
                     }
                   >
-                    {tab === "done" ? "Готово" : "Готово к отправке: Готово"}
+                    ✓ {tab === "done" ? "Готово" : "Готово к отправке: Готово"}
                   </button>
                 )}
               </div>

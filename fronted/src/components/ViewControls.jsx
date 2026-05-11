@@ -349,101 +349,110 @@ export function ViewControls({
           </div>
         )}
         {view === "shipment" && (
-          <div className="filters-right">
-            <label className="empty-only-toggle">
+          <div className="shipment-filters-body">
+            <div className="shipment-filters__status-row">
+              <span className="shipment-filters__status-label">Статус:</span>
+              <button
+                type="button"
+                className={`status-dot-toggle${showAwaiting ? " active" : ""}`}
+                data-color="gray"
+                onClick={() => setShowAwaiting(!showAwaiting)}
+              >
+                <span className="status-dot" />Ожидаю заказ
+              </button>
+              <button
+                type="button"
+                className={`status-dot-toggle${showOnPilka ? " active" : ""}`}
+                data-color="blue"
+                onClick={() => setShowOnPilka(!showOnPilka)}
+              >
+                <span className="status-dot" />На пиле
+              </button>
+              <button
+                type="button"
+                className={`status-dot-toggle${showOnKromka ? " active" : ""}`}
+                data-color="purple"
+                onClick={() => setShowOnKromka(!showOnKromka)}
+              >
+                <span className="status-dot" />На кромке
+              </button>
+              <button
+                type="button"
+                className={`status-dot-toggle${showOnPras ? " active" : ""}`}
+                data-color="indigo"
+                onClick={() => setShowOnPras(!showOnPras)}
+              >
+                <span className="status-dot" />На присадке
+              </button>
+              <button
+                type="button"
+                className={`status-dot-toggle${showReadyAssembly ? " active" : ""}`}
+                data-color="yellow"
+                onClick={() => setShowReadyAssembly(!showReadyAssembly)}
+              >
+                <span className="status-dot" />Готовы к сборке
+              </button>
+              <button
+                type="button"
+                className={`status-dot-toggle${showAwaitShipment ? " active" : ""}`}
+                data-color="orange"
+                onClick={() => setShowAwaitShipment(!showAwaitShipment)}
+              >
+                <span className="status-dot" />Ждёт отправку
+              </button>
+              <button
+                type="button"
+                className={`status-dot-toggle${showShipped ? " active" : ""}`}
+                data-color="green"
+                onClick={() => setShowShipped(!showShipped)}
+              >
+                <span className="status-dot" />Отправленные
+              </button>
+            </div>
+
+            <div className="shipment-filters__actions-row">
+              <button className="mini ghost" disabled={!canOperateProduction} onClick={openCreatePlanDialog}>
+                + Добавить план
+              </button>
+              <button className="mini ghost" disabled={!canOperateProduction} onClick={openStrapDialog}>
+                ⚙ Обвязку
+              </button>
+              <button
+                className="mini ghost shipment-filters__pkg-btn"
+                type="button"
+                onClick={openPackagingDialog}
+                title="Входящие заказы в секцию Упаковка"
+              >
+                📦 Упаковка
+                {Number(packagingInboxCount || 0) > 0 && (
+                  <span className="pkg-badge">{packagingInboxCount}</span>
+                )}
+              </button>
+              <button
+                className="mini ok"
+                disabled={selectedShipments.length === 0}
+                onClick={exportSelectedShipmentToExcel}
+              >
+                ↓ Экспорт Excel
+              </button>
               <input
-                type="checkbox"
-                checked={showAwaiting}
-                onChange={(e) => setShowAwaiting(e.target.checked)}
+                ref={importPlanFileRef}
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                style={{ display: "none" }}
+                onChange={(e) => {
+                  const f = e.target.files && e.target.files[0];
+                  importShipmentPlanFromExcelFile(f);
+                }}
               />
-              <span>Ожидаю заказ</span>
-            </label>
-            <label className="empty-only-toggle">
-              <input
-                type="checkbox"
-                checked={showOnPilka}
-                onChange={(e) => setShowOnPilka(e.target.checked)}
-              />
-              <span>На пиле</span>
-            </label>
-            <label className="empty-only-toggle">
-              <input
-                type="checkbox"
-                checked={showOnKromka}
-                onChange={(e) => setShowOnKromka(e.target.checked)}
-              />
-              <span>На кромке</span>
-            </label>
-            <label className="empty-only-toggle">
-              <input
-                type="checkbox"
-                checked={showOnPras}
-                onChange={(e) => setShowOnPras(e.target.checked)}
-              />
-              <span>На присадке</span>
-            </label>
-            <label className="empty-only-toggle">
-              <input
-                type="checkbox"
-                checked={showReadyAssembly}
-                onChange={(e) => setShowReadyAssembly(e.target.checked)}
-              />
-              <span>Готовы к сборке</span>
-            </label>
-            <label className="empty-only-toggle">
-              <input
-                type="checkbox"
-                checked={showAwaitShipment}
-                onChange={(e) => setShowAwaitShipment(e.target.checked)}
-              />
-              <span>Ждёт отправку</span>
-            </label>
-            <label className="empty-only-toggle">
-              <input
-                type="checkbox"
-                checked={showShipped}
-                onChange={(e) => setShowShipped(e.target.checked)}
-              />
-              <span>Отправленные</span>
-            </label>
-            <button className="mini" disabled={!canOperateProduction} onClick={openStrapDialog}>
-              Добавить обвязку
-            </button>
-            <button className="mini ok" disabled={!canOperateProduction} onClick={openCreatePlanDialog}>
-              Добавить план
-            </button>
-            <button
-              className="mini"
-              type="button"
-              onClick={openPackagingDialog}
-              title="Входящие заказы в секцию Упаковка"
-            >
-              Упаковка{Number(packagingInboxCount || 0) > 0 ? ` (${packagingInboxCount})` : ""}
-            </button>
-            <button
-              className="mini"
-              disabled={selectedShipments.length === 0}
-              onClick={exportSelectedShipmentToExcel}
-            >
-              Экспорт в Excel
-            </button>
-            <input
-              ref={importPlanFileRef}
-              type="file"
-              accept=".xlsx,.xls,.csv"
-              style={{ display: "none" }}
-              onChange={(e) => {
-                const f = e.target.files && e.target.files[0];
-                importShipmentPlanFromExcelFile(f);
-              }}
-            />
-            <button
-              className="mini"
-              disabled={actionLoading === "shipment:import" || !canOperateProduction}
-              onClick={() => importPlanFileRef.current?.click()}
-            >
-              {actionLoading === "shipment:import" ? "Импорт..." : "Импорт из Excel"}
-            </button>
+              <button
+                className="mini ghost"
+                disabled={actionLoading === "shipment:import" || !canOperateProduction}
+                onClick={() => importPlanFileRef.current?.click()}
+              >
+                {actionLoading === "shipment:import" ? "Импорт..." : "↑ Импорт Excel"}
+              </button>
+            </div>
           </div>
         )}
         {view === "metal" && (

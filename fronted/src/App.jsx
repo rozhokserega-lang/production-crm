@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppHeader } from "./components/AppHeader";
 import { DomainDrawer } from "./components/DomainDrawer";
 import { ViewSwitcher } from "./components/ViewSwitcher";
+import { MobileBottomBar } from "./components/MobileBottomBar";
 import { KpiGrid } from "./components/KpiGrid";
 import { ViewControls } from "./components/ViewControls";
 import { OrderDrawer } from "./components/OrderDrawer";
@@ -1020,6 +1021,7 @@ export default function App() {
         onClose={closeCreatePlanDialog}
         refreshPlanCatalogs={refreshPlanCatalogs}
       />
+      <MobileBottomBar view={view} setView={setView} setTab={setTab} />
     </div>
   );
 }
