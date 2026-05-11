@@ -6,6 +6,7 @@ export default defineConfig(({ mode }) => {
   // We do this by letting the browser call the same-origin path (/supabase/...)
   // and Vite forwards it server-side to the real Supabase proxy.
   const env = loadEnv(mode, process.cwd(), "");
+  const prodEnv = loadEnv("production", process.cwd(), "");
   const proxyBase = String(env.VITE_SUPABASE_PROXY_URL || "").trim();
   const proxyTarget = String(env.VITE_SUPABASE_PROXY_TARGET_URL || env.VITE_SUPABASE_PROXY_TARGET || env.VITE_SUPABASE_URL || "").trim();
 
@@ -18,6 +19,13 @@ export default defineConfig(({ mode }) => {
     environment: "jsdom",
     globals: true,
     clearMocks: true,
+    // Подмешиваем .env.production, чтобы на VPS vitest видел VITE_* (есть только в этом файле).
+    // TZ фиксирует calcWorkingMsBetween/stageTime.test (календарный день).
+    env: {
+      ...prodEnv,
+      ...env,
+      TZ: "Europe/Moscow",
+    },
   },
   build: {
     outDir: "dist",
