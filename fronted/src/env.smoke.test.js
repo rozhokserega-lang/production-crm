@@ -30,8 +30,15 @@ describe("Environment smoke tests", () => {
     ).toBeGreaterThan(20);
   });
 
-  it("VITE_SUPABASE_PROXY_URL is set and not a bare relative path", () => {
-    expect(SUPABASE_PROXY_URL, "VITE_SUPABASE_PROXY_URL is empty").not.toBe("");
+  it("VITE_SUPABASE_PROXY_URL: dev path or omitted when using direct HTTPS URL", () => {
+    if (!SUPABASE_PROXY_URL) {
+      // Продакшен (VPS): в .env.production часто только VITE_SUPABASE_URL=https://supabase-proxy...
+      expect(
+        SUPABASE_URL.startsWith("https://"),
+        "без VITE_SUPABASE_PROXY_URL адрес Supabase должен быть полным https://"
+      ).toBe(true);
+      return;
+    }
     expect(
       SUPABASE_PROXY_URL,
       'VITE_SUPABASE_PROXY_URL should not be "/supabase" — use direct HTTPS URL in production'
