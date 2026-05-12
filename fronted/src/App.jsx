@@ -444,23 +444,7 @@ export default function App() {
 
   return (
     <div className="page">
-      <AppHeader
-        authEnabled={authEnabled}
-        authUserLabel={authUserLabel}
-        authEmail={authEmail}
-        setAuthEmail={setAuthEmail}
-        authPassword={authPassword}
-        setAuthPassword={setAuthPassword}
-        authSaving={authSaving}
-        signInWithSupabase={signInWithSupabase}
-        signOutSupabaseUser={signOutSupabaseUser}
-        crmRole={crmRole}
-        crmRoleLabel={crmRoleLabel}
-        canAdminSettings={canAdminSettings}
-        crmAuthStrict={crmAuthStrict}
-        toggleCrmAuthStrict={toggleCrmAuthStrict}
-        crmAuthStrictSaving={crmAuthStrictSaving}
-      />
+      <DomainDrawer open={domainDrawerOpen} setOpen={setDomainDrawerOpen} view={view} setView={setView} />
       <button
         type="button"
         className="domain-drawer-mobile-trigger"
@@ -473,16 +457,40 @@ export default function App() {
         </span>
         <span className="domain-drawer-mobile-trigger__text">Режим</span>
       </button>
-      <DomainDrawer open={domainDrawerOpen} setOpen={setDomainDrawerOpen} view={view} setView={setView} />
 
-      {showMainTopPanels && (
-        <ViewSwitcher
-          view={view}
-          setView={setView}
-          setTab={setTab}
-          canAdminSettings={canAdminSettings}
-        />
-      )}
+      <div className="app-layout">
+        {/* ── Левый сайдбар ── */}
+        <div className="sidebar-col">
+          {showMainTopPanels && (
+            <ViewSwitcher
+              view={view}
+              setView={setView}
+              setTab={setTab}
+              canAdminSettings={canAdminSettings}
+              packagingInboxCount={packagingOrders.length}
+            />
+          )}
+          <AppHeader
+            authEnabled={authEnabled}
+            authUserLabel={authUserLabel}
+            authEmail={authEmail}
+            setAuthEmail={setAuthEmail}
+            authPassword={authPassword}
+            setAuthPassword={setAuthPassword}
+            authSaving={authSaving}
+            signInWithSupabase={signInWithSupabase}
+            signOutSupabaseUser={signOutSupabaseUser}
+            crmRole={crmRole}
+            crmRoleLabel={crmRoleLabel}
+            canAdminSettings={canAdminSettings}
+            crmAuthStrict={crmAuthStrict}
+            toggleCrmAuthStrict={toggleCrmAuthStrict}
+            crmAuthStrictSaving={crmAuthStrictSaving}
+          />
+        </div>
+
+        {/* ── Правая основная колонка ── */}
+        <div className="main-col">
 
       {showMainTopPanels && (
         <KpiGrid
@@ -580,6 +588,7 @@ export default function App() {
         <div className="error">{error}</div>
       )}
 
+      <div className="content-area">
       <section className="cards">
         {view === "shipment" && (
           <ShipmentView
@@ -840,6 +849,8 @@ export default function App() {
           />
         )}
       </section>
+      </div>{/* /content-area */}
+
       {hoverTip.visible && (
         <div
           className="hover-tip"
@@ -1033,6 +1044,8 @@ export default function App() {
         onClose={closeCreatePlanDialog}
         refreshPlanCatalogs={refreshPlanCatalogs}
       />
+        </div>{/* /main-col */}
+      </div>{/* /app-layout */}
       <MobileBottomBar view={view} setView={setView} setTab={setTab} />
     </div>
   );
