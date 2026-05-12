@@ -4,7 +4,6 @@ import { AppHeader } from "./components/AppHeader";
 import { DomainDrawer } from "./components/DomainDrawer";
 import { ViewSwitcher } from "./components/ViewSwitcher";
 import { MobileBottomBar } from "./components/MobileBottomBar";
-import { KpiGrid } from "./components/KpiGrid";
 import { ViewControls } from "./components/ViewControls";
 import { OrderDrawer } from "./components/OrderDrawer";
 import { ConsumeDialog } from "./components/ConsumeDialog";
@@ -264,7 +263,7 @@ export default function App() {
     visibleCellsForItem,
     sortItemsForShipment,
     shipmentRenderSections,
-    kpi, statsGroups: _statsGroups, statsList, overviewColumns, shipmentKpi,
+    statsGroups: _statsGroups, statsList, overviewColumns,
     workshopRows,
     shipmentMaterialBalance,
     shipmentTableRowsWithStockStatus,
@@ -275,7 +274,6 @@ export default function App() {
     laborOrdersRows,
     laborStageTimelineRows,
     laborPlannerRows,
-    laborKpi,
     warehouseTableRows,
     leftoversTableRows,
     consumeHistoryTableRows,
@@ -444,7 +442,23 @@ export default function App() {
 
   return (
     <div className="page">
-      <DomainDrawer open={domainDrawerOpen} setOpen={setDomainDrawerOpen} view={view} setView={setView} />
+      <AppHeader
+        authEnabled={authEnabled}
+        authUserLabel={authUserLabel}
+        authEmail={authEmail}
+        setAuthEmail={setAuthEmail}
+        authPassword={authPassword}
+        setAuthPassword={setAuthPassword}
+        authSaving={authSaving}
+        signInWithSupabase={signInWithSupabase}
+        signOutSupabaseUser={signOutSupabaseUser}
+        crmRole={crmRole}
+        crmRoleLabel={crmRoleLabel}
+        canAdminSettings={canAdminSettings}
+        crmAuthStrict={crmAuthStrict}
+        toggleCrmAuthStrict={toggleCrmAuthStrict}
+        crmAuthStrictSaving={crmAuthStrictSaving}
+      />
       <button
         type="button"
         className="domain-drawer-mobile-trigger"
@@ -457,51 +471,14 @@ export default function App() {
         </span>
         <span className="domain-drawer-mobile-trigger__text">Режим</span>
       </button>
-
-      <div className="app-layout">
-        {/* ── Левый сайдбар ── */}
-        <div className="sidebar-col">
-          {showMainTopPanels && (
-            <ViewSwitcher
-              view={view}
-              setView={setView}
-              setTab={setTab}
-              canAdminSettings={canAdminSettings}
-              packagingInboxCount={packagingOrders.length}
-            />
-          )}
-          <AppHeader
-            authEnabled={authEnabled}
-            authUserLabel={authUserLabel}
-            authEmail={authEmail}
-            setAuthEmail={setAuthEmail}
-            authPassword={authPassword}
-            setAuthPassword={setAuthPassword}
-            authSaving={authSaving}
-            signInWithSupabase={signInWithSupabase}
-            signOutSupabaseUser={signOutSupabaseUser}
-            crmRole={crmRole}
-            crmRoleLabel={crmRoleLabel}
-            canAdminSettings={canAdminSettings}
-            crmAuthStrict={crmAuthStrict}
-            toggleCrmAuthStrict={toggleCrmAuthStrict}
-            crmAuthStrictSaving={crmAuthStrictSaving}
-          />
-        </div>
-
-        {/* ── Правая основная колонка ── */}
-        <div className="main-col">
+      <DomainDrawer open={domainDrawerOpen} setOpen={setDomainDrawerOpen} view={view} setView={setView} />
 
       {showMainTopPanels && (
-        <KpiGrid
+        <ViewSwitcher
           view={view}
-          shipmentKpi={shipmentKpi}
-          overviewSubView={overviewSubView}
-          overviewShippedOnly={overviewShippedOnly}
-          filtered={filtered}
-          statusClass={statusClass}
-          laborKpi={laborKpi}
-          kpi={kpi}
+          setView={setView}
+          setTab={setTab}
+          canAdminSettings={canAdminSettings}
         />
       )}
 
@@ -588,7 +565,6 @@ export default function App() {
         <div className="error">{error}</div>
       )}
 
-      <div className="content-area">
       <section className="cards">
         {view === "shipment" && (
           <ShipmentView
@@ -849,8 +825,6 @@ export default function App() {
           />
         )}
       </section>
-      </div>{/* /content-area */}
-
       {hoverTip.visible && (
         <div
           className="hover-tip"
@@ -1044,8 +1018,6 @@ export default function App() {
         onClose={closeCreatePlanDialog}
         refreshPlanCatalogs={refreshPlanCatalogs}
       />
-        </div>{/* /main-col */}
-      </div>{/* /app-layout */}
       <MobileBottomBar view={view} setView={setView} setTab={setTab} />
     </div>
   );

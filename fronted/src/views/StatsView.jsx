@@ -1,4 +1,5 @@
 import { memo, useMemo } from "react";
+import { StatsKpiGrid } from "../components/KpiGrid";
 import {
   Bar,
   BarChart,
@@ -85,6 +86,7 @@ export const StatsView = memo(function StatsView({
       {!statsList.length && !loading && <div className="empty">Нет данных для статистики</div>}
       {statsList.length > 0 && (
         <>
+          <StatsKpiGrid statsList={statsList} />
           <div className="stats-charts-grid">
             <section className="stats-chart-card">
               <h3>Throughput по неделям</h3>
