@@ -38,8 +38,19 @@ export function extractErrorMessage(e) {
 
 export function toUserError(e) {
   const msg = extractErrorMessage(e);
+  const lower = msg.toLowerCase();
   if (msg.includes("Система занята")) {
     return "Система занята, повторите через 1-2 секунды.";
+  }
+  if (
+    lower.includes("57014") ||
+    lower.includes("query_canceled") ||
+    lower.includes("query canceled") ||
+    lower.includes("statement timeout") ||
+    lower.includes("canceling statement due to statement timeout") ||
+    lower.includes("canceling statement")
+  ) {
+    return "Сервер слишком долго считал данные (лимит времени запроса). Попробуйте обновить страницу через минуту или обратитесь к администратору БД.";
   }
   if (msg.includes("Failed to fetch") || msg.includes("NetworkError")) {
     return "Нет связи с сервером. Проверьте интернет и повторите.";

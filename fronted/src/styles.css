@@ -3142,7 +3142,30 @@ button:disabled {
     box-shadow: none;
     padding: 0;
     transform: none !important;
-    width: auto;
+    width: 100% !important;
+    max-width: none !important;
+  }
+
+  /* При печати плана — вся ширина листа, без колонки действий справа. */
+  .shipment-layout.is-plan-preview-open {
+    grid-template-columns: 1fr !important;
+  }
+
+  .shipment-layout.is-plan-preview-open .shipment-actions-pane {
+    display: none !important;
+  }
+
+  /* Экранный превью ограничивает ширину (1200px) — при печати нужна вся полоса A4 landscape. */
+  .shipment-layout.is-plan-preview-open .print-area {
+    max-width: none !important;
+    width: 100% !important;
+    margin: 0 !important;
+  }
+
+  .print-area .plan-preview.print-plan-page {
+    width: 100% !important;
+    max-width: none !important;
+    box-sizing: border-box;
   }
 
   /* Metal plan preview: print only the preview sheet. */
