@@ -10,6 +10,7 @@ import { ConsumeDialog } from "./components/ConsumeDialog";
 import { PlanDialog } from "./components/PlanDialog";
 import { StrapDialog } from "./components/StrapDialog";
 import { AdminView } from "./views/AdminView";
+import { DatabaseCatalogView } from "./views/DatabaseCatalogView";
 import { WorkshopView } from "./views/WorkshopView";
 import { ShipmentView } from "./views/ShipmentView";
 import { OverviewView } from "./views/OverviewView";
@@ -529,7 +530,6 @@ export default function App() {
           actionLoading={actionLoading}
           importShipmentPlanFromExcelFile={importShipmentPlanFromExcelFile}
           warehouseSyncLoading={warehouseSyncLoading}
-          loading={loading}
           syncWarehouseFromGoogleSheet={syncWarehouseFromGoogleSheet}
           leftoversSyncLoading={leftoversSyncLoading}
           syncLeftoversToGoogleSheet={syncLeftoversToGoogleSheet}
@@ -752,6 +752,13 @@ export default function App() {
             callBackend={callBackend}
             load={load}
             refreshPlanCatalogs={refreshPlanCatalogs}
+          />
+        )}
+        {view === "db" && (
+          <DatabaseCatalogView
+            canAdminSettings={canAdminSettings}
+            refreshPlanCatalogs={refreshPlanCatalogs}
+            load={load}
           />
         )}
         {view === "admin" && (

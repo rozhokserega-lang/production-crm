@@ -1,4 +1,5 @@
 import { firstSelectedWeek } from "./weekFilterUtils";
+import { normText, sectionNamesMatch } from "../utils/shipmentUtils";
 
 export function buildStrapDialogInit({
   strapItems = [],
@@ -37,11 +38,11 @@ export function buildCreatePlanDialogInit({
   const firstSection = sectionOptions[0] || "Прочее";
   const firstWeek = weeks[0] || "";
   const firstArticle = normalizeSectionArticles(sectionArticleRows).find(
-    (x) => x.sectionName === firstSection && x.article,
+    (x) => sectionNamesMatch(x.sectionName, firstSection) && (x.article || x.itemName),
   );
   return {
     section: firstSection,
-    article: firstArticle?.itemName || "",
+    article: firstArticle ? planCatalogRowSelectKey(firstArticle) : "",
     material: resolvePlanMaterial(firstArticle),
     week: firstWeek,
     qty: "",
@@ -122,4 +123,25 @@ function normalizeSectionArticles(rows = []) {
     itemName: String(x.item_name || x.itemName || "").trim(),
     material: String(x.material || "").trim(),
   }));
+}
+
+/** Уникальное значение <select> для строки каталога (несколько цветов при одном item_name из конструктора). */
+export function planCatalogRowSelectKey(x) {
+  const art = String(x?.article || "").trim();
+  const matNorm = normText(String(x?.material || x?.table_color || "").trim());
+  if (art) return `${art.toUpperCase()}|${matNorm}`;
+  const item = String(x?.itemName || x?.item_name || "").trim();
+  return `${item}|||${matNorm}`;
+}
+
+/** Совпадение ключа селекта с учётом старых значений (только артикул без материала). */
+export function matchPlanCatalogRowSelectKey(row, selectKey) {
+  const k = String(selectKey || "").trim();
+  if (!k) return false;
+  if (planCatalogRowSelectKey(row) === k) return true;
+  if (!k.includes("|") && !k.includes("|||")) {
+    const art = String(row?.article || "").trim().toUpperCase();
+    if (art && art === k) return true;
+  }
+  return false;
 }

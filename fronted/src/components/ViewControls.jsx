@@ -205,7 +205,6 @@ export function ViewControls({
   actionLoading,
   importShipmentPlanFromExcelFile,
   warehouseSyncLoading,
-  loading,
   syncWarehouseFromGoogleSheet,
   leftoversSyncLoading,
   syncLeftoversToGoogleSheet,
@@ -308,18 +307,26 @@ export function ViewControls({
           <button
             type="button"
             className="mini ok"
-            disabled={warehouseSyncLoading || loading || !canOperateWarehouse}
+            disabled={warehouseSyncLoading || !canOperateWarehouse}
             onClick={syncWarehouseFromGoogleSheet}
-            title="Синхронизировать материалы из основной Google-таблицы склада"
+            title={
+              !canOperateWarehouse
+                ? "Нужны роль «Админ» или «Склад» и действующая сессия. Выйдите и войдите снова при зависшей авторизации."
+                : "Синхронизировать материалы из основной Google-таблицы склада"
+            }
           >
             {warehouseSyncLoading ? "Синхронизация..." : "Синхр. склад"}
           </button>
           <button
             type="button"
             className="mini ok"
-            disabled={leftoversSyncLoading || loading || !canOperateWarehouse}
+            disabled={leftoversSyncLoading || !canOperateWarehouse}
             onClick={() => syncLeftoversToGoogleSheet()}
-            title="Выгрузить остатки в лист 'Остатки' Google-таблицы"
+            title={
+              !canOperateWarehouse
+                ? "Нужны роль «Админ» или «Склад» и действующая сессия. Выйдите и войдите снова при зависшей авторизации."
+                : "Выгрузить остатки в лист 'Остатки' Google-таблицы"
+            }
           >
             {leftoversSyncLoading ? "Выгрузка..." : "Выгрузить остатки"}
           </button>
@@ -328,7 +335,13 @@ export function ViewControls({
             className="mini"
             disabled={warehouseOrderPlanRows.length === 0 || !canOperateWarehouse}
             onClick={printWarehouseOrderPlanPdf}
-            title="Сформировать PDF, что нужно заказать для закрытия плана"
+            title={
+              !canOperateWarehouse
+                ? "Нужны роль «Админ» или «Склад» и действующая сессия."
+                : warehouseOrderPlanRows.length === 0
+                  ? "Нет позиций в плане заказа для этого отчёта."
+                  : "Сформировать PDF, что нужно заказать для закрытия плана"
+            }
           >
             Что заказать
           </button>
@@ -492,14 +505,14 @@ export function ViewControls({
       )}
       {view !== "shipment" && (
       <div className="filters">
-        {view !== "furniture" && view !== "metalProcess" && (
+        {view !== "furniture" && view !== "metalProcess" && view !== "db" && (
           <input
             placeholder={view === "warehouse" ? (warehouseSubView === "leftovers" ? "Поиск по цвету или размеру" : warehouseSubView === "history" ? "Поиск: заказ, материал, комментарий" : "Поиск материала") : view === "metal" ? "Поиск по артикулу или названию металла" : "Поиск по названию или ID"}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
         )}
-        {view !== "warehouse" && view !== "furniture" && view !== "metal" && view !== "metalProcess" && view !== "shipment" && !(view === "labor" && laborSubView === "stages") && (
+        {view !== "warehouse" && view !== "furniture" && view !== "metal" && view !== "metalProcess" && view !== "shipment" && view !== "db" && !(view === "labor" && laborSubView === "stages") && (
           <>
           <WeekFilterDropdown value={weekFilter} onChange={setWeekFilter} weeks={weeks} />
           </>

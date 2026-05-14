@@ -341,82 +341,85 @@ export async function loadShipmentDomainData({
   };
 }
 
+function filterPilkaDoneAuditRows(auditData) {
+  const auditRows = Array.isArray(auditData) ? auditData : [];
+  return auditRows.filter((row) => {
+    const details = row?.details && typeof row.details === "object" ? row.details : {};
+    const stage = String(details?.stage || details?.p_stage || "").trim().toLowerCase();
+    const status = String(
+      details?.status ||
+        details?.new_status ||
+        details?.to_status ||
+        details?.p_status ||
+        "",
+    )
+      .trim()
+      .toLowerCase();
+    return stage === "pilka" && status === "done";
+  });
+}
+
 export async function loadWarehouseDomainData() {
-  const data = await OrderService.getMaterialsStock();
-  let leftoversRows = [];
-  let leftoversHistoryRows = [];
-  let consumeHistoryRows = [];
-  let pilkaDoneHistoryRows = [];
-  try {
-    const leftoversData = await OrderService.getLeftovers();
-    leftoversRows = Array.isArray(leftoversData) ? leftoversData : [];
-  } catch (_) {}
-  try {
-    const leftoversHistoryData = await OrderService.getLeftoversHistory(500);
-    leftoversHistoryRows = Array.isArray(leftoversHistoryData) ? leftoversHistoryData : [];
-  } catch (_) {}
-  try {
-    const consumeHistoryData = await OrderService.getConsumeHistory(300);
-    consumeHistoryRows = Array.isArray(consumeHistoryData) ? consumeHistoryData : [];
-  } catch (_) {}
-  try {
-    const auditData = await OrderService.getAuditLog({
+  const [
+    data,
+    leftoversData,
+    leftoversHistoryData,
+    consumeHistoryData,
+    auditData,
+    ordersData,
+    consumeResolveBoard,
+    tplRaw,
+  ] = await Promise.all([
+    OrderService.getMaterialsStock(),
+    OrderService.getLeftovers().catch(() => null),
+    OrderService.getLeftoversHistory(500).catch(() => null),
+    OrderService.getConsumeHistory(300).catch(() => null),
+    OrderService.getAuditLog({
       limit: 1000,
       offset: 0,
       action: "set_stage",
       entity: "orders",
-    });
-    const auditRows = Array.isArray(auditData) ? auditData : [];
-    pilkaDoneHistoryRows = auditRows.filter((row) => {
-      const details = row?.details && typeof row.details === "object" ? row.details : {};
-      const stage = String(details?.stage || details?.p_stage || "").trim().toLowerCase();
-      const status = String(
-        details?.status ||
-          details?.new_status ||
-          details?.to_status ||
-          details?.p_status ||
-          "",
-      )
-        .trim()
-        .toLowerCase();
-      return stage === "pilka" && status === "done";
-    });
-  } catch (_) {}
-  let ordersSnapshot = [];
-  try {
-    const ordersData = await OrderService.getAllOrders();
-    ordersSnapshot = Array.isArray(ordersData) ? ordersData : [];
-    const existingIds = new Set(
-      pilkaDoneHistoryRows
-        .map((row) => String(row?.entity_id || row?.entityId || "").trim())
-        .filter(Boolean),
-    );
-    const fallbackRows = ordersSnapshot
-      .filter((row) => {
-        const orderId = String(row?.order_id || row?.orderId || "").trim();
-        if (!orderId || existingIds.has(orderId)) return false;
-        return Boolean(row?.pilka_done_at || row?.pilkaDoneAt);
-      })
-      .map((row) => ({
-        id: `fallback:${String(row?.order_id || row?.orderId || "").trim()}`,
-        created_at: String(row?.pilka_done_at || row?.pilkaDoneAt || row?.updated_at || row?.updatedAt || ""),
-        action: "set_stage",
-        entity: "orders",
-        entity_id: String(row?.order_id || row?.orderId || "").trim(),
-        details: {
-          stage: "pilka",
-          status: "done",
-          material: String(row?.material || "").trim(),
-          item: String(row?.item || "").trim(),
-          week: String(row?.week || "").trim(),
-          qty: Number(row?.qty || 0),
-          source_row_id: String(row?.source_row_id || row?.sourceRowId || "").trim(),
-          sheets_needed: Number(row?.sheets_needed ?? row?.sheetsNeeded ?? 0),
-          source: "orders_fallback",
-        },
-      }));
-    pilkaDoneHistoryRows = [...pilkaDoneHistoryRows, ...fallbackRows];
-  } catch (_) {}
+    }).catch(() => null),
+    OrderService.getAllOrders().catch(() => null),
+    OrderService.getShipmentBoard().catch(() => null),
+    OrderService.getFurnitureCustomTemplates().catch(() => null),
+  ]);
+
+  const leftoversRows = Array.isArray(leftoversData) ? leftoversData : [];
+  const leftoversHistoryRows = Array.isArray(leftoversHistoryData) ? leftoversHistoryData : [];
+  const consumeHistoryRows = Array.isArray(consumeHistoryData) ? consumeHistoryData : [];
+  let pilkaDoneHistoryRows = filterPilkaDoneAuditRows(auditData);
+  const ordersSnapshot = Array.isArray(ordersData) ? ordersData : [];
+  const consumeResolveTemplates = Array.isArray(tplRaw) ? tplRaw : [];
+
+  const existingIds = new Set(
+    pilkaDoneHistoryRows.map((row) => String(row?.entity_id || row?.entityId || "").trim()).filter(Boolean),
+  );
+  const fallbackRows = ordersSnapshot
+    .filter((row) => {
+      const orderId = String(row?.order_id || row?.orderId || "").trim();
+      if (!orderId || existingIds.has(orderId)) return false;
+      return Boolean(row?.pilka_done_at || row?.pilkaDoneAt);
+    })
+    .map((row) => ({
+      id: `fallback:${String(row?.order_id || row?.orderId || "").trim()}`,
+      created_at: String(row?.pilka_done_at || row?.pilkaDoneAt || row?.updated_at || row?.updatedAt || ""),
+      action: "set_stage",
+      entity: "orders",
+      entity_id: String(row?.order_id || row?.orderId || "").trim(),
+      details: {
+        stage: "pilka",
+        status: "done",
+        material: String(row?.material || "").trim(),
+        item: String(row?.item || "").trim(),
+        week: String(row?.week || "").trim(),
+        qty: Number(row?.qty || 0),
+        source_row_id: String(row?.source_row_id || row?.sourceRowId || "").trim(),
+        sheets_needed: Number(row?.sheets_needed ?? row?.sheetsNeeded ?? 0),
+        source: "orders_fallback",
+      },
+    }));
+  pilkaDoneHistoryRows = [...pilkaDoneHistoryRows, ...fallbackRows];
 
   const orderById = new Map(
     ordersSnapshot
@@ -439,19 +442,6 @@ export async function loadWarehouseDomainData() {
     };
     return { ...row, details: merged };
   });
-
-  let consumeResolveBoard = null;
-  try {
-    consumeResolveBoard = await OrderService.getShipmentBoard();
-  } catch (_) {
-    /* без доски расчёт листов только из заказа / шаблонов */
-  }
-
-  let consumeResolveTemplates = [];
-  try {
-    const tpl = await OrderService.getFurnitureCustomTemplates();
-    consumeResolveTemplates = Array.isArray(tpl) ? tpl : [];
-  } catch (_) {}
 
   return {
     data,

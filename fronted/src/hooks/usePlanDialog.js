@@ -3,7 +3,12 @@ import { OrderService } from "../services/orderService";
 import { resolvePlanMaterial, formatDateTimeForPrint } from "../app/appUtils";
 import { buildPreviewRowsFromFurnitureTemplate } from "../app/appUtils";
 import { resolveFurnitureTemplateForPreview } from "../utils/furnitureUtils";
-import { buildCreatePlanDialogInit } from "../app/shipmentDialogHelpers";
+import {
+  buildCreatePlanDialogInit,
+  matchPlanCatalogRowSelectKey,
+  planCatalogRowSelectKey,
+} from "../app/shipmentDialogHelpers";
+import { sectionNamesMatch } from "../utils/shipmentUtils";
 import { toUserError } from "../app/errorCatalogHelpers";
 
 /**
@@ -73,17 +78,19 @@ export function usePlanDialog({
           itemName: String(x.item_name || x.itemName || "").trim(),
           material: String(x.material || "").trim(),
         }))
-        .find((x) => x.sectionName === nextSection && x.article);
-      setPlanArticle(firstArticle?.itemName || "");
+        .find((x) => sectionNamesMatch(x.sectionName, nextSection) && (x.article || x.itemName));
+      setPlanArticle(firstArticle ? planCatalogRowSelectKey(firstArticle) : "");
       setPlanMaterial(resolvePlanMaterial(firstArticle));
     },
     [sectionArticleRows, setPlanSection, setPlanArticle, setPlanMaterial],
   );
 
   const handlePlanArticleChange = useCallback(
-    (nextArticle) => {
-      setPlanArticle(nextArticle);
-      const matched = sectionArticles.find((x) => x.itemName === nextArticle);
+    (nextKey) => {
+      setPlanArticle(nextKey);
+      const matched = sectionArticles.find((x) =>
+        matchPlanCatalogRowSelectKey(x, String(nextKey || "").trim()),
+      );
       setPlanMaterial(resolvePlanMaterial(matched));
     },
     [sectionArticles, setPlanArticle, setPlanMaterial],
@@ -189,10 +196,13 @@ export function usePlanDialog({
     const week = String(planWeek || "").trim();
     const qty = Number(String(planQty || "").replace(",", "."));
     const selectedCatalogArticle = String(
-      (sectionArticles || []).find((x) => x.itemName === planArticle && String(x.material || "").trim() === String(planMaterial || "").trim())
+      (sectionArticles || []).find((x) => matchPlanCatalogRowSelectKey(x, String(planArticle || "").trim()))
         ?.article ||
-      (sectionArticles || []).find((x) => x.itemName === planArticle)?.article ||
-      "",
+        (sectionArticles || []).find(
+          (x) => x.itemName === planArticle && String(x.material || "").trim() === String(planMaterial || "").trim(),
+        )?.article ||
+        (sectionArticles || []).find((x) => x.itemName === planArticle)?.article ||
+        "",
     ).trim();
     if (!item) {
       setError("Выберите материал для изделия.");

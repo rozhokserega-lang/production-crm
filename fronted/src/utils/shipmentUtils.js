@@ -5,6 +5,15 @@ export function normText(v) {
   return String(v || "").trim().toLowerCase();
 }
 
+/** Сравнение имён секций: регистр, пробелы, ё/е. */
+export function normSectionKey(name) {
+  return normText(String(name || "").replace(/ё/g, "е"));
+}
+
+export function sectionNamesMatch(a, b) {
+  return normSectionKey(a) === normSectionKey(b);
+}
+
 export function sectionSortKey(name, sectionOrder = []) {
   const n = normText(name);
   const idx = sectionOrder.findIndex((x) => normText(x) === n);

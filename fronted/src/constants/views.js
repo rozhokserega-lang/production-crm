@@ -8,6 +8,7 @@ export const VIEWS = [
   { id: "labor", label: "Трудоемкость" },
   { id: "stats", label: "Статистика" },
   { id: "furniture", label: "Мебель" },
+  { id: "db", label: "БД" },
   { id: "admin", label: "Админ" },
 ];
 

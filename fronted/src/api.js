@@ -130,6 +130,25 @@ export function getSupabaseAuthUser() {
   return supabaseAuthSession?.user || null;
 }
 
+/** UUID пользователя: из объекта user либо из claim sub в access_token (запасной путь для старых/укороченных сессий). */
+export function getSupabaseAuthUserId() {
+  const fromUser = String(supabaseAuthSession?.user?.id ?? "").trim();
+  if (fromUser) return fromUser;
+  const token = String(supabaseAuthSession?.access_token ?? "").trim();
+  if (!token) return "";
+  const parts = token.split(".");
+  if (parts.length < 2) return "";
+  try {
+    let b64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const pad = b64.length % 4;
+    if (pad) b64 += "=".repeat(4 - pad);
+    const payload = JSON.parse(atob(b64));
+    return String(payload?.sub ?? "").trim();
+  } catch (_) {
+    return "";
+  }
+}
+
 export function getSupabaseRealtimeClient() {
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return null;
   if (!supabaseRealtimeClient) {
@@ -296,6 +315,9 @@ const RPC_MAP = {
   webUpsertItemArticleMapVariants: "web_upsert_item_article_map_variants",
   webGetItemArticleMapByArticle: "web_get_item_article_map_by_article",
   webGetManualItemArticleVariants: "web_get_manual_item_article_variants",
+  webGetItemArticleMapAdmin: "web_get_item_article_map_admin",
+  webAdminUpsertItemArticleMapRow: "web_admin_upsert_item_article_map_row",
+  webAdminDeleteItemArticleMapRow: "web_admin_delete_item_article_map_row",
   webGetMetalForFurniture: "web_get_metal_for_furniture",
   webGetMetalStock: "web_get_metal_stock",
   webSetMetalStock: "web_set_metal_stock",
@@ -643,6 +665,23 @@ function buildRpcPayload(action, payload = {}) {
     return {
       p_order_id: String(payload.orderId || payload.p_order_id || "").trim(),
       p_qty_done: Number(payload.qtyDone || payload.p_qty_done || 0),
+    };
+  }
+  if (action === "webAdminUpsertItemArticleMapRow") {
+    const prev = String(payload.prevArticle ?? payload.p_prev_article ?? "").trim();
+    return {
+      p_prev_article: prev ? prev : null,
+      p_article: String(payload.article ?? payload.p_article ?? "").trim(),
+      p_item_name: String(payload.itemName ?? payload.p_item_name ?? "").trim(),
+      p_source: String(payload.source ?? payload.p_source ?? "manual").trim(),
+      p_section_name: String(payload.sectionName ?? payload.p_section_name ?? "").trim(),
+      p_table_color: String(payload.tableColor ?? payload.p_table_color ?? "").trim(),
+      p_sort_order: Number(payload.sortOrder ?? payload.p_sort_order ?? 999),
+    };
+  }
+  if (action === "webAdminDeleteItemArticleMapRow") {
+    return {
+      p_article: String(payload.article ?? payload.p_article ?? "").trim(),
     };
   }
   if (action === "webDeleteFurnitureCustomTemplate") {

@@ -1,7 +1,8 @@
 import { useMemo } from "react";
-import { normalizeCatalogDedupKey, normalizeCatalogItemName } from "../app/errorCatalogHelpers";
+import { normalizeCatalogItemName } from "../app/errorCatalogHelpers";
+import { matchPlanCatalogRowSelectKey, planCatalogRowSelectKey } from "../app/shipmentDialogHelpers";
 import { getMaterialLabel } from "../app/orderHelpers";
-import { normText } from "../utils/shipmentUtils";
+import { normText, sectionNamesMatch } from "../utils/shipmentUtils";
 
 export function useShipmentPlanningDerivedData({
   view,
@@ -83,24 +84,24 @@ export function useShipmentPlanningDerivedData({
         itemName: normalizeCatalogItemName(String(x.item_name || x.itemName || "").trim()),
         material: String(x.material || "").trim(),
       }))
-      .filter((x) => x.sectionName === planSection && x.article && x.itemName)
+      .filter((x) => sectionNamesMatch(x.sectionName, planSection) && x.article && x.itemName)
       .filter((x) => {
         if (!hasWhiteAliasSection) return true;
         return !/(белый|белые ноги)/i.test(x.itemName);
       })
       .sort((a, b) => a.itemName.localeCompare(b.itemName, "ru"));
-    const byItemName = new Map();
+    const byKey = new Map();
     list.forEach((row) => {
-      const dedupKey = normalizeCatalogDedupKey(row.itemName);
-      if (!byItemName.has(dedupKey)) byItemName.set(dedupKey, row);
+      const k = planCatalogRowSelectKey(row);
+      if (!byKey.has(k)) byKey.set(k, row);
     });
-    return [...byItemName.values()];
+    return [...byKey.values()];
   }, [sectionArticleRows, planSection, sectionOptions]);
 
   const selectedItemVariants = useMemo(() => {
     const section = String(planSection || "").trim();
-    const item = String(planArticle || "").trim();
-    if (!section || !item) return [];
+    const selectKey = String(planArticle || "").trim();
+    if (!section || !selectKey) return [];
     const hasWhiteAliasSection = sectionOptions.includes(`${section} белый`);
     const list = (sectionArticleRows || [])
       .map((x) => ({
@@ -109,7 +110,14 @@ export function useShipmentPlanningDerivedData({
         itemName: normalizeCatalogItemName(String(x.item_name || x.itemName || "").trim()),
         material: String(x.material || "").trim(),
       }))
-      .filter((x) => x.sectionName === section && x.article && x.itemName && x.itemName === item && x.material)
+      .filter(
+        (x) =>
+          sectionNamesMatch(x.sectionName, section) &&
+          x.article &&
+          x.itemName &&
+          x.material &&
+          matchPlanCatalogRowSelectKey(x, selectKey),
+      )
       .filter((x) => {
         if (!hasWhiteAliasSection) return true;
         return !/(белый|белые ноги)/i.test(x.itemName);
@@ -125,7 +133,13 @@ export function useShipmentPlanningDerivedData({
   }, [sectionArticleRows, planSection, planArticle, sectionOptions]);
 
   const selectedArticleRow = useMemo(() => {
-    return sectionArticles.find((x) => x.itemName === planArticle) || null;
+    const k = String(planArticle || "").trim();
+    if (!k) return null;
+    return (
+      sectionArticles.find((x) => matchPlanCatalogRowSelectKey(x, k)) ||
+      sectionArticles.find((x) => x.itemName === k) ||
+      null
+    );
   }, [sectionArticles, planArticle]);
 
   const articleLookupByItemKey = useMemo(() => {

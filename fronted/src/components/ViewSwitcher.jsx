@@ -10,6 +10,7 @@ const VIEW_ICONS = {
   labor:      "⏱",
   stats:      "▮▮",
   furniture:  "🪑",
+  db:         "🗄",
   admin:      "👤",
 };
 
@@ -17,7 +18,7 @@ export function ViewSwitcher({ view, setView, setTab, canAdminSettings }) {
   return (
     <section className="view-switch">
       {VIEWS.map((v) => {
-        if (v.id === "admin" && !canAdminSettings) return null;
+        if ((v.id === "admin" || v.id === "db") && !canAdminSettings) return null;
         return (
           <button
             key={v.id}

@@ -318,9 +318,13 @@ export function FurnitureView({
 
       // 1) Add/update to plan catalog.
       const variantsToUpsert = [];
+      const skippedVariants = [];
       for (const v of variants) {
         const article = String(v?.article || "").trim().toUpperCase();
-        if (!article) continue;
+        if (!article) {
+          skippedVariants.push({ article: "—", reason: "пустой артикул" });
+          continue;
+        }
         const catalogRow = existingByArticle.get(article)?.row || null;
 
         // Extra existence check (handles xlsx rows with NULL section_name/table_color).
@@ -342,22 +346,51 @@ export function FurnitureView({
         ).trim().toLowerCase().replace(/ё/g, "е");
         const canReassignFromMisc = !existingSection || existingSection === "прочее";
         if (source && source !== "manual" && !canReassignFromMisc) {
+          skippedVariants.push({
+            article,
+            reason: `артикул уже в каталоге (источник «${source}», секция «${existingSection || "—"}»); такой вариант из конструктора не перезаписывается`,
+          });
           continue;
         }
 
         const color = String(v?.color || "").trim();
-        if (!color) continue;
+        if (!color) {
+          skippedVariants.push({ article, reason: "не указан цвет/материал" });
+          continue;
+        }
         variantsToUpsert.push(v);
       }
 
       if (variantsToUpsert.length > 0) {
         await OrderService.upsertItemArticleMapVariants(section, name, variantsToUpsert, 999);
+      } else if (skippedVariants.length > 0) {
+        setCreateError(
+          `Ни один вариант не сохранён в каталог плана. ${skippedVariants
+            .map((s) => `${s.article}: ${s.reason}`)
+            .join(" ")}`,
+        );
+        setCreateSaving(false);
+        return;
+      }
+
+      if (variantsToUpsert.length === 0) {
+        setCreateError("Нет валидных вариантов для сохранения в каталог плана.");
+        setCreateSaving(false);
+        return;
       }
 
       // 2) Save composition as a custom template (so it can be used inside furniture constructor / previews)
       await OrderService.upsertFurnitureCustomTemplate(name, normalizedDetails, kitsPerSheet);
 
-      setCreateOk("Готово: изделие сохранено и появится в 'Добавить новый план'.");
+      const okParts = [
+        `Готово: в каталог плана записано вариантов: ${variantsToUpsert.length} из ${variants.length}. Изделие появится в «Добавить новый план».`,
+      ];
+      if (skippedVariants.length > 0) {
+        okParts.push(
+          `Не записано (${skippedVariants.length}): ${skippedVariants.map((s) => `${s.article} (${s.reason})`).join("; ")}`,
+        );
+      }
+      setCreateOk(okParts.join(" "));
       setCreateOpen(false);
       setCreateName("");
       setCreateVariants([]);

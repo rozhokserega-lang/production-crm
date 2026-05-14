@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import {
   callBackend,
+  getSupabaseAuthSession,
+  getSupabaseAuthUserId,
   getSupabaseRealtimeClient,
 } from "../api";
 import {
@@ -404,7 +406,12 @@ export function useAppState() {
     authUser,
   });
   const canOperateProduction = crmRole === "operator" || crmRole === "manager" || crmRole === "admin";
-  const canOperateWarehouse = Boolean(authUser?.id) && (crmRole === "warehouse" || crmRole === "admin");
+  const hasAuthSession =
+    Boolean(String(authUser?.id || authUser?.email || "").trim()) ||
+    Boolean(String(getSupabaseAuthUserId() || "").trim()) ||
+    Boolean(String(getSupabaseAuthSession()?.access_token || "").trim());
+  const canOperateWarehouse =
+    hasAuthSession && (crmRole === "warehouse" || crmRole === "admin");
   const canManageOrders = crmRole === "manager" || crmRole === "admin";
   const canAdminSettings = crmRole === "admin";
 
@@ -1324,6 +1331,7 @@ export function useAppState() {
     crmAuthStrict,
     crmAuthStrictSaving,
     canOperateProduction,
+    canOperateWarehouse,
     canManageOrders,
     canAdminSettings,
     crmUsers,

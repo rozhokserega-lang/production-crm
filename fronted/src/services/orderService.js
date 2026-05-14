@@ -110,6 +110,36 @@ export class OrderService {
     });
   }
 
+  /** Админ: полный справочник item_article_map (артикул ↔ изделие, секция, цвет). */
+  static async getItemArticleMapAdmin() {
+    return await callBackend("webGetItemArticleMapAdmin");
+  }
+
+  /** Админ: создать/обновить одну строку (артикул уникален). prevArticle — старый код при переименовании артикула. */
+  static async adminUpsertItemArticleMapRow({
+    prevArticle = "",
+    article,
+    itemName,
+    source = "manual",
+    sectionName = "",
+    tableColor = "",
+    sortOrder = 999,
+  }) {
+    return await callBackend("webAdminUpsertItemArticleMapRow", {
+      prevArticle,
+      article,
+      itemName,
+      source,
+      sectionName,
+      tableColor,
+      sortOrder,
+    });
+  }
+
+  static async adminDeleteItemArticleMapRow(article) {
+    return await callBackend("webAdminDeleteItemArticleMapRow", { article });
+  }
+
   static async getArticlesForImport() {
     return await callBackend("webGetArticlesForImport");
   }

@@ -1,4 +1,13 @@
 import { useEffect } from "react";
+import { planCatalogRowSelectKey } from "../app/shipmentDialogHelpers";
+
+function planCatalogOptionLabel(x) {
+  const item = String(x?.itemName || "").trim();
+  const mat = String(x?.material || "").trim();
+  if (!mat) return item || "—";
+  if (item.toLowerCase().includes(mat.toLowerCase())) return item;
+  return `${item} — ${mat}`;
+}
 
 export function PlanDialog({
   isOpen,
@@ -57,9 +66,14 @@ export function PlanDialog({
               {sectionArticles.length === 0 ? (
                 <option value="">Нет артикулов для секции</option>
               ) : (
-                sectionArticles.map((x) => (
-                  <option key={`${x.article}::${x.itemName}`} value={x.itemName}>{x.itemName}</option>
-                ))
+                sectionArticles.map((x) => {
+                  const v = planCatalogRowSelectKey(x);
+                  return (
+                    <option key={v} value={v}>
+                      {planCatalogOptionLabel(x)}
+                    </option>
+                  );
+                })
               )}
             </select>
           </div>
