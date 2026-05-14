@@ -66,10 +66,12 @@ export function detectWorkshopStrapProductLine(rawItem) {
   if (!stripped) return "";
   const alias = resolveFurnitureAliasKey([stripped]);
   if (alias === "донини гранде") return "donini_grande";
+  if (alias === "донини r") return "donini_r";
   if (alias === "донини") return "donini";
   if (alias === "авелла лайт") return "avella_lite";
   const lower = stripped.toLowerCase();
   if (lower.includes("donini") && lower.includes("grande")) return "donini_grande";
+  if (/\bdonini\s+r\b/i.test(lower) || lower.includes("donini r")) return "donini_r";
   if (lower.includes("donini")) return "donini";
   if (lower.includes("avella") && lower.includes("lite")) return "avella_lite";
   if (lower.includes("авелла") && lower.includes("лайт")) return "avella_lite";
@@ -80,10 +82,24 @@ export function detectWorkshopStrapProductLine(rawItem) {
 /**
  * Множители «штук на 1 единицу заказа» по коду планки (после базового расчёта из шаблона или каталога).
  * Avella lite: 1158_50 и 600_50 — по 2; Donini: 1000_80 — 2, 558_80 — 4; Donini Grande: как в ТЗ.
+ * Donini R: фиксированный набор (каталог/шаблон не смешиваем с обычным Donini).
  */
 function applyWorkshopStrapQtyOverrides(productLine, orderQty, needs) {
   const Q = Number(orderQty || 0) || 0;
   if (!(Q > 0)) return needs || [];
+
+  if (productLine === "donini_r") {
+    const rulesR = { "288_80": 4, "502_80": 2, "520_80": 2, "544_80": 2 };
+    const out = [];
+    Object.entries(rulesR).forEach(([codeRaw, mul]) => {
+      const code = normalizeStrapInventoryCode(codeRaw);
+      const target = Math.max(0, Math.round(Q * Number(mul || 0)));
+      if (!code || !STRAP_TYPE_CODES.has(code) || !(target > 0)) return;
+      out.push({ code, needed: target, name: strapDisplayNameForCode(code) });
+    });
+    return out.sort((a, b) => a.name.localeCompare(b.name, "ru"));
+  }
+
   const rules =
     productLine === "avella_lite"
       ? { "1158_50": 2, "600_50": 2 }

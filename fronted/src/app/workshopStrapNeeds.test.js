@@ -99,6 +99,21 @@ describe("getResolvedWorkshopStrapNeeds", () => {
     expect(by["618_80"]).toBe(96);
     expect(by["586_80"]).toBe(96);
   });
+
+  it("applies Donini R fixed strap set (288×4, 502/520/544×2 per unit)", () => {
+    const needs = getResolvedWorkshopStrapNeeds(
+      { item: "Donini R 750 мм. Бетон", qty: 12, pipeline_stage: "pras" },
+      emptyDeps,
+    );
+    const by = Object.fromEntries(needs.map((x) => [x.code, x.needed]));
+    expect(by["288_80"]).toBe(48);
+    expect(by["502_80"]).toBe(24);
+    expect(by["520_80"]).toBe(24);
+    expect(by["544_80"]).toBe(24);
+    expect(by["522_80"]).toBeUndefined();
+    expect(by["1000_80"]).toBeUndefined();
+    expect(by["558_80"]).toBeUndefined();
+  });
 });
 
 describe("orderKeysForStrapCatalogMatch", () => {

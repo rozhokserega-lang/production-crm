@@ -83,9 +83,8 @@ export const WorkshopView = memo(function WorkshopView({
     [furnitureTemplates, furnitureCustomTemplates, furnitureDetailArticleRows, normalizeFurnitureKey],
   );
 
-  const { workshopStrapRows, totalObvyazkaDeficit } = useMemo(() => {
-    let total = 0;
-    const workshopStrapRows = workshopRows.map((o) => {
+  const workshopStrapRows = useMemo(() => {
+    return workshopRows.map((o) => {
       if (!orderCountsTowardStrapDemand(o)) {
         return { strapNeeds: [], strapDeficit: 0 };
       }
@@ -95,35 +94,13 @@ export const WorkshopView = memo(function WorkshopView({
         const available = strapStockByType[k] ?? 0;
         return sum + Math.max(0, Number(needed || 0) - available);
       }, 0);
-      total += strapDeficit;
       return { strapNeeds, strapDeficit };
     });
-    return { workshopStrapRows, totalObvyazkaDeficit: total };
   }, [workshopRows, strapStockByType, strapDeps]);
-
-  const hasAnyStrapPlanning = workshopStrapRows.some((r) => r.strapNeeds.length > 0);
 
   return (
     <>
       {!workshopRows.length && !loading && <div className="empty">Нет заказов</div>}
-      {hasAnyStrapPlanning && workshopRows.length > 0 && (
-        <div
-          className="strap-workshop-total-deficit"
-          style={{
-            marginBottom: 12,
-            padding: "10px 14px",
-            borderRadius: 8,
-            background: totalObvyazkaDeficit > 0 ? "#fff1f2" : "#f0fdf4",
-            border: `1px solid ${totalObvyazkaDeficit > 0 ? "#fda4af" : "#86efac"}`,
-            color: totalObvyazkaDeficit > 0 ? "#9f1239" : "#166534",
-            fontWeight: 600,
-            fontSize: 14,
-          }}
-          title="Сумма max(0, нужно − на складе обвязки) по всем заказам в списке"
-        >
-          Нехватает (обвязка), всего: {totalObvyazkaDeficit} шт
-        </div>
-      )}
       {workshopRows.map((o, idx) => {
         const orderId = String(o.orderId || o.order_id || "");
         const isPaused = (status) => /пауза/i.test(String(status || ""));
