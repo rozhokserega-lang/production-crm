@@ -1206,6 +1206,7 @@ export function useAppState() {
     normalizeFurnitureKey,
     hiddenShipmentGroups,
     furnitureCustomTemplates,
+    warehouseRows,
   });
   /** Те же цифры, что в красном блоке «Нехватка по всему плану» на отгрузке (awaiting + фильтры недели/этапов + шаблоны листов). */
   const warehouseOrderPlanRows = useMemo(

@@ -12,6 +12,7 @@ export function useShipmentTableData({
   normalizeFurnitureKey,
   hiddenShipmentGroups,
   furnitureCustomTemplates,
+  warehouseRows,
 }) {
   const shipmentTableRows = useMemo(() => {
     if (view !== "shipment" && view !== "warehouse") return [];
@@ -105,6 +106,22 @@ export function useShipmentTableData({
     furnitureCustomTemplates,
   ]);
 
+  /** Сумма листов по материалу из таблицы склада (те же строки, что «Листов в наличии»). */
+  const warehouseSheetsByMaterialKey = useMemo(() => {
+    const map = new Map();
+    const rows = Array.isArray(warehouseRows) ? warehouseRows : [];
+    rows.forEach((r) => {
+      const raw = String(r?.material ?? r?.Material ?? "").trim();
+      if (!raw) return;
+      const key =
+        typeof normalizeFurnitureKey === "function" ? normalizeFurnitureKey(raw) : raw.toLowerCase().trim();
+      if (!key) return;
+      const qty = Number(r?.qty_sheets ?? r?.qtySheets ?? 0) || 0;
+      map.set(key, (map.get(key) || 0) + qty);
+    });
+    return map;
+  }, [warehouseRows, normalizeFurnitureKey]);
+
   const shipmentMaterialBalance = useMemo(() => {
     const byMaterial = new Map();
     shipmentTableRows.forEach((row) => {
@@ -113,14 +130,16 @@ export function useShipmentTableData({
       const material = String(row.material || "Материал не указан").trim();
       const key = normalizeFurnitureKey(material);
       const needed = Number(row.sheets || 0);
-      const available = Number(row.availableSheets || 0);
+      const fromCell = Number(row.availableSheets || 0);
+      const fromWarehouse = Number(warehouseSheetsByMaterialKey.get(key) || 0);
+      const available = Math.max(fromCell, fromWarehouse);
       if (!byMaterial.has(key)) byMaterial.set(key, { material, needed: 0, available: 0 });
       const bucket = byMaterial.get(key);
       bucket.needed += needed;
       bucket.available = Math.max(bucket.available, available);
     });
     return byMaterial;
-  }, [shipmentTableRows, normalizeFurnitureKey]);
+  }, [shipmentTableRows, normalizeFurnitureKey, warehouseSheetsByMaterialKey]);
 
   const shipmentTableRowsWithStockStatus = useMemo(() => {
     return shipmentTableRows.map((row) => {
