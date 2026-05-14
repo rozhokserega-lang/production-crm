@@ -79,7 +79,10 @@ export function useWorkshopRows({
   isOrderCustomerShipped = () => false,
 } = {}) {
   return useMemo(() => {
-    if (view !== "workshop" || tab === "stats") return [];
+    /** На «Склад обвязки» нужен тот же набор заказов, что в цеху при вкладке «Все» — для колонки нехватки. */
+    const strapStockPlanning = view === "strapStock";
+    if ((view !== "workshop" && !strapStockPlanning) || tab === "stats") return [];
+    const effectiveTab = strapStockPlanning ? "all" : tab;
     const arr = [...filtered].filter((o) => {
       const pilkaStatus = String(o.pilkaStatus || o.pilka || "");
       const kromkaStatus = String(o.kromkaStatus || o.kromka || "");
@@ -93,28 +96,28 @@ export function useWorkshopRows({
       const shipped = isOrderCustomerShipped(o);
       const onPackaging = /упаков/i.test(overallStatus);
       const lane = getOverviewLaneId(o);
-      if (tab === "pilka") return lane === "pilka";
-      if (tab === "kromka") return lane === "kromka";
-      if (tab === "pras") return lane === "pras";
-      if (tab === "assembly") return pilkaDone && kromkaDone && prasDone && !assemblyDone && !shipped;
-      if (tab === "done") return assemblyDone && !onPackaging && !shipped;
+      if (effectiveTab === "pilka") return lane === "pilka";
+      if (effectiveTab === "kromka") return lane === "kromka";
+      if (effectiveTab === "pras") return lane === "pras";
+      if (effectiveTab === "assembly") return pilkaDone && kromkaDone && prasDone && !assemblyDone && !shipped;
+      if (effectiveTab === "done") return assemblyDone && !onPackaging && !shipped;
       return true;
     });
     const isPaused = (status) => /пауза/i.test(String(status || ""));
     const isRowPaused = (o) => {
-      if (tab === "pilka") return isPaused(o.pilkaStatus);
-      if (tab === "kromka") return isPaused(o.kromkaStatus);
-      if (tab === "pras") return isPaused(o.prasStatus);
-      if (tab === "assembly") return isPaused(o.assemblyStatus);
-      if (tab === "done") return false;
+      if (effectiveTab === "pilka") return isPaused(o.pilkaStatus);
+      if (effectiveTab === "kromka") return isPaused(o.kromkaStatus);
+      if (effectiveTab === "pras") return isPaused(o.prasStatus);
+      if (effectiveTab === "assembly") return isPaused(o.assemblyStatus);
+      if (effectiveTab === "done") return false;
       return isPaused(o.pilkaStatus) || isPaused(o.kromkaStatus) || isPaused(o.prasStatus) || isPaused(o.assemblyStatus);
     };
     const isRowInWork = (o) => {
-      if (tab === "pilka") return isInWork(o.pilkaStatus);
-      if (tab === "kromka") return isInWork(o.kromkaStatus);
-      if (tab === "pras") return isInWork(o.prasStatus);
-      if (tab === "assembly") return isInWork(o.assemblyStatus);
-      if (tab === "done") return false;
+      if (effectiveTab === "pilka") return isInWork(o.pilkaStatus);
+      if (effectiveTab === "kromka") return isInWork(o.kromkaStatus);
+      if (effectiveTab === "pras") return isInWork(o.prasStatus);
+      if (effectiveTab === "assembly") return isInWork(o.assemblyStatus);
+      if (effectiveTab === "done") return false;
       return isInWork(o.pilkaStatus) || isInWork(o.kromkaStatus) || isInWork(o.prasStatus);
     };
     arr.sort((a, b) => {

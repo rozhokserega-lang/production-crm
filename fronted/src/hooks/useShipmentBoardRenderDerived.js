@@ -29,6 +29,8 @@ function pickPreferredGroupLabel(currentLabel, nextLabel) {
 export function useShipmentBoardRenderDerived({
   view,
   filtered,
+  /** Секции доски отгрузки (как на вкладке «Отгрузка»); на «Склад» передавайте shipmentFiltered — не baseOrderFiltered. */
+  shipmentFiltered,
   weekFilter,
   shipmentOrderMaps,
   passesShipmentStageFilter,
@@ -102,12 +104,13 @@ export function useShipmentBoardRenderDerived({
   }, [materialsStockRows]);
 
   const shipmentRenderSections = useMemo(() => {
-    if (view !== "shipment") return [];
+    if (view !== "shipment" && view !== "warehouse") return [];
+    const boardSections = Array.isArray(shipmentFiltered) ? shipmentFiltered : [];
 
     let baseSections = [];
 
     if (shipmentSort === "name") {
-      baseSections = [...filtered]
+      baseSections = [...boardSections]
         .sort((a, b) => {
           const ka = sectionSortKey(a.name, SHIPMENT_SECTION_ORDER);
           const kb = sectionSortKey(b.name, SHIPMENT_SECTION_ORDER);
@@ -120,7 +123,7 @@ export function useShipmentBoardRenderDerived({
         }));
     } else {
       const groups = {};
-      (filtered || []).forEach((section) => {
+      boardSections.forEach((section) => {
         (section.items || []).forEach((it) => {
           const visibleCells = visibleCellsForItem(it);
           if (!visibleCells.length) return;
@@ -205,7 +208,7 @@ export function useShipmentBoardRenderDerived({
     });
 
     return [...baseSections, { name: "Обвязка", items: sortItemsForShipment(strapRows) }];
-  }, [view, shipmentSort, filtered, strapItems, strapStockByMaterial, sortItemsForShipment, visibleCellsForItem]);
+  }, [view, shipmentSort, shipmentFiltered, strapItems, strapStockByMaterial, sortItemsForShipment, visibleCellsForItem]);
 
   return {
     overviewShippedOnly,

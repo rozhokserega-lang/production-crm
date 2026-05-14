@@ -297,6 +297,7 @@ const RPC_MAP = {
   webGetProductColorMap: "web_get_product_color_map",
   webGetStrapStock: "web_get_strap_stock",
   webAddStrapStock: "web_add_strap_stock",
+  webConsumeStrapStock: "web_consume_strap_stock",
   webSetStrapStock: "web_set_strap_stock",
   webReduceOrderQty: "web_reduce_order_qty",
   webGetReplacementOrders: "web_get_replacement_orders",
@@ -654,7 +655,7 @@ function buildRpcPayload(action, payload = {}) {
       p_entity: String(payload.entity || payload.p_entity || "").trim() || null,
     };
   }
-  if (action === "webAddStrapStock" || action === "webSetStrapStock") {
+  if (action === "webAddStrapStock" || action === "webSetStrapStock" || action === "webConsumeStrapStock") {
     return {
       p_strap_type: String(payload.strapType || payload.p_strap_type || "").trim(),
       p_color: String(payload.color || payload.p_color || "").trim(),

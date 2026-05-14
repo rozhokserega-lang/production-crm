@@ -127,6 +127,7 @@ export default function App() {
 
     // Data loading
     load,
+    mutationLoad,
     rows: _rows, setRows: _setRows,
     query, setQuery,
     loading, setLoading: _setLoading,
@@ -209,6 +210,7 @@ export default function App() {
     furnitureArticleSearchRows,
     furnitureArticleGroups,
     furnitureCustomTemplates,
+    furnitureDetailArticleRows,
     strapStockGlobal,
 
     // Refs
@@ -410,7 +412,7 @@ export default function App() {
         qty: Number(order.qty || 1) || 1,
       });
       await callBackend("webAcceptReplacementOrderPackaging", { p_id: orderId });
-      await Promise.all([refreshPackagingOrders(), load()]);
+      await Promise.all([refreshPackagingOrders(), mutationLoad()]);
     } catch (e) {
       setError(String(e?.message || e || "Не удалось принять заказ в упаковку"));
     } finally {
@@ -642,7 +644,7 @@ export default function App() {
             setError={setError}
             loading={loading}
             canAdminSettings={canAdminSettings}
-            load={load}
+            load={mutationLoad}
             manualLaborOpenNonce={manualLaborOpenNonce}
           />
         )}
@@ -673,7 +675,14 @@ export default function App() {
           />
         )}
         {view === "strapStock" && (
-          <StrapStockView callBackend={callBackend} />
+          <StrapStockView
+            callBackend={callBackend}
+            workshopRows={workshopRows}
+            furnitureTemplates={furnitureTemplates}
+            furnitureCustomTemplates={furnitureCustomTemplates}
+            furnitureDetailArticleRows={furnitureDetailArticleRows}
+            normalizeFurnitureKey={normalizeFurnitureKey}
+          />
         )}
         {view === "metal" && (
           <MetalView
@@ -750,7 +759,7 @@ export default function App() {
             furnitureCustomTemplates={furnitureCustomTemplates}
             sectionCatalogRows={_sectionCatalogRows}
             callBackend={callBackend}
-            load={load}
+            load={mutationLoad}
             refreshPlanCatalogs={refreshPlanCatalogs}
           />
         )}
@@ -758,7 +767,7 @@ export default function App() {
           <DatabaseCatalogView
             canAdminSettings={canAdminSettings}
             refreshPlanCatalogs={refreshPlanCatalogs}
-            load={load}
+            load={mutationLoad}
           />
         )}
         {view === "admin" && (
@@ -826,6 +835,7 @@ export default function App() {
             executorOptions={executorOptions}
             getMaterialLabel={getMaterialLabel}
             furnitureCustomTemplates={furnitureCustomTemplates}
+            furnitureDetailArticleRows={furnitureDetailArticleRows}
             furnitureTemplates={furnitureTemplates}
             normalizeFurnitureKey={normalizeFurnitureKey}
             strapStock={strapStockGlobal}

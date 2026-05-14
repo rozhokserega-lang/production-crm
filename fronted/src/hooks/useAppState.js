@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import {
   callBackend,
@@ -57,7 +57,6 @@ import { useStrapDerivedData } from "./useStrapDerivedData";
 import { useFurnitureDerivedData } from "./useFurnitureDerivedData";
 import { useDashboardDerivedData } from "./useDashboardDerivedData";
 import { useWarehouseTableData } from "./useWarehouseTableData";
-import { useWarehouseOrderPlanRows } from "./useWarehouseOrderPlanRows";
 import { useLaborDerivedData } from "./useLaborDerivedData";
 import { useLaborStageAnalytics } from "./useLaborStageAnalytics";
 import { useShipmentPlanningDerivedData } from "./useShipmentPlanningDerivedData";
@@ -111,6 +110,11 @@ import { useShipmentActions } from "./useShipmentActions";
 import { useFurnitureActions } from "./useFurnitureActions";
 import { useOrderMgmtActions } from "./useOrderMgmtActions";
 import { useWarehouseActions } from "./useWarehouseActions";
+import {
+  clearAllViewCaches,
+  getMutationInvalidationViews,
+  invalidateViewCaches,
+} from "./viewCache";
 import {
   buildPreviewRowsFromFurnitureTemplate,
   getColorGroup,
@@ -320,7 +324,7 @@ export function useAppState() {
     return false;
   }, [setError]);
 
-  const { load } = useDataLoader({
+  const { load: rawLoad } = useDataLoader({
     view,
     tab,
     callBackend,
@@ -353,6 +357,15 @@ export function useAppState() {
     loadFurnitureDomainData,
     toUserError,
   });
+  const load = useCallback((options) => rawLoad(options), [rawLoad]);
+  const mutationLoad = useCallback(async () => {
+    invalidateViewCaches(getMutationInvalidationViews(view));
+    await rawLoad();
+  }, [rawLoad, view]);
+  const handleAuthChange = useCallback(async () => {
+    clearAllViewCaches();
+    await rawLoad();
+  }, [rawLoad]);
   const {
     authEmail,
     authPassword,
@@ -364,7 +377,7 @@ export function useAppState() {
     signOutSupabaseUser,
   } = useAuth({
     authEnabled,
-    onAuthChange: load,
+    onAuthChange: handleAuthChange,
     setError,
     toUserError,
   });
@@ -474,7 +487,7 @@ export function useAppState() {
     setError,
     setWarehouseSyncLoading,
     setLeftoversSyncLoading,
-    load,
+    load: mutationLoad,
     consumeLogSheetName,
   });
 
@@ -498,7 +511,7 @@ export function useAppState() {
     setConsumeLoading,
     logConsumeToGoogleSheet,
     syncLeftoversToGoogleSheet,
-    load,
+    load: mutationLoad,
   });
 
   const openPrasDoneStrapDialog = useCallback((orderId, meta = {}) => {
@@ -545,13 +558,13 @@ export function useAppState() {
       setStrapDoneDialogOpen(false);
       setStrapDoneDialogMeta(null);
       setStrapDoneQtyInput("");
-      void load();
+      void mutationLoad();
     } catch (e) {
       setStrapDoneError(String(e?.message || e || "Ошибка сохранения"));
     } finally {
       setStrapDoneSaving(false);
     }
-  }, [strapDoneDialogMeta, load]);
+  }, [strapDoneDialogMeta, mutationLoad]);
 
   const {
     weeks,
@@ -651,7 +664,7 @@ export function useAppState() {
     resolvedPlanItem,
     furnitureTemplates,
     syncPlanCellToGoogleSheet,
-    load,
+    load: mutationLoad,
   });
 
   const openCreatePlanDialog = useCallback(async () => {
@@ -699,7 +712,7 @@ export function useAppState() {
     strapNameToOrderItem,
     normalizeStrapProductKey,
     syncPlanCellToGoogleSheet,
-    load,
+    load: mutationLoad,
   });
 
   const crmRoleLabel = CRM_ROLE_LABELS[crmRole] || CRM_ROLE_LABELS.viewer;
@@ -719,12 +732,12 @@ export function useAppState() {
 
   useEffect(() => {
     if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-      const fallbackId = setInterval(() => load().catch(() => {}), 60000);
+      const fallbackId = setInterval(() => load({ background: true }).catch(() => {}), 60000);
       return () => clearInterval(fallbackId);
     }
     const client = getSupabaseRealtimeClient();
     if (!client) {
-      const fallbackId = setInterval(() => load().catch(() => {}), 60000);
+      const fallbackId = setInterval(() => load({ background: true }).catch(() => {}), 60000);
       return () => clearInterval(fallbackId);
     }
     let disposed = false;
@@ -736,12 +749,12 @@ export function useAppState() {
       if (reloadTimer) window.clearTimeout(reloadTimer);
       reloadTimer = window.setTimeout(() => {
         reloadTimer = null;
-        load().catch(() => {});
+        load({ background: true }).catch(() => {});
       }, 300);
     };
     const ensureFallbackPolling = () => {
       if (disposed || fallbackId) return;
-      fallbackId = window.setInterval(() => load().catch(() => {}), 60000);
+      fallbackId = window.setInterval(() => load({ background: true }).catch(() => {}), 60000);
     };
     const clearFallbackPolling = () => {
       if (!fallbackId) return;
@@ -951,6 +964,25 @@ export function useAppState() {
     rows,
   });
 
+  const workshopStrapDeps = useMemo(
+    () => ({
+      furnitureTemplates,
+      furnitureCustomTemplates,
+      furnitureDetailArticleRows,
+      normalizeFurnitureKey,
+    }),
+    [furnitureTemplates, furnitureCustomTemplates, furnitureDetailArticleRows, normalizeFurnitureKey],
+  );
+
+  const refreshStrapStock = useCallback(async () => {
+    try {
+      const data = await callBackend("webGetStrapStock", {});
+      setStrapStockGlobal(Array.isArray(data) ? data : []);
+    } catch (_) {
+      /* ignore */
+    }
+  }, [callBackend]);
+
   const { runAction } = useStageActions({
     canOperateProduction,
     denyActionByRole,
@@ -960,13 +992,15 @@ export function useAppState() {
     setPendingStageActionKeys,
     orderIndexById,
     shipmentBoard,
-    load,
+    load: mutationLoad,
     syncPlanCellToGoogleSheet,
     notifyAssemblyReadyTelegram,
     notifyFinalStageTelegram,
     openPilkaDoneConsumeDialog,
     openPilkaDoneConsumeDialogOnError,
     openPrasDoneStrapDialog,
+    workshopStrapDeps,
+    refreshStrapStock,
   });
 
   // Load strap stock globally so WorkshopView can show strap availability
@@ -1044,7 +1078,7 @@ export function useAppState() {
     denyActionByRole,
     setActionLoading,
     setError,
-    load,
+    load: mutationLoad,
     orderDrawerId,
     rowsRef,
   });
@@ -1125,6 +1159,7 @@ export function useAppState() {
   } = useShipmentBoardRenderDerived({
     view,
     filtered,
+    shipmentFiltered,
     weekFilter,
     shipmentOrderMaps,
     passesShipmentStageFilter: shipmentStageFilter,
@@ -1172,12 +1207,17 @@ export function useAppState() {
     hiddenShipmentGroups,
     furnitureCustomTemplates,
   });
-  const warehouseOrderPlanRows = useWarehouseOrderPlanRows({
-    shipmentBoard,
-    materialsStockRows,
-    getMaterialLabel,
-    normalizeFurnitureKey,
-  });
+  /** Те же цифры, что в красном блоке «Нехватка по всему плану» на отгрузке (awaiting + фильтры недели/этапов + шаблоны листов). */
+  const warehouseOrderPlanRows = useMemo(
+    () =>
+      shipmentPlanDeficits.map((d) => ({
+        material: d.material,
+        needed: d.needed,
+        available: d.available,
+        toOrder: d.deficit,
+      })),
+    [shipmentPlanDeficits],
+  );
 
   const { printWarehouseOrderPlanPdf } = useWarehouseActions({
     warehouseOrderPlanRows,
@@ -1244,7 +1284,7 @@ export function useAppState() {
     setPlanPreviews,
     setActionLoading,
     setError,
-    load,
+    load: mutationLoad,
     view,
     loadMetalQueue,
     selectedShipmentMetal,
@@ -1278,7 +1318,7 @@ export function useAppState() {
     denyActionByRole,
     setActionLoading,
     setError,
-    load,
+    load: mutationLoad,
     sectionArticleRows,
     syncPlanCellToGoogleSheet,
     loadMetalStock,
@@ -1297,7 +1337,7 @@ export function useAppState() {
     setActionLoading,
     canOperateProduction,
     denyActionByRole,
-    load,
+    load: mutationLoad,
     setLaborImportedRows,
     setLaborSaveSelected,
     setLaborSavingByKey,
@@ -1352,6 +1392,7 @@ export function useAppState() {
 
     // Data loading
     load,
+    mutationLoad,
     rows, setRows,
     query, setQuery,
     loading, setLoading,

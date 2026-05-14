@@ -14,7 +14,7 @@ export function useShipmentTableData({
   furnitureCustomTemplates,
 }) {
   const shipmentTableRows = useMemo(() => {
-    if (view !== "shipment") return [];
+    if (view !== "shipment" && view !== "warehouse") return [];
     const n = (v) => (typeof normalizeFurnitureKey === "function" ? normalizeFurnitureKey(v) : String(v || "").toLowerCase().trim());
     const templates = Array.isArray(furnitureCustomTemplates) ? furnitureCustomTemplates : [];
     const resolveKitsPerSheet = (itemName, materialName = "") => {

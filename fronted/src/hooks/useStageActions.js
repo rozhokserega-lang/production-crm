@@ -8,7 +8,12 @@ import {
   buildNotifyPayload,
   buildStageSyncPayload,
 } from "../app/runActionHelpers";
-import { getMaterialLabel } from "../app/orderHelpers";
+import { getMaterialLabel, stripPlanItemMeta } from "../app/orderHelpers";
+import {
+  getResolvedWorkshopStrapNeeds,
+  isWorkshopStrapOrderItem,
+  strapConsumeColorForOrder,
+} from "../app/workshopStrapNeeds";
 import { resolveSectionNameForOrder } from "../app/appUtils";
 import { toUserError } from "../app/errorCatalogHelpers";
 import { OrderService } from "../services/orderService";
@@ -34,6 +39,8 @@ export function useStageActions({
   openPilkaDoneConsumeDialog,
   openPilkaDoneConsumeDialogOnError,
   openPrasDoneStrapDialog,
+  workshopStrapDeps,
+  refreshStrapStock,
 }) {
   const stageActionSeqRef = useRef(new Map());
 
@@ -77,6 +84,38 @@ export function useStageActions({
       }
       try {
         await OrderService.updateOrderStage(orderId, action, payload);
+
+        if (action === "webSetAssemblyDone" && workshopStrapDeps) {
+          const source = orderIndexById.get(String(orderId));
+          if (source) {
+            const raw = stripPlanItemMeta(String(source.item || source.Item || ""));
+            if (!isWorkshopStrapOrderItem(raw)) {
+              try {
+                const list = getResolvedWorkshopStrapNeeds(source, workshopStrapDeps);
+                const color = strapConsumeColorForOrder(source);
+                for (const row of list) {
+                  const n = Number(row.needed || 0);
+                  if (n > 0) {
+                    await OrderService.consumeStrapStock({ strapType: row.code, color, qty: n });
+                  }
+                }
+              } catch (strapErr) {
+                setError(
+                  toUserError(strapErr) ||
+                    "Сборка отмечена, но списание обвязки со склада не выполнено. Проверьте остатки вручную.",
+                );
+              }
+            }
+            if (typeof refreshStrapStock === "function") {
+              try {
+                await refreshStrapStock();
+              } catch (_) {
+                /* ignore */
+              }
+            }
+          }
+        }
+
         const stageSync = STAGE_SYNC_META[action];
         if (stageSync) {
           const sourceOrder = orderIndexById.get(String(orderId)) || {};
@@ -162,6 +201,8 @@ export function useStageActions({
       openPilkaDoneConsumeDialog,
       openPilkaDoneConsumeDialogOnError,
       openPrasDoneStrapDialog,
+      workshopStrapDeps,
+      refreshStrapStock,
     ],
   );
 

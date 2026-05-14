@@ -25,6 +25,10 @@ export class OrderService {
     return await callBackend(action, { orderId, ...payload });
   }
 
+  static async consumeStrapStock({ strapType, color, qty }) {
+    return await callBackend("webConsumeStrapStock", { strapType, color, qty });
+  }
+
   static async deleteOrder(orderId) {
     return await callBackend("webDeleteOrderById", { orderId });
   }

@@ -55,8 +55,8 @@ export function extractDetailSizeToken(v) {
   return `${m[1]}_${m[2]}`;
 }
 
-function resolveFurnitureAliasKey(candidates) {
-  const text = candidates.join(" ");
+export function resolveFurnitureAliasKey(candidates) {
+  const text = candidates.join(" ").toLowerCase();
   const checks = [
     { has: ["donini grande"], key: "донини гранде" },
     { has: ["donini r"], key: "донини r" },

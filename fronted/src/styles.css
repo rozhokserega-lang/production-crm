@@ -1917,6 +1917,107 @@ button:disabled {
   font-size: 12px;
 }
 
+/* Workshop card line2: одна горизонтальная полоса — мета | планки (скролл) | итог */
+.line2.workshop-card-line2 {
+  width: 100%;
+  flex-direction: row;
+  align-items: center;
+  /* override .line1,.line2 { justify-content: space-between } — планки сразу после меты, остаток ширины в полосе скролла */
+  justify-content: flex-start;
+  gap: 10px;
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+
+.workshop-card-line2__meta {
+  flex: 0 1 auto;
+  max-width: min(38%, 320px);
+  min-width: 0;
+}
+
+.workshop-card-line2__meta-text {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.workshop-card-line2__straps {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.workshop-strap-strip {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 5px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 1px;
+  scrollbar-width: thin;
+}
+
+.workshop-strap-strip::-webkit-scrollbar {
+  height: 4px;
+}
+
+.workshop-strap-strip::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+.workshop-strap-chip {
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+  padding: 1px 5px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.workshop-strap-chip--ok {
+  color: #166534;
+  background: #dcfce7;
+  border: 1px solid #86efac;
+}
+
+.workshop-strap-chip--short {
+  color: #9f1239;
+  background: #fff1f2;
+  border: 1px solid #fda4af;
+}
+
+.workshop-strap-total {
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+  padding: 1px 6px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.workshop-strap-total--ok {
+  color: #166534;
+  background: #f0fdf4;
+  border: 1px solid #86efac;
+}
+
+.workshop-strap-total--warn {
+  color: #9f1239;
+  background: #fff1f2;
+  border: 1px solid #fda4af;
+}
+
 .stages {
   margin-top: 4px;
   display: grid;
@@ -4314,11 +4415,11 @@ button:hover {
 .strap-stock-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 14px;
+  font-size: 13px;
 }
 .strap-stock-table th {
   background: #f8fafc;
-  padding: 10px 14px;
+  padding: 8px 10px;
   text-align: left;
   font-weight: 600;
   color: #475569;
@@ -4326,12 +4427,11 @@ button:hover {
   white-space: nowrap;
 }
 .strap-stock-row td {
-  padding: 9px 14px;
+  padding: 7px 10px;
   border-bottom: 1px solid #f1f5f9;
   vertical-align: middle;
 }
 .strap-stock-row:last-child td { border-bottom: none; }
-.strap-stock-row--empty td { color: #94a3b8; }
 .strap-stock-row--zero td { background: #fafafa; }
 .strap-stock-type { font-weight: 500; color: #1e293b; }
 .strap-stock-color { color: #475569; }
@@ -4340,14 +4440,36 @@ button:hover {
 .strap-stock-updated { color: #94a3b8; font-size: 12px; white-space: nowrap; }
 .strap-stock-actions { text-align: right; white-space: nowrap; }
 .strap-stock-qty-input {
-  width: 80px;
-  padding: 4px 8px;
-  font-size: 14px;
+  width: 72px;
+  padding: 3px 6px;
+  font-size: 13px;
   border: 1px solid #6366f1;
   border-radius: 6px;
   outline: none;
 }
 .strap-stock-qty-input:focus { box-shadow: 0 0 0 2px #c7d2fe; }
+
+.strap-stock-th-numeric {
+  text-align: right;
+}
+.strap-stock-qty {
+  text-align: right;
+  white-space: nowrap;
+}
+.strap-stock-shortage {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  width: 1%;
+}
+.strap-stock-shortage--deficit {
+  color: #9f1239;
+}
+.strap-stock-shortage--ok .strap-stock-shortage-zero {
+  color: #94a3b8;
+  font-weight: 400;
+}
 
 /* ========== Мобильный UI (≤600px), после max-width:900px — перебивает отступы .page и т.д. ========== */
 @media (max-width: 600px) {

@@ -1,7 +1,11 @@
 import { memo, useMemo } from "react";
 import { KROMKA_EXECUTORS, PRAS_EXECUTORS } from "../config";
 import { stripPlanItemMeta } from "../app/orderHelpers";
-import { STRAP_OPTIONS } from "../constants/views";
+import {
+  getResolvedWorkshopStrapNeeds,
+  isWorkshopStrapOrderItem,
+  normalizeStrapInventoryCode,
+} from "../app/workshopStrapNeeds";
 import { resolvePipelineStage, getOrderStageDisplayLabel } from "../orderPipeline";
 
 const STAGE_PILL_CLASS = {
@@ -24,19 +28,6 @@ const STAGE_ICON = {
   shipped:          "✅",
 };
 
-// Extract strap type code from STRAP_OPTIONS like "Обвязка (1158_50)" → "1158_50"
-const STRAP_TYPE_CODES = new Set(
-  STRAP_OPTIONS.map((opt) => {
-    const m = String(opt).match(/\((\d{2,5}[_x]\d{2,5})\)/);
-    return m ? m[1] : null;
-  }).filter(Boolean),
-);
-
-function extractStrapCode(detailName) {
-  const m = String(detailName || "").match(/\((\d{2,5}[_x]\d{2,5})\)/);
-  return m ? m[1] : null;
-}
-
 export const WorkshopView = memo(function WorkshopView({
   workshopRows,
   loading,
@@ -58,6 +49,7 @@ export const WorkshopView = memo(function WorkshopView({
   executorOptions,
   getMaterialLabel,
   furnitureCustomTemplates,
+  furnitureDetailArticleRows,
   furnitureTemplates,
   normalizeFurnitureKey,
   strapStock,
@@ -70,92 +62,65 @@ export const WorkshopView = memo(function WorkshopView({
     : PRAS_EXECUTORS;
   const isPending = (key) => (typeof isActionPending === "function" ? isActionPending(key) : actionLoading === key);
 
-  // Detect strap orders by item name pattern (size codes like "1000_80", "316_167")
-  // or by "Планки обвязки" prefix used in some order types.
-  const isStrapItem = (item) => {
-    const s = String(item || "").trim();
-    return s.includes("Планки обвязки") || /^\d{3,5}[_x]\d{2,5}$/.test(s);
-  };
-
-  // Build strap stock lookup: { "1158_50": 98, "316_167": 0, ... }
+  // Build strap stock lookup: { "1158_50": 98, ... } (нормализуем код размера)
   const strapStockByType = useMemo(() => {
     const map = {};
     (Array.isArray(strapStock) ? strapStock : []).forEach((s) => {
-      const key = String(s.strap_type || "").trim();
+      const key = normalizeStrapInventoryCode(String(s.strap_type || "").trim());
       if (key) map[key] = (map[key] || 0) + Number(s.qty || 0);
     });
     return map;
   }, [strapStock]);
 
-  // Build template lookup from merged templates (Excel + DB), fallback to DB-only
-  // furnitureTemplates has { productName, details: [{ detailName, perUnit }] }
-  // furnitureCustomTemplates has { product_name, details: [{ detailName, perUnit }] }
-  const templateByKey = useMemo(() => {
-    const map = {};
-    const merged = Array.isArray(furnitureTemplates) && furnitureTemplates.length > 0
-      ? furnitureTemplates
-      : (Array.isArray(furnitureCustomTemplates) ? furnitureCustomTemplates : []);
-    merged.forEach((t) => {
-      const name = String(t.productName || t.product_name || "").trim();
-      const k = typeof normalizeFurnitureKey === "function"
-        ? normalizeFurnitureKey(name)
-        : name.toLowerCase();
-      if (k) map[k] = t;
+  const strapDeps = useMemo(
+    () => ({
+      furnitureTemplates,
+      furnitureCustomTemplates,
+      furnitureDetailArticleRows,
+      normalizeFurnitureKey,
+    }),
+    [furnitureTemplates, furnitureCustomTemplates, furnitureDetailArticleRows, normalizeFurnitureKey],
+  );
+
+  const { workshopStrapRows, totalObvyazkaDeficit } = useMemo(() => {
+    let total = 0;
+    const workshopStrapRows = workshopRows.map((o) => {
+      const strapNeeds = getResolvedWorkshopStrapNeeds(o, strapDeps);
+      const strapDeficit = strapNeeds.reduce((sum, { code, needed }) => {
+        const k = normalizeStrapInventoryCode(code);
+        const available = strapStockByType[k] ?? 0;
+        return sum + Math.max(0, Number(needed || 0) - available);
+      }, 0);
+      total += strapDeficit;
+      return { strapNeeds, strapDeficit };
     });
-    return map;
-  }, [furnitureTemplates, furnitureCustomTemplates, normalizeFurnitureKey]);
+    return { workshopStrapRows, totalObvyazkaDeficit: total };
+  }, [workshopRows, strapStockByType, strapDeps]);
 
-  // Extract base product name before material part: "Тумба под ТВ Лофт. Дуб Коми" → "тумба под тв лофт"
-  // and strip trailing size numbers: "тумба под тв лофт 180" → "тумба под тв лофт"
-  const extractBaseKey = (name) => {
-    const norm = typeof normalizeFurnitureKey === "function"
-      ? normalizeFurnitureKey(name)
-      : String(name || "").toLowerCase().trim();
-    // Take part before ". " (material separator)
-    const base = norm.split(". ")[0].trim();
-    // Strip trailing size numbers like " 180", " 1800", " 750 мм" etc.
-    return base.replace(/\s*\d[\d\s.]*(?:мм)?$/, "").trim();
-  };
-
-  // For a given order, calculate straps needed per strap type
-  const calcStrapNeeds = (rawItem, qty) => {
-    const itemKey = typeof normalizeFurnitureKey === "function"
-      ? normalizeFurnitureKey(rawItem)
-      : String(rawItem || "").toLowerCase().trim();
-    const orderBase = extractBaseKey(rawItem);
-
-    // 1. Exact match by full normalized name
-    let tpl = templateByKey[itemKey] || null;
-
-    // 2. Base-name match: order base starts with template base or vice versa
-    if (!tpl && orderBase.length >= 5) {
-      const entry = Object.entries(templateByKey).find(([, t]) => {
-        const tplBase = extractBaseKey(String(t.product_name || t.productName || ""));
-        return tplBase.length >= 5 && (
-          orderBase.startsWith(tplBase) || tplBase.startsWith(orderBase)
-        );
-      });
-      tpl = entry ? entry[1] : null;
-    }
-
-    if (!tpl || !Array.isArray(tpl.details)) return [];
-    const orderQty = Number(qty || 0);
-    const needs = [];
-    tpl.details.forEach((d) => {
-      const code = extractStrapCode(d.detailName || d.detail_name || "");
-      if (!code || !STRAP_TYPE_CODES.has(code)) return;
-      const totalNeeded = (Number(d.perUnit || d.per_unit || 0)) * orderQty;
-      if (totalNeeded > 0) {
-        needs.push({ code, needed: totalNeeded, name: d.detailName || d.detail_name });
-      }
-    });
-    return needs;
-  };
+  const hasAnyStrapPlanning = workshopStrapRows.some((r) => r.strapNeeds.length > 0);
 
   return (
     <>
       {!workshopRows.length && !loading && <div className="empty">Нет заказов</div>}
-      {workshopRows.map((o) => {
+      {hasAnyStrapPlanning && workshopRows.length > 0 && (
+        <div
+          className="strap-workshop-total-deficit"
+          style={{
+            marginBottom: 12,
+            padding: "10px 14px",
+            borderRadius: 8,
+            background: totalObvyazkaDeficit > 0 ? "#fff1f2" : "#f0fdf4",
+            border: `1px solid ${totalObvyazkaDeficit > 0 ? "#fda4af" : "#86efac"}`,
+            color: totalObvyazkaDeficit > 0 ? "#9f1239" : "#166534",
+            fontWeight: 600,
+            fontSize: 14,
+          }}
+          title="Сумма max(0, нужно − на складе обвязки) по всем заказам в списке"
+        >
+          Нехватает (обвязка), всего: {totalObvyazkaDeficit} шт
+        </div>
+      )}
+      {workshopRows.map((o, idx) => {
         const orderId = String(o.orderId || o.order_id || "");
         const isPaused = (status) => /пауза/i.test(String(status || ""));
         const rawItem = stripPlanItemMeta(String(o.item || ""));
@@ -189,8 +154,7 @@ export const WorkshopView = memo(function WorkshopView({
         const displayMaterial = String(o.material || o.colorName || "").trim() || "Материал не указан";
         const adminNote = String(o.adminComment ?? o.admin_comment ?? "").trim();
 
-        // Strap availability calculation (only for non-strap orders)
-        const strapNeeds = isStrapItem(rawItem) ? [] : calcStrapNeeds(rawItem, o.qty);
+        const { strapNeeds, strapDeficit } = workshopStrapRows[idx] || { strapNeeds: [], strapDeficit: 0 };
 
         const pilkaDone = isDone(o.pilkaStatus);
         const pilkaInWork = isInWork(o.pilkaStatus);
@@ -254,33 +218,43 @@ export const WorkshopView = memo(function WorkshopView({
                     )}
                   </div>
                 </div>
-                <div className="line2">
-                  <span>ID: {orderId || "-"}</span>
-                  <span>Листов нужно: {Number(displaySheetsNeeded || 0)}</span>
-                  <span>
-                    Листы: {displayMaterial} ({Number(displaySheetsNeeded || 0)} шт)
-                  </span>
-                  {strapNeeds.map(({ code, needed, name }) => {
-                    const available = strapStockByType[code] ?? 0;
-                    const enough = available >= needed;
-                    return (
+                <div className="line2 workshop-card-line2">
+                  <div
+                    className="workshop-card-line2__meta"
+                    title={`ID: ${orderId || "-"} · Листов нужно: ${Number(displaySheetsNeeded || 0)} · Листы: ${displayMaterial} (${Number(displaySheetsNeeded || 0)} шт)`}
+                  >
+                    <span className="workshop-card-line2__meta-text">
+                      ID: {orderId || "-"} · Листов нужно: {Number(displaySheetsNeeded || 0)} · Листы:{" "}
+                      {displayMaterial} ({Number(displaySheetsNeeded || 0)} шт)
+                    </span>
+                  </div>
+                  {strapNeeds.length > 0 && (
+                    <div className="workshop-card-line2__straps">
+                      <div className="workshop-strap-strip" role="list">
+                        {strapNeeds.map(({ code, needed, name }) => {
+                          const k = normalizeStrapInventoryCode(code);
+                          const available = strapStockByType[k] ?? 0;
+                          const enough = available >= needed;
+                          return (
+                            <span
+                              role="listitem"
+                              key={k}
+                              className={`workshop-strap-chip${enough ? " workshop-strap-chip--ok" : " workshop-strap-chip--short"}`}
+                              title={`${name || k}: нужно ${needed}, в наличии ${available}${enough ? "" : `, нехватает ${Math.max(0, Number(needed || 0) - available)}`}`}
+                            >
+                              {k}: {available}/{needed}
+                            </span>
+                          );
+                        })}
+                      </div>
                       <span
-                        key={code}
-                        style={{
-                          color: enough ? "#166534" : "#9f1239",
-                          background: enough ? "#dcfce7" : "#fff1f2",
-                          border: `1px solid ${enough ? "#86efac" : "#fda4af"}`,
-                          borderRadius: 4,
-                          padding: "1px 6px",
-                          fontWeight: 600,
-                          fontSize: 12,
-                        }}
-                        title={`${name}: нужно ${needed}, в наличии ${available}`}
+                        className={`workshop-strap-total${strapDeficit > 0 ? " workshop-strap-total--warn" : " workshop-strap-total--ok"}`}
+                        title="Сумма нехватки по всем типам планок для этого заказа"
                       >
-                        {name || code}: {available}/{needed}
+                        {strapDeficit > 0 ? `Нехв. ${strapDeficit}` : "OK"}
                       </span>
-                    );
-                  })}
+                    </div>
+                  )}
                 </div>
               </div>
               {adminNote ? (
@@ -404,7 +378,7 @@ export const WorkshopView = memo(function WorkshopView({
                           week: o.week,
                           qty: o.qty,
                           executor: executorByOrder[orderId] || o.prasExecutor || "",
-                          isStrapOrder: isStrapItem(o.item),
+                          isStrapOrder: isWorkshopStrapOrderItem(o.item),
                         })
                       }
                     >
@@ -418,7 +392,7 @@ export const WorkshopView = memo(function WorkshopView({
                           item: o.item,
                           material: getMaterialLabel(o.item, o.material || o.colorName || ""),
                           qty: o.qty,
-                          isStrapOrder: isStrapItem(o.item),
+                          isStrapOrder: isWorkshopStrapOrderItem(o.item),
                         })
                       }
                     >

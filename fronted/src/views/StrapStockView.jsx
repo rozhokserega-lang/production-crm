@@ -1,5 +1,9 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { STRAP_OPTIONS } from "../app/appConstants";
+import {
+  computeWorkshopStrapDemandByInventoryKey,
+  strapWarehouseShortage,
+} from "../app/workshopStrapNeeds";
 
 /**
  * Extracts the size code from a STRAP_OPTIONS display name.
@@ -23,7 +27,29 @@ function buildStockMap(rows) {
   return map;
 }
 
-export function StrapStockView({ callBackend }) {
+/** Если в БД ещё нет строки по типу — создаём остаток с этим цветом (как в существующих строках склада). */
+const DEFAULT_STRAP_STOCK_COLOR = "Черный";
+
+function ShortageCell({ demandByKey, strapType, color, qty }) {
+  const miss = strapWarehouseShortage(demandByKey, strapType, color, qty);
+  return (
+    <td
+      className={`strap-stock-shortage${miss > 0 ? " strap-stock-shortage--deficit" : " strap-stock-shortage--ok"}`}
+      title="По заказам в цеху (все этапы, как на вкладке «Все»): max(0, нужно − остаток в этой строке)"
+    >
+      {miss > 0 ? <b>{miss}</b> : <span className="strap-stock-shortage-zero">0</span>}
+    </td>
+  );
+}
+
+export function StrapStockView({
+  callBackend,
+  workshopRows = [],
+  furnitureTemplates = [],
+  furnitureCustomTemplates = [],
+  furnitureDetailArticleRows = [],
+  normalizeFurnitureKey,
+}) {
   const [stockRows, setStockRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -47,6 +73,24 @@ export function StrapStockView({ callBackend }) {
   useEffect(() => {
     load();
   }, [load]);
+
+  const strapDeps = useMemo(
+    () => ({
+      furnitureTemplates,
+      furnitureCustomTemplates,
+      furnitureDetailArticleRows,
+      normalizeFurnitureKey:
+        typeof normalizeFurnitureKey === "function"
+          ? normalizeFurnitureKey
+          : (v) => String(v || "").toLowerCase().trim(),
+    }),
+    [furnitureTemplates, furnitureCustomTemplates, furnitureDetailArticleRows, normalizeFurnitureKey],
+  );
+
+  const demandByKey = useMemo(
+    () => computeWorkshopStrapDemandByInventoryKey(workshopRows, strapDeps),
+    [workshopRows, strapDeps],
+  );
 
   const stockMap = buildStockMap(stockRows);
 
@@ -108,7 +152,10 @@ export function StrapStockView({ callBackend }) {
               <tr>
                 <th>Тип обвязки</th>
                 <th>Цвет</th>
-                <th>Кол-во (шт)</th>
+                <th className="strap-stock-th-numeric">Кол-во (шт)</th>
+                <th className="strap-stock-th-numeric" title="Сколько не хватает по производству (цех, все этапы) при текущем остатке в строке">
+                  Нехватает
+                </th>
                 <th>Изменено</th>
                 <th></th>
               </tr>
@@ -119,13 +166,66 @@ export function StrapStockView({ callBackend }) {
                 const label = STRAP_OPTIONS.find((o) => strapOptionToCode(o) === code) || code;
 
                 if (rows.length === 0) {
+                  const strapType = code;
+                  const color = DEFAULT_STRAP_STOCK_COLOR;
+                  const key = `${strapType}|${color}`;
+                  const isEditing = editKey === key;
+                  const displayQty = isEditing ? Number.parseInt(editQty, 10) : 0;
+                  const qtyForShortage = Number.isFinite(displayQty) && displayQty >= 0 ? displayQty : 0;
                   return (
-                    <tr key={code} className="strap-stock-row strap-stock-row--empty">
+                    <tr key={code} className="strap-stock-row strap-stock-row--zero">
                       <td className="strap-stock-type">{label}</td>
-                      <td className="strap-stock-color">—</td>
-                      <td className="strap-stock-qty strap-stock-qty--zero">0</td>
+                      <td className="strap-stock-color">{color}</td>
+                      <td className="strap-stock-qty">
+                        {isEditing ? (
+                          <input
+                            type="number"
+                            className="strap-stock-qty-input"
+                            value={editQty}
+                            min={0}
+                            onChange={(e) => setEditQty(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") handleEditSave(strapType, color);
+                              if (e.key === "Escape") handleEditCancel();
+                            }}
+                            autoFocus
+                          />
+                        ) : (
+                          <span className="strap-qty-zero">0</span>
+                        )}
+                      </td>
+                      <ShortageCell demandByKey={demandByKey} strapType={strapType} color={color} qty={qtyForShortage} />
                       <td className="strap-stock-updated">—</td>
-                      <td className="strap-stock-actions"></td>
+                      <td className="strap-stock-actions">
+                        {isEditing ? (
+                          <>
+                            <button
+                              type="button"
+                              className="mini ok"
+                              disabled={saving}
+                              onClick={() => handleEditSave(strapType, color)}
+                            >
+                              ✓
+                            </button>
+                            <button
+                              type="button"
+                              className="mini ghost"
+                              disabled={saving}
+                              onClick={handleEditCancel}
+                            >
+                              ✕
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            type="button"
+                            className="mini ghost"
+                            onClick={() => handleEditStart(strapType, color, 0)}
+                          >
+                            Изменить
+                          </button>
+                        )}
+                      </td>
                     </tr>
                   );
                 }
@@ -141,6 +241,10 @@ export function StrapStockView({ callBackend }) {
                         minute: "2-digit",
                       })
                     : "—";
+                  const rowQty = Number(row.qty || 0);
+                  const editParsed = Number.parseInt(editQty, 10);
+                  const qtyForShortage =
+                    isEditing && Number.isFinite(editParsed) && editParsed >= 0 ? editParsed : rowQty;
                   return (
                     <tr
                       key={key}
@@ -168,6 +272,12 @@ export function StrapStockView({ callBackend }) {
                           </span>
                         )}
                       </td>
+                      <ShortageCell
+                        demandByKey={demandByKey}
+                        strapType={row.strap_type}
+                        color={row.color}
+                        qty={qtyForShortage}
+                      />
                       <td className="strap-stock-updated">{updatedAt}</td>
                       <td className="strap-stock-actions">
                         {isEditing ? (
