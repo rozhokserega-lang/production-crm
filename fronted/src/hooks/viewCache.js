@@ -70,16 +70,16 @@ export function clearAllViewCaches() {
 export function getMutationInvalidationViews(view) {
   const key = normalizeView(view);
   if (["overview", "workshop", "stats"].includes(key)) {
-    return ["overview", "workshop", "stats", "shipment", "warehouse", "sheetMirror"];
+    return ["overview", "workshop", "stats", "shipment", "warehouse", "sheetMirror", "strapStock"];
   }
   if (key === "shipment") {
-    return ["shipment", "overview", "workshop", "stats", "warehouse", "furniture", "sheetMirror"];
+    return ["shipment", "overview", "workshop", "stats", "warehouse", "furniture", "sheetMirror", "strapStock"];
   }
   if (key === "warehouse") {
-    return ["warehouse", "shipment", "overview", "workshop", "stats", "sheetMirror"];
+    return ["warehouse", "shipment", "overview", "workshop", "stats", "sheetMirror", "strapStock"];
   }
   if (key === "furniture") {
-    return ["furniture", "shipment", "workshop", "warehouse"];
+    return ["furniture", "shipment", "workshop", "warehouse", "strapStock"];
   }
   if (key === "labor") {
     return ["labor"];

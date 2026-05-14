@@ -330,7 +330,9 @@ export function useDataLoader({
           } catch (_) {
             // keep previous shipment board snapshot
           }
-          // Load furniture custom templates for strap availability display
+        }
+        if (view === "workshop" || view === "strapStock") {
+          // Load furniture custom templates + detail map (как в цеху) — для расчёта обвязки на складе и в карточках
           if (typeof setFurnitureCustomTemplates === "function") {
             try {
               const templates = await OrderService.getFurnitureCustomTemplates();

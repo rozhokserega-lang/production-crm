@@ -4,7 +4,9 @@ import {
   computeWorkshopStrapDemandByInventoryKey,
   getResolvedWorkshopStrapNeeds,
   inventoryCodeFromStrapStockType,
+  orderCountsTowardStrapDemand,
   orderKeysForStrapCatalogMatch,
+  strapWarehouseDemandQty,
   strapWarehouseShortage,
 } from "./workshopStrapNeeds";
 import { normalizeFurnitureKey } from "../utils/furnitureUtils";
@@ -106,6 +108,19 @@ describe("orderKeysForStrapCatalogMatch", () => {
   });
 });
 
+describe("orderCountsTowardStrapDemand", () => {
+  it("is true for pilka through workshop_complete", () => {
+    expect(orderCountsTowardStrapDemand({ pipeline_stage: "pilka" })).toBe(true);
+    expect(orderCountsTowardStrapDemand({ pipeline_stage: "workshop_complete" })).toBe(true);
+  });
+
+  it("is false for assembled, ready_to_ship, shipped", () => {
+    expect(orderCountsTowardStrapDemand({ pipeline_stage: "assembled" })).toBe(false);
+    expect(orderCountsTowardStrapDemand({ pipeline_stage: "ready_to_ship" })).toBe(false);
+    expect(orderCountsTowardStrapDemand({ pipeline_stage: "shipped" })).toBe(false);
+  });
+});
+
 describe("inventoryCodeFromStrapStockType / strapWarehouseShortage", () => {
   it("parses label or short code", () => {
     expect(inventoryCodeFromStrapStockType("Обвязка (1000_80)")).toBe("1000_80");
@@ -116,6 +131,8 @@ describe("inventoryCodeFromStrapStockType / strapWarehouseShortage", () => {
     const m = new Map([["1000_80|Черный", 50]]);
     expect(strapWarehouseShortage(m, "1000_80", "Черный", 861)).toBe(0);
     expect(strapWarehouseShortage(m, "1000_80", "Черный", 40)).toBe(10);
+    expect(strapWarehouseDemandQty(m, "1000_80", "Черный")).toBe(50);
+    expect(strapWarehouseDemandQty(m, "558_80", "Черный")).toBe(0);
   });
 
   it("aggregates demand across workshop rows", () => {
@@ -131,6 +148,25 @@ describe("inventoryCodeFromStrapStockType / strapWarehouseShortage", () => {
     const workshopRows = [
       { item: "Donini 750 мм. Дуб Вотан", qty: 12 },
       { item: "Donini 750 мм. Дуб Вотан", qty: 12 },
+    ];
+    const map = computeWorkshopStrapDemandByInventoryKey(workshopRows, deps);
+    expect(map.get("1000_80|Черный")).toBe(48);
+    expect(map.get("558_80|Черный")).toBe(96);
+  });
+
+  it("ignores assembled / final orders in demand map", () => {
+    const rows = [
+      {
+        product_name: "Донини",
+        detail_name_pattern: "Обвязка",
+        article: "X1",
+        is_active: true,
+      },
+    ];
+    const deps = { ...emptyDeps, furnitureDetailArticleRows: rows };
+    const workshopRows = [
+      { item: "Donini 750 мм. Дуб Вотан", qty: 24, pipeline_stage: "assembled" },
+      { item: "Donini 750 мм. Дуб Вотан", qty: 24, pipeline_stage: "pilka" },
     ];
     const map = computeWorkshopStrapDemandByInventoryKey(workshopRows, deps);
     expect(map.get("1000_80|Черный")).toBe(48);

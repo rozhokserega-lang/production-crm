@@ -12,6 +12,7 @@ import { getMaterialLabel, stripPlanItemMeta } from "../app/orderHelpers";
 import {
   getResolvedWorkshopStrapNeeds,
   isWorkshopStrapOrderItem,
+  orderCountsTowardStrapDemand,
   strapConsumeColorForOrder,
 } from "../app/workshopStrapNeeds";
 import { resolveSectionNameForOrder } from "../app/appUtils";
@@ -60,6 +61,11 @@ export function useStageActions({
       });
       setError("");
       const targetOrderId = String(orderId || "");
+      /** Состояние заказа до оптимистичного патча — для списания обвязки при сборке. */
+      const strapAssemblySource =
+        action === "webSetAssemblyDone"
+          ? orderIndexById.get(String(orderId || ""))
+          : null;
       const hasOptimisticRule = hasOptimisticActionRule(action);
       let rowsSnapshot = null;
       let shipmentOrdersSnapshot = null;
@@ -85,33 +91,30 @@ export function useStageActions({
       try {
         await OrderService.updateOrderStage(orderId, action, payload);
 
-        if (action === "webSetAssemblyDone" && workshopStrapDeps) {
-          const source = orderIndexById.get(String(orderId));
-          if (source) {
-            const raw = stripPlanItemMeta(String(source.item || source.Item || ""));
-            if (!isWorkshopStrapOrderItem(raw)) {
-              try {
-                const list = getResolvedWorkshopStrapNeeds(source, workshopStrapDeps);
-                const color = strapConsumeColorForOrder(source);
-                for (const row of list) {
-                  const n = Number(row.needed || 0);
-                  if (n > 0) {
-                    await OrderService.consumeStrapStock({ strapType: row.code, color, qty: n });
-                  }
+        if (action === "webSetAssemblyDone" && workshopStrapDeps && strapAssemblySource) {
+          const raw = stripPlanItemMeta(String(strapAssemblySource.item || strapAssemblySource.Item || ""));
+          if (!isWorkshopStrapOrderItem(raw) && orderCountsTowardStrapDemand(strapAssemblySource)) {
+            try {
+              const list = getResolvedWorkshopStrapNeeds(strapAssemblySource, workshopStrapDeps);
+              const color = strapConsumeColorForOrder(strapAssemblySource);
+              for (const row of list) {
+                const n = Number(row.needed || 0);
+                if (n > 0) {
+                  await OrderService.consumeStrapStock({ strapType: row.code, color, qty: n });
                 }
-              } catch (strapErr) {
-                setError(
-                  toUserError(strapErr) ||
-                    "Сборка отмечена, но списание обвязки со склада не выполнено. Проверьте остатки вручную.",
-                );
               }
+            } catch (strapErr) {
+              setError(
+                toUserError(strapErr) ||
+                  "Сборка отмечена, но списание обвязки со склада не выполнено. Проверьте остатки вручную.",
+              );
             }
-            if (typeof refreshStrapStock === "function") {
-              try {
-                await refreshStrapStock();
-              } catch (_) {
-                /* ignore */
-              }
+          }
+          if (typeof refreshStrapStock === "function") {
+            try {
+              await refreshStrapStock();
+            } catch (_) {
+              /* ignore */
             }
           }
         }

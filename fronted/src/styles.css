@@ -4456,6 +4456,21 @@ button:hover {
   text-align: right;
   white-space: nowrap;
 }
+.strap-stock-demand {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  width: 1%;
+  color: #334155;
+}
+.strap-stock-demand--active {
+  color: #1e40af;
+}
+.strap-stock-demand-zero {
+  color: #94a3b8;
+  font-weight: 400;
+}
 .strap-stock-shortage {
   text-align: right;
   white-space: nowrap;

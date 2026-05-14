@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { STRAP_OPTIONS } from "../app/appConstants";
 import {
   computeWorkshopStrapDemandByInventoryKey,
+  strapWarehouseDemandQty,
   strapWarehouseShortage,
 } from "../app/workshopStrapNeeds";
 
@@ -30,12 +31,24 @@ function buildStockMap(rows) {
 /** Если в БД ещё нет строки по типу — создаём остаток с этим цветом (как в существующих строках склада). */
 const DEFAULT_STRAP_STOCK_COLOR = "Черный";
 
+function DemandCell({ demandByKey, strapType, color }) {
+  const need = strapWarehouseDemandQty(demandByKey, strapType, color);
+  return (
+    <td
+      className={`strap-stock-demand${need > 0 ? " strap-stock-demand--active" : ""}`}
+      title="Сколько штук нужно по заказам в цеху (пила, кромка, присадка, до сборки включительно)"
+    >
+      {need > 0 ? <b>{need}</b> : <span className="strap-stock-demand-zero">0</span>}
+    </td>
+  );
+}
+
 function ShortageCell({ demandByKey, strapType, color, qty }) {
   const miss = strapWarehouseShortage(demandByKey, strapType, color, qty);
   return (
     <td
       className={`strap-stock-shortage${miss > 0 ? " strap-stock-shortage--deficit" : " strap-stock-shortage--ok"}`}
-      title="По заказам в цеху (все этапы, как на вкладке «Все»): max(0, нужно − остаток в этой строке)"
+      title="max(0, «Требуется» − остаток в этой строке)"
     >
       {miss > 0 ? <b>{miss}</b> : <span className="strap-stock-shortage-zero">0</span>}
     </td>
@@ -153,7 +166,13 @@ export function StrapStockView({
                 <th>Тип обвязки</th>
                 <th>Цвет</th>
                 <th className="strap-stock-th-numeric">Кол-во (шт)</th>
-                <th className="strap-stock-th-numeric" title="Сколько не хватает по производству (цех, все этапы) при текущем остатке в строке">
+                <th
+                  className="strap-stock-th-numeric"
+                  title="Сумма потребности по заказам в активных этапах цеха (пила, кромка, присадка, ожидание сборки)"
+                >
+                  Требуется
+                </th>
+                <th className="strap-stock-th-numeric" title="max(0, «Требуется» − количество в строке)">
                   Нехватает
                 </th>
                 <th>Изменено</th>
@@ -194,6 +213,7 @@ export function StrapStockView({
                           <span className="strap-qty-zero">0</span>
                         )}
                       </td>
+                      <DemandCell demandByKey={demandByKey} strapType={strapType} color={color} />
                       <ShortageCell demandByKey={demandByKey} strapType={strapType} color={color} qty={qtyForShortage} />
                       <td className="strap-stock-updated">—</td>
                       <td className="strap-stock-actions">
@@ -272,6 +292,7 @@ export function StrapStockView({
                           </span>
                         )}
                       </td>
+                      <DemandCell demandByKey={demandByKey} strapType={row.strap_type} color={row.color} />
                       <ShortageCell
                         demandByKey={demandByKey}
                         strapType={row.strap_type}

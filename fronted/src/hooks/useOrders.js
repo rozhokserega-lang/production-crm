@@ -1,6 +1,7 @@
 import { useMemo, useState, useCallback, useEffect } from "react";
 import { OrderService } from "../services/orderService";
 import { matchesWeekFilter } from "../app/weekFilterUtils";
+import { orderCountsTowardStrapDemand } from "../app/workshopStrapNeeds";
 
 export function useOrders({
   autoLoad = true
@@ -103,6 +104,7 @@ export function useWorkshopRows({
       if (effectiveTab === "done") return assemblyDone && !onPackaging && !shipped;
       return true;
     });
+    const list = strapStockPlanning ? arr.filter(orderCountsTowardStrapDemand) : arr;
     const isPaused = (status) => /пауза/i.test(String(status || ""));
     const isRowPaused = (o) => {
       if (effectiveTab === "pilka") return isPaused(o.pilkaStatus);
@@ -120,7 +122,7 @@ export function useWorkshopRows({
       if (effectiveTab === "done") return false;
       return isInWork(o.pilkaStatus) || isInWork(o.kromkaStatus) || isInWork(o.prasStatus);
     };
-    arr.sort((a, b) => {
+    list.sort((a, b) => {
       const aw = isRowInWork(a) ? 1 : 0;
       const bw = isRowInWork(b) ? 1 : 0;
       if (aw !== bw) return bw - aw;
@@ -129,7 +131,7 @@ export function useWorkshopRows({
       if (ap !== bp) return bp - ap;
       return String(a.item || "").localeCompare(String(b.item || ""), "ru");
     });
-    return arr;
+    return list;
   }, [filtered, getOverviewLaneId, isDone, isInWork, isOrderCustomerShipped, tab, view]);
 }
 

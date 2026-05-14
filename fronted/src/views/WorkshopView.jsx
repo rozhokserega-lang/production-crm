@@ -5,6 +5,7 @@ import {
   getResolvedWorkshopStrapNeeds,
   isWorkshopStrapOrderItem,
   normalizeStrapInventoryCode,
+  orderCountsTowardStrapDemand,
 } from "../app/workshopStrapNeeds";
 import { resolvePipelineStage, getOrderStageDisplayLabel } from "../orderPipeline";
 
@@ -85,6 +86,9 @@ export const WorkshopView = memo(function WorkshopView({
   const { workshopStrapRows, totalObvyazkaDeficit } = useMemo(() => {
     let total = 0;
     const workshopStrapRows = workshopRows.map((o) => {
+      if (!orderCountsTowardStrapDemand(o)) {
+        return { strapNeeds: [], strapDeficit: 0 };
+      }
       const strapNeeds = getResolvedWorkshopStrapNeeds(o, strapDeps);
       const strapDeficit = strapNeeds.reduce((sum, { code, needed }) => {
         const k = normalizeStrapInventoryCode(code);

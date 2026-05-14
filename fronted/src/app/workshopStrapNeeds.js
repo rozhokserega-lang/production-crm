@@ -1,4 +1,5 @@
 import { STRAP_OPTIONS } from "../constants/views";
+import { PipelineStage, resolvePipelineStage } from "../orderPipeline";
 import { stripPlanItemMeta } from "./orderHelpers";
 import {
   canonicalStrapProductName,
@@ -41,6 +42,17 @@ export function strapDisplayNameForCode(code) {
 export function isWorkshopStrapOrderItem(item) {
   const s = String(item || "").trim();
   return s.includes("Планки обвязки") || /^\d{3,5}[_x]\d{2,5}$/.test(s);
+}
+
+/** Потребность в планках для склада/карточки: только пила, кромка, присадка и «готов» к сборке (до «собрано» и финала). */
+export function orderCountsTowardStrapDemand(order) {
+  const ps = resolvePipelineStage(order);
+  return (
+    ps === PipelineStage.PILKA ||
+    ps === PipelineStage.KROMKA ||
+    ps === PipelineStage.PRAS ||
+    ps === PipelineStage.WORKSHOP_COMPLETE
+  );
 }
 
 export function strapConsumeColorForOrder(order) {
@@ -254,6 +266,7 @@ export function computeWorkshopStrapDemandByInventoryKey(workshopRows, deps) {
   const map = new Map();
   if (!Array.isArray(workshopRows) || !deps) return map;
   for (const order of workshopRows) {
+    if (!orderCountsTowardStrapDemand(order)) continue;
     const needs = getResolvedWorkshopStrapNeeds(order, deps);
     if (!needs.length) continue;
     const color = strapConsumeColorForOrder(order);
@@ -273,4 +286,11 @@ export function strapWarehouseShortage(demandMap, strapType, color, qtyOnHand) {
   const c = String(color || "").trim() || "Черный";
   const demand = demandMap.get(`${code}|${c}`) || 0;
   return Math.max(0, Math.round(demand - (Number(qtyOnHand) || 0)));
+}
+
+/** Суммарная потребность (шт) по заказам в активных этапах цеха для типа+цвета строки склада. */
+export function strapWarehouseDemandQty(demandMap, strapType, color) {
+  const code = inventoryCodeFromStrapStockType(strapType);
+  const c = String(color || "").trim() || "Черный";
+  return Math.max(0, Math.round(demandMap.get(`${code}|${c}`) || 0));
 }
