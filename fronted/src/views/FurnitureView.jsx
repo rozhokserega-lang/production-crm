@@ -3,27 +3,31 @@ import ShelfCalculator from "../components/ShelfCalculator";
 import { OrderService } from "../services/orderService";
 
 export function FurnitureView({
-  furnitureLoading,
-  furnitureError,
-  furnitureSheetData,
-  furnitureSelectedProduct,
-  setFurnitureSelectedProduct,
-  furnitureTemplates,
-  furnitureProductLabel,
-  furnitureSelectedQty,
-  setFurnitureSelectedQty,
-  furnitureGeneratedDetails,
-  furnitureSelectedTemplate,
-  furnitureQtyNumber,
-  canOperateProduction,
-  createShelfPlanOrder,
-  createFurniturePlanOrder,
-  furnitureArticleSearchRows,
-  furnitureCustomTemplates,
-  sectionCatalogRows,
-  load,
-  refreshPlanCatalogs,
+  furniture,
+  permissions,
+  actions,
+  helpers,
 }) {
+  const {
+    furnitureLoading,
+    furnitureError,
+    furnitureSheetData,
+    furnitureSelectedProduct,
+    setFurnitureSelectedProduct,
+    furnitureTemplates,
+    furnitureSelectedQty,
+    setFurnitureSelectedQty,
+    furnitureGeneratedDetails,
+    furnitureSelectedTemplate,
+    furnitureQtyNumber,
+    furnitureArticleSearchRows,
+    furnitureCustomTemplates,
+    sectionCatalogRows,
+  } = furniture;
+  const { canOperateProduction } = permissions;
+  const { createShelfPlanOrder, createFurniturePlanOrder, load, refreshPlanCatalogs } = actions;
+  const { furnitureProductLabel } = helpers;
+
   const [furnitureSubTab, setFurnitureSubTab] = useState("main");
   const [planWeek, setPlanWeek] = useState("");
   const [planSaving, setPlanSaving] = useState(false);

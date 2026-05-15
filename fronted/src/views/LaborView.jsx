@@ -64,24 +64,32 @@ function LaborRowMinutesAdmin({ row, disabled, onSave }) {
 }
 
 export const LaborView = memo(function LaborView({
-  laborSubView,
-  laborTableRows,
-  laborOrdersRows,
-  laborPlannerRows,
-  laborPlannerQtyByGroup,
-  setLaborPlannerQtyByGroup,
-  laborStageTimelineRows,
-  laborSaveSelected,
-  setLaborSaveSelected,
-  laborSavingByKey,
-  laborSavedByKey,
-  saveImportedLaborRowToDb,
-  setError,
-  loading,
-  canAdminSettings = false,
-  load = async () => {},
-  manualLaborOpenNonce = 0,
+  labor,
+  permissions,
+  shell,
 }) {
+  const {
+    laborSubView,
+    laborTableRows,
+    laborOrdersRows,
+    laborPlannerRows,
+    laborPlannerQtyByGroup,
+    setLaborPlannerQtyByGroup,
+    laborStageTimelineRows,
+    laborSaveSelected,
+    setLaborSaveSelected,
+    laborSavingByKey,
+    laborSavedByKey,
+    saveImportedLaborRowToDb,
+    manualLaborOpenNonce = 0,
+  } = labor;
+  const {
+    setError,
+    loading,
+    load = async () => {},
+  } = shell;
+  const { canAdminSettings = false } = permissions;
+
   const [plannerMode, setPlannerMode] = useState("groups");
   const [kitQtyByKey, setKitQtyByKey] = useState({});
   const [kitNameDraft, setKitNameDraft] = useState("");

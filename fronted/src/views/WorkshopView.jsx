@@ -30,31 +30,39 @@ const STAGE_ICON = {
 };
 
 export const WorkshopView = memo(function WorkshopView({
-  workshopRows,
-  loading,
-  tab,
-  shipmentOrders,
-  shipmentBoard,
-  statusClass,
-  resolveDefaultConsumeSheets,
-  resolveDefaultConsumeSheetsFromBoard,
-  isDone,
-  isInWork,
-  isOrderCustomerShipped,
-  actionLoading,
-  isActionPending,
-  canOperateProduction,
-  runAction,
-  executorByOrder,
-  setExecutorByOrder,
-  executorOptions,
-  getMaterialLabel,
-  furnitureCustomTemplates,
-  furnitureDetailArticleRows,
-  furnitureTemplates,
-  normalizeFurnitureKey,
-  strapStock,
+  workshop,
+  permissions,
+  helpers,
 }) {
+  const {
+    workshopRows,
+    loading,
+    tab,
+    shipmentOrders,
+    shipmentBoard,
+    actionLoading,
+    isActionPending,
+    runAction,
+    executorByOrder,
+    setExecutorByOrder,
+    executorOptions,
+    furnitureCustomTemplates,
+    furnitureDetailArticleRows,
+    furnitureTemplates,
+    normalizeFurnitureKey,
+    strapStock,
+  } = workshop;
+  const { canOperateProduction } = permissions;
+  const {
+    statusClass,
+    resolveDefaultConsumeSheets,
+    resolveDefaultConsumeSheetsFromBoard,
+    isDone,
+    isInWork,
+    isOrderCustomerShipped,
+    getMaterialLabel,
+  } = helpers;
+
   const kromkaOptions = Array.isArray(executorOptions?.kromka) && executorOptions.kromka.length > 0
     ? executorOptions.kromka
     : KROMKA_EXECUTORS;

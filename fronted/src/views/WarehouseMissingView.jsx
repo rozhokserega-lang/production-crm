@@ -11,7 +11,6 @@ export const WarehouseMissingView = memo(function WarehouseMissingView({
   callBackend,
   furnitureTemplates,
   furnitureArticleGroups,
-  productColorMapRows,
   sectionArticleRows,
   materialsStockRows,
   formatProductName,
@@ -20,6 +19,7 @@ export const WarehouseMissingView = memo(function WarehouseMissingView({
   const [loading, setLoading] = useState(false);
   const [sendingId, setSendingId] = useState(null);
   const [listView, setListView] = useState("new");
+  const [productColorMapRows, setProductColorMapRows] = useState([]);
   const [form, setForm] = useState({
     open: false, step: 1,
     product: "", part: "", qty: "1", color: "", note: "",
@@ -40,6 +40,23 @@ export const WarehouseMissingView = memo(function WarehouseMissingView({
   useEffect(() => {
     loadOrders();
   }, [loadOrders]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const rows = await callBackend("webGetProductColorMap");
+        if (cancelled) return;
+        setProductColorMapRows(Array.isArray(rows) ? rows : []);
+      } catch (_) {
+        if (cancelled) return;
+        setProductColorMapRows([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [callBackend]);
 
   const productsCatalog = useMemo(() => {
     const templates = Array.isArray(furnitureTemplates) ? furnitureTemplates : [];
