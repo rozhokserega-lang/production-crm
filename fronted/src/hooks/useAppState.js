@@ -2,8 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import {
   callBackend,
-  getSupabaseAuthSession,
-  getSupabaseAuthUserId,
   getSupabaseRealtimeClient,
 } from "../api";
 import {
@@ -47,8 +45,6 @@ import {
   useWorkshopRows,
 } from "./useOrders";
 import { useDataLoader } from "./useDataLoader";
-import { useAuth } from "./useAuth";
-import { useCrmRole } from "./useCrmRole";
 import { useShipmentDialogsState } from "./useShipmentDialogsState";
 import { useShipmentUiState } from "./useShipmentUiState";
 import { useShipmentSelectionStats } from "./useShipmentSelectionStats";
@@ -74,14 +70,14 @@ import { useMetalState } from "./useMetalState";
 import { useMetalProcessState } from "./useMetalProcessState";
 import { useEdgeSync } from "./useEdgeSync";
 import { useWorkSchedule } from "./useWorkSchedule";
-import { useError } from "../contexts/ErrorContext";
 import { useShipmentData } from "../contexts/ShipmentDataContext";
 import { useWarehouseData } from "../contexts/WarehouseDataContext";
 import { useFurnitureData } from "../contexts/FurnitureDataContext";
+import { useNavigation } from "../contexts/NavigationContext";
+import { useUiState } from "../contexts/UiStateContext";
 import { OrderService } from "../services/orderService";
 import {
   CONSUME_LOG_SHEET_NAME,
-  CRM_ROLE_LABELS,
   DEFAULT_SHIPMENT_PREFS,
   STRAP_OPTIONS,
   STRAP_SHEET_HEIGHT,
@@ -128,8 +124,76 @@ import {
   passesShipmentStageFilter,
 } from "../app/appUtils";
 
-export function useAppState() {
-  const [view, setView] = useState("shipment");
+export function useAppState({ auth }) {
+  const {
+    view,
+    setView,
+    overviewSubView,
+    setOverviewSubView,
+    warehouseSubView,
+    setWarehouseSubView,
+    statsSort,
+    setStatsSort,
+    orderDrawerId,
+    setOrderDrawerId,
+  } = useNavigation();
+
+  const {
+    loading,
+    setLoading,
+    error,
+    setError,
+    actionLoading,
+    setActionLoading,
+    isOnline,
+  } = useUiState();
+
+  const {
+    authEnabled,
+    authEmail,
+    setAuthEmail,
+    authPassword,
+    setAuthPassword,
+    authSaving,
+    authUser,
+    authUserLabel,
+    signInWithSupabase,
+    signOutSupabaseUser,
+    crmRole,
+    crmRoleLabel,
+    crmAuthStrict,
+    crmAuthStrictSaving,
+    canAdminSettings,
+    canOperateProduction,
+    canOperateWarehouse,
+    canManageOrders,
+    toggleCrmAuthStrict,
+    denyActionByRole,
+    crmUsers,
+    crmUsersLoading,
+    crmUsersSaving,
+    newCrmUserId,
+    setNewCrmUserId,
+    newCrmUserRole,
+    setNewCrmUserRole,
+    newCrmUserNote,
+    setNewCrmUserNote,
+    auditLog,
+    auditLoading,
+    auditError,
+    auditAction,
+    setAuditAction,
+    auditEntity,
+    setAuditEntity,
+    auditLimit,
+    auditOffset,
+    loadCrmUsers,
+    loadAuditLog,
+    updateCrmUserRole,
+    removeCrmUserRole,
+    createCrmUserRole,
+  } = auth;
+
   const {
     tab,
     setTab,
@@ -137,10 +201,7 @@ export function useAppState() {
     setRows,
     query,
     setQuery,
-    loading,
-    setLoading,
-  } = useOrders();
-  const [overviewSubView, setOverviewSubView] = useState("kanban");
+  } = useOrders({ autoLoad: false });
   const {
     shipmentBoard,
     setShipmentBoard,
@@ -188,18 +249,11 @@ export function useAppState() {
     isSectionCollapsed,
     toggleSectionCollapsed,
   } = useShipmentUiState(DEFAULT_SHIPMENT_PREFS);
-  const [statsSort, setStatsSort] = useState("stage");
-  const [actionLoading, setActionLoading] = useState("");
-  const [orderDrawerId, setOrderDrawerId] = useState("");
   const rowsRef = useRef(rows);
   useEffect(() => {
     rowsRef.current = rows;
   }, [rows]);
   const [pendingStageActionKeys, setPendingStageActionKeys] = useState(() => new Set());
-  const { error, setError } = useError();
-  const [isOnline, setIsOnline] = useState(
-    typeof navigator === "undefined" ? true : navigator.onLine,
-  );
   const [executorByOrder, setExecutorByOrder] = useState({});
   const [executorOptions, setExecutorOptions] = useState({
     kromka: KROMKA_EXECUTORS,
@@ -291,7 +345,6 @@ export function useAppState() {
     pilkaDoneHistoryRows,
     setPilkaDoneHistoryRows,
   } = useWarehouseData();
-  const [warehouseSubView, setWarehouseSubView] = useState("sheets");
   const [warehouseSyncLoading, setWarehouseSyncLoading] = useState(false);
   const [leftoversSyncLoading, setLeftoversSyncLoading] = useState(false);
   const {
@@ -316,13 +369,7 @@ export function useAppState() {
     furnitureSelectedQty,
     setFurnitureSelectedQty,
   } = useFurnitureData();
-  const authEnabled = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
   const isActionPending = useCallback((key) => pendingStageActionKeys.has(key), [pendingStageActionKeys]);
-
-  const denyActionByRole = useCallback((message) => {
-    setError(message);
-    return false;
-  }, [setError]);
 
   const { load: rawLoad } = useDataLoader({
     view,
@@ -362,72 +409,6 @@ export function useAppState() {
     invalidateViewCaches(getMutationInvalidationViews(view));
     await rawLoad();
   }, [rawLoad, view]);
-  const handleAuthChange = useCallback(async () => {
-    clearAllViewCaches();
-    await rawLoad();
-  }, [rawLoad]);
-  const {
-    authEmail,
-    authPassword,
-    authSaving,
-    authUser,
-    setAuthEmail,
-    setAuthPassword,
-    signInWithSupabase,
-    signOutSupabaseUser,
-  } = useAuth({
-    authEnabled,
-    onAuthChange: handleAuthChange,
-    setError,
-    toUserError,
-  });
-
-  const {
-    crmRole,
-    crmAuthStrict,
-    crmAuthStrictSaving,
-    crmUsers,
-    crmUsersLoading,
-    crmUsersSaving,
-    auditLog,
-    auditLoading,
-    auditError,
-    auditAction,
-    auditEntity,
-    auditLimit,
-    auditOffset,
-    newCrmUserId,
-    newCrmUserRole,
-    newCrmUserNote,
-    setNewCrmUserId,
-    setNewCrmUserRole,
-    setNewCrmUserNote,
-    setAuditAction,
-    setAuditEntity,
-    toggleCrmAuthStrict,
-    loadCrmUsers,
-    loadAuditLog,
-    updateCrmUserRole,
-    removeCrmUserRole,
-    createCrmUserRole,
-  } = useCrmRole({
-    view,
-    toUserError,
-    authEnabled,
-    load,
-    setError,
-    authUser,
-  });
-  const canOperateProduction = crmRole === "operator" || crmRole === "manager" || crmRole === "admin";
-  const hasAuthSession =
-    Boolean(String(authUser?.id || authUser?.email || "").trim()) ||
-    Boolean(String(getSupabaseAuthUserId() || "").trim()) ||
-    Boolean(String(getSupabaseAuthSession()?.access_token || "").trim());
-  const canOperateWarehouse =
-    hasAuthSession && (crmRole === "warehouse" || crmRole === "admin");
-  const canManageOrders = crmRole === "manager" || crmRole === "admin";
-  const canAdminSettings = crmRole === "admin";
-
   const [consumeLogSheetName, setConsumeLogSheetName] = useState(CONSUME_LOG_SHEET_NAME);
   const [consumeLogSheetUpdatedAt, setConsumeLogSheetUpdatedAt] = useState("");
   const [consumeLogSheetLoading, setConsumeLogSheetLoading] = useState(false);
@@ -714,21 +695,6 @@ export function useAppState() {
     syncPlanCellToGoogleSheet,
     load: mutationLoad,
   });
-
-  const crmRoleLabel = CRM_ROLE_LABELS[crmRole] || CRM_ROLE_LABELS.viewer;
-  const authUserLabel = String(authUser?.email || authUser?.phone || authUser?.id || "").trim();
-
-  useEffect(() => {
-    if (typeof window === "undefined") return undefined;
-    const onOnline = () => setIsOnline(true);
-    const onOffline = () => setIsOnline(false);
-    window.addEventListener("online", onOnline);
-    window.addEventListener("offline", onOffline);
-    return () => {
-      window.removeEventListener("online", onOnline);
-      window.removeEventListener("offline", onOffline);
-    };
-  }, []);
 
   useEffect(() => {
     if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {

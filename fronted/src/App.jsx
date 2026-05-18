@@ -1,7 +1,11 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAppState } from "./hooks/useAppState";
 import { useAppShellEffects } from "./hooks/useAppShellEffects";
 import { usePackagingInbox } from "./hooks/usePackagingInbox";
+import { AuthProvider, useAuth } from "./contexts/AuthContext";
+import { useNavigation } from "./contexts/NavigationContext";
+import { useUiState } from "./contexts/UiStateContext";
+import { ShipmentProvider } from "./contexts/ShipmentContext";
 import { AppChrome } from "./components/AppChrome";
 import { AppDialogs } from "./components/AppDialogs";
 import { AdminView } from "./views/AdminView";
@@ -32,22 +36,11 @@ import {
   getMaterialLabel,
 } from "./app/orderHelpers";
 import {
-  buildPlanPreviewQrPayload,
-  buildQrCodeUrl,
-  resolvePlanPreviewArticleByName,
-} from "./app/planPreviewHelpers";
-import {
   formatDateTimeRu,
 } from "./app/rowHelpers";
 import {
   getStatsDeleteActionKey,
 } from "./app/statsDeleteHelpers";
-import {
-  getReadableTextColor,
-} from "./utils/colorUtils";
-import {
-  getShipmentStageKey,
-} from "./utils/shipmentUtils";
 import {
   normalizeFurnitureKey,
   furnitureProductLabel,
@@ -64,13 +57,13 @@ import {
 } from "./app/appUtils";
 
 
-export default function App() {
+function AppInner({ onAuthChangeRef }) {
   const [manualLaborOpenNonce, setManualLaborOpenNonce] = useState(0);
   const openManualLaborDialog = () => setManualLaborOpenNonce((x) => x + 1);
 
+  const auth = useAuth();
   const {
     shell,
-    auth,
     admin,
     shipment,
     workshop,
@@ -81,7 +74,11 @@ export default function App() {
     dialogs,
     actions,
     services,
-  } = useAppState();
+  } = useAppState({ auth });
+
+  useEffect(() => {
+    if (onAuthChangeRef) onAuthChangeRef.current = shell.mutationLoad;
+  }, [shell.mutationLoad, onAuthChangeRef]);
 
   useAppShellEffects({
     view: shell.view,
@@ -120,33 +117,7 @@ export default function App() {
   const currentView = (() => {
     switch (shell.view) {
       case "shipment":
-        return (
-          <ShipmentView
-            shipment={{
-              ...shipment,
-              resolvePlanPreviewArticleByName,
-              buildPlanPreviewQrPayload,
-              buildQrCodeUrl,
-              loading: shell.loading,
-              actionLoading: shell.actionLoading,
-              shipmentTableGroupNames: shipmentTableGroupNamesForView,
-              shipmentTableRowsWithStockStatus: shipmentTableRowsForView,
-              shipmentRenderSections: shipmentRenderSectionsForView,
-            }}
-            permissions={{
-              canOperateProduction: auth.canOperateProduction,
-              canManageOrders: auth.canManageOrders,
-            }}
-            helpers={{
-              getReadableTextColor,
-              getMaterialLabel,
-              normalizeFurnitureKey,
-              getShipmentStageKey,
-              stageBg,
-              stageLabel,
-            }}
-          />
-        );
+        return <ShipmentView />;
       case "overview":
         return (
           <OverviewView
@@ -372,8 +343,30 @@ export default function App() {
     }
   })();
 
+  const shipmentContextValue = useMemo(
+    () => ({
+      ...shipment,
+      loading: shell.loading,
+      actionLoading: shell.actionLoading,
+      shipmentTableGroupNames: shipmentTableGroupNamesForView,
+      shipmentTableRowsWithStockStatus: shipmentTableRowsForView,
+      shipmentRenderSections: shipmentRenderSectionsForView,
+      shipmentTableRowsForView,
+      shipmentRenderSectionsForView,
+      shipmentTableGroupNamesForView,
+    }),
+    [
+      shipment,
+      shell.loading,
+      shell.actionLoading,
+      shipmentTableGroupNamesForView,
+      shipmentTableRowsForView,
+      shipmentRenderSectionsForView,
+    ],
+  );
+
   return (
-    <>
+    <ShipmentProvider value={shipmentContextValue}>
       <AppChrome
         shell={shell}
         auth={auth}
@@ -407,6 +400,22 @@ export default function App() {
           getMaterialLabel,
         }}
       />
-    </>
+    </ShipmentProvider>
+  );
+}
+
+export default function App() {
+  const { setError } = useUiState();
+  const { view } = useNavigation();
+  const onAuthChangeRef = useRef(() => Promise.resolve());
+
+  return (
+    <AuthProvider
+      view={view}
+      onAuthChange={() => onAuthChangeRef.current()}
+      setError={setError}
+    >
+      <AppInner onAuthChangeRef={onAuthChangeRef} />
+    </AuthProvider>
   );
 }

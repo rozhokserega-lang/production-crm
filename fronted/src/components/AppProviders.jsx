@@ -2,6 +2,8 @@ import { ErrorProvider } from "../contexts/ErrorContext";
 import { ShipmentDataProvider } from "../contexts/ShipmentDataContext";
 import { WarehouseDataProvider } from "../contexts/WarehouseDataContext";
 import { FurnitureDataProvider } from "../contexts/FurnitureDataContext";
+import { UiStateProvider } from "../contexts/UiStateContext";
+import { NavigationProvider } from "../contexts/NavigationContext";
 import { ErrorBoundary } from "./ErrorBoundary";
 
 /**
@@ -13,13 +15,17 @@ export function AppProviders({ children }) {
   return (
     <ErrorProvider>
       <ErrorBoundary>
-        <FurnitureDataProvider>
-          <WarehouseDataProvider>
-            <ShipmentDataProvider>
-              {children}
-            </ShipmentDataProvider>
-          </WarehouseDataProvider>
-        </FurnitureDataProvider>
+        <UiStateProvider>
+          <NavigationProvider>
+            <FurnitureDataProvider>
+              <WarehouseDataProvider>
+                <ShipmentDataProvider>
+                  {children}
+                </ShipmentDataProvider>
+              </WarehouseDataProvider>
+            </FurnitureDataProvider>
+          </NavigationProvider>
+        </UiStateProvider>
       </ErrorBoundary>
     </ErrorProvider>
   );

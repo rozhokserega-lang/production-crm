@@ -1,11 +1,21 @@
 import { memo } from "react";
-import { stripPlanItemMeta } from "../app/orderHelpers";
+import { stripPlanItemMeta, getMaterialLabel } from "../app/orderHelpers";
+import { useShipment } from "../contexts/ShipmentContext";
+import { useAuth } from "../contexts/AuthContext";
+import { useUiState } from "../contexts/UiStateContext";
+import {
+  buildPlanPreviewQrPayload,
+  buildQrCodeUrl,
+  resolvePlanPreviewArticleByName,
+} from "../app/planPreviewHelpers";
+import { getReadableTextColor } from "../utils/colorUtils";
+import { normalizeFurnitureKey } from "../utils/furnitureUtils";
+import { getShipmentStageKey } from "../utils/shipmentUtils";
+import { stageBg, stageLabel } from "../app/statusHelpers";
 
-export const ShipmentView = memo(function ShipmentView({
-  shipment,
-  permissions,
-  helpers,
-}) {
+export const ShipmentView = memo(function ShipmentView() {
+  const { loading, actionLoading } = useUiState();
+  const { canOperateProduction, canManageOrders } = useAuth();
   const {
     selectedShipments,
     strapItems,
@@ -15,20 +25,19 @@ export const ShipmentView = memo(function ShipmentView({
     strapCalculation,
     shipmentPlanDeficits,
     articleLookupByItemKey,
-    resolvePlanPreviewArticleByName,
-    buildPlanPreviewQrPayload,
-    buildQrCodeUrl,
     planPreviews,
     setPlanPreviews,
     filtered,
-    loading,
     shipmentViewMode,
     shipmentTableGroupNames,
+    shipmentTableGroupNamesForView,
     hiddenShipmentGroups,
     setHiddenShipmentGroups,
     shipmentTableRowsWithStockStatus,
+    shipmentTableRowsForView,
     toggleShipmentSelection,
     shipmentRenderSections,
+    shipmentRenderSectionsForView,
     toggleSectionCollapsed,
     isSectionCollapsed,
     sortItemsForShipment,
@@ -37,21 +46,15 @@ export const ShipmentView = memo(function ShipmentView({
     shipmentOrderMaps,
     setHoverTip,
     sendableSelectedCount,
-    actionLoading,
     previewSelectedShipmentPlan,
     sendSelectedShipmentToWork,
     deleteSelectedShipmentPlan,
     setSelectedShipments,
-  } = shipment;
-  const { canOperateProduction, canManageOrders } = permissions;
-  const {
-    getReadableTextColor,
-    getMaterialLabel,
-    normalizeFurnitureKey,
-    getShipmentStageKey,
-    stageBg,
-    stageLabel,
-  } = helpers;
+  } = useShipment();
+
+  const tableRows = shipmentTableRowsForView ?? shipmentTableRowsWithStockStatus;
+  const tableSections = shipmentRenderSectionsForView ?? shipmentRenderSections;
+  const tableGroupNames = shipmentTableGroupNamesForView ?? shipmentTableGroupNames;
 
   const isPlanPreviewOpen = planPreviews.length > 0;
   const norm = (v) => {
@@ -332,7 +335,7 @@ export const ShipmentView = memo(function ShipmentView({
           <div>
             <div className="shipment-group-filters">
               <span className="shipment-group-filters__label">Группы:</span>
-              {shipmentTableGroupNames.map((groupName) => {
+              {tableGroupNames.map((groupName) => {
                 const hidden = !!hiddenShipmentGroups[groupName];
                 return (
                   <button
@@ -346,13 +349,13 @@ export const ShipmentView = memo(function ShipmentView({
                   </button>
                 );
               })}
-              {shipmentTableGroupNames.length > 0 && (
+              {tableGroupNames.length > 0 && (
                 <button
                   type="button"
                   className="mini shipment-group-reset"
                   onClick={() =>
                     setHiddenShipmentGroups(
-                      Object.fromEntries(shipmentTableGroupNames.map((name) => [name, true]))
+                      Object.fromEntries(tableGroupNames.map((name) => [name, true]))
                     )
                   }
                 >
@@ -383,9 +386,9 @@ export const ShipmentView = memo(function ShipmentView({
                   </tr>
                 </thead>
                 <tbody>
-                  {shipmentTableGroupNames.flatMap((groupName) => {
+                  {tableGroupNames.flatMap((groupName) => {
                     const hidden = !!hiddenShipmentGroups[groupName];
-                    const groupRows = shipmentTableRowsWithStockStatus.filter(
+                    const groupRows = tableRows.filter(
                       (row) => String(row.section || "Прочее") === groupName
                     );
                     const rows = [
@@ -468,7 +471,7 @@ export const ShipmentView = memo(function ShipmentView({
             </div>
           </div>
         )}
-        {!isPlanPreviewOpen && shipmentViewMode !== "table" && shipmentRenderSections.map((section) => (
+        {!isPlanPreviewOpen && shipmentViewMode !== "table" && tableSections.map((section) => (
           <div key={section.name} className="shipment-section">
             <button
               type="button"
