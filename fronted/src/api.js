@@ -304,6 +304,7 @@ const RPC_MAP = {
   webCreateReplacementOrder: "web_create_replacement_order",
   webSendReplacementOrderToWork: "web_send_replacement_order_to_work",
   webAcceptReplacementOrderPackaging: "web_accept_replacement_order_packaging",
+  webSkipWorkshopToAssembly: "web_skip_workshop_to_assembly",
   webDeleteReplacementOrder: "web_delete_replacement_order",
   webGetArticlesForImport: "web_get_articles_for_import",
   webGetFurnitureProductArticles: "web_get_furniture_product_articles",
@@ -417,6 +418,7 @@ function buildRpcPayload(action, payload = {}) {
     return {
       p_row: payload.row != null ? String(payload.row) : null,
       p_col: payload.col != null ? String(payload.col) : null,
+      p_skip_workshop: Boolean(payload.skipWorkshop ?? payload.p_skip_workshop ?? false),
     };
   }
   if (action === "webGetConsumeOptions") {
@@ -666,6 +668,16 @@ function buildRpcPayload(action, payload = {}) {
     return {
       p_order_id: String(payload.orderId || payload.p_order_id || "").trim(),
       p_qty_done: Number(payload.qtyDone || payload.p_qty_done || 0),
+    };
+  }
+  if (action === "webAcceptReplacementOrderPackaging") {
+    return {
+      p_id: String(payload.p_id || payload.id || "").trim(),
+    };
+  }
+  if (action === "webSkipWorkshopToAssembly") {
+    return {
+      p_order_id: String(payload.orderId || payload.p_order_id || "").trim(),
     };
   }
   if (action === "webAdminUpsertItemArticleMapRow") {

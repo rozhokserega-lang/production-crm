@@ -1510,6 +1510,10 @@ export function useAppState() {
       strapProductNames,
       strapOptionsForSelectedProduct,
       shipmentKpi,
+      toggleShipmentSelection,
+      previewSelectedShipmentPlan,
+      sendSelectedShipmentToWork,
+      deleteSelectedShipmentPlan,
     },
     workshop: {
       workshopRows,

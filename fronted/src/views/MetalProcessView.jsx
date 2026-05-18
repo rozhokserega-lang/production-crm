@@ -1425,7 +1425,7 @@ export function MetalProcessView({
                         <td>
                           <div className="route-badge-row">
                             {route.map((stage, idx) => (
-                              <span key={stage} className="route-badge">
+                              <span key={`${row.article}-${idx}-${stage}`} className="route-badge">
                                 {idx > 0 && <span className="route-badge__arrow">→</span>}
                                 <StageBadge stage={stage} size="sm" />
                               </span>
