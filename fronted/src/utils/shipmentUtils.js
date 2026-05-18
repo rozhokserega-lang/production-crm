@@ -41,8 +41,11 @@ export function isGarbageShipmentItemName(text) {
   return false;
 }
 
-export function shipmentOrderItemWeekKey(itemName, week) {
-  return `${normText(itemName)}|${String(week || "").trim()}`;
+export function shipmentOrderItemWeekKey(itemName, week, material = "") {
+  const itemKey = normText(itemName);
+  const weekKey = String(week || "").trim();
+  const materialKey = normText(material);
+  return materialKey ? `${itemKey}|${weekKey}|${materialKey}` : `${itemKey}|${weekKey}`;
 }
 
 /** Согласование этапа отгрузки с pipeline заказа (Производство ↔ Отгрузка). */
@@ -81,7 +84,11 @@ export function getShipmentStageKey(c, sourceRow, orderMaps, itemName) {
   const rowKey = shipmentOrderKey(sourceRow, c.week);
   let order = orderMaps?.byRowWeek?.get(rowKey);
   if (!order && itemName && orderMaps?.byItemWeek) {
-    order = orderMaps.byItemWeek.get(shipmentOrderItemWeekKey(itemName, c.week));
+    const material = c?.material ?? c?.material_name ?? "";
+    order = orderMaps.byItemWeek.get(shipmentOrderItemWeekKey(itemName, c.week, material));
+    if (!order) {
+      order = orderMaps.byItemWeek.get(shipmentOrderItemWeekKey(itemName, c.week));
+    }
   }
   if (order) {
     return mapPipelineStageToShipmentKey(order);

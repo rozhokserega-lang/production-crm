@@ -12,7 +12,11 @@ export function useShipmentOrderIndexes({ shipmentOrders, rows }) {
       const sourceRow = String(o?.source_row_id || o?.sourceRowId || "").trim();
       if (sourceRow) mergeOrderPreferNewer(byRowWeek, shipmentOrderKey(sourceRow, week), o);
       const item = String(o?.item || "").trim();
-      if (item) mergeOrderPreferNewer(byItemWeek, shipmentOrderItemWeekKey(item, week), o);
+      const material = String(o?.material || "").trim();
+      if (item) {
+        mergeOrderPreferNewer(byItemWeek, shipmentOrderItemWeekKey(item, week, material), o);
+        mergeOrderPreferNewer(byItemWeek, shipmentOrderItemWeekKey(item, week), o);
+      }
     });
     return { byRowWeek, byItemWeek };
   }, [shipmentOrders]);

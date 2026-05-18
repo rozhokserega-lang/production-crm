@@ -166,6 +166,13 @@ export const WarehouseMissingView = memo(function WarehouseMissingView({
     } catch (_) {}
   }
 
+  async function resetPackagingOrder(orderId) {
+    try {
+      await callBackend("webResetReplacementOrderPackaging", { p_id: orderId });
+      await loadOrders();
+    } catch (_) {}
+  }
+
   const partDef = form.product
     ? (productsCatalog[form.product] || []).find((p) => p.name === form.part)
     : null;
@@ -241,6 +248,16 @@ export const WarehouseMissingView = memo(function WarehouseMissingView({
               {!o.sent_to_work && (
                 <button type="button" className="mini ok" disabled={sendingId === o.id} onClick={() => sendToWork(o.id)}>
                   {sendingId === o.id ? "Отправляю..." : "▶ Отправить в работу"}
+                </button>
+              )}
+              {o.sent_to_work && o.packaging_accepted && (
+                <button
+                  type="button"
+                  className="mini"
+                  title="Вернуть в очередь «Упаковка» на отгрузке для повторного приёма"
+                  onClick={() => resetPackagingOrder(o.id)}
+                >
+                  ↩ В упаковку
                 </button>
               )}
               <button type="button" className="mini warn" onClick={() => deleteOrder(o.id)}>Удалить</button>
