@@ -121,6 +121,22 @@ export function resolveDefaultConsumeSheetsFromBoard(order, shipmentBoard) {
 /**
  * Сколько листов ожидается списать по заказу (как в диалоге после «Готово» на пиле).
  */
+/**
+ * kits_per_sheet в конструкторе: >= 1 — комплектов на лист; (0, 1) — листов на комплект (напр. 0,4 → 8 листов на 20 шт.).
+ */
+export function effectiveOutputPerSheet(kitsPerSheet) {
+  const k = Number(kitsPerSheet || 0);
+  if (!(k > 0)) return 0;
+  return k >= 1 ? k : 1 / k;
+}
+
+export function sheetsFromTemplateKits(kitsPerSheet, qty) {
+  const out = effectiveOutputPerSheet(kitsPerSheet);
+  const q = Number(qty || 0);
+  if (!(out > 0) || !(q > 0)) return 0;
+  return Math.ceil(q / out);
+}
+
 export function resolveExpectedConsumeSheets(order, opts = {}) {
   const shipmentOrders = Array.isArray(opts.shipmentOrders) ? opts.shipmentOrders : [];
   const shipmentBoard = opts.shipmentBoard || null;
@@ -147,8 +163,7 @@ export function resolveExpectedConsumeSheets(order, opts = {}) {
     null;
   const kitsPerSheet = Number(tpl?.kits_per_sheet ?? tpl?.kitsPerSheet ?? 0) || 0;
   const qty = Number(order?.qty || 0) || 0;
-  if (!(kitsPerSheet > 0) || !(qty > 0)) return 0;
-  return Math.ceil(qty / kitsPerSheet);
+  return sheetsFromTemplateKits(kitsPerSheet, qty);
 }
 
 export function normalizeShipmentBoard(data) {

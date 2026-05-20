@@ -91,6 +91,14 @@ export function useStageActions({
       try {
         await OrderService.updateOrderStage(orderId, action, payload);
 
+        if (action === "webSetShippingDone") {
+          try {
+            await OrderService.completeReplacementForWorkshopOrder(targetOrderId);
+          } catch (_) {
+            /* триггер в БД дублирует; не блокируем финал */
+          }
+        }
+
         if (action === "webSetAssemblyDone" && workshopStrapDeps && strapAssemblySource) {
           const raw = stripPlanItemMeta(String(strapAssemblySource.item || strapAssemblySource.Item || ""));
           if (!isWorkshopStrapOrderItem(raw) && orderCountsTowardStrapDemand(strapAssemblySource)) {

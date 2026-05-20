@@ -1,4 +1,5 @@
 import { VIEWS } from "../app/appConstants";
+import { preloadView } from "../app/preloadViews";
 
 const VIEW_ICONS = {
   shipment:   "🚚",
@@ -27,6 +28,7 @@ export function ViewSwitcher({ view, setView, setTab, canAdminSettings }) {
               setView(v.id);
               if (v.id === "workshop") setTab("pilka");
             }}
+            onMouseEnter={() => preloadView(v.id)}
           >
             <span className="view-switch__icon">{VIEW_ICONS[v.id]}</span>
             {v.label}

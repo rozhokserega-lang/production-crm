@@ -2,6 +2,12 @@ import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { PRODUCTS_CATALOG } from "../constants/missingParts";
 
 const OTHER_PRODUCT_KEY = "__OTHER__";
+const DONE_STATUS = "✅ Готово";
+
+function isOrderDone(order) {
+  return String(order?.status || "") === DONE_STATUS;
+}
+
 const EXCLUDED_PRODUCT_PATTERNS = [
   /лофт/i,
   /системы\s*хранения/i,
@@ -179,9 +185,34 @@ export const WarehouseMissingView = memo(function WarehouseMissingView({
   const isOther = form.product === OTHER_PRODUCT_KEY;
   const step3Valid = form.qty && Number(form.qty) >= 1 && (isOther ? Boolean(String(form.color || "").trim()) : (!partDef?.hasColor || form.color));
 
+  const orderBuckets = useMemo(() => {
+    const fresh = [];
+    const active = [];
+    const done = [];
+    for (const o of orders) {
+      if (isOrderDone(o)) done.push(o);
+      else if (!o.sent_to_work) fresh.push(o);
+      else active.push(o);
+    }
+    done.sort((a, b) => {
+      const ta = new Date(a.completed_at || a.created_at).getTime();
+      const tb = new Date(b.completed_at || b.created_at).getTime();
+      return tb - ta;
+    });
+    return { fresh, active, done };
+  }, [orders]);
+
   const displayOrders = listView === "new"
-    ? orders.filter((o) => !o.sent_to_work)
-    : orders;
+    ? orderBuckets.fresh
+    : listView === "done"
+      ? orderBuckets.done
+      : orderBuckets.active;
+
+  const emptyState = listView === "new"
+    ? { icon: "✅", title: "Нет новых заказов на замену", hint: "Нажмите «+ Создать заказ» чтобы добавить" }
+    : listView === "done"
+      ? { icon: "📋", title: "Нет готовых заказов", hint: "Завершённые заказы появятся здесь после финала в производстве" }
+      : { icon: "📦", title: "Нет заказов в работе", hint: "Активные заказы отображаются здесь до статуса «Готово»" };
 
   return (
     <div className="warehouse-view">
@@ -209,10 +240,13 @@ export const WarehouseMissingView = memo(function WarehouseMissingView({
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, gap: 8, flexWrap: "wrap" }}>
         <div className="tabs" style={{ margin: 0 }}>
           <button type="button" className={listView === "new" ? "tab active" : "tab"} onClick={() => setListView("new")}>
-            Новые ({orders.filter((o) => !o.sent_to_work).length})
+            Новые ({orderBuckets.fresh.length})
           </button>
           <button type="button" className={listView === "all" ? "tab active" : "tab"} onClick={() => setListView("all")}>
-            Все заказы ({orders.length})
+            Все заказы ({orderBuckets.active.length})
+          </button>
+          <button type="button" className={listView === "done" ? "tab active" : "tab"} onClick={() => setListView("done")}>
+            Готовые ({orderBuckets.done.length})
           </button>
         </div>
         <button type="button" className="mini" onClick={loadOrders} disabled={loading}>
@@ -224,13 +258,16 @@ export const WarehouseMissingView = memo(function WarehouseMissingView({
         <div className="warehouse-empty" style={{ fontSize: 14, color: "#6b7280" }}>Загрузка...</div>
       ) : displayOrders.length === 0 ? (
         <div className="warehouse-empty">
-          <div style={{ fontSize: 40, marginBottom: 8 }}>{listView === "new" ? "✅" : "📦"}</div>
-          <div>{listView === "new" ? "Нет новых заказов на замену" : "Нет заказов на замену деталей"}</div>
-          <div style={{ color: "#6b7280", fontSize: 13, marginTop: 4 }}>Нажмите «+ Создать заказ» чтобы добавить</div>
+          <div style={{ fontSize: 40, marginBottom: 8 }}>{emptyState.icon}</div>
+          <div>{emptyState.title}</div>
+          <div style={{ color: "#6b7280", fontSize: 13, marginTop: 4 }}>{emptyState.hint}</div>
         </div>
       ) : (
         displayOrders.map((o) => (
-          <article key={o.id} className={`card missing-order-card ${o.sent_to_work ? "done" : ""}`}>
+          <article
+            key={o.id}
+            className={`card missing-order-card ${isOrderDone(o) ? "done completed" : o.sent_to_work ? "done" : ""}`}
+          >
             <div className="line1">
               <strong>{o.product} — {o.part}</strong>
               <span className="badge">{o.status}</span>
@@ -242,7 +279,11 @@ export const WarehouseMissingView = memo(function WarehouseMissingView({
             {o.note && <div style={{ fontSize: 12, color: "#6b7280", paddingTop: 2 }}>💬 {o.note}</div>}
             <div className="line2" style={{ color: "#9ca3af", fontSize: 11 }}>
               <span>ID: {o.id}</span>
-              <span>{new Date(o.created_at).toLocaleString("ru-RU")}</span>
+              <span>
+                {isOrderDone(o) && o.completed_at
+                  ? `Готово: ${new Date(o.completed_at).toLocaleString("ru-RU")}`
+                  : new Date(o.created_at).toLocaleString("ru-RU")}
+              </span>
             </div>
             <div className="actions">
               {!o.sent_to_work && (
@@ -250,7 +291,10 @@ export const WarehouseMissingView = memo(function WarehouseMissingView({
                   {sendingId === o.id ? "Отправляю..." : "▶ Отправить в работу"}
                 </button>
               )}
-              {o.sent_to_work && o.packaging_accepted && (
+              {isOrderDone(o) && o.workshop_order_id && (
+                <span style={{ fontSize: 12, color: "#6b7280" }}>Цех: {o.workshop_order_id}</span>
+              )}
+              {o.sent_to_work && o.packaging_accepted && !isOrderDone(o) && (
                 <button
                   type="button"
                   className="mini"
@@ -260,7 +304,9 @@ export const WarehouseMissingView = memo(function WarehouseMissingView({
                   ↩ В упаковку
                 </button>
               )}
-              <button type="button" className="mini warn" onClick={() => deleteOrder(o.id)}>Удалить</button>
+              {!isOrderDone(o) && (
+                <button type="button" className="mini warn" onClick={() => deleteOrder(o.id)}>Удалить</button>
+              )}
             </div>
           </article>
         ))

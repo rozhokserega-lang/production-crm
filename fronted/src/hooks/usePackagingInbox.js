@@ -94,7 +94,10 @@ export function usePackagingInbox({
           throw new Error("Заказ создан, но не удалось получить ID для цеха");
         }
 
-        await callBackend("webAcceptReplacementOrderPackaging", { p_id: String(orderId) });
+        await callBackend("webAcceptReplacementOrderPackaging", {
+          p_id: String(orderId),
+          p_workshop_order_id: workshopOrderId(createdOrder),
+        });
         await Promise.all([refreshPackagingOrders(), mutationLoad()]);
         setPackagingActionError("");
       } catch (e) {

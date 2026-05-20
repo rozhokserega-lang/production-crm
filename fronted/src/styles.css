@@ -4562,3 +4562,29 @@ button:hover {
     transform: none;
   }
 }
+
+/* Suspense / lazy view loading */
+.view-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 48px 20px;
+  color: var(--text-soft, #6b7280);
+  font-size: 14px;
+}
+
+.view-loading__spinner {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--border-main, #e2e8f2);
+  border-top-color: var(--accent, #1f6f7a);
+  border-radius: 50%;
+  animation: view-loading-spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes view-loading-spin {
+  to { transform: rotate(360deg); }
+}

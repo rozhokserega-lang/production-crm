@@ -1,27 +1,29 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useAppState } from "./hooks/useAppState";
 import { useAppShellEffects } from "./hooks/useAppShellEffects";
 import { usePackagingInbox } from "./hooks/usePackagingInbox";
+import { preloadCriticalViews } from "./app/preloadViews";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { useNavigation } from "./contexts/NavigationContext";
 import { useUiState } from "./contexts/UiStateContext";
 import { ShipmentProvider } from "./contexts/ShipmentContext";
 import { AppChrome } from "./components/AppChrome";
 import { AppDialogs } from "./components/AppDialogs";
-import { AdminView } from "./views/AdminView";
-import { DatabaseCatalogView } from "./views/DatabaseCatalogView";
-import { WorkshopView } from "./views/WorkshopView";
-import { ShipmentView } from "./views/ShipmentView";
-import { OverviewView } from "./views/OverviewView";
-import { LaborView } from "./views/LaborView";
-import { WarehouseView } from "./views/WarehouseView";
-import { WarehouseMissingView } from "./views/WarehouseMissingView";
-import { StrapStockView } from "./views/StrapStockView";
-import { StatsView } from "./views/StatsView";
-import { SheetMirrorView } from "./views/SheetMirrorView";
-import { FurnitureView } from "./views/FurnitureView";
-import { MetalView } from "./views/MetalView";
-import { MetalProcessView } from "./views/MetalProcessView";
+
+const AdminView = lazy(() => import("./views/AdminView").then((m) => ({ default: m.AdminView })));
+const DatabaseCatalogView = lazy(() => import("./views/DatabaseCatalogView").then((m) => ({ default: m.DatabaseCatalogView })));
+const WorkshopView = lazy(() => import("./views/WorkshopView").then((m) => ({ default: m.WorkshopView })));
+const ShipmentView = lazy(() => import("./views/ShipmentView").then((m) => ({ default: m.ShipmentView })));
+const OverviewView = lazy(() => import("./views/OverviewView").then((m) => ({ default: m.OverviewView })));
+const LaborView = lazy(() => import("./views/LaborView").then((m) => ({ default: m.LaborView })));
+const WarehouseView = lazy(() => import("./views/WarehouseView").then((m) => ({ default: m.WarehouseView })));
+const WarehouseMissingView = lazy(() => import("./views/WarehouseMissingView").then((m) => ({ default: m.WarehouseMissingView })));
+const StrapStockView = lazy(() => import("./views/StrapStockView").then((m) => ({ default: m.StrapStockView })));
+const StatsView = lazy(() => import("./views/StatsView").then((m) => ({ default: m.StatsView })));
+const SheetMirrorView = lazy(() => import("./views/SheetMirrorView").then((m) => ({ default: m.SheetMirrorView })));
+const FurnitureView = lazy(() => import("./views/FurnitureView").then((m) => ({ default: m.FurnitureView })));
+const MetalView = lazy(() => import("./views/MetalView").then((m) => ({ default: m.MetalView })));
+const MetalProcessView = lazy(() => import("./views/MetalProcessView").then((m) => ({ default: m.MetalProcessView })));
 import {
   CRM_ROLES,
   CRM_ROLE_LABELS,
@@ -75,6 +77,10 @@ function AppInner({ onAuthChangeRef }) {
     actions,
     services,
   } = useAppState({ auth });
+
+  useEffect(() => {
+    preloadCriticalViews();
+  }, []);
 
   useEffect(() => {
     if (onAuthChangeRef) onAuthChangeRef.current = shell.mutationLoad;
@@ -381,7 +387,15 @@ function AppInner({ onAuthChangeRef }) {
         }}
       >
         <section className="cards">
-          {currentView}
+          <Suspense fallback={(
+            <div className="view-loading">
+              <span className="view-loading__spinner" />
+              Загружаем...
+            </div>
+          )}
+          >
+            {currentView}
+          </Suspense>
         </section>
       </AppChrome>
 

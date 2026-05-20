@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { extractPlanItemArticle, stripPlanItemMeta } from "../app/orderHelpers";
+import { effectiveOutputPerSheet } from "../app/appUtils";
 
 export function useShipmentTableData({
   view,
@@ -23,24 +24,28 @@ export function useShipmentTableData({
       if (!rawItem) return 0;
       const itemKey = n(rawItem);
       const materialKey = n(materialName);
-      const list = templates.map((t) => ({
-        name: String(t?.product_name || t?.productName || "").trim(),
-        kits: Number(t?.kits_per_sheet ?? t?.kitsPerSheet ?? 0) || 0,
-      }));
-      const byExact = list.find((x) => n(x.name) === itemKey && x.kits > 0);
-      if (byExact) return byExact.kits;
+      const list = templates.map((t) => {
+        const rawKits = Number(t?.kits_per_sheet ?? t?.kitsPerSheet ?? 0) || 0;
+        return {
+          name: String(t?.product_name || t?.productName || "").trim(),
+          kits: rawKits,
+          output: effectiveOutputPerSheet(rawKits),
+        };
+      });
+      const byExact = list.find((x) => n(x.name) === itemKey && x.output > 0);
+      if (byExact) return byExact.output;
       const byContains = list.find((x) => {
         const key = n(x.name);
-        return key && x.kits > 0 && (itemKey.includes(key) || key.includes(itemKey));
+        return key && x.output > 0 && (itemKey.includes(key) || key.includes(itemKey));
       });
-      if (byContains) return byContains.kits;
+      if (byContains) return byContains.output;
       if (materialKey) {
         const parts = rawItem.split(".").map((x) => String(x || "").trim()).filter(Boolean);
         if (parts.length >= 2 && n(parts[parts.length - 1]) === materialKey) {
           const noMaterial = parts.slice(0, -1).join(". ");
           const nm = n(noMaterial);
-          const byBase = list.find((x) => n(x.name) === nm && x.kits > 0);
-          if (byBase) return byBase.kits;
+          const byBase = list.find((x) => n(x.name) === nm && x.output > 0);
+          if (byBase) return byBase.output;
         }
       }
       return 0;

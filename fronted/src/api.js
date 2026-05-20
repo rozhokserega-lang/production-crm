@@ -305,6 +305,7 @@ const RPC_MAP = {
   webSendReplacementOrderToWork: "web_send_replacement_order_to_work",
   webAcceptReplacementOrderPackaging: "web_accept_replacement_order_packaging",
   webResetReplacementOrderPackaging: "web_reset_replacement_order_packaging",
+  webCompleteReplacementForWorkshopOrder: "web_complete_replacement_for_workshop_order",
   webSkipWorkshopToAssembly: "web_skip_workshop_to_assembly",
   webDeleteReplacementOrder: "web_delete_replacement_order",
   webGetArticlesForImport: "web_get_articles_for_import",
@@ -674,6 +675,12 @@ function buildRpcPayload(action, payload = {}) {
   if (action === "webAcceptReplacementOrderPackaging") {
     return {
       p_id: String(payload.p_id || payload.id || "").trim(),
+      p_workshop_order_id: String(payload.p_workshop_order_id || payload.workshopOrderId || "").trim(),
+    };
+  }
+  if (action === "webCompleteReplacementForWorkshopOrder") {
+    return {
+      p_workshop_order_id: String(payload.p_workshop_order_id || payload.orderId || "").trim(),
     };
   }
   if (action === "webResetReplacementOrderPackaging") {

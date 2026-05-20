@@ -33,9 +33,19 @@ export default defineConfig(({ mode }) => {
     sourcemap: false,
     rollupOptions: {
       output: {
-        manualChunks: {
-          vendor: ["react", "react-dom"],
-          utils: ["xlsx"],
+        manualChunks(id) {
+          if (id.includes("node_modules/react") || id.includes("node_modules/react-dom")) {
+            return "vendor-react";
+          }
+          if (id.includes("recharts") || id.includes("d3-") || id.includes("victory")) {
+            return "vendor-charts";
+          }
+          if (id.includes("xlsx") || id.includes("SheetJS")) {
+            return "vendor-xlsx";
+          }
+          if (id.includes("@supabase")) {
+            return "vendor-supabase";
+          }
         },
       },
     },

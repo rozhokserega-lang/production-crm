@@ -25,6 +25,12 @@ export class OrderService {
     return await callBackend(action, { orderId, ...payload });
   }
 
+  static async completeReplacementForWorkshopOrder(orderId) {
+    return await callBackend("webCompleteReplacementForWorkshopOrder", {
+      p_workshop_order_id: orderId,
+    });
+  }
+
   static async consumeStrapStock({ strapType, color, qty }) {
     return await callBackend("webConsumeStrapStock", { strapType, color, qty });
   }

@@ -1,6 +1,7 @@
 import { memo, useMemo } from "react";
 import { KROMKA_EXECUTORS, PRAS_EXECUTORS } from "../config";
 import { stripPlanItemMeta } from "../app/orderHelpers";
+import { sheetsFromTemplateKits } from "../app/appUtils";
 import {
   getResolvedWorkshopStrapNeeds,
   isWorkshopStrapOrderItem,
@@ -135,8 +136,7 @@ export const WorkshopView = memo(function WorkshopView({
             null;
           const kitsPerSheet = Number(tpl?.kits_per_sheet ?? tpl?.kitsPerSheet ?? 0) || 0;
           const qty = Number(o.qty || 0) || 0;
-          if (!(kitsPerSheet > 0) || !(qty > 0)) return 0;
-          return Math.ceil(qty / kitsPerSheet);
+          return sheetsFromTemplateKits(kitsPerSheet, qty);
         })();
 
         const displaySheetsNeeded = Number(baseDisplaySheetsNeeded || 0) > 0 ? baseDisplaySheetsNeeded : fallbackMainFurnitureSheets;
