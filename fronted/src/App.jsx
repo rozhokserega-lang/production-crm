@@ -30,8 +30,6 @@ import {
 } from "./app/appConstants";
 import {
   getOverallStatusDisplay,
-  stageBg,
-  stageLabel,
   statusClass,
 } from "./app/statusHelpers";
 import {
@@ -401,7 +399,7 @@ function AppInner({ onAuthChangeRef }) {
 
       <AppDialogs
         shell={shell}
-        admin={{ ...admin, canAdminSettings: auth.canAdminSettings }}
+        admin={{ ...admin, canAdminSettings: auth.canAdminSettings, canManageOrders: auth.canManageOrders }}
         shipment={shipment}
         dialogs={dialogs}
         packaging={packaging}
