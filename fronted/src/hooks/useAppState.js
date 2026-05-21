@@ -1182,6 +1182,10 @@ export function useAppState({ auth }) {
         needed: d.needed,
         available: d.available,
         toOrder: d.deficit,
+        firstWeek: d.firstWeek,
+        weeks: d.weeks || [],
+        blockerRows: d.blockerRows || [],
+        blockedCount: d.blockedCount || 0,
       })),
     [shipmentPlanDeficits],
   );

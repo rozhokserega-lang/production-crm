@@ -142,6 +142,7 @@ function AppInner({ onAuthChangeRef }) {
               ...labor,
               laborSubView: shell.laborSubView,
               manualLaborOpenNonce,
+              workSchedule: admin.workSchedule,
             }}
             permissions={{ canAdminSettings: auth.canAdminSettings }}
             shell={{

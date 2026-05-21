@@ -372,6 +372,13 @@ export function ViewControls({
           </button>
           <button
             type="button"
+            className={laborSubView === "forecast" ? "tab active" : "tab"}
+            onClick={() => setLaborSubView("forecast")}
+          >
+            Прогноз
+          </button>
+          <button
+            type="button"
             className={laborSubView === "stages" ? "tab active" : "tab"}
             onClick={() => setLaborSubView("stages")}
           >
@@ -601,5 +608,4 @@ export function ViewControls({
     </section>
   );
 }
-
 

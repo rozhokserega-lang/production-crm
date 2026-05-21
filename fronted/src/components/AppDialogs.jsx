@@ -75,6 +75,7 @@ export function AppDialogs({
         savingAdminComment={adminCommentSaving}
         canAdminStageOverride={admin.canAdminSettings}
         onAdminStageOverride={actions.overrideOrderStageFromDrawer}
+        canViewOrderTimeline={admin.canAdminSettings || admin.canManageOrders}
         workSchedule={workSchedule}
       />
 

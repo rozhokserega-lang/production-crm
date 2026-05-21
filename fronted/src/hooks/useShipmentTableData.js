@@ -1,6 +1,7 @@
 import { useMemo } from "react";
-import { extractPlanItemArticle, stripPlanItemMeta } from "../app/orderHelpers";
+import { extractPlanItemArticle, shipmentOrderKey, stripPlanItemMeta } from "../app/orderHelpers";
 import { effectiveOutputPerSheet } from "../app/appUtils";
+import { shipmentOrderItemWeekKey } from "../utils/shipmentUtils";
 
 export function useShipmentTableData({
   view,
@@ -57,6 +58,13 @@ export function useShipmentTableData({
           const sourceRow = it.sourceRowId != null ? String(it.sourceRowId) : String(it.row);
           const sourceCol = c.sourceColId != null ? String(c.sourceColId) : String(c.col);
           const stageKey = getShipmentStageKey(c, sourceRow, shipmentOrderMaps, it.item);
+          const sourceItem = String(it.item || "");
+          const week = c.week || "-";
+          const relatedOrder =
+            shipmentOrderMaps?.byRowWeek?.get(shipmentOrderKey(sourceRow, week)) ||
+            shipmentOrderMaps?.byItemWeek?.get(shipmentOrderItemWeekKey(sourceItem, week, it.material || "")) ||
+            shipmentOrderMaps?.byItemWeek?.get(shipmentOrderItemWeekKey(sourceItem, week)) ||
+            null;
           const displayBg = stageBg(stageKey, c.bg || "#ffffff");
           const qty = Number(c.qty || 0);
           const sheetsRaw = Number(c.sheetsNeeded || 0);
@@ -75,14 +83,15 @@ export function useShipmentTableData({
           rowsFlat.push({
             key: `${sourceRow}-${sourceCol}`,
             section: section.name,
-            sourceItem: String(it.item || ""),
+            sourceItem,
             item: stripPlanItemMeta(it.item),
+            orderId: String(relatedOrder?.orderId || relatedOrder?.order_id || "").trim(),
             productArticle: String(
               it.productArticle || it.article_code || it.articleCode || it.article || it.mapped_article_code || it.mappedArticleCode || "",
             ).trim() || extractPlanItemArticle(it.item),
             strapProduct: String(it.strapProduct || ""),
             material: it.material || "",
-            week: c.week || "-",
+            week,
             qty,
             sheets,
             outputPerSheet,
@@ -174,16 +183,87 @@ export function useShipmentTableData({
   }, [shipmentTableRowsWithStockStatus, hiddenShipmentGroups]);
 
   const shipmentPlanDeficits = useMemo(() => {
-    return [...shipmentMaterialBalance.values()]
-      .map((x) => ({
-        material: x.material,
-        needed: Number(x.needed || 0),
-        available: Number(x.available || 0),
-        deficit: Math.max(0, Number(x.needed || 0) - Number(x.available || 0)),
-      }))
+    const byMaterial = new Map();
+    shipmentTableRowsWithStockStatus.forEach((row) => {
+      if (row.stageKey !== "awaiting") return;
+      const material = String(row.material || "Материал не указан").trim();
+      const key = normalizeFurnitureKey(material);
+      if (!byMaterial.has(key)) {
+        const totals = shipmentMaterialBalance.get(key) || { needed: 0, available: 0 };
+        byMaterial.set(key, {
+          material,
+          needed: Number(totals.needed || 0),
+          available: Number(totals.available || 0),
+          rows: [],
+        });
+      }
+      byMaterial.get(key).rows.push({
+        key: row.key,
+        orderId: row.orderId,
+        section: row.section,
+        item: row.item,
+        article: row.productArticle,
+        week: row.week || "-",
+        qty: Number(row.qty || 0),
+        sheets: Number(row.sheets || 0),
+        sourceRow: row.sourceRow,
+        sourceCol: row.sourceCol,
+      });
+    });
+
+    return [...byMaterial.values()]
+      .map((x) => {
+        const deficit = Math.max(0, Number(x.needed || 0) - Number(x.available || 0));
+        const rows = x.rows
+          .filter((row) => Number(row.sheets || 0) > 0)
+          .sort((a, b) =>
+            String(a.week || "").localeCompare(String(b.week || ""), "ru", { numeric: true }) ||
+            Number(b.sheets || 0) - Number(a.sheets || 0),
+          );
+        let remainingAvailable = Number(x.available || 0);
+        const weekMap = new Map();
+        rows.forEach((row) => {
+          const week = String(row.week || "-").trim() || "-";
+          if (!weekMap.has(week)) weekMap.set(week, { week, needed: 0, deficit: 0, rows: [] });
+          const bucket = weekMap.get(week);
+          bucket.needed += Number(row.sheets || 0);
+          bucket.rows.push(row);
+        });
+        const weeks = [...weekMap.values()].map((week) => {
+          const weekDeficit = Math.max(0, Number(week.needed || 0) - remainingAvailable);
+          remainingAvailable = Math.max(0, remainingAvailable - Number(week.needed || 0));
+          return {
+            ...week,
+            needed: Number(week.needed || 0),
+            deficit: weekDeficit,
+          };
+        });
+        let rowRemainingAvailable = Number(x.available || 0);
+        const blockedRows = [];
+        rows.forEach((row) => {
+          const sheets = Number(row.sheets || 0);
+          if (sheets > rowRemainingAvailable) {
+            blockedRows.push({
+              ...row,
+              shortage: Math.max(0, sheets - rowRemainingAvailable),
+            });
+          }
+          rowRemainingAvailable = Math.max(0, rowRemainingAvailable - sheets);
+        });
+        return {
+          material: x.material,
+          needed: Number(x.needed || 0),
+          available: Number(x.available || 0),
+          deficit,
+          firstWeek: weeks[0]?.week || "-",
+          weeks,
+          blockerRows: blockedRows.slice(0, 8),
+          blockedCount: blockedRows.length,
+        };
+      })
       .filter((x) => x.deficit > 0)
       .sort((a, b) => b.deficit - a.deficit || a.material.localeCompare(b.material, "ru"));
-  }, [shipmentMaterialBalance]);
+  }, [shipmentTableRowsWithStockStatus, shipmentMaterialBalance, normalizeFurnitureKey]);
 
   return {
     shipmentTableRows,

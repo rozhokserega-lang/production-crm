@@ -258,6 +258,24 @@ export class OrderService {
     return await callBackend("webGetAuditLog", params);
   }
 
+  static async getOrderTimelineAudit(orderId) {
+    const id = String(orderId || "").trim();
+    if (!id) return [];
+    const [orderEvents, materialEvents] = await Promise.all([
+      this.getAuditLog({ limit: 1000, offset: 0, action: null, entity: "orders" }).catch(() => []),
+      this.getAuditLog({ limit: 1000, offset: 0, action: null, entity: "materials_moves" }).catch(() => []),
+    ]);
+    const all = [
+      ...(Array.isArray(orderEvents) ? orderEvents : []),
+      ...(Array.isArray(materialEvents) ? materialEvents : []),
+    ];
+    return all.filter((row) => {
+      const details = row?.details && typeof row.details === "object" ? row.details : {};
+      const eventOrderId = String(row?.entity_id || details?.order_id || details?.orderId || "").trim();
+      return eventOrderId === id;
+    });
+  }
+
   // ==================== Мебель (Furniture) ====================
 
   static async getFurnitureProductArticles() {

@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { buildLaborFactPayload } from "../app/laborImportHelpers";
+import { buildProductionLoadForecast } from "../app/laborForecastHelpers";
 import { STRAP_OPTIONS } from "../app/appConstants";
 import { OrderService } from "../services/orderService";
 
@@ -13,6 +14,11 @@ function formatHhMm(totalMin) {
 const CAPACITY_STORAGE_KEY = "labor_planner_capacity_v1";
 const isImportedLaborRow = (row) =>
   Boolean(row?.importedLocal) || /^import-/i.test(String(row?.orderId || "").trim());
+const FORECAST_STATUS_LABELS = {
+  ok: "Свободно",
+  warn: "Плотно",
+  over: "Перегруз",
+};
 
 function parseMinInput(v) {
   const n = Number(String(v ?? "").replace(",", ".").trim());
@@ -82,6 +88,7 @@ export const LaborView = memo(function LaborView({
     laborSavedByKey,
     saveImportedLaborRowToDb,
     manualLaborOpenNonce = 0,
+    workSchedule,
   } = labor;
   const {
     setError,
@@ -104,6 +111,18 @@ export const LaborView = memo(function LaborView({
   const laborTotalRows = useMemo(
     () => laborTableRows.filter((r) => !isImportedLaborRow(r)),
     [laborTableRows],
+  );
+  const laborForecastRows = useMemo(
+    () =>
+      buildProductionLoadForecast({
+        laborTableRows,
+        workSchedule,
+        stationMultipliers: {
+          kromka: Math.max(1, Number(kromkaPosts || 1)),
+          pras: Math.max(1, Number(prasPosts || 1)),
+        },
+      }),
+    [kromkaPosts, laborTableRows, prasPosts, workSchedule],
   );
 
   const [laborAdminSavingKey, setLaborAdminSavingKey] = useState("");
@@ -476,6 +495,97 @@ export const LaborView = memo(function LaborView({
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+      {laborSubView === "forecast" && !laborForecastRows.length && !loading && (
+        <div className="empty">Нет данных для прогноза загрузки</div>
+      )}
+      {laborSubView === "forecast" && laborForecastRows.length > 0 && (
+        <div className="labor-forecast">
+          <div className="labor-forecast__toolbar">
+            <div>
+              <b>Мощность недели</b>
+              <span>
+                {laborForecastRows[0]?.capacity?.workingDaysCount || 5} дн. x {laborForecastRows[0]?.capacity?.hoursPerDay || 8} ч
+              </span>
+            </div>
+            <label>
+              <span>Кромка</span>
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={kromkaPosts}
+                onChange={(e) => setKromkaPosts(Math.max(1, Number(e.target.value || 1)))}
+              />
+            </label>
+            <label>
+              <span>Присадка</span>
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={prasPosts}
+                onChange={(e) => setPrasPosts(Math.max(1, Number(e.target.value || 1)))}
+              />
+            </label>
+          </div>
+          <div className="labor-forecast__weeks">
+            {laborForecastRows.map((weekRow) => (
+              <section
+                key={`labor-forecast-${weekRow.week}`}
+                className={`labor-forecast-week labor-forecast-week--${weekRow.status}`}
+              >
+                <div className="labor-forecast-week__head">
+                  <div>
+                    <h3>Неделя {weekRow.week}</h3>
+                    <p>{weekRow.ordersCount} заказов, {weekRow.qty} шт, {weekRow.totalHhmm}</p>
+                  </div>
+                  <span className={`labor-forecast-status labor-forecast-status--${weekRow.status}`}>
+                    {FORECAST_STATUS_LABELS[weekRow.status] || weekRow.status}
+                  </span>
+                </div>
+                <div className="labor-forecast-stages">
+                  {weekRow.stages.map((stage) => (
+                    <div
+                      key={`${weekRow.week}-${stage.key}`}
+                      className={`labor-forecast-stage labor-forecast-stage--${stage.status}`}
+                    >
+                      <div className="labor-forecast-stage__top">
+                        <span>{stage.label}</span>
+                        <b>{stage.hhmm}</b>
+                      </div>
+                      <div className="labor-forecast-stage__bar">
+                        <span style={{ width: `${Math.min(140, Math.max(2, stage.loadPct))}%` }} />
+                      </div>
+                      <div className="labor-forecast-stage__meta">
+                        <span>{stage.loadPct}%</span>
+                        <span>план {formatHhMm(stage.capacity)}</span>
+                        {stage.over > 0 ? (
+                          <span>перегруз {formatHhMm(stage.over)}</span>
+                        ) : (
+                          <span>свободно {formatHhMm(stage.free)}</span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {weekRow.overloadedStages.length > 0 && (
+                  <div className="labor-forecast-alert">
+                    Перегруз: {weekRow.overloadedStages.map((stage) => stage.label).join(", ")}
+                  </div>
+                )}
+                <div className="labor-forecast-orders">
+                  {weekRow.topOrders.map((order) => (
+                    <span key={`${weekRow.week}-${order.orderId || order.item}-${order.totalMin}`}>
+                      {order.orderId ? `#${order.orderId}: ` : ""}
+                      {order.item || "-"} ({order.hhmm})
+                    </span>
+                  ))}
+                </div>
+              </section>
+            ))}
+          </div>
         </div>
       )}
       {manualLaborOpen && (

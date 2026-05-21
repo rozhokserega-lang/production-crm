@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { extractPlanItemArticle, stripPlanItemMeta } from "../app/orderHelpers";
 import { buildLiveStageClock } from "../app/stageTime";
+import { buildOrderTimeline } from "../app/orderTimelineHelpers";
+import { OrderService } from "../services/orderService";
 
 function stageDotClass(status, isDone, isInWork) {
   if (isDone(status)) return "order-drawer__dot order-drawer__dot--done";
@@ -68,6 +70,7 @@ export function OrderDrawer({
   savingAdminComment,
   canAdminStageOverride,
   onAdminStageOverride,
+  canViewOrderTimeline,
   workSchedule,
 }) {
   const [commentDraft, setCommentDraft] = useState("");
@@ -75,6 +78,9 @@ export function OrderDrawer({
   const [overrideStatus, setOverrideStatus] = useState("wait");
   const [overrideSaving, setOverrideSaving] = useState(false);
   const [clockTick, setClockTick] = useState(() => Date.now());
+  const [timeline, setTimeline] = useState([]);
+  const [timelineLoading, setTimelineLoading] = useState(false);
+  const [timelineError, setTimelineError] = useState("");
 
   useEffect(() => {
     if (!open) return undefined;
@@ -96,6 +102,35 @@ export function OrderDrawer({
     const timer = window.setInterval(() => setClockTick(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, [open, orderId]);
+
+  useEffect(() => {
+    if (!open || !orderId || !canViewOrderTimeline) {
+      setTimeline([]);
+      setTimelineError("");
+      setTimelineLoading(false);
+      return undefined;
+    }
+    let cancelled = false;
+    async function loadTimeline() {
+      setTimelineLoading(true);
+      setTimelineError("");
+      try {
+        const auditRows = await OrderService.getOrderTimelineAudit(orderId);
+        if (cancelled) return;
+        setTimeline(buildOrderTimeline({ orderId, auditRows, orderRows: lines }));
+      } catch (e) {
+        if (cancelled) return;
+        setTimeline([]);
+        setTimelineError(String(e?.message || e || "Не удалось загрузить историю"));
+      } finally {
+        if (!cancelled) setTimelineLoading(false);
+      }
+    }
+    void loadTimeline();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, orderId, canViewOrderTimeline, lines]);
 
   if (!open || !orderId) return null;
 
@@ -255,6 +290,41 @@ export function OrderDrawer({
             </div>
           )}
         </div>
+
+        {canViewOrderTimeline ? (
+          <div className="order-drawer__section">
+            <h3 className="order-drawer__h3">История заказа</h3>
+            {timelineLoading ? (
+              <div className="order-timeline__empty">Загружаем историю...</div>
+            ) : timelineError ? (
+              <div className="order-timeline__empty order-timeline__empty--error">{timelineError}</div>
+            ) : timeline.length === 0 ? (
+              <div className="order-timeline__empty">Событий по заказу пока нет.</div>
+            ) : (
+              <ol className="order-timeline">
+                {timeline.map((event) => (
+                  <li key={event.id} className={`order-timeline__item order-timeline__item--${event.tone || "default"}`}>
+                    <div className="order-timeline__dot" />
+                    <div className="order-timeline__body">
+                      <div className="order-timeline__top">
+                        <strong>{event.title}</strong>
+                        <span>{formatDateTimeRu(event.createdAt)}</span>
+                      </div>
+                      <div className="order-timeline__actor">{event.actor}</div>
+                      {Array.isArray(event.lines) && event.lines.length > 0 ? (
+                        <ul className="order-timeline__lines">
+                          {event.lines.map((line, idx) => (
+                            <li key={`${event.id}-line-${idx}`}>{line}</li>
+                          ))}
+                        </ul>
+                      ) : null}
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </div>
+        ) : null}
 
         {showCommentBlock ? (
           <div className="order-drawer__section order-drawer__section--comment">
