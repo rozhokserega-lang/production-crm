@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import ShelfCalculator from "../components/ShelfCalculator";
+import {
+  buildMaterialYieldsFromVariants,
+  normalizeMaterialKey,
+  parseMaterialYields,
+} from "../app/furnitureMaterialYield";
 import { OrderService } from "../services/orderService";
 
 export function FurnitureView({
@@ -35,8 +40,8 @@ export function FurnitureView({
   const [createOpen, setCreateOpen] = useState(false);
   const [createSection, setCreateSection] = useState("Прочее");
   const [createName, setCreateName] = useState("");
+  const [createProductArticle, setCreateProductArticle] = useState("");
   const [createVariants, setCreateVariants] = useState([]);
-  const [createKitsPerSheet, setCreateKitsPerSheet] = useState("");
   const [createSaving, setCreateSaving] = useState(false);
   const [createError, setCreateError] = useState("");
   const [createOk, setCreateOk] = useState("");
@@ -56,11 +61,11 @@ export function FurnitureView({
     ),
   ).sort((a, b) => a.localeCompare(b, "ru"));
 
-  function makeVariantRow(article = "", color = "") {
+  function makeColorRow(color = "", kitsPerSheet = "") {
     return {
       id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-      article,
       color,
+      kitsPerSheet,
     };
   }
 
@@ -165,17 +170,12 @@ export function FurnitureView({
     void ensureCatalogArticlesForImportLoaded();
   }, [createOpen, canOperateProduction, ensureCatalogArticlesForImportLoaded]); // uses cached ensure() logic
 
-  // If variants are pre-filled (e.g. when opening an existing mapping),
-  // ensure we also fetch "by article" hints for those SKUs.
   useEffect(() => {
     if (!createOpen) return;
-    (Array.isArray(createVariants) ? createVariants : []).forEach((v) => {
-      const key = String(v?.article || "").trim().toUpperCase();
-      if (!key || key.length < 4) return;
-      void ensureCatalogArticleByArticleLoaded(key);
-    });
+    const key = String(createProductArticle || "").trim().toUpperCase();
+    if (key.length >= 4) void ensureCatalogArticleByArticleLoaded(createProductArticle);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [createOpen, createVariants]);
+  }, [createOpen, createProductArticle]);
 
   useEffect(() => {
     if (!createOpen) return;
@@ -197,16 +197,40 @@ export function FurnitureView({
         if (cancelled) return;
         const inferredSection = matched[0]?.sectionName || "";
         if (inferredSection) setCreateSection(inferredSection);
-        setCreateVariants(matched.length ? matched.map((v) => makeVariantRow(v.article, v.color)) : [makeVariantRow("", "")]);
+        const article = matched[0]?.article || "";
+        if (article) setCreateProductArticle(article);
 
         const list = Array.isArray(furnitureCustomTemplates) ? furnitureCustomTemplates : [];
         const tpl = list.find((t) => String(t?.product_name || t?.productName || "").trim() === itemName) || null;
-        const kits = Number(tpl?.kits_per_sheet ?? tpl?.kitsPerSheet ?? 0) || 0;
-        setCreateKitsPerSheet(kits > 0 ? String(kits) : "");
+        const yields = parseMaterialYields(tpl);
+        const yieldByMaterial = new Map(
+          yields.map((y) => [normalizeMaterialKey(y.material), y.kits_per_sheet]),
+        );
+        const legacyKits = Number(tpl?.kits_per_sheet ?? tpl?.kitsPerSheet ?? 0) || 0;
+
+        const colorSources =
+          yields.length > 0
+            ? yields.map((y) => ({ color: y.material, kits: y.kits_per_sheet }))
+            : matched.map((v) => ({
+                color: v.color,
+                kits: yieldByMaterial.get(normalizeMaterialKey(v.color)) || legacyKits,
+              }));
+
+        const seen = new Set();
+        const colorRows = colorSources
+          .filter((x) => {
+            const key = normalizeMaterialKey(x.color);
+            if (!key || seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          })
+          .map((x) => makeColorRow(x.color, x.kits > 0 ? String(x.kits) : ""));
+
+        setCreateVariants(colorRows.length ? colorRows : [makeColorRow("", "")]);
       } catch (_) {
         if (cancelled) return;
-        setCreateVariants([makeVariantRow("", "")]);
-        setCreateKitsPerSheet("");
+        setCreateVariants([makeColorRow("", "")]);
+        setCreateProductArticle("");
       }
     })();
     return () => {
@@ -269,22 +293,33 @@ export function FurnitureView({
     if (!canOperateProduction) return;
     const section = String(createSection || "").trim() || "Прочее";
     const name = String(createName || "").trim();
-    const variants = (Array.isArray(createVariants) ? createVariants : [])
+    const colorRows = (Array.isArray(createVariants) ? createVariants : [])
       .map((v) => ({
-        article: String(v?.article || "").trim(),
         color: String(v?.color || "").trim(),
+        kitsPerSheet: String(v?.kitsPerSheet ?? "").trim(),
       }))
-      .filter((v) => v.article && v.color);
+      .filter((v) => v.color);
 
     if (!name) {
       setCreateError("Укажите название.");
       return;
     }
-    if (!variants.length) {
-      setCreateError("Добавьте варианты: артикул + цвет/материал (1 артикул = 1 цвет).");
+    if (!colorRows.length) {
+      setCreateError("Добавьте хотя бы один цвет/материал и расход листа.");
       return;
     }
-    const kitsPerSheet = parseNumInput(createKitsPerSheet);
+    for (const v of colorRows) {
+      const kits = parseNumInput(v.kitsPerSheet);
+      if (!(kits > 0)) {
+        setCreateError(
+          `Укажите расход листа для «${v.color}» (например 6 комплектов на лист или 0,4 листа на комплект).`,
+        );
+        return;
+      }
+    }
+    const materialYields = buildMaterialYieldsFromVariants(colorRows, parseNumInput);
+    const article = String(createProductArticle || "").trim().toUpperCase();
+    const kitsPerSheet = materialYields.length === 1 ? materialYields[0].kits_per_sheet : 0;
     const detailsRows = Array.isArray(createDetails) ? createDetails : [];
     const normalizedDetails = detailsRows
       .map((r) => {
@@ -320,18 +355,11 @@ export function FurnitureView({
           .filter((x) => x.article),
       );
 
-      // 1) Add/update to plan catalog.
-      const variantsToUpsert = [];
-      const skippedVariants = [];
-      for (const v of variants) {
-        const article = String(v?.article || "").trim().toUpperCase();
-        if (!article) {
-          skippedVariants.push({ article: "—", reason: "пустой артикул" });
-          continue;
-        }
+      // 1) Привязка одного артикула изделия к каталогу (в БД один артикул = одна строка).
+      let catalogSaved = false;
+      let catalogSkipReason = "";
+      if (article) {
         const catalogRow = existingByArticle.get(article)?.row || null;
-
-        // Extra existence check (handles xlsx rows with NULL section_name/table_color).
         let existingRow = null;
         try {
           const rows = await OrderService.getItemArticleMapByArticle(article);
@@ -339,66 +367,44 @@ export function FurnitureView({
         } catch (_) {
           existingRow = null;
         }
-
-        // Allow reusing existing manual articles: backend RPC will reassign them to the selected section.
-        // Skip only immutable catalog rows (xlsx/system sources).
-        const source = String(
-          existingRow?.source || catalogRow?.source || "",
-        ).trim();
+        const source = String(existingRow?.source || catalogRow?.source || "").trim();
         const existingSection = String(
           existingRow?.section_name || existingRow?.sectionName || catalogRow?.section_name || catalogRow?.sectionName || "",
-        ).trim().toLowerCase().replace(/ё/g, "е");
+        )
+          .trim()
+          .toLowerCase()
+          .replace(/ё/g, "е");
         const canReassignFromMisc = !existingSection || existingSection === "прочее";
         if (source && source !== "manual" && !canReassignFromMisc) {
-          skippedVariants.push({
-            article,
-            reason: `артикул уже в каталоге (источник «${source}», секция «${existingSection || "—"}»); такой вариант из конструктора не перезаписывается`,
-          });
-          continue;
+          catalogSkipReason = `артикул «${article}» в каталоге (источник «${source}») — привязка не изменена`;
+        } else {
+          const primaryColor = colorRows[0]?.color || "";
+          await OrderService.upsertItemArticleMapVariants(
+            section,
+            name,
+            [{ article, color: primaryColor }],
+            999,
+          );
+          catalogSaved = true;
         }
-
-        const color = String(v?.color || "").trim();
-        if (!color) {
-          skippedVariants.push({ article, reason: "не указан цвет/материал" });
-          continue;
-        }
-        variantsToUpsert.push(v);
-      }
-
-      if (variantsToUpsert.length > 0) {
-        await OrderService.upsertItemArticleMapVariants(section, name, variantsToUpsert, 999);
-      } else if (skippedVariants.length > 0) {
-        setCreateError(
-          `Ни один вариант не сохранён в каталог плана. ${skippedVariants
-            .map((s) => `${s.article}: ${s.reason}`)
-            .join(" ")}`,
-        );
-        setCreateSaving(false);
-        return;
-      }
-
-      if (variantsToUpsert.length === 0) {
-        setCreateError("Нет валидных вариантов для сохранения в каталог плана.");
-        setCreateSaving(false);
-        return;
       }
 
       // 2) Save composition as a custom template (so it can be used inside furniture constructor / previews)
-      await OrderService.upsertFurnitureCustomTemplate(name, normalizedDetails, kitsPerSheet);
+      await OrderService.upsertFurnitureCustomTemplate(name, normalizedDetails, kitsPerSheet, materialYields);
 
       const okParts = [
-        `Готово: в каталог плана записано вариантов: ${variantsToUpsert.length} из ${variants.length}. Изделие появится в «Добавить новый план».`,
+        `Готово: расход листа сохранён для ${materialYields.length} цвет(ов).`,
+        catalogSaved
+          ? `Артикул ${article} привязан к изделию.`
+          : article
+            ? catalogSkipReason || `Артикул не привязан к каталогу.`
+            : "Артикул не указан — привязка к каталогу пропущена.",
       ];
-      if (skippedVariants.length > 0) {
-        okParts.push(
-          `Не записано (${skippedVariants.length}): ${skippedVariants.map((s) => `${s.article} (${s.reason})`).join("; ")}`,
-        );
-      }
       setCreateOk(okParts.join(" "));
       setCreateOpen(false);
       setCreateName("");
       setCreateVariants([]);
-      setCreateKitsPerSheet("");
+      setCreateProductArticle("");
       setCreateDetails([]);
       if (typeof load === "function") {
         try { await load(); } catch (_) {}
@@ -432,7 +438,6 @@ export function FurnitureView({
       setEditingExisting(false);
       setCreateName("");
       setCreateVariants([]);
-      setCreateKitsPerSheet("");
       setCreateDetails([]);
       setCreateDetailsNonce((x) => x + 1);
       if (typeof refreshPlanCatalogs === "function") {
@@ -514,8 +519,8 @@ export function FurnitureView({
                       setCreateOk("");
                       setCreateSection("Прочее");
                       setCreateName(furnitureProductLabel(furnitureSelectedTemplate?.productName || ""));
-                      setCreateVariants([makeVariantRow("", "")]);
-                      setCreateKitsPerSheet("");
+                      setCreateVariants([makeColorRow("", "")]);
+                      setCreateProductArticle("");
                       setCreateDetails([]);
                       setCreateDetailsNonce((x) => x + 1);
                       setEditingExisting(false);
@@ -546,7 +551,7 @@ export function FurnitureView({
                         setCreateSection("Прочее");
                         setCreateName(selectedName);
                         setCreateVariants([]);
-                        setCreateKitsPerSheet("");
+                        setCreateProductArticle("");
                         setCreateDetails([]);
                         setCreateDetailsNonce((x) => x + 1);
                         setEditingExisting(true);
@@ -631,47 +636,95 @@ export function FurnitureView({
                     </div>
                   </div>
 
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 220px", gap: 12, marginTop: 12 }}>
-                    <div />
-                    <div>
-                      <div
-                        style={{
-                          fontSize: 11,
-                          color: "#64748b",
-                          textTransform: "uppercase",
-                          letterSpacing: "0.06em",
-                          marginBottom: 5,
-                        }}
-                      >
-                        Комплектов на лист
-                      </div>
-                      <input
-                        inputMode="decimal"
-                        value={createKitsPerSheet}
-                        onChange={(e) => setCreateKitsPerSheet(e.target.value.replace(/[^0-9.,]/g, ""))}
-                        placeholder="Например: 6"
-                        style={{
-                          width: "100%",
-                          minHeight: 38,
-                          border: "1.5px solid #cbd5e1",
-                          borderRadius: 10,
-                          padding: "7px 10px",
-                          fontSize: 16,
-                          fontWeight: 800,
-                          textAlign: "center",
-                          boxSizing: "border-box",
-                        }}
-                      />
-                      <div style={{ marginTop: 6, fontSize: 12, color: "#64748b" }}>
-                        Сколько комплектов помещается на 1 лист (для будущего списания листов).
-                      </div>
-                    </div>
-                  </div>
-
                   <div style={{ marginTop: 12 }}>
+                    <div style={{ marginBottom: 12 }}>
+                      <div style={{ fontSize: 11, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 5 }}>
+                        Артикул изделия (один на всё)
+                      </div>
+                      {(() => {
+                        const articleKey = String(createProductArticle || "").trim().toUpperCase();
+                        const hit = Array.isArray(catalogArticlesForImport)
+                          ? catalogArticlesForImport.find(
+                              (r) => String(r?.article || "").trim().toUpperCase() === articleKey,
+                            )
+                          : null;
+                        const hitByArticle = catalogArticleByArticle[articleKey] || null;
+                        const resolvedHit = hit || hitByArticle;
+                        return (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 6, maxWidth: 420 }}>
+                            <input
+                              value={createProductArticle}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setCreateProductArticle(val);
+                                const key = String(val || "").trim().toUpperCase();
+                                if (key.length >= 4 && !catalogArticleByArticleLoading[key] && !catalogArticleByArticle[key]) {
+                                  void ensureCatalogArticleByArticleLoaded(val);
+                                }
+                                if (
+                                  key.length > 0 &&
+                                  !catalogArticlesLoading &&
+                                  (!Array.isArray(catalogArticlesForImport) || catalogArticlesForImport.length === 0)
+                                ) {
+                                  void ensureCatalogArticlesForImportLoaded();
+                                }
+                              }}
+                              placeholder="GXodCB_OsGphY"
+                              style={{
+                                width: "100%",
+                                minHeight: 38,
+                                border: resolvedHit ? "2px solid #60a5fa" : "1.5px solid #cbd5e1",
+                                borderRadius: 10,
+                                padding: "7px 10px",
+                                fontSize: 14,
+                                boxSizing: "border-box",
+                                fontFamily: "monospace",
+                                background: resolvedHit ? "#eff6ff" : "#fff",
+                              }}
+                            />
+                            {resolvedHit && (
+                              <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                                <div style={{ fontSize: 11, color: "#1d4ed8", fontWeight: 900 }}>
+                                  В базе: {String(resolvedHit.item_name || "").trim() || "—"}
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setCreateError("");
+                                    setCreateOk("");
+                                    setCreateName(String(resolvedHit.item_name || "").trim() || createName);
+                                    if (String(resolvedHit.section_name || "").trim()) {
+                                      setCreateSection(String(resolvedHit.section_name || "").trim());
+                                    }
+                                    setCreateProductArticle(String(resolvedHit.article || createProductArticle).trim());
+                                  }}
+                                  style={{
+                                    alignSelf: "flex-start",
+                                    minHeight: 24,
+                                    borderRadius: 8,
+                                    border: "1px solid #93c5fd",
+                                    background: "#fff",
+                                    color: "#1e40af",
+                                    fontWeight: 900,
+                                    cursor: "pointer",
+                                    padding: "0 8px",
+                                    fontSize: 11,
+                                  }}
+                                >
+                                  Подставить из базы
+                                </button>
+                              </div>
+                            )}
+                            <div style={{ fontSize: 12, color: "#64748b" }}>
+                              Один артикул на изделие. Ниже — декоры и расход листа по каждому цвету (как в плане отгрузки).
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </div>
                     <div>
                       <div style={{ fontSize: 11, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 5 }}>
-                        Варианты (артикул → цвет/материал)
+                        Декоры / материалы
                       </div>
                       <div
                         style={{
@@ -684,7 +737,7 @@ export function FurnitureView({
                         <div
                           style={{
                             display: "grid",
-                            gridTemplateColumns: "220px 1fr 36px",
+                            gridTemplateColumns: "1fr 130px 36px",
                             gap: 8,
                             padding: "8px 10px",
                             background: "#f8fafc",
@@ -694,8 +747,8 @@ export function FurnitureView({
                             fontWeight: 800,
                           }}
                         >
-                          <div>Артикул</div>
-                          <div>Цвет/материал</div>
+                          <div>Цвет/материал (как в плане)</div>
+                          <div style={{ textAlign: "center" }}>Лист / комплект</div>
                           <div />
                         </div>
                         {(createVariants || []).map((v, idx) => (
@@ -703,7 +756,7 @@ export function FurnitureView({
                             key={v.id}
                             style={{
                               display: "grid",
-                              gridTemplateColumns: "220px 1fr 36px",
+                              gridTemplateColumns: "1fr 130px 36px",
                               gap: 8,
                               padding: "8px 10px",
                               borderTop: idx === 0 ? "none" : "1px solid #eef2f7",
@@ -711,102 +764,6 @@ export function FurnitureView({
                               alignItems: "center",
                             }}
                           >
-                            {(() => {
-                              const article = String(v?.article || "").trim().toUpperCase();
-                              const hit = Array.isArray(catalogArticlesForImport)
-                                ? catalogArticlesForImport.find(
-                                    (r) => String(r?.article || "").trim().toUpperCase() === article,
-                                  )
-                                : null;
-                              const hitByArticle = catalogArticleByArticle[article] || null;
-                              const resolvedHit = hit || hitByArticle;
-
-                              return (
-                                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                                  <input
-                                    value={String(v.article || "")}
-                                    onChange={(e) => {
-                                      const val = e.target.value;
-                                      setCreateVariants((prev) =>
-                                        (prev || []).map((x) => (x.id === v.id ? { ...x, article: val } : x)),
-                                      );
-                                      const key = String(val || "").trim().toUpperCase();
-                                      if (
-                                        key.length >= 4 &&
-                                        !catalogArticleByArticleLoading[key] &&
-                                        !catalogArticleByArticle[key]
-                                      ) {
-                                        void ensureCatalogArticleByArticleLoaded(val);
-                                      }
-                                      if (
-                                        key.trim().length > 0 &&
-                                        !catalogArticlesLoading &&
-                                        (!Array.isArray(catalogArticlesForImport) || catalogArticlesForImport.length === 0)
-                                      ) {
-                                        void ensureCatalogArticlesForImportLoaded();
-                                      }
-                                    }}
-                                    placeholder="GX..."
-                                    style={{
-                                      width: "100%",
-                                      minHeight: 34,
-                                      border: resolvedHit ? "2px solid #60a5fa" : "1px solid #cbd5e1",
-                                      borderRadius: 10,
-                                      padding: "6px 10px",
-                                      fontSize: 14,
-                                      boxSizing: "border-box",
-                                      fontFamily: "monospace",
-                                      background: resolvedHit ? "#eff6ff" : "#fff",
-                                    }}
-                                  />
-
-                                  {resolvedHit && (
-                                    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                                      <div style={{ fontSize: 11, color: "#1d4ed8", fontWeight: 900 }}>
-                                        В базе: {String(resolvedHit.item_name || "").trim() || "-"}
-                                      </div>
-                                      <div style={{ fontSize: 11, color: "#0f172a" }}>
-                                        Цвет/материал: <b>{String(resolvedHit.material || "").trim()}</b>
-                                      </div>
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          setCreateError("");
-                                          setCreateOk("");
-                                          setCreateName(String(resolvedHit.item_name || "").trim());
-                                          if (String(resolvedHit.section_name || "").trim()) {
-                                            setCreateSection(String(resolvedHit.section_name || "").trim());
-                                          }
-                                          setCreateVariants((prev) =>
-                                            (prev || []).map((x) =>
-                                              x.id === v.id
-                                                ? {
-                                                    ...x,
-                                                    color: String(resolvedHit.material || "").trim() || String(x.color || "").trim(),
-                                                  }
-                                                : x,
-                                            ),
-                                          );
-                                        }}
-                                        style={{
-                                          minHeight: 24,
-                                          borderRadius: 8,
-                                          border: "1px solid #93c5fd",
-                                          background: "#fff",
-                                          color: "#1e40af",
-                                          fontWeight: 900,
-                                          cursor: "pointer",
-                                          padding: "0 8px",
-                                          fontSize: 11,
-                                        }}
-                                      >
-                                        Подставить
-                                      </button>
-                                    </div>
-                                  )}
-                                </div>
-                              );
-                            })()}
                             <input
                               value={String(v.color || "")}
                               onChange={(e) => {
@@ -823,6 +780,29 @@ export function FurnitureView({
                                 borderRadius: 10,
                                 padding: "6px 10px",
                                 fontSize: 14,
+                                boxSizing: "border-box",
+                              }}
+                            />
+                            <input
+                              inputMode="decimal"
+                              value={String(v.kitsPerSheet ?? "")}
+                              onChange={(e) => {
+                                const val = e.target.value.replace(/[^0-9.,]/g, "");
+                                setCreateVariants((prev) =>
+                                  (prev || []).map((x) => (x.id === v.id ? { ...x, kitsPerSheet: val } : x)),
+                                );
+                              }}
+                              placeholder="6 или 0,4"
+                              title="≥1 — комплектов на лист; меньше 1 (напр. 0,4) — листов на комплект"
+                              style={{
+                                width: "100%",
+                                minHeight: 34,
+                                border: "1px solid #cbd5e1",
+                                borderRadius: 10,
+                                padding: "6px 10px",
+                                fontSize: 14,
+                                fontWeight: 800,
+                                textAlign: "center",
                                 boxSizing: "border-box",
                               }}
                             />
@@ -848,7 +828,7 @@ export function FurnitureView({
                         <div style={{ padding: 10, borderTop: "1px solid #e2e8f0", background: "#f8fafc" }}>
                           <button
                             type="button"
-                            onClick={() => setCreateVariants((prev) => [...(prev || []), makeVariantRow("", "")])}
+                            onClick={() => setCreateVariants((prev) => [...(prev || []), makeColorRow("", "")])}
                             style={{
                               minHeight: 34,
                               borderRadius: 10,
@@ -863,7 +843,8 @@ export function FurnitureView({
                             + Вариант
                           </button>
                           <div style={{ marginTop: 6, fontSize: 12, color: "#64748b" }}>
-                            1 артикул = 1 цвет/материал. Если цветов несколько — делайте несколько артикулов.
+                            Для Color Block и похожих изделий: один артикул сверху, несколько строк декоров. «Лист / комплект»: 6 — комплектов на лист;
+                            0,5 — половина листа на комплект. Листы округляются вверх до целого.
                           </div>
                         </div>
                       </div>

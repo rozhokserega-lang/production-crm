@@ -1,6 +1,10 @@
 import { useMemo } from "react";
 import { normalizeCatalogItemName } from "../app/errorCatalogHelpers";
-import { matchPlanCatalogRowSelectKey, planCatalogRowSelectKey } from "../app/shipmentDialogHelpers";
+import {
+  matchPlanCatalogRowSelectKey,
+  planCatalogRowSelectKey,
+  resolvePlanCatalogSelection,
+} from "../app/shipmentDialogHelpers";
 import { getMaterialLabel } from "../app/orderHelpers";
 import { normText, sectionNamesMatch } from "../utils/shipmentUtils";
 
@@ -14,6 +18,7 @@ export function useShipmentPlanningDerivedData({
   sectionArticleRows,
   planSection,
   planArticle,
+  planMaterial,
   normalizeFurnitureKey,
 }) {
   const weeks = useMemo(() => {
@@ -132,15 +137,17 @@ export function useShipmentPlanningDerivedData({
     });
   }, [sectionArticleRows, planSection, planArticle, sectionOptions]);
 
-  const selectedArticleRow = useMemo(() => {
-    const k = String(planArticle || "").trim();
-    if (!k) return null;
-    return (
-      sectionArticles.find((x) => matchPlanCatalogRowSelectKey(x, k)) ||
-      sectionArticles.find((x) => x.itemName === k) ||
-      null
-    );
-  }, [sectionArticles, planArticle]);
+  const selectedArticleRow = useMemo(
+    () =>
+      resolvePlanCatalogSelection({
+        planSection,
+        planArticle,
+        planMaterial: "",
+        sectionArticleRows,
+        sectionArticles,
+      }),
+    [planSection, planArticle, sectionArticleRows, sectionArticles],
+  );
 
   const articleLookupByItemKey = useMemo(() => {
     const map = new Map();
@@ -156,8 +163,16 @@ export function useShipmentPlanningDerivedData({
   }, [sectionArticleRows, normalizeFurnitureKey]);
 
   const resolvedPlanItem = useMemo(() => {
-    return String(selectedArticleRow?.itemName || "").trim();
-  }, [selectedArticleRow]);
+    const row =
+      resolvePlanCatalogSelection({
+        planSection,
+        planArticle,
+        planMaterial,
+        sectionArticleRows,
+        sectionArticles,
+      }) || selectedArticleRow;
+    return String(row?.itemName || "").trim();
+  }, [planSection, planArticle, planMaterial, sectionArticleRows, sectionArticles, selectedArticleRow]);
 
   return {
     weeks,

@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { extractPlanItemArticle, shipmentOrderKey, stripPlanItemMeta } from "../app/orderHelpers";
-import { effectiveOutputPerSheet } from "../app/appUtils";
+import { ceilWholeSheets } from "../app/appUtils";
+import { resolveKitsPerSheetForItem } from "../app/furnitureMaterialYield";
 import { shipmentOrderItemWeekKey } from "../utils/shipmentUtils";
 
 export function useShipmentTableData({
@@ -23,30 +24,15 @@ export function useShipmentTableData({
     const resolveKitsPerSheet = (itemName, materialName = "") => {
       const rawItem = stripPlanItemMeta(String(itemName || "")).trim();
       if (!rawItem) return 0;
-      const itemKey = n(rawItem);
+      let output = resolveKitsPerSheetForItem(templates, rawItem, materialName, n);
+      if (output > 0) return output;
       const materialKey = n(materialName);
-      const list = templates.map((t) => {
-        const rawKits = Number(t?.kits_per_sheet ?? t?.kitsPerSheet ?? 0) || 0;
-        return {
-          name: String(t?.product_name || t?.productName || "").trim(),
-          kits: rawKits,
-          output: effectiveOutputPerSheet(rawKits),
-        };
-      });
-      const byExact = list.find((x) => n(x.name) === itemKey && x.output > 0);
-      if (byExact) return byExact.output;
-      const byContains = list.find((x) => {
-        const key = n(x.name);
-        return key && x.output > 0 && (itemKey.includes(key) || key.includes(itemKey));
-      });
-      if (byContains) return byContains.output;
       if (materialKey) {
         const parts = rawItem.split(".").map((x) => String(x || "").trim()).filter(Boolean);
         if (parts.length >= 2 && n(parts[parts.length - 1]) === materialKey) {
           const noMaterial = parts.slice(0, -1).join(". ");
-          const nm = n(noMaterial);
-          const byBase = list.find((x) => n(x.name) === nm && x.output > 0);
-          if (byBase) return byBase.output;
+          output = resolveKitsPerSheetForItem(templates, noMaterial, materialName, n);
+          if (output > 0) return output;
         }
       }
       return 0;
@@ -67,7 +53,7 @@ export function useShipmentTableData({
             null;
           const displayBg = stageBg(stageKey, c.bg || "#ffffff");
           const qty = Number(c.qty || 0);
-          const sheetsRaw = Number(c.sheetsNeeded || 0);
+          const sheetsRaw = ceilWholeSheets(c.sheetsNeeded || 0);
           const outputRaw = Number(c.outputPerSheet || 0);
           // If backend did not store per-sheet output, try to derive it from constructor templates
           // (kits_per_sheet) using the item name and material.
@@ -78,7 +64,7 @@ export function useShipmentTableData({
           const sheets = sheetsRaw > 0
             ? sheetsRaw
             : outputPerSheet > 0 && qty > 0
-              ? Math.ceil(qty / outputPerSheet)
+              ? ceilWholeSheets(qty / outputPerSheet)
               : 0;
           rowsFlat.push({
             key: `${sourceRow}-${sourceCol}`,

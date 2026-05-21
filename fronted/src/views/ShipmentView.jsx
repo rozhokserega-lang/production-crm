@@ -119,11 +119,24 @@ export const ShipmentView = memo(function ShipmentView() {
             {selectedShipmentSummary.items.map((x, idx) => (
               <div key={`${x.row}-${x.col}-${idx}`} className="selection-summary-item">
                 <div>{x.item}</div>
-                <div>
-                  {x.qty} шт. {"->"} {x.sheetsNeeded} лист(ов) {x.material}
-                  {!x.sheetsExact && x.outputPerSheet > 0 ? " (оценка)" : ""}
-                  {!x.sheetsExact && x.outputPerSheet <= 0 ? " (нет данных по раскрою)" : ""}
-                </div>
+                {x.multiDecor && x.materialLines?.length > 0 ? (
+                  <div>
+                    <div>
+                      {x.qty} шт. {"->"} {x.sheetsNeeded} лист(ов) всего:
+                    </div>
+                    {x.materialLines.map((line) => (
+                      <div key={`${x.row}-${x.col}-${line.material}`} style={{ marginLeft: 8, fontSize: 13 }}>
+                        • {line.material}: {line.sheets} лист(ов)
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div>
+                    {x.qty} шт. {"->"} {x.sheetsNeeded} лист(ов) {x.material}
+                    {!x.sheetsExact && x.outputPerSheet > 0 ? " (оценка)" : ""}
+                    {!x.sheetsExact && x.outputPerSheet <= 0 ? " (нет данных по раскрою)" : ""}
+                  </div>
+                )}
               </div>
             ))}
             <div className="selection-summary-title" style={{ marginTop: 10 }}>Общее количество:</div>

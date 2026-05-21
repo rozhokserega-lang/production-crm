@@ -1,4 +1,5 @@
 import { firstSelectedWeek } from "./weekFilterUtils";
+import { normalizeCatalogItemName } from "./errorCatalogHelpers";
 import { normText, sectionNamesMatch } from "../utils/shipmentUtils";
 
 export function buildStrapDialogInit({
@@ -134,14 +135,102 @@ export function planCatalogRowSelectKey(x) {
   return `${item}|||${matNorm}`;
 }
 
+function planCatalogArticleFromKey(selectKey) {
+  const k = String(selectKey || "").trim();
+  if (!k) return "";
+  if (k.includes("|")) return k.split("|")[0].trim().toUpperCase();
+  if (!k.includes("|||")) return k.toUpperCase();
+  return "";
+}
+
 /** Совпадение ключа селекта с учётом старых значений (только артикул без материала). */
 export function matchPlanCatalogRowSelectKey(row, selectKey) {
   const k = String(selectKey || "").trim();
   if (!k) return false;
   if (planCatalogRowSelectKey(row) === k) return true;
+  const art = String(row?.article || "").trim().toUpperCase();
+  if (art && k.includes("|")) {
+    const keyArt = planCatalogArticleFromKey(k);
+    if (keyArt && keyArt === art) return true;
+  }
   if (!k.includes("|") && !k.includes("|||")) {
-    const art = String(row?.article || "").trim().toUpperCase();
-    if (art && art === k) return true;
+    if (art && art === k.toUpperCase()) return true;
+  }
+  if (k.includes("|||")) {
+    const [itemPart, matPart] = k.split("|||");
+    const rowItem = normText(String(row?.itemName || row?.item_name || ""));
+    const rowMat = normText(String(row?.material || row?.table_color || ""));
+    if (itemPart && rowItem === normText(itemPart) && (!matPart || rowMat === normText(matPart))) return true;
   }
   return false;
+}
+
+function normalizePlanCatalogRow(x) {
+  return {
+    sectionName: String(x?.section_name || x?.sectionName || "").trim(),
+    article: String(x?.article || "").trim(),
+    itemName: normalizeCatalogItemName(String(x?.item_name || x?.itemName || "").trim()),
+    material: String(x?.material || x?.table_color || "").trim(),
+  };
+}
+
+/**
+ * Находит строку каталога по секции, ключу селекта «Артикул» и материалу.
+ */
+export function resolvePlanCatalogSelection({
+  planSection = "",
+  planArticle = "",
+  planMaterial = "",
+  sectionArticleRows = [],
+  sectionArticles = [],
+}) {
+  const section = String(planSection || "").trim();
+  const selectKey = String(planArticle || "").trim();
+  const materialKey = normText(planMaterial);
+
+  const pool = (
+    Array.isArray(sectionArticles) && sectionArticles.length
+      ? sectionArticles
+      : (sectionArticleRows || [])
+          .map(normalizePlanCatalogRow)
+          .filter((x) => sectionNamesMatch(x.sectionName, section) && x.article && x.itemName)
+  ).map((x) => (x.itemName ? x : normalizePlanCatalogRow(x)));
+
+  if (!selectKey && !materialKey) return null;
+
+  const pickBest = (candidates) => {
+    if (!candidates.length) return null;
+    if (materialKey) {
+      const byMat = candidates.filter((r) => normText(r.material) === materialKey);
+      if (byMat.length) return byMat[0];
+      const fuzzy = candidates.filter((r) => {
+        const rm = normText(r.material);
+        return rm.includes(materialKey) || materialKey.includes(rm);
+      });
+      if (fuzzy.length === 1) return fuzzy[0];
+    }
+    return candidates[0];
+  };
+
+  let candidates = pool.filter((r) => matchPlanCatalogRowSelectKey(r, selectKey));
+  const hit = pickBest(candidates);
+  if (hit) return hit;
+
+  candidates = pool.filter((r) => normText(r.itemName) === normText(selectKey));
+  const hitByName = pickBest(candidates);
+  if (hitByName) return hitByName;
+
+  const keyArt = planCatalogArticleFromKey(selectKey);
+  if (keyArt) {
+    candidates = pool.filter((r) => r.article.toUpperCase() === keyArt);
+    const hitByArt = pickBest(candidates);
+    if (hitByArt) return hitByArt;
+  }
+
+  if (materialKey) {
+    candidates = pool.filter((r) => normText(r.material) === materialKey);
+    if (candidates.length === 1) return candidates[0];
+  }
+
+  return null;
 }

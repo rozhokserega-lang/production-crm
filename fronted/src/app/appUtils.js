@@ -1,4 +1,5 @@
 import { normalizeFurnitureKey } from "../utils/furnitureUtils";
+import { findFurnitureTemplate, resolveKitsPerSheetFromTemplate } from "./furnitureMaterialYield";
 
 const ACTION_OPTIMISTIC_MAP = {
   webSetPilkaInWork: {
@@ -59,7 +60,7 @@ export function applyOptimisticOrderRow(row, action, payload = {}) {
 
 export function resolveDefaultConsumeSheets(order, shipmentOrders) {
   const direct = Number(order?.sheetsNeeded ?? order?.sheets_needed ?? 0);
-  if (Number.isFinite(direct) && direct > 0) return direct;
+  if (Number.isFinite(direct) && direct > 0) return ceilWholeSheets(direct);
 
   const orderId = String(order?.orderId || order?.order_id || "").trim();
   const sourceRowId = String(order?.sourceRowId || order?.source_row_id || "").trim();
@@ -67,7 +68,7 @@ export function resolveDefaultConsumeSheets(order, shipmentOrders) {
   const item = String(order?.item || "").trim();
   const all = Array.isArray(shipmentOrders) ? shipmentOrders : [];
 
-  const getSheets = (x) => Number(x?.sheetsNeeded ?? x?.sheets_needed ?? 0);
+  const getSheets = (x) => ceilWholeSheets(x?.sheetsNeeded ?? x?.sheets_needed ?? 0);
 
   if (orderId) {
     const byOrderId = all.find((x) => String(x?.orderId || x?.order_id || "").trim() === orderId && getSheets(x) > 0);
@@ -93,7 +94,7 @@ export function resolveDefaultConsumeSheets(order, shipmentOrders) {
 
 export function resolveDefaultConsumeSheetsFromBoard(order, shipmentBoard) {
   const direct = Number(order?.sheetsNeeded ?? order?.sheets_needed ?? 0);
-  if (Number.isFinite(direct) && direct > 0) return direct;
+  if (Number.isFinite(direct) && direct > 0) return ceilWholeSheets(direct);
 
   const sourceRowId = String(order?.sourceRowId || order?.source_row_id || "").trim();
   const week = String(order?.week || "").trim();
@@ -108,8 +109,8 @@ export function resolveDefaultConsumeSheetsFromBoard(order, shipmentBoard) {
       const itemName = String(it?.item || "").trim();
       for (const c of it?.cells || []) {
         const cellWeek = String(c?.week || "").trim();
-        const sheets = Number(c?.sheetsNeeded ?? c?.sheets_needed ?? 0);
-        if (!(Number.isFinite(sheets) && sheets > 0)) continue;
+        const sheets = ceilWholeSheets(c?.sheetsNeeded ?? c?.sheets_needed ?? 0);
+        if (!(sheets > 0)) continue;
         if (sourceRowId && week && rowId === sourceRowId && cellWeek === week) byRowWeek = Math.max(byRowWeek, sheets);
         if (item && week && itemName === item && cellWeek === week) byItemWeek = Math.max(byItemWeek, sheets);
       }
@@ -122,6 +123,15 @@ export function resolveDefaultConsumeSheetsFromBoard(order, shipmentBoard) {
  * Сколько листов ожидается списать по заказу (как в диалоге после «Готово» на пиле).
  */
 /**
+ * Целое число листов: всегда округление вверх (1.2 → 2, 0.4 → 1).
+ */
+export function ceilWholeSheets(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.ceil(n);
+}
+
+/**
  * kits_per_sheet в конструкторе: >= 1 — комплектов на лист; (0, 1) — листов на комплект (напр. 0,4 → 8 листов на 20 шт.).
  */
 export function effectiveOutputPerSheet(kitsPerSheet) {
@@ -131,10 +141,11 @@ export function effectiveOutputPerSheet(kitsPerSheet) {
 }
 
 export function sheetsFromTemplateKits(kitsPerSheet, qty) {
-  const out = effectiveOutputPerSheet(kitsPerSheet);
+  const k = Number(kitsPerSheet || 0);
   const q = Number(qty || 0);
-  if (!(out > 0) || !(q > 0)) return 0;
-  return Math.ceil(q / out);
+  if (!(k > 0) || !(q > 0)) return 0;
+  if (k < 1) return ceilWholeSheets(q * k);
+  return ceilWholeSheets(q / k);
 }
 
 export function resolveExpectedConsumeSheets(order, opts = {}) {
@@ -149,19 +160,11 @@ export function resolveExpectedConsumeSheets(order, opts = {}) {
   n = resolveDefaultConsumeSheetsFromBoard(order, shipmentBoard);
   if (Number.isFinite(n) && n > 0) return n;
 
-  const kitsList = furnitureCustomTemplates;
-  if (!kitsList.length) return 0;
   const rawItem = String(order?.item || "").trim();
-  const itemKey = normalize(rawItem);
-  if (!itemKey) return 0;
-  const tpl =
-    kitsList.find((t) => normalize(String(t.product_name || t.productName || "")) === itemKey) ||
-    kitsList.find((t) => {
-      const k = normalize(String(t.product_name || t.productName || ""));
-      return k && (itemKey.includes(k) || k.includes(itemKey));
-    }) ||
-    null;
-  const kitsPerSheet = Number(tpl?.kits_per_sheet ?? tpl?.kitsPerSheet ?? 0) || 0;
+  const tpl = findFurnitureTemplate(furnitureCustomTemplates, rawItem, normalize);
+  if (!tpl) return 0;
+  const material = String(order?.material || order?.colorName || order?.color || "").trim();
+  const kitsPerSheet = resolveKitsPerSheetFromTemplate(tpl, material);
   const qty = Number(order?.qty || 0) || 0;
   return sheetsFromTemplateKits(kitsPerSheet, qty);
 }
@@ -230,9 +233,9 @@ export function normalizeShipmentBoard(data) {
       directOutputPerSheet > 0 ? directOutputPerSheet : Number(storageAutoCut.outputPerSheet || 0);
     const sheetsNeeded =
       directSheetsNeeded > 0
-        ? directSheetsNeeded
+        ? ceilWholeSheets(directSheetsNeeded)
         : outputPerSheet > 0 && qtyRaw > 0
-          ? Math.ceil(qtyRaw / outputPerSheet)
+          ? ceilWholeSheets(qtyRaw / outputPerSheet)
           : 0;
     itemMap.get(rowKey).cells.push({
       col: row?.source_col_id || row?.sourceColId || row?.col_ref || row?.colRef || String(idx + 1),
@@ -269,7 +272,7 @@ export function mergeShipmentBoardWithTable(board, tableRows) {
     if (!sourceRow || !sourceCol) return;
     bySource.set(`${sourceRow}|${sourceCol}`, {
       availableSheets: Number(r?.available_sheets ?? r?.availableSheets ?? 0),
-      sheetsNeeded: Number(r?.sheets_needed ?? r?.sheetsNeeded ?? 0),
+      sheetsNeeded: ceilWholeSheets(r?.sheets_needed ?? r?.sheetsNeeded ?? 0),
       materialEnoughForOrder:
         r?.material_enough_for_order == null
           ? (r?.materialEnoughForOrder == null ? undefined : !!r?.materialEnoughForOrder)
@@ -290,7 +293,10 @@ export function mergeShipmentBoardWithTable(board, tableRows) {
           return {
             ...cell,
             availableSheets: fromTable.availableSheets,
-            sheetsNeeded: fromTable.sheetsNeeded > 0 ? fromTable.sheetsNeeded : cell.sheetsNeeded,
+            sheetsNeeded:
+              fromTable.sheetsNeeded > 0
+                ? ceilWholeSheets(fromTable.sheetsNeeded)
+                : ceilWholeSheets(cell.sheetsNeeded),
             materialEnoughForOrder:
               fromTable.materialEnoughForOrder == null ? cell.materialEnoughForOrder : fromTable.materialEnoughForOrder,
           };
@@ -311,7 +317,7 @@ function resolveStorageAutoCut(sectionName, itemName, qty) {
   const byAB = Math.floor(STORAGE_SHEET_WIDTH / a) * Math.floor(STORAGE_SHEET_HEIGHT / b);
   const byBA = Math.floor(STORAGE_SHEET_WIDTH / b) * Math.floor(STORAGE_SHEET_HEIGHT / a);
   const outputPerSheet = Math.max(byAB, byBA, 0);
-  const sheetsNeeded = outputPerSheet > 0 && qty > 0 ? Math.ceil(Number(qty || 0) / outputPerSheet) : 0;
+  const sheetsNeeded = outputPerSheet > 0 && qty > 0 ? ceilWholeSheets(Number(qty || 0) / outputPerSheet) : 0;
   return { outputPerSheet, sheetsNeeded };
 }
 
@@ -342,7 +348,7 @@ function applyStorageAutoCutToBoard(board) {
               if (directOutputPerSheet > 0 || directSheetsNeeded > 0) return cell;
               const autoCut = resolveStorageAutoCut(sectionName, itemName, qty);
               const outputPerSheet = Number(autoCut.outputPerSheet || 0);
-              const sheetsNeeded = outputPerSheet > 0 && qty > 0 ? Math.ceil(qty / outputPerSheet) : 0;
+              const sheetsNeeded = outputPerSheet > 0 && qty > 0 ? ceilWholeSheets(qty / outputPerSheet) : 0;
               if (!(outputPerSheet > 0) && !(sheetsNeeded > 0)) return cell;
               return {
                 ...cell,

@@ -85,11 +85,12 @@ export class OrderService {
     return await callBackend("webGetFurnitureCustomTemplates");
   }
 
-  static async upsertFurnitureCustomTemplate(productName, details, kitsPerSheet = 0) {
+  static async upsertFurnitureCustomTemplate(productName, details, kitsPerSheet = 0, materialYields = []) {
     return await callBackend("webUpsertFurnitureCustomTemplate", {
       p_product_name: productName,
       p_details: details,
       p_kits_per_sheet: kitsPerSheet,
+      p_material_yields: Array.isArray(materialYields) ? materialYields : [],
     });
   }
 
@@ -186,6 +187,13 @@ export class OrderService {
 
   static async consumeSheetsByOrderId(orderId, material, qty) {
     return await callBackend("webConsumeSheetsByOrderId", { orderId, material, qty });
+  }
+
+  static async consumeSheetsLinesByOrderId(orderId, lines) {
+    return await callBackend("webConsumeSheetsLinesByOrderId", {
+      p_order_id: orderId,
+      p_lines: Array.isArray(lines) ? lines : [],
+    });
   }
 
   static async logConsumeSheetsFailed(orderId, material, qty, error) {

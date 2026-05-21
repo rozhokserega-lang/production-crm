@@ -27,15 +27,20 @@ describe("OrderService", () => {
     expect(callBackend).toHaveBeenCalledWith("webGetOrdersAll");
   });
 
-  it("sends kits_per_sheet in upsertFurnitureCustomTemplate", async () => {
+  it("sends kits_per_sheet and material_yields in upsertFurnitureCustomTemplate", async () => {
     callBackend.mockResolvedValueOnce({ ok: true });
+    const yields = [
+      { material: "Дуб", kits_per_sheet: 6 },
+      { material: "Белый", kits_per_sheet: 0.4 },
+    ];
 
-    await OrderService.upsertFurnitureCustomTemplate("GX", [{ detailName: "A", perUnit: 1 }], 6);
+    await OrderService.upsertFurnitureCustomTemplate("GX", [{ detailName: "A", perUnit: 1 }], 0, yields);
 
     expect(callBackend).toHaveBeenCalledWith("webUpsertFurnitureCustomTemplate", {
       p_product_name: "GX",
       p_details: [{ detailName: "A", perUnit: 1 }],
-      p_kits_per_sheet: 6,
+      p_kits_per_sheet: 0,
+      p_material_yields: yields,
     });
   });
 

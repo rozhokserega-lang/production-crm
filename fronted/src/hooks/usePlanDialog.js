@@ -142,11 +142,11 @@ export function usePlanDialog({
     const week = String(planWeek || "").trim();
     const qty = Number(String(planQty || "").replace(",", "."));
     if (!item) {
-      setError("Выберите материал для изделия.");
+      setError("Выберите изделие в списке «Артикул» (не удалось определить название по выбранной строке).");
       return;
     }
     if (!material) {
-      setError("Выберите материал.");
+      setError("Укажите материал (он подставляется из артикула или выбирается в списке).");
       return;
     }
     if (!week) {
@@ -205,11 +205,11 @@ export function usePlanDialog({
         "",
     ).trim();
     if (!item) {
-      setError("Выберите материал для изделия.");
+      setError("Выберите изделие в списке «Артикул» (не удалось определить название по выбранной строке).");
       return;
     }
     if (!material) {
-      setError("Выберите материал.");
+      setError("Укажите материал (он подставляется из артикула или выбирается в списке).");
       return;
     }
     if (!week) {

@@ -493,6 +493,8 @@ export function useAppState({ auth }) {
     logConsumeToGoogleSheet,
     syncLeftoversToGoogleSheet,
     load: mutationLoad,
+    furnitureCustomTemplates,
+    normalizeFurnitureKey,
   });
 
   const openPrasDoneStrapDialog = useCallback((orderId, meta = {}) => {
@@ -564,6 +566,7 @@ export function useAppState({ auth }) {
     sectionArticleRows,
     planSection,
     planArticle,
+    planMaterial,
     normalizeFurnitureKey,
   });
 
@@ -1237,6 +1240,7 @@ export function useAppState({ auth }) {
     parseStrapSize,
     strapSheetWidth: STRAP_SHEET_WIDTH,
     strapSheetHeight: STRAP_SHEET_HEIGHT,
+    furnitureCustomTemplates,
   });
   const {
     importPlanFileRef,

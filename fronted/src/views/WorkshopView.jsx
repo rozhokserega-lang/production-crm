@@ -2,6 +2,7 @@ import { memo, useMemo } from "react";
 import { KROMKA_EXECUTORS, PRAS_EXECUTORS } from "../config";
 import { stripPlanItemMeta } from "../app/orderHelpers";
 import { sheetsFromTemplateKits } from "../app/appUtils";
+import { findFurnitureTemplate, resolveKitsPerSheetFromTemplate } from "../app/furnitureMaterialYield";
 import {
   getResolvedWorkshopStrapNeeds,
   isWorkshopStrapOrderItem,
@@ -127,14 +128,9 @@ export const WorkshopView = memo(function WorkshopView({
           if (!kitsList.length) return 0;
           const itemKey = normalize(rawItem);
           if (!itemKey) return 0;
-          const tpl =
-            kitsList.find((t) => normalize(String(t.product_name || t.productName || "")) === itemKey) ||
-            kitsList.find((t) => {
-              const k = normalize(String(t.product_name || t.productName || ""));
-              return k && (itemKey.includes(k) || k.includes(itemKey));
-            }) ||
-            null;
-          const kitsPerSheet = Number(tpl?.kits_per_sheet ?? tpl?.kitsPerSheet ?? 0) || 0;
+          const tpl = findFurnitureTemplate(kitsList, rawItem, normalize);
+          const material = String(o.material || o.colorName || o.color || "").trim();
+          const kitsPerSheet = resolveKitsPerSheetFromTemplate(tpl, material);
           const qty = Number(o.qty || 0) || 0;
           return sheetsFromTemplateKits(kitsPerSheet, qty);
         })();

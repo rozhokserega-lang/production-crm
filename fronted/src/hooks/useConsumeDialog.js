@@ -1,27 +1,12 @@
 import { useCallback, useRef } from "react";
+import { ceilWholeSheets } from "../app/appUtils";
+import { resolveSheetNeedsByMaterials } from "../app/furnitureMaterialYield";
 import { OrderService } from "../services/orderService";
 import { buildPilkaDoneDialogInit } from "../app/runActionHelpers";
 import { extractErrorMessage } from "../app/errorCatalogHelpers";
 
 /**
- * Encapsulates consume dialog logic: open, submit, close, error-handling variants.
- *
  * @param {object} params
- * @param {boolean} params.canOperateProduction
- * @param {boolean} [params.canOperateWarehouse]
- * @param {Function} params.setError
- * @param {object} params.consumeDialogData - current consume dialog data (from useShipmentDialogsState)
- * @param {Function} params.setConsumeDialogOpen
- * @param {Function} params.setConsumeEditMode
- * @param {Function} params.setConsumeDialogData
- * @param {Function} params.setConsumeMaterial
- * @param {Function} params.setConsumeQty
- * @param {Function} params.setConsumeError
- * @param {Function} params.setConsumeSaving
- * @param {Function} params.setConsumeLoading
- * @param {Function} params.logConsumeToGoogleSheet
- * @param {Function} params.syncLeftoversToGoogleSheet
- * @param {Function} params.load
  */
 export function useConsumeDialog({
   canOperateProduction,
@@ -39,9 +24,9 @@ export function useConsumeDialog({
   logConsumeToGoogleSheet,
   syncLeftoversToGoogleSheet,
   load,
+  furnitureCustomTemplates = [],
+  normalizeFurnitureKey,
 }) {
-  // Set of orderIds that have already been submitted for consumption in this session.
-  // Prevents duplicate edge function calls when load() triggers re-render.
   const submittedOrderIdsRef = useRef(new Set());
 
   const closeConsumeDialog = useCallback(() => {
@@ -64,22 +49,36 @@ export function useConsumeDialog({
     setConsumeLoading,
   ]);
 
+  const buildConsumeLinesFromMeta = useCallback(
+    (meta = {}) => {
+      const qty = Number(meta.qty || 0);
+      const item = String(meta.item || "").trim();
+      const material = String(meta.material || "").trim();
+      if (!(qty > 0) || !item) return [];
+      const n =
+        typeof normalizeFurnitureKey === "function" ? normalizeFurnitureKey : (v) => String(v || "").toLowerCase().trim();
+      return resolveSheetNeedsByMaterials(furnitureCustomTemplates, item, qty, material, n).map((line) => ({
+        material: line.material,
+        qty: line.sheets,
+      }));
+    },
+    [furnitureCustomTemplates, normalizeFurnitureKey],
+  );
+
   const submitConsume = useCallback(
     async (materialRaw, qtyRaw) => {
       if (!canOperateProduction && !canOperateWarehouse) {
         setConsumeError("Недостаточно прав для списания листов.");
         return;
       }
-      // consumeDialogData is passed in from the parent — it's the current value
       if (!consumeDialogData?.orderId) return;
       const orderId = consumeDialogData.orderId;
-      const material = String(materialRaw || "").trim();
-      const qty = Number(String(qtyRaw || "").replace(",", "."));
-      if (!material) return setConsumeError("Укажите материал");
-      if (!isFinite(qty) || qty <= 0) return setConsumeError("Некорректное количество");
+      const presetLines = Array.isArray(consumeDialogData.consumeLines) ? consumeDialogData.consumeLines : [];
+      const multiLines =
+        presetLines.length > 1
+          ? presetLines
+          : [];
 
-      // Guard: prevent duplicate submission for the same orderId in this session.
-      // This avoids double-calling logConsumeToGoogleSheet when load() triggers re-render.
       if (submittedOrderIdsRef.current.has(orderId)) {
         console.warn(`[CRM] Duplicate consume submission blocked for order ${orderId}`);
         closeConsumeDialog();
@@ -90,25 +89,43 @@ export function useConsumeDialog({
       setConsumeSaving(true);
       setConsumeError("");
       try {
-        await OrderService.consumeSheetsByOrderId(orderId, material, qty);
-        logConsumeToGoogleSheet({
-          orderId,
-          item: String(consumeDialogData.item || ""),
-          material,
-          week: String(consumeDialogData.week || ""),
-          qty,
-        });
+        if (multiLines.length > 1) {
+          await OrderService.consumeSheetsLinesByOrderId(orderId, multiLines);
+          for (const line of multiLines) {
+            logConsumeToGoogleSheet({
+              orderId,
+              item: String(consumeDialogData.item || ""),
+              material: line.material,
+              week: String(consumeDialogData.week || ""),
+              qty: line.qty,
+            });
+          }
+        } else {
+          const material = String(materialRaw || presetLines[0]?.material || "").trim();
+          const qty = Number(String(qtyRaw ?? presetLines[0]?.qty ?? "").replace(",", "."));
+          if (!material) return setConsumeError("Укажите материал");
+          if (!isFinite(qty) || qty <= 0) return setConsumeError("Некорректное количество");
+          await OrderService.consumeSheetsByOrderId(orderId, material, qty);
+          logConsumeToGoogleSheet({
+            orderId,
+            item: String(consumeDialogData.item || ""),
+            material,
+            week: String(consumeDialogData.week || ""),
+            qty,
+          });
+        }
         closeConsumeDialog();
         await load();
         syncLeftoversToGoogleSheet({ silent: true });
       } catch (e) {
+        submittedOrderIdsRef.current.delete(orderId);
         const consumeErrText = String(e?.message || e || "unknown");
         setConsumeError(consumeErrText);
         try {
-          await OrderService.logConsumeSheetsFailed(orderId, material, qty, consumeErrText);
-        } catch (_) {
-          // Audit logging must not block UI error handling.
-        }
+          const failMat = multiLines[0]?.material || materialRaw || "";
+          const failQty = multiLines[0]?.qty || qtyRaw || 0;
+          await OrderService.logConsumeSheetsFailed(orderId, failMat, failQty, consumeErrText);
+        } catch (_) {}
       } finally {
         setConsumeSaving(false);
       }
@@ -130,41 +147,65 @@ export function useConsumeDialog({
     (orderId, meta = {}) => {
       const init = buildPilkaDoneDialogInit(orderId, meta);
       const isPlankOrder = init.isPlankOrder;
-      const defaultQty = init.consumeQty;
+      const templateLines = isPlankOrder ? [] : buildConsumeLinesFromMeta(meta);
+      const consumeLines = templateLines.length > 0 ? templateLines : [];
+      const multiDecor = consumeLines.length > 1;
 
-      setConsumeDialogData(init.consumeDialogData);
-      setConsumeMaterial(init.consumeMaterial);
-      setConsumeQty(init.consumeQty);
-      setConsumeEditMode(true);
+      setConsumeDialogData({
+        ...init.consumeDialogData,
+        consumeLines,
+        multiDecor,
+      });
+      setConsumeMaterial(
+        isPlankOrder ? "Черный" : consumeLines[0]?.material || init.consumeMaterial || String(meta.material || "").trim(),
+      );
+      setConsumeQty(
+        multiDecor
+          ? String(consumeLines.reduce((s, l) => s + Number(l.qty || 0), 0))
+          : consumeLines[0]?.qty
+            ? String(consumeLines[0].qty)
+            : init.consumeQty,
+      );
+      setConsumeEditMode(!multiDecor && !isPlankOrder ? false : true);
       setConsumeError("");
-      setConsumeLoading(true);
+      setConsumeLoading(!multiDecor);
       setConsumeDialogOpen(true);
+
+      if (multiDecor || isPlankOrder) {
+        setConsumeLoading(false);
+        if (!isPlankOrder) setConsumeEditMode(false);
+        return;
+      }
 
       OrderService.getConsumeOptions(orderId)
         .then((options) => {
-          setConsumeDialogData(options || { orderId });
+          const apiLines = Array.isArray(options?.consumeLines) ? options.consumeLines : [];
+          const lines = apiLines.length > 0 ? apiLines : consumeLines;
+          const multi = lines.length > 1;
+          setConsumeDialogData((prev) => ({
+            ...(prev || { orderId }),
+            ...(options || {}),
+            orderId,
+            consumeLines: lines,
+            multiDecor: multi,
+          }));
           const suggested = isPlankOrder
             ? "Черный"
-            : String(options?.suggestedMaterial || meta.material || "").trim();
+            : String(options?.suggestedMaterial || lines[0]?.material || meta.material || "").trim();
           if (suggested) setConsumeMaterial(suggested);
-          const suggestedSheetsRaw =
-            options?.suggestedSheets ?? options?.sheetsNeeded ?? defaultQty ?? 0;
-          const suggestedSheets = Number(suggestedSheetsRaw);
-          if (Number.isFinite(suggestedSheets) && suggestedSheets > 0) {
-            setConsumeQty((prev) => {
-              const prevNum = Number(String(prev || "").replace(",", "."));
-              if (Number.isFinite(prevNum) && prevNum > 0) return prev;
-              return String(suggestedSheets);
-            });
+          const suggestedSheets = ceilWholeSheets(
+            options?.suggestedSheets ?? options?.sheetsNeeded ?? lines.reduce((s, l) => s + Number(l.qty || 0), 0) ?? 0,
+          );
+          if (suggestedSheets > 0) {
+            setConsumeQty(String(suggestedSheets));
           }
-          if (!isPlankOrder && suggested) setConsumeEditMode(false);
+          if (!isPlankOrder && (suggested || lines.length === 1)) setConsumeEditMode(false);
         })
-        .catch(() => {
-          // Keep manual mode without hints.
-        })
+        .catch(() => {})
         .finally(() => setConsumeLoading(false));
     },
     [
+      buildConsumeLinesFromMeta,
       setConsumeDialogData,
       setConsumeMaterial,
       setConsumeQty,
@@ -178,9 +219,18 @@ export function useConsumeDialog({
   const openPilkaDoneConsumeDialogOnError = useCallback(
     (orderId, meta = {}, error) => {
       const init = buildPilkaDoneDialogInit(orderId, meta, { useMetaMaterialOnError: true });
-      setConsumeDialogData(init.consumeDialogData);
+      const consumeLines = buildConsumeLinesFromMeta(meta);
+      setConsumeDialogData({
+        ...init.consumeDialogData,
+        consumeLines,
+        multiDecor: consumeLines.length > 1,
+      });
       setConsumeMaterial(init.consumeMaterial);
-      setConsumeQty(init.consumeQty);
+      setConsumeQty(
+        consumeLines.length > 1
+          ? String(consumeLines.reduce((s, l) => s + Number(l.qty || 0), 0))
+          : init.consumeQty,
+      );
       setConsumeEditMode(true);
       setConsumeLoading(false);
       setConsumeError(
@@ -189,6 +239,7 @@ export function useConsumeDialog({
       setConsumeDialogOpen(true);
     },
     [
+      buildConsumeLinesFromMeta,
       setConsumeDialogData,
       setConsumeMaterial,
       setConsumeQty,

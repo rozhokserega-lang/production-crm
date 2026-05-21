@@ -384,6 +384,7 @@ const RPC_MAP = {
   webSendShipmentToWork: "web_send_shipment_to_work_by_source",
   webSendPlanksToWork: "web_send_planks_to_work",
   webConsumeSheetsByOrderId: "web_consume_sheets_by_order_id",
+  webConsumeSheetsLinesByOrderId: "web_consume_sheets_lines_by_order_id",
 };
 
 function stageFromAction(action) {
@@ -414,6 +415,12 @@ function buildRpcPayload(action, payload = {}) {
       p_order_id: payload.orderId,
       p_material: payload.material,
       p_qty: Number(payload.qty || 0),
+    };
+  }
+  if (action === "webConsumeSheetsLinesByOrderId") {
+    return {
+      p_order_id: String(payload.p_order_id ?? payload.orderId ?? "").trim(),
+      p_lines: payload.p_lines ?? payload.lines ?? [],
     };
   }
   if (action === "webSendShipmentToWork") {

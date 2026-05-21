@@ -26,17 +26,37 @@ export function ConsumeDialog({
         {consumeLoading && <div className="line2" style={{ marginBottom: 8 }}>Загружаю подсказки по материалу...</div>}
         {!consumeEditMode ? (
           <>
-            <div className="line2">
-              <span>Списать количество листов материала:</span>
-              <b>{consumeMaterial || "—"}</b>
-            </div>
-            <div className="line2">
-              <span>Количество:</span>
-              <b>{consumeQty || "—"}</b>
-            </div>
+            {Array.isArray(consumeDialogData?.consumeLines) && consumeDialogData.consumeLines.length > 1 ? (
+              <>
+                <div className="line2" style={{ marginBottom: 6 }}>
+                  <span>Списать листы по декорам:</span>
+                </div>
+                {consumeDialogData.consumeLines.map((line) => (
+                  <div key={line.material} className="line2" style={{ marginLeft: 8 }}>
+                    <span>• {line.material}:</span>
+                    <b>{line.qty} лист(ов)</b>
+                  </div>
+                ))}
+                <div className="line2" style={{ marginTop: 6 }}>
+                  <span>Итого листов:</span>
+                  <b>{consumeQty || "—"}</b>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="line2">
+                  <span>Списать количество листов материала:</span>
+                  <b>{consumeMaterial || "—"}</b>
+                </div>
+                <div className="line2">
+                  <span>Количество:</span>
+                  <b>{consumeQty || "—"}</b>
+                </div>
+              </>
+            )}
             <div className="actions">
               <button className="mini ok" disabled={consumeSaving} onClick={() => onSubmit(consumeMaterial, consumeQty)}>
-                {consumeSaving ? "Списываю..." : "Подтвердить"}
+                {consumeSaving ? "Списываю..." : consumeDialogData?.consumeLines?.length > 1 ? "Списать все" : "Подтвердить"}
               </button>
               <button className="mini" disabled={consumeSaving} onClick={() => onSetEditMode(true)}>
                 Изменить

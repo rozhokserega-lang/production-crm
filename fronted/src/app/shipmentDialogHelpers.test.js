@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { buildCreatePlanDialogInit, matchPlanCatalogRowSelectKey, planCatalogRowSelectKey } from "./shipmentDialogHelpers";
+import {
+  buildCreatePlanDialogInit,
+  matchPlanCatalogRowSelectKey,
+  planCatalogRowSelectKey,
+  resolvePlanCatalogSelection,
+} from "./shipmentDialogHelpers";
 
 describe("planCatalogRowSelectKey", () => {
   it("uses uppercased article and normalized material when present", () => {
@@ -16,6 +21,33 @@ describe("matchPlanCatalogRowSelectKey", () => {
     const row = { article: "SN-1", itemName: "X", material: "Юта" };
     expect(matchPlanCatalogRowSelectKey(row, "SN-1")).toBe(true);
     expect(matchPlanCatalogRowSelectKey(row, planCatalogRowSelectKey(row))).toBe(true);
+  });
+});
+
+describe("resolvePlanCatalogSelection", () => {
+  it("matches by article when material suffix in key differs from catalog", () => {
+    const rows = [
+      {
+        section_name: "Donini 806",
+        article: "GXKTDOBC",
+        item_name: "Donini 806 мм. Бетон Чикаго светло-серый",
+        material: "Бетон Чикаго светло-серый",
+      },
+    ];
+    const sectionArticles = rows.map((x) => ({
+      sectionName: "Donini 806",
+      article: "GXKTDOBC",
+      itemName: "Donini 806 мм. Бетон Чикаго светло-серый",
+      material: "Бетон Чикаго светло-серый",
+    }));
+    const hit = resolvePlanCatalogSelection({
+      planSection: "Donini 806",
+      planArticle: "GXKTDOBC|бетон чикаго",
+      planMaterial: "Бетон чикаго",
+      sectionArticleRows: rows,
+      sectionArticles,
+    });
+    expect(hit?.itemName).toContain("Donini 806");
   });
 });
 
