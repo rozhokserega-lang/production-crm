@@ -1,16 +1,24 @@
 import { memo } from "react";
 import { extractPlanItemArticle, stripPlanItemMeta } from "../app/orderHelpers";
+import { OverviewPlansPanel } from "../components/OverviewPlansPanel";
+import { useOverviewPlanMonths } from "../hooks/useOverviewPlanMonths";
 
 export const OverviewView = memo(function OverviewView({
   overviewSubView,
   filtered,
+  rows,
+  shipmentBoard,
+  shipmentOrderMaps,
+  weekFilter,
   loading,
   overviewColumns,
   getStageLabel,
   overviewShippedOnly,
   formatDateTimeRu,
   onOpenOrderDrawer,
+  onGoToKanban,
 }) {
+  const { months, addMonth, updateMonth, deleteMonth } = useOverviewPlanMonths();
   const ARTICLE_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{2,}$/;
   const readArticle = (row) =>
     String(
@@ -150,6 +158,21 @@ export const OverviewView = memo(function OverviewView({
             </div>
           )}
         </>
+      )}
+      {overviewSubView === "plans" && (
+        <OverviewPlansPanel
+          filtered={filtered}
+          rows={rows}
+          shipmentBoard={shipmentBoard}
+          shipmentOrderMaps={shipmentOrderMaps}
+          weekFilter={weekFilter}
+          months={months}
+          addMonth={addMonth}
+          updateMonth={updateMonth}
+          deleteMonth={deleteMonth}
+          onOpenOrderDrawer={onOpenOrderDrawer}
+          onGoToKanban={onGoToKanban}
+        />
       )}
       {overviewSubView === "shipped" && (
         <>

@@ -1,6 +1,8 @@
-import { memo } from "react";
+import { memo, useCallback } from "react";
 import { stripPlanItemMeta, getMaterialLabel } from "../app/orderHelpers";
 import { useShipment } from "../contexts/ShipmentContext";
+import { useCutting } from "../contexts/CuttingContext";
+import { useNavigation } from "../contexts/NavigationContext";
 import { useAuth } from "../contexts/AuthContext";
 import { useUiState } from "../contexts/UiStateContext";
 import {
@@ -10,12 +12,15 @@ import {
 } from "../app/planPreviewHelpers";
 import { getReadableTextColor } from "../utils/colorUtils";
 import { normalizeFurnitureKey } from "../utils/furnitureUtils";
-import { getShipmentStageKey } from "../utils/shipmentUtils";
+import { getShipmentStageKey, isStorageLikeName } from "../utils/shipmentUtils";
 import { stageBg, stageLabel } from "../app/statusHelpers";
+import { parseItemSize } from "../app/appUtils";
 
 export const ShipmentView = memo(function ShipmentView() {
   const { loading, actionLoading } = useUiState();
   const { canOperateProduction, canManageOrders } = useAuth();
+  const { addItems: addItemsToCutting } = useCutting();
+  const { setView } = useNavigation();
   const {
     selectedShipments,
     strapItems,
@@ -57,6 +62,32 @@ export const ShipmentView = memo(function ShipmentView() {
   const tableGroupNames = shipmentTableGroupNamesForView ?? shipmentTableGroupNames;
 
   const isPlanPreviewOpen = planPreviews.length > 0;
+  const storageSelected = selectedShipments.filter(
+    (s) => isStorageLikeName(s.item) || isStorageLikeName(s.section),
+  );
+  const storageSelectedCount = storageSelected.length;
+
+  const addToCutting = useCallback(() => {
+    const cuttingItems = [];
+    for (const s of storageSelected) {
+      const name = String(s.item || "").trim();
+      const size = parseItemSize(name);
+      if (!size) continue;
+      cuttingItems.push({
+        itemName: name,
+        w: size.a,
+        h: size.b,
+        qty: Math.max(1, Number(s.qty || 1)),
+        material: String(s.material || "").trim() || "ДСП",
+        week: String(s.week || "").trim(),
+        section: String(s.section || "").trim(),
+      });
+    }
+    if (cuttingItems.length > 0) {
+      addItemsToCutting(cuttingItems);
+    }
+    setView("cutting");
+  }, [storageSelected, addItemsToCutting, setView]);
   const norm = (v) => {
     const raw = String(v || "").trim();
     if (!raw) return "";
@@ -660,6 +691,14 @@ export const ShipmentView = memo(function ShipmentView() {
               >
                 Удалить из плана
               </button>
+              {storageSelectedCount > 0 && (
+                <button
+                  className="mini accent"
+                  onClick={addToCutting}
+                >
+                  ✂ Раскрой ({storageSelectedCount})
+                </button>
+              )}
               <button className="mini" onClick={() => setSelectedShipments([])}>
                 Сбросить выбор
               </button>

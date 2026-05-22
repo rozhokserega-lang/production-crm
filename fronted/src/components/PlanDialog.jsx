@@ -1,12 +1,17 @@
-import { useEffect } from "react";
-import { planCatalogRowSelectKey } from "../app/shipmentDialogHelpers";
+import { useEffect, useRef, useState, useCallback } from "react";
+import { planCatalogRowSelectKey, matchPlanCatalogRowSelectKey } from "../app/shipmentDialogHelpers";
 
-function planCatalogOptionLabel(x) {
+function articleOptionLabel(x) {
   const item = String(x?.itemName || "").trim();
   const mat = String(x?.material || "").trim();
-  if (!mat) return item || "—";
-  if (item.toLowerCase().includes(mat.toLowerCase())) return item;
-  return `${item} — ${mat}`;
+  if (!mat || item.toLowerCase().includes(mat.toLowerCase())) return item || "—";
+  return `${item} · ${mat}`;
+}
+
+function adjustQtyValue(current, delta) {
+  const n = Number(String(current || "").replace(",", "."));
+  const next = (Number.isFinite(n) ? n : 0) + delta;
+  return next <= 0 ? "" : String(next);
 }
 
 export function PlanDialog({
@@ -18,6 +23,7 @@ export function PlanDialog({
   selectedItemVariants,
   planMaterial,
   planWeek,
+  weeks,
   planQty,
   planSaving,
   planPreviewing,
@@ -27,85 +33,275 @@ export function PlanDialog({
   onPlanWeekChange,
   onPlanQtyChange,
   onSave,
+  onSaveAll,
   onPreview,
+  onPreviewItems,
   onClose,
   refreshPlanCatalogs,
 }) {
+  const qtyRef = useRef(null);
+  const addCheckRef = useRef(null);
+  const [pendingItems, setPendingItems] = useState([]);
+
   useEffect(() => {
-    // Keep dropdown options in sync with DB changes (e.g. new sections/items created in FurnitureView).
     if (!isOpen) return;
-    if (typeof refreshPlanCatalogs !== "function") return;
-    void refreshPlanCatalogs();
+    if (typeof refreshPlanCatalogs === "function") void refreshPlanCatalogs();
   }, [isOpen, refreshPlanCatalogs]);
 
-  if (!isOpen) return null;
+  useEffect(() => {
+    if (isOpen) {
+      setPendingItems([]);
+      setTimeout(() => qtyRef.current?.focus(), 60);
+    }
+  }, [isOpen]);
+
+  // --- Все вычисления и хуки ДО раннего return ---
 
   const variants = Array.isArray(selectedItemVariants) ? selectedItemVariants : [];
   const materialOptions = variants.map((v) => String(v.material || "").trim()).filter(Boolean);
   const canSelectMaterial = materialOptions.length > 1;
 
+  const selectedRow = (sectionArticles || []).find((x) =>
+    matchPlanCatalogRowSelectKey(x, String(planArticle || "").trim()),
+  );
+  const selectedFullName = selectedRow ? articleOptionLabel(selectedRow) : "";
+
+  const qtyNum = Number(String(planQty || "").replace(",", "."));
+  const hasValidQty = Number.isFinite(qtyNum) && qtyNum > 0;
+  const summaryReady = isOpen && planSection && selectedFullName && planMaterial && planWeek && hasValidQty;
+
+  const canSave = !planSaving && (pendingItems.length > 0 || summaryReady);
+  const canPreview = !planSaving && !planPreviewing && (pendingItems.length > 0 || summaryReady);
+
+  const buildCurrentSnapshot = useCallback(() => ({
+    resolvedItem: String(selectedRow?.itemName || "").trim(),
+    catalogArticle: String(selectedRow?.article || "").trim(),
+    articleLabel: selectedFullName || planArticle,
+    week: planWeek,
+    qty: qtyNum,
+    section: planSection,
+    material: planMaterial,
+  }), [selectedRow, selectedFullName, planArticle, planWeek, qtyNum, planSection, planMaterial]);
+
+  const handleAddToPending = useCallback(() => {
+    if (!summaryReady) return;
+    setPendingItems((prev) => [...prev, buildCurrentSnapshot()]);
+    onArticleChange("");
+    onPlanQtyChange("");
+    if (addCheckRef.current) addCheckRef.current.checked = false;
+    setTimeout(() => qtyRef.current?.focus(), 60);
+  }, [summaryReady, buildCurrentSnapshot, onArticleChange, onPlanQtyChange]);
+
+  const handleKeyDown = (e) => {
+    if (e.key === "Escape") { onClose(); return; }
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { onSave(); return; }
+  };
+
+  if (!isOpen) return null;
+
   return (
-    <div className="dialog-backdrop">
-      <div className="dialog-card">
-        <h3 style={{ marginTop: 0 }}>Добавить новый план</h3>
-        <div className="line2" style={{ marginBottom: 10 }}>
-          Создаёт или обновляет позицию плана в отгрузке по неделе и изделию.
+    <div className="dialog-backdrop" onKeyDown={handleKeyDown}>
+      <div className="dialog-card plan-dialog-card">
+        <div className="plan-dialog__header">
+          <h3 className="plan-dialog__title">Новый план отгрузки</h3>
+          <button type="button" className="plan-dialog__close" onClick={onClose} disabled={planSaving} aria-label="Закрыть">✕</button>
         </div>
-        <div className="strap-grid">
-          <div className="strap-row" style={{ gridTemplateColumns: "120px 1fr" }}>
-            <label>Секция</label>
-            <select value={planSection} onChange={(e) => onSectionChange(e.target.value)}>
+
+        <div className="plan-dialog__form">
+          {/* Секция */}
+          <div className="plan-dialog__field">
+            <label className="plan-dialog__label">Секция</label>
+            <select
+              className="plan-dialog__select"
+              value={planSection}
+              onChange={(e) => onSectionChange(e.target.value)}
+              disabled={planSaving}
+            >
               {sectionOptions.map((name) => (
                 <option key={name} value={name}>{name}</option>
               ))}
             </select>
           </div>
-          <div className="strap-row" style={{ gridTemplateColumns: "120px 1fr" }}>
-            <label>Артикул</label>
-            <select value={planArticle} onChange={(e) => onArticleChange(e.target.value)}>
-              {sectionArticles.length === 0 ? (
-                <option value="">Нет артикулов для секции</option>
-              ) : (
-                sectionArticles.map((x) => {
-                  const v = planCatalogRowSelectKey(x);
-                  return (
-                    <option key={v} value={v}>
-                      {planCatalogOptionLabel(x)}
-                    </option>
-                  );
-                })
+
+          {/* Изделие + полное название */}
+          <div className="plan-dialog__field plan-dialog__field--col">
+            <label className="plan-dialog__label plan-dialog__label--top">Изделие</label>
+            <div className="plan-dialog__field-body">
+              <select
+                className="plan-dialog__select"
+                value={planArticle}
+                onChange={(e) => onArticleChange(e.target.value)}
+                disabled={planSaving}
+              >
+                {sectionArticles.length === 0 ? (
+                  <option value="">Нет изделий для секции</option>
+                ) : (
+                  sectionArticles.map((x) => {
+                    const v = planCatalogRowSelectKey(x);
+                    return <option key={v} value={v}>{articleOptionLabel(x)}</option>;
+                  })
+                )}
+              </select>
+              {selectedFullName && (
+                <div className="plan-dialog__article-full">{selectedFullName}</div>
               )}
-            </select>
+            </div>
           </div>
-          <div className="strap-row" style={{ gridTemplateColumns: "120px 1fr" }}>
-            <label>Материал</label>
+
+          {/* Материал */}
+          <div className="plan-dialog__field">
+            <label className="plan-dialog__label">Материал</label>
             {canSelectMaterial ? (
-              <select value={planMaterial} onChange={(e) => onMaterialChange?.(e.target.value)}>
-                {materialOptions.map((m) => (
-                  <option key={m} value={m}>{m}</option>
-                ))}
+              <select
+                className="plan-dialog__select"
+                value={planMaterial}
+                onChange={(e) => onMaterialChange?.(e.target.value)}
+                disabled={planSaving}
+              >
+                {materialOptions.map((m) => <option key={m} value={m}>{m}</option>)}
               </select>
             ) : (
-              <input value={planMaterial} readOnly placeholder="Материал подставляется из артикула" />
+              <div className="plan-dialog__material-badge">
+                {planMaterial || <span className="plan-dialog__material-empty">Определяется по изделию</span>}
+              </div>
             )}
           </div>
-          <div className="strap-row" style={{ gridTemplateColumns: "120px 1fr" }}>
-            <label>Неделя</label>
-            <input value={planWeek} onChange={(e) => onPlanWeekChange(e.target.value)} placeholder="Например: 70" />
+
+          {/* Неделя + быстрый выбор из существующих */}
+          <div className="plan-dialog__field plan-dialog__field--col">
+            <label className="plan-dialog__label plan-dialog__label--top">Неделя</label>
+            <div className="plan-dialog__field-body">
+              <input
+                className="plan-dialog__input"
+                value={planWeek}
+                onChange={(e) => onPlanWeekChange(e.target.value)}
+                placeholder="Номер недели, например: 70"
+                disabled={planSaving}
+              />
+            </div>
           </div>
-          <div className="strap-row" style={{ gridTemplateColumns: "120px 1fr" }}>
-            <label>Количество</label>
-            <input inputMode="decimal" value={planQty} onChange={(e) => onPlanQtyChange(e.target.value)} placeholder="Например: 36" />
+
+          {/* Количество с кнопками */}
+          <div className="plan-dialog__field">
+            <label className="plan-dialog__label">Количество</label>
+            <div className="plan-dialog__qty-wrap">
+              <button
+                type="button"
+                className="plan-dialog__qty-btn"
+                onClick={() => onPlanQtyChange(adjustQtyValue(planQty, -1))}
+                disabled={planSaving || !hasValidQty || qtyNum <= 1}
+                aria-label="Уменьшить"
+              >−</button>
+              <input
+                ref={qtyRef}
+                className="plan-dialog__input plan-dialog__input--qty"
+                inputMode="decimal"
+                value={planQty}
+                onChange={(e) => onPlanQtyChange(e.target.value)}
+                placeholder="36"
+                disabled={planSaving}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") { e.preventDefault(); onSave(); }
+                }}
+              />
+              <button
+                type="button"
+                className="plan-dialog__qty-btn"
+                onClick={() => onPlanQtyChange(adjustQtyValue(planQty, +1))}
+                disabled={planSaving}
+                aria-label="Увеличить"
+              >+</button>
+              <span className="plan-dialog__qty-unit">шт</span>
+            </div>
           </div>
         </div>
-        <div className="actions" style={{ marginTop: 10 }}>
-          <button className="mini ok" disabled={planSaving} onClick={onSave}>
-            {planSaving ? "Сохраняю..." : "Сохранить план"}
+
+        {/* Строка-превью с чекбоксом */}
+        {summaryReady && (
+          <div className="plan-dialog__summary">
+            <span className="plan-dialog__summary-label">Создаётся:</span>
+            <span>{planSection}</span>
+            <span className="plan-dialog__summary-sep">·</span>
+            <span>{selectedFullName}</span>
+            <span className="plan-dialog__summary-sep">·</span>
+            <span>нед. {planWeek}</span>
+            <span className="plan-dialog__summary-sep">·</span>
+            <b>{qtyNum} шт</b>
+            <input
+              ref={addCheckRef}
+              type="checkbox"
+              className="plan-dialog__add-trigger"
+              title="Добавить в список (продолжить)"
+              disabled={planSaving}
+              onChange={() => handleAddToPending()}
+            />
+          </div>
+        )}
+
+        {/* Накопленный список позиций */}
+        {pendingItems.length > 0 && (
+          <div className="plan-dialog__added-list">
+            <div className="plan-dialog__added-list-header">
+              <span className="plan-dialog__added-list-title">В план</span>
+              <span className="plan-dialog__added-list-count">{pendingItems.length} {pendingItems.length === 1 ? "позиция" : pendingItems.length < 5 ? "позиции" : "позиций"}</span>
+            </div>
+            <div className="plan-dialog__added-list-body">
+              {pendingItems.map((it, i) => (
+                <div key={i} className="plan-dialog__added-item">
+                  <span className="plan-dialog__added-item-num">{i + 1}</span>
+                  <span className="plan-dialog__added-item-name">{it.articleLabel}</span>
+                  <span className="plan-dialog__added-item-meta">
+                    нед.&nbsp;{it.week}
+                    <span className="plan-dialog__added-item-qty">{it.qty}&nbsp;шт</span>
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="plan-dialog__actions">
+          <button
+            type="button"
+            className="plan-dialog__btn plan-dialog__btn--primary"
+            disabled={!canSave}
+            onClick={() => {
+              if (pendingItems.length > 0 && typeof onSaveAll === "function") {
+                const allItems = [...pendingItems];
+                if (summaryReady) allItems.push(buildCurrentSnapshot());
+                onSaveAll(allItems);
+              } else {
+                onSave();
+              }
+            }}
+            title="Ctrl+Enter"
+          >
+            {planSaving ? (
+              <><span className="plan-dialog__spinner" />Сохраняю…</>
+            ) : "Сохранить"}
           </button>
-          <button className="mini" disabled={planSaving || planPreviewing} onClick={onPreview}>
-            {planPreviewing ? "Открываю..." : "Предпросмотр плана"}
+          <button
+            type="button"
+            className="plan-dialog__btn plan-dialog__btn--secondary"
+            disabled={!canPreview}
+            onClick={() => {
+              if (pendingItems.length > 0 && typeof onPreviewItems === "function") {
+                const allItems = [...pendingItems];
+                if (summaryReady) allItems.push(buildCurrentSnapshot());
+                onPreviewItems(allItems);
+              } else {
+                onPreview();
+              }
+            }}
+          >
+            {planPreviewing ? <><span className="plan-dialog__spinner" />Загружаю…</> : "Предпросмотр"}
           </button>
-          <button className="mini" disabled={planSaving} onClick={onClose}>
+          <button
+            type="button"
+            className="plan-dialog__btn plan-dialog__btn--ghost"
+            disabled={planSaving}
+            onClick={onClose}
+          >
             Отмена
           </button>
         </div>

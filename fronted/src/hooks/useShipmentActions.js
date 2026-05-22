@@ -50,6 +50,10 @@ import {
 import {
   resolvePlanPreviewArticleByName,
 } from "../app/planPreviewHelpers";
+import {
+  buildCuttingPlanFromSelection,
+} from "../app/cuttingPlanAlgorithm";
+import { isStorageLikeName } from "../utils/shipmentUtils";
 
 /**
  * Действия с выбранными ячейками отгрузки:
@@ -66,6 +70,7 @@ export function useShipmentActions({
   selectedShipments,
   setSelectedShipments,
   setPlanPreviews,
+  setCuttingPlan,
   setActionLoading,
   setError,
   load,
@@ -378,6 +383,23 @@ export function useShipmentActions({
     }
   }, [canOperateProduction, sectionArticleRows, setActionLoading, setError, load, importPlanFileRef, denyActionByRole]);
 
+  const generateCuttingPlan = useCallback(() => {
+    const storageItems = selectedShipments.filter(
+      (s) => isStorageLikeName(s.item) || isStorageLikeName(s.section),
+    );
+    if (storageItems.length === 0) {
+      setError("В выборке нет позиций «Система хранения» с распознанными размерами.");
+      return;
+    }
+    const plan = buildCuttingPlanFromSelection(storageItems);
+    if (plan.materialGroups.length === 0) {
+      setError("Не удалось определить размеры ни для одной из выбранных позиций.");
+      return;
+    }
+    setError("");
+    setCuttingPlan(plan);
+  }, [selectedShipments, setError, setCuttingPlan]);
+
   return {
     importPlanFileRef,
     sendSelectedShipmentToWork,
@@ -386,5 +408,6 @@ export function useShipmentActions({
     previewSelectedShipmentPlan,
     exportSelectedShipmentToExcel,
     importShipmentPlanFromExcelFile,
+    generateCuttingPlan,
   };
 }

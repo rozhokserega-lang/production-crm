@@ -17,6 +17,7 @@ export function useShipmentUiState(defaultPrefs) {
   const [shipmentSort, setShipmentSort] = useState(defaultPrefs.shipmentSort);
   const [shipmentViewMode, setShipmentViewMode] = useState("table");
   const [collapsedSections, setCollapsedSections] = useState(defaultPrefs.collapsedSections);
+  const [cuttingPlan, setCuttingPlan] = useState(null);
 
   useEffect(() => {
     try {
@@ -134,5 +135,7 @@ export function useShipmentUiState(defaultPrefs) {
     resetShipmentFilters,
     isSectionCollapsed,
     toggleSectionCollapsed,
+    cuttingPlan,
+    setCuttingPlan,
   };
 }

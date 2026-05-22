@@ -266,6 +266,13 @@ export function ViewControls({
           >
             Отгружено
           </button>
+          <button
+            type="button"
+            className={overviewSubView === "plans" ? "tab active" : "tab"}
+            onClick={() => setOverviewSubView("plans")}
+          >
+            Планы
+          </button>
         </div>
       )}
       {view === "workshop" && (

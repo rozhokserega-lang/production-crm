@@ -5,6 +5,7 @@ export const VIEWS = [
   { id: "warehouse", label: "Склад" },
   { id: "strapStock", label: "Обвязка" },
   { id: "metal", label: "Металл" },
+  { id: "cutting", label: "Раскрой" },
   { id: "labor", label: "Трудоемкость" },
   { id: "stats", label: "Статистика" },
   { id: "furniture", label: "Мебель" },

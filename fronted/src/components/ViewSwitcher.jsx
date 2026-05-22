@@ -8,6 +8,7 @@ const VIEW_ICONS = {
   warehouse:  "🏠",
   strapStock: "🔗",
   metal:      "✦",
+  cutting:    "✂",
   labor:      "⏱",
   stats:      "▮▮",
   furniture:  "🪑",

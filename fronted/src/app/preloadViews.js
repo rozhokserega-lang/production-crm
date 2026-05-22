@@ -13,6 +13,7 @@ const VIEW_LOADERS = {
   stats: () => import("../views/StatsView"),
   furniture: () => import("../views/FurnitureView"),
   metal: () => import("../views/MetalView"),
+  cutting: () => import("../views/CuttingView"),
   metalProcess: () => import("../views/MetalProcessView"),
   sheetMirror: () => import("../views/SheetMirrorView"),
   db: () => import("../views/DatabaseCatalogView"),

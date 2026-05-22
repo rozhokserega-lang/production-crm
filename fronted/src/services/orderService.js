@@ -35,6 +35,24 @@ export class OrderService {
     return await callBackend("webConsumeStrapStock", { strapType, color, qty });
   }
 
+  // --- Cutting jobs ---
+  static async getCuttingJobs() {
+    return await callBackend("webGetCuttingJobs");
+  }
+
+  static async upsertCuttingJob({ id, name, settings, items }) {
+    return await callBackend("webUpsertCuttingJob", {
+      p_id: id || 0,
+      p_name: name,
+      p_settings: settings,
+      p_items: items,
+    });
+  }
+
+  static async deleteCuttingJob(id) {
+    return await callBackend("webDeleteCuttingJob", { p_id: id });
+  }
+
   static async deleteOrder(orderId) {
     return await callBackend("webDeleteOrderById", { orderId });
   }

@@ -321,7 +321,7 @@ function resolveStorageAutoCut(sectionName, itemName, qty) {
   return { outputPerSheet, sheetsNeeded };
 }
 
-function parseItemSize(itemName) {
+export function parseItemSize(itemName) {
   const m = String(itemName || "").match(/(\d{2,4})\s*[_xх]\s*(\d{2,4})/i);
   if (!m) return null;
   return { a: Number(m[1]), b: Number(m[2]) };

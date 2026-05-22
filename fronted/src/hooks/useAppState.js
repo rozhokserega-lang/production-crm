@@ -248,6 +248,8 @@ export function useAppState({ auth }) {
     resetShipmentFilters,
     isSectionCollapsed,
     toggleSectionCollapsed,
+    cuttingPlan,
+    setCuttingPlan,
   } = useShipmentUiState(DEFAULT_SHIPMENT_PREFS);
   const rowsRef = useRef(rows);
   useEffect(() => {
@@ -622,7 +624,9 @@ export function useAppState({ auth }) {
     openCreatePlanDialog: _openCreatePlanDialog,
     closeCreatePlanDialog,
     saveCreatePlanDialog,
+    saveAllPlanDialogItems,
     previewCreatePlanDialog,
+    previewMultiplePlanDialogItems,
   } = usePlanDialog({
     canOperateProduction,
     denyActionByRole,
@@ -1250,6 +1254,7 @@ export function useAppState({ auth }) {
     previewSelectedShipmentPlan,
     exportSelectedShipmentToExcel,
     importShipmentPlanFromExcelFile,
+    generateCuttingPlan,
   } = useShipmentActions({
     canOperateProduction,
     canManageOrders,
@@ -1257,6 +1262,7 @@ export function useAppState({ auth }) {
     selectedShipments,
     setSelectedShipments,
     setPlanPreviews,
+    setCuttingPlan,
     setActionLoading,
     setError,
     load: mutationLoad,
@@ -1488,6 +1494,9 @@ export function useAppState({ auth }) {
       previewSelectedShipmentPlan,
       sendSelectedShipmentToWork,
       deleteSelectedShipmentPlan,
+      cuttingPlan,
+      setCuttingPlan,
+      generateCuttingPlan,
     },
     workshop: {
       workshopRows,
@@ -1672,7 +1681,9 @@ export function useAppState({ auth }) {
       openCreatePlanDialog,
       closeCreatePlanDialog,
       saveCreatePlanDialog,
+      saveAllPlanDialogItems,
       previewCreatePlanDialog,
+      previewMultiplePlanDialogItems,
       openStrapDialog,
       saveStrapDialog,
       importLaborTotalFromExcelFile,

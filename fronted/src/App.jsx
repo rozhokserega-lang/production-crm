@@ -9,6 +9,7 @@ import { useUiState } from "./contexts/UiStateContext";
 import { ShipmentProvider } from "./contexts/ShipmentContext";
 import { AppChrome } from "./components/AppChrome";
 import { AppDialogs } from "./components/AppDialogs";
+import { CuttingProvider } from "./contexts/CuttingContext";
 
 const AdminView = lazy(() => import("./views/AdminView").then((m) => ({ default: m.AdminView })));
 const DatabaseCatalogView = lazy(() => import("./views/DatabaseCatalogView").then((m) => ({ default: m.DatabaseCatalogView })));
@@ -24,6 +25,7 @@ const SheetMirrorView = lazy(() => import("./views/SheetMirrorView").then((m) =>
 const FurnitureView = lazy(() => import("./views/FurnitureView").then((m) => ({ default: m.FurnitureView })));
 const MetalView = lazy(() => import("./views/MetalView").then((m) => ({ default: m.MetalView })));
 const MetalProcessView = lazy(() => import("./views/MetalProcessView").then((m) => ({ default: m.MetalProcessView })));
+const CuttingView = lazy(() => import("./views/CuttingView").then((m) => ({ default: m.CuttingView })));
 import {
   CRM_ROLES,
   CRM_ROLE_LABELS,
@@ -127,12 +129,20 @@ function AppInner({ onAuthChangeRef }) {
           <OverviewView
             overviewSubView={shell.overviewSubView}
             filtered={shipment.filtered}
+            rows={shell.rows}
+            shipmentBoard={shipment.shipmentBoard}
+            shipmentOrderMaps={shipment.shipmentOrderMaps}
+            weekFilter={shipment.weekFilter}
             loading={shell.loading}
             overviewColumns={shell.overviewColumns}
             getStageLabel={getStageLabel}
             overviewShippedOnly={shell.overviewShippedOnly}
             formatDateTimeRu={formatDateTimeRu}
             onOpenOrderDrawer={shell.setOrderDrawerId}
+            onGoToKanban={(week) => {
+              shipment.setWeekFilter(week);
+              shell.setOverviewSubView("kanban");
+            }}
           />
         );
       case "labor":
@@ -207,6 +217,8 @@ function AppInner({ onAuthChangeRef }) {
             onAdjustStock={metal.adjustMetalStock}
           />
         );
+      case "cutting":
+        return <CuttingView />;
       case "metalProcess":
         return (
           <MetalProcessView
@@ -371,6 +383,7 @@ function AppInner({ onAuthChangeRef }) {
   );
 
   return (
+    <CuttingProvider>
     <ShipmentProvider value={shipmentContextValue}>
       <AppChrome
         shell={shell}
@@ -414,6 +427,7 @@ function AppInner({ onAuthChangeRef }) {
         }}
       />
     </ShipmentProvider>
+    </CuttingProvider>
   );
 }
 
