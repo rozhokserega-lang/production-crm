@@ -339,8 +339,6 @@ function SheetTable({ pieces }) {
 // ─── Material group ───────────────────────────────────────────────────────────
 
 function MaterialGroup({ group, gIdx, globalColorMap, settings, onMovePiece }) {
-  let sheetDisplayIdx = 0;
-
   return (
     <div className="cutting-plan__material-group">
       <div className="cutting-plan__material-header">
@@ -353,7 +351,7 @@ function MaterialGroup({ group, gIdx, globalColorMap, settings, onMovePiece }) {
       </div>
 
       {group.sheets.map((sheet, sIdx) => {
-        sheetDisplayIdx += 1;
+        const sheetDisplayIdx = sIdx + 1;
         const eff = calcEfficiency(sheet.pieces, sheet.sheetW, sheet.sheetH);
         const sheetTitle = `${group.material.replace(/[\\/:*?"<>|]/g, "_")}_лист${sheetDisplayIdx}`;
 
@@ -423,20 +421,19 @@ function MaterialGroup({ group, gIdx, globalColorMap, settings, onMovePiece }) {
 // ─── Main view ────────────────────────────────────────────────────────────────
 
 export function CuttingPlanView({ plan, onClose }) {
-  if (!plan || !plan.materialGroups) return null;
+  const [localPlan, setLocalPlan] = useState(null);
 
-  // Local mutable copy of the plan for manual adjustments
-  const [localPlan, setLocalPlan] = useState(() => JSON.parse(JSON.stringify(plan)));
-  const isModified = localPlan !== plan &&
-    JSON.stringify(localPlan.materialGroups) !== JSON.stringify(plan.materialGroups);
-
-  // When the original plan changes (re-calculation), reset local state
   useEffect(() => {
-    setLocalPlan(JSON.parse(JSON.stringify(plan)));
+    if (plan?.materialGroups) {
+      setLocalPlan(JSON.parse(JSON.stringify(plan)));
+    } else {
+      setLocalPlan(null);
+    }
   }, [plan]);
 
   const globalColorMap = useMemo(() => {
     const map = new Map();
+    if (!localPlan?.materialGroups) return map;
     for (const group of localPlan.materialGroups) {
       for (const sheet of group.sheets) {
         for (const piece of sheet.pieces) {
@@ -447,9 +444,9 @@ export function CuttingPlanView({ plan, onClose }) {
     return map;
   }, [localPlan]);
 
-  // Move a piece to a new position within the same sheet
   const onMovePiece = useCallback((gIdx, sIdx, pIdx, newX, newY) => {
     setLocalPlan((prev) => {
+      if (!prev?.materialGroups) return prev;
       const next = JSON.parse(JSON.stringify(prev));
       const piece = next.materialGroups[gIdx].sheets[sIdx].pieces[pIdx];
       piece.x = newX;
@@ -457,6 +454,13 @@ export function CuttingPlanView({ plan, onClose }) {
       return next;
     });
   }, []);
+
+  const isModified = useMemo(() => {
+    if (!plan?.materialGroups || !localPlan?.materialGroups) return false;
+    return JSON.stringify(localPlan.materialGroups) !== JSON.stringify(plan.materialGroups);
+  }, [localPlan, plan]);
+
+  if (!plan?.materialGroups || !localPlan?.materialGroups) return null;
 
   const totalSheets = localPlan.materialGroups.reduce((s, g) => s + g.totalSheets, 0);
 
