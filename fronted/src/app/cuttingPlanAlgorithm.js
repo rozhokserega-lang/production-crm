@@ -698,6 +698,17 @@ function packGrouped(pieces, settings) {
 
 // ─── Public API ──────────────────────────────────────────────────────────────
 
+/** Размер детали для раскладки (с учётом кромки −1 мм с каждой стороны). */
+export function cuttingPieceSize(w, h, settings) {
+  let pw = Number(w) || 0;
+  let ph = Number(h) || 0;
+  if (settings?.accountEdgeBand) {
+    pw = Math.max(1, pw - 1);
+    ph = Math.max(1, ph - 1);
+  }
+  return { w: pw, h: ph };
+}
+
 export const CUTTING_ALGORITHMS = [
   { id: "saw",      label: "Пила 🪚 (полосы)",   hint: "Одинаковые высоты в одной полосе — точно как BAZIS. Первый рез горизонтальный, потом вертикальные. Рекомендуется для раскроечной пилы" },
   { id: "maxrects", label: "MaxRects BSSF ✦",    hint: "Максимальное заполнение листа. Детали в любом месте — эффективнее, но резы не полосками (хорошо для ЧПУ/лазера)" },
@@ -708,7 +719,7 @@ export const CUTTING_ALGORITHMS = [
 
 /**
  * @param {Array<{itemName:string, w:number, h:number, qty:number, material:string}>} items
- * @param {{sheetW,sheetH,kerf,marginX,marginY,allowRotate,algorithm}} settings
+ * @param {{sheetW,sheetH,kerf,marginX,marginY,allowRotate,accountEdgeBand,algorithm}} settings
  */
 export function buildCuttingPlan(items, settings) {
   const {
@@ -718,10 +729,11 @@ export function buildCuttingPlan(items, settings) {
     marginX = 20,
     marginY = 20,
     allowRotate = false,
+    accountEdgeBand = false,
     algorithm = "saw",
   } = settings || {};
 
-  const safe = { sheetW, sheetH, kerf, marginX, marginY, allowRotate, algorithm };
+  const safe = { sheetW, sheetH, kerf, marginX, marginY, allowRotate, accountEdgeBand, algorithm };
 
   const packer =
     algorithm === "saw"      ? packSaw :
@@ -738,7 +750,8 @@ export function buildCuttingPlan(items, settings) {
     if (!byMaterial.has(mat)) byMaterial.set(mat, []);
     const group = byMaterial.get(mat);
     for (let i = 0; i < qty; i++) {
-      group.push({ label: item.itemName, w: item.w, h: item.h });
+      const { w, h } = cuttingPieceSize(item.w, item.h, safe);
+      group.push({ label: item.itemName, w, h });
     }
   }
 

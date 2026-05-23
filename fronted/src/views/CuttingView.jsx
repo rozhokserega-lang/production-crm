@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useCutting } from "../contexts/CuttingContext";
-import { buildCuttingPlan, CUTTING_ALGORITHMS } from "../app/cuttingPlanAlgorithm";
+import { buildCuttingPlan, CUTTING_ALGORITHMS, cuttingPieceSize } from "../app/cuttingPlanAlgorithm";
 import { CuttingPlanView } from "../components/CuttingPlanView";
 import { readExcelFile } from "../app/cuttingExcelImport";
 
@@ -38,10 +38,10 @@ function SettingsRow({ settings, onChange }) {
       <label className="cv-setting cv-setting--check">
         <input
           type="checkbox"
-          checked={!!s.allowRotate}
-          onChange={(e) => onChange({ allowRotate: e.target.checked })}
+          checked={!!s.accountEdgeBand}
+          onChange={(e) => onChange({ accountEdgeBand: e.target.checked })}
         />
-        <span className="cv-setting__label">Поворот</span>
+        <span className="cv-setting__label">Учитывать кромку</span>
       </label>
       <div className="cv-settings__sep" />
       <label className="cv-setting cv-setting--algo">
@@ -109,13 +109,21 @@ function JobSidebar({ jobs, activeJobId, onOpen, onDelete, onNewJob, loading, on
   );
 }
 
-function ItemRow({ item, idx, onQty, onTurn, onRemove }) {
+function ItemRow({ item, idx, accountEdgeBand, onQty, onTurn, onRemove }) {
+  const cut = cuttingPieceSize(item.w, item.h, { accountEdgeBand });
+  const showCutDims = accountEdgeBand && (cut.w !== item.w || cut.h !== item.h);
+
   return (
     <div className={`cv-item${item.turned ? " cv-item--turned" : ""}`}>
       <div className="cv-item__main">
         <div className="cv-item__name" title={item.itemName}>{item.itemName}</div>
         <div className="cv-item__dims">
           {item.w}×{item.h} мм
+          {showCutDims ? (
+            <span className="cv-item__chip cv-item__chip--cut" title="Размер в раскрое с учётом кромки">
+              → {cut.w}×{cut.h}
+            </span>
+          ) : null}
           {item.turned && <span className="cv-item__chip cv-item__chip--turn">↺ повёрнута</span>}
           {item.material ? <span className="cv-item__chip">{item.material}</span> : null}
           {item.week ? <span className="cv-item__chip">нед. {item.week}</span> : null}
@@ -125,7 +133,7 @@ function ItemRow({ item, idx, onQty, onTurn, onRemove }) {
         <button
           className={`cv-item__turn-btn${item.turned ? " cv-item__turn-btn--active" : ""}`}
           onClick={() => onTurn(idx)}
-          title={item.turned ? "Деталь повёрнута (текстура поперёк) — нажмите чтобы вернуть" : "Повернуть деталь на 90° (изменить текстуру)"}
+          title={item.turned ? "Деталь повёрнута — нажмите чтобы вернуть" : "Повернуть деталь на 90°"}
         >
           ↺
         </button>
@@ -248,7 +256,7 @@ function AddItemForm({ existingMaterials, onAdd, onClose }) {
 
 // ── Items panel ───────────────────────────────────────────────────────────────
 
-function ItemsPanel({ items, onQty, onTurn, onRemove, showAddForm, existingMaterials, onAdd, onCloseForm }) {
+function ItemsPanel({ items, accountEdgeBand, onQty, onTurn, onRemove, showAddForm, existingMaterials, onAdd, onCloseForm }) {
   return (
     <>
       {showAddForm && (
@@ -271,7 +279,15 @@ function ItemsPanel({ items, onQty, onTurn, onRemove, showAddForm, existingMater
       ) : (
         <div className="cv-items">
           {items.map((item, idx) => (
-            <ItemRow key={idx} item={item} idx={idx} onQty={onQty} onTurn={onTurn} onRemove={onRemove} />
+            <ItemRow
+              key={idx}
+              item={item}
+              idx={idx}
+              accountEdgeBand={accountEdgeBand}
+              onQty={onQty}
+              onTurn={onTurn}
+              onRemove={onRemove}
+            />
           ))}
         </div>
       )}
@@ -478,6 +494,7 @@ export function CuttingView() {
           <div className="cv-left__scroll">
             <ItemsPanel
               items={activeJob.items}
+              accountEdgeBand={!!activeJob.settings.accountEdgeBand}
               onQty={updateItemQty}
               onTurn={toggleItemTurn}
               onRemove={removeItem}

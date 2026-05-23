@@ -1,5 +1,5 @@
-import { useMemo, useState, useRef, useCallback, useEffect } from "react";
-import { generateSheetDXF, downloadDXF, downloadAllDXF } from "../app/dxfExport";
+import { useMemo, useState, useRef, useCallback, useEffect, useId } from "react";
+import { downloadAllDXF } from "../app/dxfExport";
 import { downloadAllCUT } from "../app/cutExport";
 import { downloadAllNXCut } from "../app/nxcutExport";
 
@@ -24,7 +24,172 @@ function calcEfficiency(pieces, sheetW, sheetH) {
   return Math.round((used / area) * 100);
 }
 
-function RemainderZone({ displayX, displayY, displayW, displayH, label }) {
+function truncateLabel(text, maxWidthPx, fontSize) {
+  if (!text || maxWidthPx <= 4) return "";
+  const maxChars = Math.max(0, Math.floor(maxWidthPx / (fontSize * 0.52)));
+  if (maxChars <= 0) return "";
+  if (text.length <= maxChars) return text;
+  if (maxChars === 1) return "…";
+  return `${text.slice(0, maxChars - 1)}…`;
+}
+
+function pieceFitsAt(pieces, idx, x, y, w, h, settings, sheetW, sheetH) {
+  const kerf = settings?.kerf ?? 4.8;
+  const marginX = settings?.marginX ?? 20;
+  const marginY = settings?.marginY ?? 20;
+  const px = roundMm(x);
+  const py = roundMm(y);
+  if (px < marginX || py < marginY) return false;
+  if (px + w > sheetW - marginX || py + h > sheetH - marginY) return false;
+  return pieces.every((other, i) => {
+    if (i === idx) return true;
+    const ox = roundMm(other.x);
+    const oy = roundMm(other.y);
+    return (
+      px + w + kerf <= ox || ox + other.w + kerf <= px ||
+      py + h + kerf <= oy || oy + other.h + kerf <= py
+    );
+  });
+}
+
+function tryRotatePiece(piece, pieces, idx, settings, sheetW, sheetH) {
+  const nw = piece.h;
+  const nh = piece.w;
+  const nr = !piece.rotated;
+  if (pieceFitsAt(pieces, idx, piece.x, piece.y, nw, nh, settings, sheetW, sheetH)) {
+    return { w: nw, h: nh, rotated: nr };
+  }
+  return null;
+}
+
+function tryResizePiece(piece, pieces, idx, nw, nh, settings, sheetW, sheetH) {
+  const w = Math.max(1, Math.round(Number(nw) || piece.w));
+  const h = Math.max(1, Math.round(Number(nh) || piece.h));
+  if (pieceFitsAt(pieces, idx, piece.x, piece.y, w, h, settings, sheetW, sheetH)) {
+    return { w, h };
+  }
+  return null;
+}
+
+const SNAP_X_MM = 400;
+const SNAP_Y_MM = 400;
+const EDGE_SNAP_MM = 20;
+
+function roundMm(v) {
+  return Math.round(Number(v) || 0);
+}
+
+/** Сетка X/Y из координат всех деталей на листе. */
+function buildSnapGrid(pieces, idx, w, h, kerf, marginX, marginY) {
+  const xs = new Set([roundMm(marginX)]);
+  const ys = new Set([roundMm(marginY)]);
+
+  for (let i = 0; i < pieces.length; i++) {
+    if (i === idx) continue;
+    const o = pieces[i];
+    const ox = roundMm(o.x);
+    const oy = roundMm(o.y);
+    xs.add(ox);
+    ys.add(oy);
+    xs.add(roundMm(ox + o.w + kerf));
+    ys.add(roundMm(oy + o.h + kerf));
+    xs.add(roundMm(ox - w - kerf));
+    ys.add(roundMm(oy - h - kerf));
+  }
+
+  return {
+    xs: [...xs].sort((a, b) => a - b),
+    ys: [...ys].sort((a, b) => a - b),
+  };
+}
+
+/** Привязка к ближайшим координатам сетки (X и Y от существующих деталей). */
+function collectSnapCandidates(pieces, idx, rawX, rawY, settings, sheetW, sheetH) {
+  const piece = pieces[idx];
+  const kerf = settings?.kerf ?? 4.8;
+  const marginX = settings?.marginX ?? 20;
+  const marginY = settings?.marginY ?? 20;
+  const { xs, ys } = buildSnapGrid(pieces, idx, piece.w, piece.h, kerf, marginX, marginY);
+  const candidates = [];
+  const rx = roundMm(rawX);
+  const ry = roundMm(rawY);
+
+  for (const x of xs) {
+    for (const y of ys) {
+      const dx = Math.abs(rx - x);
+      const dy = Math.abs(ry - y);
+      if (dx > SNAP_X_MM || dy > SNAP_Y_MM) continue;
+      candidates.push({
+        x,
+        y,
+        guideX: x,
+        guideY: y,
+        priority: 0,
+        score: dx + dy * 2,
+      });
+    }
+  }
+
+  for (const y of ys) {
+    const dy = Math.abs(ry - y);
+    if (dy > SNAP_Y_MM) continue;
+    candidates.push({
+      x: rx,
+      y,
+      guideX: null,
+      guideY: y,
+      priority: 1,
+      score: dy + 50,
+    });
+  }
+
+  for (const x of xs) {
+    const dx = Math.abs(rx - x);
+    if (dx > SNAP_X_MM) continue;
+    candidates.push({
+      x,
+      y: ry,
+      guideX: x,
+      guideY: null,
+      priority: 1,
+      score: dx + 50,
+    });
+  }
+
+  candidates.push({
+    x: roundMm(marginX),
+    y: roundMm(marginY),
+    guideX: roundMm(marginX),
+    guideY: roundMm(marginY),
+    priority: 9,
+    score: Math.abs(rx - marginX) + Math.abs(ry - marginY),
+  });
+
+  candidates.sort((a, b) => a.priority - b.priority || a.score - b.score);
+  return candidates;
+}
+
+function normalizeSheetPieces(sheet) {
+  if (!sheet?.pieces) return;
+  for (const p of sheet.pieces) {
+    p.x = roundMm(p.x);
+    p.y = roundMm(p.y);
+    p.w = roundMm(p.w);
+    p.h = roundMm(p.h);
+  }
+}
+
+function normalizePlanPieces(plan) {
+  if (!plan?.materialGroups) return plan;
+  for (const group of plan.materialGroups) {
+    for (const sheet of group.sheets) {
+      normalizeSheetPieces(sheet);
+    }
+  }
+  return plan;
+}
+
+function RemainderZone({ displayX, displayY, displayW, displayH, label, hatchId }) {
   if (displayW < 4 || displayH < 4) return null;
   const cx = displayX + displayW / 2;
   const cy = displayY + displayH / 2;
@@ -36,6 +201,7 @@ function RemainderZone({ displayX, displayY, displayW, displayH, label }) {
         x={displayX} y={displayY}
         width={displayW} height={displayH}
         className="cutting-plan__remainder-rect"
+        fill={`url(#${hatchId})`}
       />
       {showLabel && (
         <text x={cx} y={cy} textAnchor="middle" dominantBaseline="middle"
@@ -47,12 +213,117 @@ function RemainderZone({ displayX, displayY, displayW, displayH, label }) {
   );
 }
 
+// ─── Piece editor panel ───────────────────────────────────────────────────────
+
+function PieceEditor({ piece, settings, sheetW, sheetH, pieces, pieceIdx, onUpdate, onClose }) {
+  const [draftW, setDraftW] = useState(String(piece.w));
+  const [draftH, setDraftH] = useState(String(piece.h));
+  const [draftX, setDraftX] = useState(String(roundMm(piece.x)));
+  const [draftY, setDraftY] = useState(String(roundMm(piece.y)));
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    setDraftW(String(piece.w));
+    setDraftH(String(piece.h));
+    setDraftX(String(roundMm(piece.x)));
+    setDraftY(String(roundMm(piece.y)));
+    setError("");
+  }, [piece.w, piece.h, piece.x, piece.y]);
+
+  const applyPatch = (patch) => {
+    onUpdate(patch);
+    setError("");
+  };
+
+  const handleRotate = () => {
+    const patch = tryRotatePiece(piece, pieces, pieceIdx, settings, sheetW, sheetH);
+    if (patch) applyPatch(patch);
+    else setError("Поворот невозможен — не помещается");
+  };
+
+  const handleApplySize = () => {
+    const patch = tryResizePiece(piece, pieces, pieceIdx, draftW, draftH, settings, sheetW, sheetH);
+    if (patch) applyPatch(patch);
+    else setError("Такой размер не помещается");
+  };
+
+  const handleApplyPosition = () => {
+    const x = roundMm(draftX);
+    const y = roundMm(draftY);
+    if (!pieceFitsAt(pieces, pieceIdx, x, y, piece.w, piece.h, settings, sheetW, sheetH)) {
+      setError("Позиция занята или выходит за поле");
+      return;
+    }
+    applyPatch({ x, y });
+  };
+
+  const sizeLabel = piece.rotated ? `${piece.h}×${piece.w}` : `${piece.w}×${piece.h}`;
+
+  return (
+    <div className="cutting-plan__piece-editor no-print">
+      <div className="cutting-plan__piece-editor-head">
+        <div>
+          <div className="cutting-plan__piece-editor-title">Выбрана деталь</div>
+          <div className="cutting-plan__piece-editor-name" title={piece.label}>{piece.label}</div>
+          <div className="cutting-plan__piece-editor-meta">
+            {sizeLabel} мм · x={roundMm(piece.x)}, y={roundMm(piece.y)}
+            {piece.rotated ? " · ↺" : ""}
+          </div>
+        </div>
+        <button type="button" className="cutting-plan__piece-editor-close" onClick={onClose} title="Снять выделение">✕</button>
+      </div>
+
+      <div className="cutting-plan__piece-editor-actions">
+        <button type="button" className="mini" onClick={handleRotate} title="Повернуть на 90°">↺ Повернуть</button>
+      </div>
+
+      <div className="cutting-plan__piece-editor-size">
+        <label className="cutting-plan__piece-editor-field">
+          <span>X, мм</span>
+          <input type="number" min="0" value={draftX} onChange={(e) => setDraftX(e.target.value)} />
+        </label>
+        <label className="cutting-plan__piece-editor-field">
+          <span>Y, мм</span>
+          <input type="number" min="0" value={draftY} onChange={(e) => setDraftY(e.target.value)} />
+        </label>
+        <button type="button" className="mini accent" onClick={handleApplyPosition}>Позиция</button>
+      </div>
+
+      <div className="cutting-plan__piece-editor-size">
+        <label className="cutting-plan__piece-editor-field">
+          <span>Ш, мм</span>
+          <input type="number" min="1" value={draftW} onChange={(e) => setDraftW(e.target.value)} />
+        </label>
+        <label className="cutting-plan__piece-editor-field">
+          <span>В, мм</span>
+          <input type="number" min="1" value={draftH} onChange={(e) => setDraftH(e.target.value)} />
+        </label>
+        <button type="button" className="mini accent" onClick={handleApplySize}>Размер</button>
+      </div>
+
+      {error ? <div className="cutting-plan__piece-editor-error">{error}</div> : null}
+      <div className="cutting-plan__piece-editor-hint">При перетаскивании X/Y привязываются к координатам других деталей</div>
+    </div>
+  );
+}
+
 // ─── SheetDiagram with drag-and-drop ─────────────────────────────────────────
 
-function SheetDiagram({ pieces, sheetW, sheetH, colorMap, settings, onMovePiece }) {
+function SheetDiagram({
+  pieces,
+  sheetW,
+  sheetH,
+  colorMap,
+  settings,
+  selectedIdx,
+  onSelectPiece,
+  onMovePiece,
+}) {
   const svgRef = useRef(null);
   const dragRef = useRef(null);  // holds drag state without triggering re-render on each move
   const [drag, setDrag] = useState(null);
+  const diagramId = useId().replace(/:/g, "");
+  const hatchId = `hatch-${diagramId}`;
 
   const displayH = Math.round((sheetH / sheetW) * DISPLAY_W);
   const scaleX = DISPLAY_W / sheetW;
@@ -78,16 +349,17 @@ function SheetDiagram({ pieces, sheetW, sheetH, colorMap, settings, onMovePiece 
   // Check if placing piece[idx] at (mmX, mmY) causes any overlap
   const checkValid = useCallback((idx, mmX, mmY) => {
     const p = pieces[idx];
-    // Clamp to inner sheet bounds
-    if (mmX < marginX || mmX + p.w > sheetW - marginX) return false;
-    if (mmY < marginY || mmY + p.h > sheetH - marginY) return false;
-    // Check against all other pieces (kerf gap required)
+    const px = roundMm(mmX);
+    const py = roundMm(mmY);
+    if (px < marginX || px + p.w > sheetW - marginX) return false;
+    if (py < marginY || py + p.h > sheetH - marginY) return false;
     return pieces.every((other, i) => {
       if (i === idx) return true;
-      const gap = kerf;
+      const ox = roundMm(other.x);
+      const oy = roundMm(other.y);
       return (
-        mmX + p.w + gap <= other.x || other.x + other.w + gap <= mmX ||
-        mmY + p.h + gap <= other.y || other.y + other.h + gap <= mmY
+        px + p.w + kerf <= ox || ox + other.w + kerf <= px ||
+        py + p.h + kerf <= oy || oy + other.h + kerf <= py
       );
     });
   }, [pieces, kerf, marginX, marginY, sheetW, sheetH]);
@@ -97,18 +369,69 @@ function SheetDiagram({ pieces, sheetW, sheetH, colorMap, settings, onMovePiece 
     const { x: svgX, y: svgY } = clientToSvg(clientX, clientY);
     const mmX = snapMm((svgX - base.offsetDX) / scaleX);
     const mmY = snapMm((svgY - base.offsetDY) / scaleY);
-    const clampedX = Math.max(marginX, Math.min(sheetW - marginX - pieces[base.idx].w, mmX));
-    const clampedY = Math.max(marginY, Math.min(sheetH - marginY - pieces[base.idx].h, mmY));
-    const valid = checkValid(base.idx, clampedX, clampedY);
+    const piece = pieces[base.idx];
+    const clampedX = Math.max(marginX, Math.min(sheetW - marginX - piece.w, mmX));
+    const clampedY = Math.max(marginY, Math.min(sheetH - marginY - piece.h, mmY));
+
+    const candidates = collectSnapCandidates(
+      pieces, base.idx, clampedX, clampedY, settings, sheetW, sheetH,
+    );
+
+    let dropX = clampedX;
+    let dropY = clampedY;
+    let guideX = null;
+    let guideY = null;
+
+    for (const cand of candidates) {
+      const cx = roundMm(cand.x);
+      const cy = roundMm(cand.y);
+      if (checkValid(base.idx, cx, cy)) {
+        dropX = cx;
+        dropY = cy;
+        guideX = cand.guideX;
+        guideY = cand.guideY;
+        break;
+      }
+    }
+
+    if (guideX == null && guideY == null) {
+      const { xs, ys } = buildSnapGrid(
+        pieces, base.idx, piece.w, piece.h, kerf, marginX, marginY,
+      );
+      let nearX = null;
+      let nearY = null;
+      let nearXDist = SNAP_X_MM + 1;
+      let nearYDist = SNAP_Y_MM + 1;
+      for (const x of xs) {
+        const d = Math.abs(clampedX - x);
+        if (d <= SNAP_X_MM && d < nearXDist) { nearXDist = d; nearX = x; }
+      }
+      for (const y of ys) {
+        const d = Math.abs(clampedY - y);
+        if (d <= SNAP_Y_MM && d < nearYDist) { nearYDist = d; nearY = y; }
+      }
+      const tryX = nearX ?? clampedX;
+      const tryY = nearY ?? clampedY;
+      if (checkValid(base.idx, tryX, tryY)) {
+        dropX = tryX;
+        dropY = tryY;
+        guideX = nearX;
+        guideY = nearY;
+      }
+    }
+
+    const valid = checkValid(base.idx, dropX, dropY);
     return {
       ...base,
-      ghostX: clampedX * scaleX,
-      ghostY: clampedY * scaleY,
-      dropX: clampedX,
-      dropY: clampedY,
+      ghostX: dropX * scaleX,
+      ghostY: dropY * scaleY,
+      dropX,
+      dropY,
+      guideX,
+      guideY,
       valid,
     };
-  }, [clientToSvg, scaleX, scaleY, marginX, marginY, sheetW, sheetH, pieces, checkValid]);
+  }, [clientToSvg, scaleX, scaleY, marginX, marginY, sheetW, sheetH, pieces, checkValid, settings]);
 
   // ── Global mouse events during drag ──────────────────────────────────────
   useEffect(() => {
@@ -138,9 +461,15 @@ function SheetDiagram({ pieces, sheetW, sheetH, colorMap, settings, onMovePiece 
   }, [drag, computeDragState, onMovePiece]);
 
   const handlePieceMouseDown = (e, idx) => {
-    if (!onMovePiece) return;
     e.preventDefault();
     e.stopPropagation();
+
+    if (selectedIdx !== idx) {
+      onSelectPiece?.(idx);
+      return;
+    }
+
+    if (!onMovePiece) return;
 
     const p = pieces[idx];
     const { x: svgX, y: svgY } = clientToSvg(e.clientX, e.clientY);
@@ -164,6 +493,12 @@ function SheetDiagram({ pieces, sheetW, sheetH, colorMap, settings, onMovePiece 
     setDrag({ ...base });
   };
 
+  const handleBackgroundMouseDown = (e) => {
+    if (e.target === e.currentTarget || e.target.classList.contains("cutting-plan__svg-bg")) {
+      onSelectPiece?.(null);
+    }
+  };
+
   // ── Remainder zones ───────────────────────────────────────────────────────
   const maxRight  = pieces.length ? Math.max(...pieces.map((p) => p.x + p.w)) : 0;
   const maxBottom = pieces.length ? Math.max(...pieces.map((p) => p.y + p.h)) : 0;
@@ -180,11 +515,23 @@ function SheetDiagram({ pieces, sheetW, sheetH, colorMap, settings, onMovePiece 
       width={DISPLAY_W}
       height={displayH}
       onContextMenu={(e) => e.preventDefault()}
+      onMouseDown={handleBackgroundMouseDown}
     >
       <defs>
-        <pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+        <pattern id={hatchId} width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
           <line x1="0" y1="0" x2="0" y2="6" stroke="#bbb" strokeWidth="1.2" />
         </pattern>
+        {pieces.map((p, i) => {
+          const clipX = p.x * scaleX + 1;
+          const clipY = p.y * scaleY + 1;
+          const clipW = Math.max(0, p.w * scaleX - 2);
+          const clipH = Math.max(0, p.h * scaleY - 2);
+          return (
+            <clipPath id={`${diagramId}-clip-${i}`} key={i}>
+              <rect x={clipX} y={clipY} width={clipW} height={clipH} />
+            </clipPath>
+          );
+        })}
       </defs>
 
       <rect x={0} y={0} width={DISPLAY_W} height={displayH} className="cutting-plan__svg-bg" />
@@ -199,25 +546,41 @@ function SheetDiagram({ pieces, sheetW, sheetH, colorMap, settings, onMovePiece 
         const cx = x + w / 2;
         const cy = y + h / 2;
         const fontSize = Math.min(11, Math.max(7, Math.min(w, h) * 0.18));
+        const nameFontSize = Math.max(6, fontSize * 0.85);
         const sizeLabel = p.rotated ? `${p.h}×${p.w}↺` : `${p.w}×${p.h}`;
+        const nameLabel = truncateLabel(p.label, w - 6, nameFontSize);
         const isDragged = drag?.idx === i;
-        const canDrag = !!onMovePiece;
+        const isSelected = selectedIdx === i;
+        const canInteract = !!onSelectPiece || !!onMovePiece;
+        const showSize = w > 24 && h > 12;
+        const showName = showSize && w > 40 && h > 24 && nameLabel;
 
         return (
-          <g key={i} className={canDrag ? "cutting-plan__piece-group" : ""}>
+          <g
+            key={i}
+            className={`cutting-plan__piece-group${isSelected ? " cutting-plan__piece-group--selected" : ""}`}
+          >
             <rect
               x={x + 1} y={y + 1}
               width={Math.max(0, w - 2)} height={Math.max(0, h - 2)}
               fill={fill}
-              opacity={isDragged ? 0.25 : 0.85}
-              className="cutting-plan__piece"
-              style={canDrag ? { cursor: isDragging ? "grabbing" : "grab" } : {}}
-              onMouseDown={canDrag ? (e) => handlePieceMouseDown(e, i) : undefined}
+              opacity={isDragged ? 0.25 : isSelected ? 1 : 0.85}
+              className={`cutting-plan__piece${isSelected ? " cutting-plan__piece--selected" : ""}`}
+              style={canInteract ? { cursor: isSelected ? (isDragging ? "grabbing" : "grab") : "pointer" } : {}}
+              onMouseDown={canInteract ? (e) => handlePieceMouseDown(e, i) : undefined}
             />
-            {!isDragged && w > 28 && h > 14 && (
-              <>
+            {isSelected && !isDragged && (
+              <rect
+                x={x} y={y}
+                width={w} height={h}
+                className="cutting-plan__piece-select-ring"
+                pointerEvents="none"
+              />
+            )}
+            {!isDragged && showSize && (
+              <g clipPath={`url(#${diagramId}-clip-${i})`}>
                 <text
-                  x={cx} y={cy - fontSize * 0.5}
+                  x={cx} y={showName ? cy - fontSize * 0.45 : cy}
                   textAnchor="middle" dominantBaseline="middle"
                   fontSize={fontSize}
                   className="cutting-plan__piece-label"
@@ -225,18 +588,18 @@ function SheetDiagram({ pieces, sheetW, sheetH, colorMap, settings, onMovePiece 
                 >
                   {sizeLabel}
                 </text>
-                {w > 36 && h > 22 && (
+                {showName && (
                   <text
-                    x={cx} y={cy + fontSize * 0.8}
+                    x={cx} y={cy + fontSize * 0.75}
                     textAnchor="middle" dominantBaseline="middle"
-                    fontSize={Math.max(6, fontSize * 0.85)}
+                    fontSize={nameFontSize}
                     className="cutting-plan__piece-name"
                     style={{ pointerEvents: "none" }}
                   >
-                    {p.label}
+                    {nameLabel}
                   </text>
                 )}
-              </>
+              </g>
             )}
           </g>
         );
@@ -248,6 +611,7 @@ function SheetDiagram({ pieces, sheetW, sheetH, colorMap, settings, onMovePiece 
           displayX={maxRightPx} displayY={0}
           displayW={DISPLAY_W - maxRightPx} displayH={maxBottomPx || displayH}
           label={`${Math.round(sheetW - maxRight)} мм`}
+          hatchId={hatchId}
         />
       )}
       {(sheetH - maxBottom) > 1 && (
@@ -255,12 +619,27 @@ function SheetDiagram({ pieces, sheetW, sheetH, colorMap, settings, onMovePiece 
           displayX={0} displayY={maxBottomPx}
           displayW={DISPLAY_W} displayH={displayH - maxBottomPx}
           label={`${Math.round(sheetH - maxBottom)} мм`}
+          hatchId={hatchId}
         />
       )}
 
       {/* Drag ghost */}
       {drag && (
         <g style={{ pointerEvents: "none" }}>
+          {drag.guideY != null && (
+            <line
+              x1={0} y1={drag.guideY * scaleY}
+              x2={DISPLAY_W} y2={drag.guideY * scaleY}
+              className="cutting-plan__snap-guide cutting-plan__snap-guide--h"
+            />
+          )}
+          {drag.guideX != null && (
+            <line
+              x1={drag.guideX * scaleX} y1={0}
+              x2={drag.guideX * scaleX} y2={displayH}
+              className="cutting-plan__snap-guide cutting-plan__snap-guide--v"
+            />
+          )}
           {/* Drop target highlight */}
           <rect
             x={drag.ghostX} y={drag.ghostY}
@@ -338,7 +717,16 @@ function SheetTable({ pieces }) {
 
 // ─── Material group ───────────────────────────────────────────────────────────
 
-function MaterialGroup({ group, gIdx, globalColorMap, settings, onMovePiece }) {
+function MaterialGroup({
+  group,
+  gIdx,
+  globalColorMap,
+  settings,
+  selection,
+  onSelectPiece,
+  onMovePiece,
+  onUpdatePiece,
+}) {
   return (
     <div className="cutting-plan__material-group">
       <div className="cutting-plan__material-header">
@@ -353,7 +741,12 @@ function MaterialGroup({ group, gIdx, globalColorMap, settings, onMovePiece }) {
       {group.sheets.map((sheet, sIdx) => {
         const sheetDisplayIdx = sIdx + 1;
         const eff = calcEfficiency(sheet.pieces, sheet.sheetW, sheet.sheetH);
-        const sheetTitle = `${group.material.replace(/[\\/:*?"<>|]/g, "_")}_лист${sheetDisplayIdx}`;
+        const sheetSelectedIdx = selection?.gIdx === gIdx && selection?.sIdx === sIdx
+          ? selection.pIdx
+          : null;
+        const selectedPiece = sheetSelectedIdx != null
+          ? sheet.pieces[sheetSelectedIdx]
+          : null;
 
         return (
           <div key={sIdx} className="cutting-plan__sheet print-page">
@@ -364,21 +757,15 @@ function MaterialGroup({ group, gIdx, globalColorMap, settings, onMovePiece }) {
                   ? ` — ×${sheet.repeatCount} листов (одинаковый раскрой)`
                   : ` — Лист ${sheetDisplayIdx} из ${group.totalSheets}`}
               </span>
+              <span className="cutting-plan__sheet-eff cutting-plan__sheet-eff--print">
+                Использование: {eff}%
+                {sheet.repeatCount > 1 && ` · итого ${sheet.repeatCount} листов`}
+              </span>
               <div className="cutting-plan__sheet-header-right no-print">
                 <span className="cutting-plan__sheet-eff">
                   Использование: {eff}%
                   {sheet.repeatCount > 1 && ` · итого ${sheet.repeatCount} листов`}
                 </span>
-                <button
-                  className="mini cutting-plan__dxf-btn"
-                  title="Скачать DXF для этого листа"
-                  onClick={() => {
-                    const dxf = generateSheetDXF(sheet, settings);
-                    downloadDXF(dxf, sheetTitle);
-                  }}
-                >
-                  ⬇ DXF
-                </button>
               </div>
             </div>
 
@@ -389,6 +776,8 @@ function MaterialGroup({ group, gIdx, globalColorMap, settings, onMovePiece }) {
                 sheetH={sheet.sheetH}
                 colorMap={globalColorMap}
                 settings={settings}
+                selectedIdx={sheetSelectedIdx}
+                onSelectPiece={(pIdx) => onSelectPiece?.(gIdx, sIdx, pIdx)}
                 onMovePiece={
                   onMovePiece
                     ? (pIdx, x, y) => onMovePiece(gIdx, sIdx, pIdx, x, y)
@@ -397,8 +786,20 @@ function MaterialGroup({ group, gIdx, globalColorMap, settings, onMovePiece }) {
               />
 
               <div className="cutting-plan__sheet-right">
+                {selectedPiece && (
+                  <PieceEditor
+                    piece={selectedPiece}
+                    pieces={sheet.pieces}
+                    pieceIdx={sheetSelectedIdx}
+                    settings={settings}
+                    sheetW={sheet.sheetW}
+                    sheetH={sheet.sheetH}
+                    onClose={() => onSelectPiece?.(gIdx, sIdx, null)}
+                    onUpdate={(patch) => onUpdatePiece?.(gIdx, sIdx, sheetSelectedIdx, patch)}
+                  />
+                )}
                 <SheetTable pieces={sheet.pieces} />
-                <div className="cutting-plan__sheet-legend">
+                <div className="cutting-plan__sheet-legend no-print">
                   {[...new Set(sheet.pieces.map((p) => p.label))].map((label) => (
                     <div key={label} className="cutting-plan__legend-item">
                       <span
@@ -422,14 +823,28 @@ function MaterialGroup({ group, gIdx, globalColorMap, settings, onMovePiece }) {
 
 export function CuttingPlanView({ plan, onClose }) {
   const [localPlan, setLocalPlan] = useState(null);
+  const [selection, setSelection] = useState(null);
 
   useEffect(() => {
     if (plan?.materialGroups) {
-      setLocalPlan(JSON.parse(JSON.stringify(plan)));
+      const copy = JSON.parse(JSON.stringify(plan));
+      normalizePlanPieces(copy);
+      setLocalPlan(copy);
+      setSelection(null);
     } else {
       setLocalPlan(null);
+      setSelection(null);
     }
   }, [plan]);
+
+  useEffect(() => {
+    if (!selection) return undefined;
+    const onKey = (e) => {
+      if (e.key === "Escape") setSelection(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selection]);
 
   const globalColorMap = useMemo(() => {
     const map = new Map();
@@ -444,13 +859,33 @@ export function CuttingPlanView({ plan, onClose }) {
     return map;
   }, [localPlan]);
 
+  const onSelectPiece = useCallback((gIdx, sIdx, pIdx) => {
+    if (pIdx == null) {
+      setSelection(null);
+      return;
+    }
+    setSelection({ gIdx, sIdx, pIdx });
+  }, []);
+
   const onMovePiece = useCallback((gIdx, sIdx, pIdx, newX, newY) => {
     setLocalPlan((prev) => {
       if (!prev?.materialGroups) return prev;
       const next = JSON.parse(JSON.stringify(prev));
       const piece = next.materialGroups[gIdx].sheets[sIdx].pieces[pIdx];
-      piece.x = newX;
-      piece.y = newY;
+      piece.x = roundMm(newX);
+      piece.y = roundMm(newY);
+      return next;
+    });
+  }, []);
+
+  const onUpdatePiece = useCallback((gIdx, sIdx, pIdx, patch) => {
+    setLocalPlan((prev) => {
+      if (!prev?.materialGroups) return prev;
+      const next = JSON.parse(JSON.stringify(prev));
+      const normalized = { ...patch };
+      if (normalized.x != null) normalized.x = roundMm(normalized.x);
+      if (normalized.y != null) normalized.y = roundMm(normalized.y);
+      Object.assign(next.materialGroups[gIdx].sheets[sIdx].pieces[pIdx], normalized);
       return next;
     });
   }, []);
@@ -542,7 +977,7 @@ export function CuttingPlanView({ plan, onClose }) {
 
       {/* Hint */}
       <div className="cutting-plan__dnd-hint no-print">
-        <span>💡 Перетащите деталь на новое место. Зелёная рамка — позиция допустима, красная — перекрытие или выход за поле.</span>
+        <span>💡 При перетаскивании X/Y привязываются к координатам сетки (±{SNAP_X_MM} мм). Или введите X/Y вручную справа.</span>
       </div>
 
       <div className="cutting-plan__content">
@@ -553,7 +988,10 @@ export function CuttingPlanView({ plan, onClose }) {
             gIdx={gIdx}
             globalColorMap={globalColorMap}
             settings={localPlan.settings}
+            selection={selection}
+            onSelectPiece={onSelectPiece}
             onMovePiece={onMovePiece}
+            onUpdatePiece={onUpdatePiece}
           />
         ))}
       </div>

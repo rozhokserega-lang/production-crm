@@ -5973,6 +5973,10 @@ button:hover {
   font-size: 12px;
 }
 
+.cutting-plan__sheet-eff--print {
+  display: none;
+}
+
 .cutting-plan__dxf-btn {
   font-size: 11px !important;
   padding: 3px 8px !important;
@@ -6035,7 +6039,6 @@ button:hover {
 
 /* Remainder zones */
 .cutting-plan__remainder-rect {
-  fill: url(#hatch);
   opacity: 0.55;
 }
 
@@ -6128,8 +6131,127 @@ button:hover {
 
 /* Piece group: show grab cursor when draggable */
 .cutting-plan__piece-group {
+  cursor: pointer;
+}
+.cutting-plan__piece-group--selected {
   cursor: grab;
 }
+.cutting-plan__piece-group--selected:active {
+  cursor: grabbing;
+}
+
+.cutting-plan__piece--selected {
+  stroke: #2563eb;
+  stroke-width: 2;
+}
+
+.cutting-plan__piece-select-ring {
+  fill: none;
+  stroke: #2563eb;
+  stroke-width: 2.5;
+  stroke-dasharray: 6 3;
+  pointer-events: none;
+}
+
+.cutting-plan__piece-editor {
+  background: color-mix(in srgb, var(--accent) 6%, var(--bg-card));
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  border-radius: 8px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cutting-plan__piece-editor-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.cutting-plan__piece-editor-title {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+}
+
+.cutting-plan__piece-editor-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-main);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 180px;
+}
+
+.cutting-plan__piece-editor-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.cutting-plan__piece-editor-close {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 2px 4px;
+}
+
+.cutting-plan__piece-editor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.cutting-plan__piece-editor-size {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.cutting-plan__piece-editor-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.cutting-plan__piece-editor-field input {
+  width: 72px;
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 13px;
+  background: var(--bg-main);
+  color: var(--text-main);
+}
+
+.cutting-plan__piece-editor-error {
+  font-size: 11px;
+  color: #dc2626;
+}
+
+.cutting-plan__piece-editor-hint {
+  font-size: 10px;
+  color: var(--text-soft);
+}
+
+.cutting-plan__snap-guide {
+  stroke: #2563eb;
+  stroke-width: 1.2;
+  stroke-dasharray: 4 3;
+  opacity: 0.75;
+}
+
 .cutting-plan__piece-group:active {
   cursor: grabbing;
 }
@@ -6192,13 +6314,18 @@ button.mini.accent:hover:not(:disabled) {
     break-after: avoid;
   }
 
-  /* First sheet: no forced page break before it (stays with material header) */
+  .cutting-plan__material-header {
+    display: none;
+  }
+
+  /* Each sheet on its own page, keep header + diagram + table together */
   .cutting-plan__sheet {
     border: none;
     border-radius: 0;
     margin-bottom: 0;
     padding: 0;
-    /* Don't break after ? break is forced BEFORE each sheet except first */
+    page-break-inside: avoid;
+    break-inside: avoid-page;
     page-break-after: auto;
     break-after: auto;
   }
@@ -6211,23 +6338,40 @@ button.mini.accent:hover:not(:disabled) {
 
   /* Sheet header must stay with the body (no orphan headers) */
   .cutting-plan__sheet-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
     padding: 4px 0 6px;
     page-break-after: avoid;
     break-after: avoid;
   }
 
-  /* Body: column layout so SVG fills full width, table below */
-  .cutting-plan__sheet-body {
-    display: block;
-    padding: 0;
+  .cutting-plan__sheet-eff--print {
+    display: inline;
+    color: #444;
+    font-size: 9pt;
+    white-space: nowrap;
   }
 
-  /* SVG expands to fill the print page */
+  /* Side-by-side layout: diagram left, table right — fits A4 landscape */
+  .cutting-plan__sheet-body {
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 0;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  /* SVG takes ~62% width, scales with viewBox */
   .cutting-plan__svg {
     display: block;
-    width: 100% !important;
+    flex: 1 1 62%;
+    width: 62% !important;
+    max-width: 62% !important;
     height: auto !important;
-    max-width: 100% !important;
     border: 1px solid #bbb;
     page-break-inside: avoid;
     break-inside: avoid;
@@ -6241,23 +6385,28 @@ button.mini.accent:hover:not(:disabled) {
     opacity: 1;
   }
 
-  /* Piece table full width below SVG */
+  /* Piece table beside diagram */
   .cutting-plan__sheet-right {
-    width: 100%;
-    margin-top: 8px;
+    flex: 0 0 36%;
+    width: 36%;
+    margin-top: 0;
   }
 
   .cutting-plan__table {
     width: 100%;
-    font-size: 9pt;
+    font-size: 8.5pt;
   }
 
-  /* Legend inline */
-  .cutting-plan__sheet-legend {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px 12px;
-    font-size: 8pt;
+  .cutting-plan__table th,
+  .cutting-plan__table td {
+    padding: 3px 6px;
+  }
+
+  .cutting-plan__piece-label,
+  .cutting-plan__piece-name {
+    paint-order: stroke fill;
+    stroke: rgba(255, 255, 255, 0.85);
+    stroke-width: 2px;
   }
 }
 
@@ -7000,6 +7149,12 @@ button.mini.accent:hover:not(:disabled) {
   border-color: color-mix(in srgb, var(--accent) 35%, transparent);
   color: var(--accent);
   font-weight: 600;
+}
+.cv-item__chip--cut {
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg-main));
+  border-color: color-mix(in srgb, var(--accent) 25%, transparent);
+  color: var(--text-muted);
+  font-size: 9px;
 }
 
 /* turned item highlight */

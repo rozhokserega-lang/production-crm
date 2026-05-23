@@ -8,6 +8,7 @@ const DEFAULT_SETTINGS = {
   marginX: 20,
   marginY: 20,
   allowRotate: false,
+  accountEdgeBand: false,
   algorithm: "saw",
 };
 
