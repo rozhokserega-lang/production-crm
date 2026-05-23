@@ -53,6 +53,23 @@ export class OrderService {
     return await callBackend("webDeleteCuttingJob", { p_id: id });
   }
 
+  static async getCuttingCatalogKits() {
+    return await callBackend("webGetCuttingCatalogKits");
+  }
+
+  static async upsertCuttingCatalogKit({ id, name, items, sort_order }) {
+    return await callBackend("webUpsertCuttingCatalogKit", {
+      p_id: id ? Number(id) : 0,
+      p_name: name,
+      p_items: items,
+      p_sort_order: sort_order ?? 0,
+    });
+  }
+
+  static async deleteCuttingCatalogKit(id) {
+    return await callBackend("webDeleteCuttingCatalogKit", { p_id: Number(id) || 0 });
+  }
+
   // --- Overview plan months ---
   static async getOverviewPlanMonths() {
     return await callBackend("webGetOverviewPlanMonths");

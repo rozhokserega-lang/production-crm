@@ -3,6 +3,7 @@ import { useCutting } from "../contexts/CuttingContext";
 import { buildCuttingPlan, CUTTING_ALGORITHMS, cuttingPieceSize } from "../app/cuttingPlanAlgorithm";
 import { CuttingPlanView } from "../components/CuttingPlanView";
 import { readExcelFile } from "../app/cuttingExcelImport";
+import { CuttingCatalogDialog } from "../components/CuttingCatalogDialog";
 
 // ---- sub-components ----
 
@@ -322,6 +323,7 @@ export function CuttingView() {
   const [showAddForm, setShowAddForm] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importWarn, setImportWarn] = useState(null);
+  const [showCatalog, setShowCatalog] = useState(false);
   const fileInputRef = useRef(null);
 
   // Unique materials from current items (for datalist suggestions)
@@ -333,6 +335,43 @@ export function CuttingView() {
   const handleAddItem = useCallback((item) => {
     addItems([item]);
   }, [addItems]);
+
+  const handleAddFromCatalog = useCallback((items, meta) => {
+    const merged = [...activeJob.items];
+    for (const ni of items) {
+      const existing = merged.find(
+        (x) => x.itemName === ni.itemName && x.material === ni.material,
+      );
+      if (existing) {
+        existing.qty = (existing.qty || 1) + (ni.qty || 1);
+      } else {
+        merged.push({ ...ni });
+      }
+    }
+
+    addItems(items);
+    if (meta?.kitName) {
+      setImportWarn(`Добавлено из каталога: ${meta.kitName} × ${meta.setsCount} компл. (${items.length} поз.)`);
+      setTimeout(() => setImportWarn(null), 6000);
+    }
+
+    setCalculating(true);
+    setTimeout(() => {
+      try {
+        const materialGroups = buildCuttingPlan(merged, activeJob.settings);
+        setCuttingResult({
+          materialGroups,
+          generatedAt: new Date().toLocaleString("ru"),
+          jobName: activeJob.name || meta?.kitName || "Раскрой",
+          settings: activeJob.settings,
+        });
+      } catch (e) {
+        console.error("Cutting plan error:", e);
+      } finally {
+        setCalculating(false);
+      }
+    }, 0);
+  }, [activeJob, addItems, setCuttingResult]);
 
   const handleImportFile = useCallback(async (e) => {
     const file = e.target.files?.[0];
@@ -419,6 +458,13 @@ export function CuttingView() {
         <div className="cv-header__right">
           <button
             className="cv-header__import-btn"
+            title="Добавить комплект из каталога (Siena, тумбы и др.)"
+            onClick={() => setShowCatalog(true)}
+          >
+            📦 Из каталога
+          </button>
+          <button
+            className="cv-header__import-btn"
             title="Импорт деталей из Excel (колонки G, H — размеры; I — количество)"
             disabled={importing}
             onClick={() => fileInputRef.current?.click()}
@@ -483,13 +529,22 @@ export function CuttingView() {
             {totalItems > 0 && (
               <span className="cv-left__count">{totalItems}</span>
             )}
-            <button
-              className={`cv-left__add-btn${showAddForm ? " cv-left__add-btn--active" : ""}`}
-              onClick={() => setShowAddForm((v) => !v)}
-              title={showAddForm ? "Закрыть форму добавления" : "Добавить деталь вручную"}
-            >
-              {showAddForm ? "✕" : "+"}
-            </button>
+            <div className="cv-left__head-actions">
+              <button
+                className="cv-left__catalog-btn"
+                onClick={() => setShowCatalog(true)}
+                title="Добавить комплект из каталога"
+              >
+                Каталог
+              </button>
+              <button
+                className={`cv-left__add-btn${showAddForm ? " cv-left__add-btn--active" : ""}`}
+                onClick={() => setShowAddForm((v) => !v)}
+                title={showAddForm ? "Закрыть форму добавления" : "Добавить деталь вручную"}
+              >
+                {showAddForm ? "✕" : "+"}
+              </button>
+            </div>
           </div>
           <div className="cv-left__scroll">
             <ItemsPanel
@@ -537,6 +592,13 @@ export function CuttingView() {
           )}
         </div>
       </div>
+
+      <CuttingCatalogDialog
+        open={showCatalog}
+        onClose={() => setShowCatalog(false)}
+        onAddItems={handleAddFromCatalog}
+        existingMaterials={existingMaterials}
+      />
     </div>
   );
 }
