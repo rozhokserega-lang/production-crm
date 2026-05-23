@@ -1,6 +1,6 @@
 import { memo, useMemo } from "react";
 import { KROMKA_EXECUTORS, PRAS_EXECUTORS } from "../config";
-import { stripPlanItemMeta } from "../app/orderHelpers";
+import { extractPlanItemArticle, extractPlanItemQrQty, stripPlanItemMeta } from "../app/orderHelpers";
 import { sheetsFromTemplateKits } from "../app/appUtils";
 import { findFurnitureTemplate, resolveKitsPerSheetFromTemplate } from "../app/furnitureMaterialYield";
 import {
@@ -115,6 +115,9 @@ export const WorkshopView = memo(function WorkshopView({
         const orderId = String(o.orderId || o.order_id || "");
         const isPaused = (status) => /пауза/i.test(String(status || ""));
         const rawItem = stripPlanItemMeta(String(o.item || ""));
+        const displayArticle = extractPlanItemArticle(String(o.item || ""));
+        const qrQty = extractPlanItemQrQty(String(o.item || ""));
+        const orderQty = Number(o.qty || 0);
         const baseDisplaySheetsNeeded =
           resolveDefaultConsumeSheets(o, shipmentOrders) || resolveDefaultConsumeSheetsFromBoard(o, shipmentBoard);
 
@@ -188,10 +191,18 @@ export const WorkshopView = memo(function WorkshopView({
               <div className="card__main">
                 <div className="line1">
                   <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                    <strong>{o.item}</strong>
+                    <strong>{rawItem || "—"}</strong>
                     <span className={stagePillClass}>{stageIcon} {stageLabel}</span>
+                    {displayArticle ? (
+                      <span className="badge meta-inline" title="Артикул комплекта">
+                        {displayArticle}
+                      </span>
+                    ) : null}
                     <span className="badge meta-inline">План: {o.week || "-"}</span>
-                    <span className="badge meta-inline">Кол-во: {o.qty || 0}</span>
+                    <span className="badge meta-inline" title={qrQty > 0 && qrQty !== orderQty ? `Комплектов по QR: ${qrQty}` : undefined}>
+                      Кол-во: {orderQty || 0}
+                      {qrQty > 0 && qrQty !== orderQty ? ` (${qrQty} компл.)` : ""}
+                    </span>
                     {hasPause && (
                       <span
                         className="badge meta-inline"

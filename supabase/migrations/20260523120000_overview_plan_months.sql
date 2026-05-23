@@ -73,6 +73,7 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path TO public
 AS $$
+#variable_conflict use_column
 DECLARE
   v_name  TEXT := btrim(coalesce(p_name, ''));
   v_weeks TEXT[] := coalesce(p_weeks, '{}');
@@ -90,17 +91,20 @@ BEGIN
   );
 
   IF p_id IS NULL OR p_id = 0 THEN
-    SELECT coalesce(max(sort_order), 0) + 1 INTO v_sort FROM public.overview_plan_months;
+    SELECT coalesce(max(m.sort_order), 0) + 1
+    INTO v_sort
+    FROM public.overview_plan_months AS m;
+
     RETURN QUERY
-      INSERT INTO public.overview_plan_months (name, weeks, sort_order)
+      INSERT INTO public.overview_plan_months AS ins (name, weeks, sort_order)
       VALUES (v_name, v_weeks, v_sort)
       RETURNING
-        overview_plan_months.id,
-        overview_plan_months.name,
-        overview_plan_months.weeks,
-        overview_plan_months.sort_order,
-        overview_plan_months.created_at,
-        overview_plan_months.updated_at;
+        ins.id,
+        ins.name,
+        ins.weeks,
+        ins.sort_order,
+        ins.created_at,
+        ins.updated_at;
   ELSE
     UPDATE public.overview_plan_months AS m
     SET name = v_name,
