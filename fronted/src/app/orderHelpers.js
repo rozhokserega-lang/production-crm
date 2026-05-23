@@ -119,3 +119,12 @@ export function extractPlanItemQrQty(itemName) {
   }
   return 0;
 }
+
+/** Человекочитаемое название позиции с вшитым артикулом/QTY (система хранения). */
+export function formatEmbeddedPlanItem(itemName) {
+  const raw = String(itemName || "").trim();
+  const title = stripPlanItemMeta(raw) || raw || "—";
+  const article = extractPlanItemArticle(raw);
+  const qrQty = extractPlanItemQrQty(raw);
+  return { title, article, qrQty, raw };
+}

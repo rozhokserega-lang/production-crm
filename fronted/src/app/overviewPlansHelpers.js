@@ -1,4 +1,5 @@
 import { PipelineStage, getOrderStageDisplayLabel, getOverviewLaneId, resolvePipelineStage } from "../orderPipeline";
+import { formatEmbeddedPlanItem } from "./orderHelpers";
 import { isWorkshopStrapOrderItem } from "./workshopStrapNeeds";
 import { matchesWeekFilter } from "./weekFilterUtils";
 import { getShipmentStageKey, isGarbageShipmentItemName, isObvyazkaSectionName } from "../utils/shipmentUtils";
@@ -150,9 +151,13 @@ export function buildPlanSummary(weekLabel, orders) {
       shippedCount += 1;
       qtyShipped += qty;
     } else {
+      const rawItem = readOrderItem(o);
+      const display = formatEmbeddedPlanItem(rawItem);
       blockingOrders.push({
         orderId: readOrderId(o),
-        item: readOrderItem(o),
+        item: display.title,
+        article: display.article,
+        qrQty: display.qrQty,
         qty,
         week: o?.week,
         stage: resolvePipelineStage(o),

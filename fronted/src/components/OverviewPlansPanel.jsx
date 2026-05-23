@@ -101,9 +101,20 @@ function BlockingOrdersList({ orders, onOpenOrder }) {
               <span className="overview-plans__blocker-id">
                 {o.orderId ? `#${o.orderId}` : "Без ID"}
               </span>
-              <span className="overview-plans__blocker-qty">{o.qty} шт</span>
+              <span
+                className="overview-plans__blocker-qty"
+                title={o.qrQty > 0 && o.qrQty !== Number(o.qty) ? `Комплектов по QR: ${o.qrQty}` : undefined}
+              >
+                {o.qty} шт
+                {o.qrQty > 0 && o.qrQty !== Number(o.qty) ? ` (${o.qrQty} компл.)` : ""}
+              </span>
             </div>
-            <div className="overview-plans__blocker-item">{o.item}</div>
+            <div className="overview-plans__blocker-item">
+              {o.item}
+              {o.article ? (
+                <span className="overview-plans__blocker-article">{o.article}</span>
+              ) : null}
+            </div>
             <span className="overview-plans__blocker-stage">{o.laneLabel || o.stageLabel}</span>
           </button>
         </li>
