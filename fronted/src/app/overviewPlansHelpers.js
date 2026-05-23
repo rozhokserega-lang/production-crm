@@ -255,7 +255,17 @@ export function buildMonthsSummary(months, orders, awaitingOrders = []) {
   return (months || []).map((m) => buildMonthSummary(m, plansByWeek));
 }
 
-export function loadPlanMonths() {
+/** Нормализация строки месяца из API/БД. */
+export function normalizePlanMonthRow(row) {
+  return {
+    id: Number(row?.id ?? row?.month_id ?? 0) || String(row?.id || ""),
+    name: String(row?.name || "").trim(),
+    weeks: sortPlanWeeks((row?.weeks || []).map(normalizePlanWeek).filter(Boolean)),
+  };
+}
+
+/** Однократная миграция из localStorage (legacy). */
+export function loadPlanMonthsFromLocalStorage() {
   try {
     const raw = localStorage.getItem(PLAN_MONTHS_STORAGE_KEY);
     if (!raw) return [];
@@ -273,6 +283,10 @@ export function loadPlanMonths() {
   }
 }
 
-export function savePlanMonths(months) {
-  localStorage.setItem(PLAN_MONTHS_STORAGE_KEY, JSON.stringify(months || []));
+export function clearPlanMonthsLocalStorage() {
+  try {
+    localStorage.removeItem(PLAN_MONTHS_STORAGE_KEY);
+  } catch {
+    /* ignore */
+  }
 }

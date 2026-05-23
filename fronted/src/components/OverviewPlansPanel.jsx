@@ -119,6 +119,9 @@ export function OverviewPlansPanel({
   shipmentOrderMaps,
   weekFilter,
   months,
+  monthsLoading = false,
+  monthsSaving = false,
+  monthsError = null,
   addMonth,
   updateMonth,
   deleteMonth,
@@ -171,17 +174,25 @@ export function OverviewPlansPanel({
           </button>
         </div>
 
+        {monthsError && (
+          <div className="overview-plans__warn">{monthsError}</div>
+        )}
+
         {editorMode === "add" && (
           <MonthEditor
             availableWeeks={availableWeeks.filter((w) => !usedWeeks.has(normalizePlanWeek(w) || w))}
-            onSave={(name, weeks) => {
-              if (addMonth(name, weeks)) setEditorMode(null);
+            onSave={async (name, weeks) => {
+              if (await addMonth(name, weeks)) setEditorMode(null);
             }}
             onCancel={() => setEditorMode(null)}
           />
         )}
 
-        {!monthSummaries.length && editorMode !== "add" && (
+        {monthsLoading && !monthSummaries.length && (
+          <div className="empty empty--hint">Загрузка месяцев…</div>
+        )}
+
+        {!monthsLoading && !monthSummaries.length && editorMode !== "add" && (
           <div className="empty empty--hint">
             Создайте месяц и выберите номера планов, которые в него входят
           </div>
@@ -236,7 +247,7 @@ export function OverviewPlansPanel({
                 >
                   Изменить
                 </button>
-                <button type="button" className="mini" onClick={() => deleteMonth(m.id)}>
+                <button type="button" className="mini" disabled={monthsSaving} onClick={() => deleteMonth(m.id)}>
                   Удалить
                 </button>
               </div>
@@ -250,9 +261,8 @@ export function OverviewPlansPanel({
                       ...m.weeks,
                     ]),
                   ].sort((a, b) => Number(a) - Number(b))}
-                  onSave={(name, weeks) => {
-                    updateMonth(m.id, { name, weeks });
-                    setEditorMode(null);
+                  onSave={async (name, weeks) => {
+                    if (await updateMonth(m.id, { name, weeks })) setEditorMode(null);
                   }}
                   onCancel={() => setEditorMode(null)}
                 />

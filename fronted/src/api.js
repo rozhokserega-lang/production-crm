@@ -298,6 +298,9 @@ const RPC_MAP = {
   webGetCuttingJobs: "web_get_cutting_jobs",
   webUpsertCuttingJob: "web_upsert_cutting_job",
   webDeleteCuttingJob: "web_delete_cutting_job",
+  webGetOverviewPlanMonths: "web_get_overview_plan_months",
+  webUpsertOverviewPlanMonth: "web_upsert_overview_plan_month",
+  webDeleteOverviewPlanMonth: "web_delete_overview_plan_month",
   webGetStrapStock: "web_get_strap_stock",
   webAddStrapStock: "web_add_strap_stock",
   webConsumeStrapStock: "web_consume_strap_stock",
@@ -729,6 +732,20 @@ function buildRpcPayload(action, payload = {}) {
     return {
       p_product_name: String(payload.productName ?? payload.p_product_name ?? "").trim(),
       p_details: payload.details ?? payload.p_details ?? [],
+    };
+  }
+  if (action === "webUpsertOverviewPlanMonth") {
+    return {
+      p_id: Number(payload.p_id ?? payload.id ?? 0) || 0,
+      p_name: String(payload.p_name ?? payload.name ?? "").trim(),
+      p_weeks: Array.isArray(payload.p_weeks ?? payload.weeks)
+        ? (payload.p_weeks ?? payload.weeks).map((w) => String(w || "").trim()).filter(Boolean)
+        : [],
+    };
+  }
+  if (action === "webDeleteOverviewPlanMonth") {
+    return {
+      p_id: Number(payload.p_id ?? payload.id ?? 0) || 0,
     };
   }
   return payload || {};

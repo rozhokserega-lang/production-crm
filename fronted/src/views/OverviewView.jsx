@@ -18,7 +18,7 @@ export const OverviewView = memo(function OverviewView({
   onOpenOrderDrawer,
   onGoToKanban,
 }) {
-  const { months, addMonth, updateMonth, deleteMonth } = useOverviewPlanMonths();
+  const { months, addMonth, updateMonth, deleteMonth, loading: monthsLoading, saving: monthsSaving, error: monthsError } = useOverviewPlanMonths();
   const ARTICLE_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{2,}$/;
   const readArticle = (row) =>
     String(
@@ -167,6 +167,9 @@ export const OverviewView = memo(function OverviewView({
           shipmentOrderMaps={shipmentOrderMaps}
           weekFilter={weekFilter}
           months={months}
+          monthsLoading={monthsLoading}
+          monthsSaving={monthsSaving}
+          monthsError={monthsError}
           addMonth={addMonth}
           updateMonth={updateMonth}
           deleteMonth={deleteMonth}

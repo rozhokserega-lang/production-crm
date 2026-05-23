@@ -53,6 +53,23 @@ export class OrderService {
     return await callBackend("webDeleteCuttingJob", { p_id: id });
   }
 
+  // --- Overview plan months ---
+  static async getOverviewPlanMonths() {
+    return await callBackend("webGetOverviewPlanMonths");
+  }
+
+  static async upsertOverviewPlanMonth({ id, name, weeks }) {
+    return await callBackend("webUpsertOverviewPlanMonth", {
+      p_id: id ? Number(id) : 0,
+      p_name: name,
+      p_weeks: Array.isArray(weeks) ? weeks.map(String) : [],
+    });
+  }
+
+  static async deleteOverviewPlanMonth({ id }) {
+    return await callBackend("webDeleteOverviewPlanMonth", { p_id: Number(id) || 0 });
+  }
+
   static async deleteOrder(orderId) {
     return await callBackend("webDeleteOrderById", { orderId });
   }
