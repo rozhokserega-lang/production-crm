@@ -266,7 +266,14 @@ export function useWorkshopFinalDone({
   );
 
   const printAdjustedPlan = useCallback(() => {
+    document.body.classList.add("workshop-partial-print");
+    const cleanup = () => {
+      document.body.classList.remove("workshop-partial-print");
+      window.removeEventListener("afterprint", cleanup);
+    };
+    window.addEventListener("afterprint", cleanup);
     window.print();
+    window.setTimeout(cleanup, 1000);
   }, []);
 
   const debtRows = useMemo(() => productionDebts, [productionDebts]);

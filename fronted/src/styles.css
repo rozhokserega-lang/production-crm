@@ -3658,6 +3658,38 @@ button:disabled {
     display: none !important;
   }
 
+  /* Печать листа из диалога сборки/финала — только plan-preview, без карточек цеха. */
+  body.workshop-partial-print * {
+    visibility: hidden !important;
+  }
+
+  body.workshop-partial-print .workshop-final-print-area,
+  body.workshop-partial-print .workshop-final-print-area * {
+    visibility: visible !important;
+  }
+
+  body.workshop-partial-print .workshop-final-print-area {
+    position: fixed !important;
+    inset: 0 !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+    pointer-events: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+    z-index: 2147483647 !important;
+  }
+
+  body.workshop-partial-print .workshop-final-print-area .print-plan-page {
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+  }
+
   .workshop-final-print-area {
     position: static !important;
     left: auto !important;
