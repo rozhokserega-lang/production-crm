@@ -114,12 +114,12 @@ function getSupabaseRpcBaseUrls() {
     : "";
   const direct = getSupabaseBaseUrl();
   const sameOriginProxy = originProxy ? `${originProxy}/supabase` : "";
-  // Candidate order matters:
-  // - Prefer explicit proxy from env.
-  // - Then direct Supabase URL (works locally and in many deployments).
-  // - Same-origin proxy is a useful fallback, but may be missing on localhost or some prod setups (can be 404).
-  const candidates = [proxy, direct, sameOriginProxy].filter(Boolean);
-  return Array.from(new Set(candidates));
+  const isCrmProductionHost = /^https:\/\/(www\.)?crm-v175\.ru$/i.test(originProxy);
+  // На проде сначала same-origin /supabase — стабильнее для телефонов и локальной сети.
+  const candidates = isCrmProductionHost
+    ? [sameOriginProxy, proxy, direct]
+    : [proxy, direct, sameOriginProxy];
+  return Array.from(new Set(candidates.filter(Boolean)));
 }
 
 export function getSupabaseAuthSession() {
@@ -818,7 +818,7 @@ export async function supabaseCall(action, payload = {}) {
         // Some deployments expose a same-origin proxy base that might be missing (404),
         // or temporarily unhealthy (5xx). In that case, try the next candidate base.
         const status = Number(res.status || 0);
-        if (status === 404 || status >= 500) {
+        if (status === 404 || status === 405 || status >= 500) {
           lastRetryableHttpError = new Error(typeof json === "string" ? json : JSON.stringify(json));
           continue;
         }
