@@ -11,10 +11,10 @@ export function useWorkshopQrScan({
   setQuery,
   setWeekFilter,
   setWorkshopQrScan,
+  searchInputRef,
 }) {
   const [active, setActive] = useState(false);
   const [scanHint, setScanHint] = useState("");
-  const searchInputRef = useRef(null);
   const debounceRef = useRef(null);
 
   const show = view === "workshop" && (tab === "kromka" || tab === "pras");
@@ -59,7 +59,7 @@ export function useWorkshopQrScan({
       }
       return next;
     });
-  }, [setQuery, setWorkshopQrScan]);
+  }, [setQuery, setWorkshopQrScan, searchInputRef]);
 
   const handleSearchKeyDown = useCallback(
     (event) => {
@@ -100,7 +100,6 @@ export function useWorkshopQrScan({
     active,
     toggle,
     scanHint,
-    searchInputRef,
     searchPlaceholder,
     searchClassName: active ? "qr-scan-active" : "",
     handleSearchKeyDown,
