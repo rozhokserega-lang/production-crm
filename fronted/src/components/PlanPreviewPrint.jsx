@@ -1,4 +1,3 @@
-import { useEffect, useMemo, useState } from "react";
 import { resolvePlanPreviewArticleByName } from "../app/planPreviewHelpers";
 import { getPlanPreviewArticleCode, stripPlanItemMeta } from "../app/orderHelpers";
 import { PlanQrImage } from "./PlanQrImage";

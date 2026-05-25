@@ -35,6 +35,7 @@ vi.mock("../app/shipmentExportHelpers", () => ({
 
 vi.mock("../app/rowHelpers", () => ({
   isShipmentCellMissingError: vi.fn(() => false),
+  normalizeOrder: vi.fn((row) => row),
 }));
 
 vi.mock("../app/appUtils", () => ({
@@ -112,9 +113,11 @@ describe("useShipmentActions – sendSelectedShipmentToWork", () => {
   });
 
   it("calls sendShipmentToWork and load on success", async () => {
-    OrderService.sendShipmentToWork.mockResolvedValueOnce({ ok: true });
+    OrderService.sendShipmentToWork.mockResolvedValueOnce({ ok: true, order_id: "SP-ABCDEF01" });
+    const openSendToWorkDialog = vi.fn().mockResolvedValue(undefined);
     const props = makeProps({
       selectedShipments: [{ row: "r1", col: "c1", canSendToWork: true }],
+      openSendToWorkDialog,
     });
     const { result } = renderHook(() => useShipmentActions(props));
 
@@ -124,6 +127,7 @@ describe("useShipmentActions – sendSelectedShipmentToWork", () => {
 
     expect(OrderService.sendShipmentToWork).toHaveBeenCalledWith("r1", "c1");
     expect(props.load).toHaveBeenCalledTimes(1);
+    expect(openSendToWorkDialog).toHaveBeenCalledTimes(1);
     expect(props.setPlanPreviews).toHaveBeenCalledWith([]);
     expect(props.setSelectedShipments).toHaveBeenCalledWith([]);
   });

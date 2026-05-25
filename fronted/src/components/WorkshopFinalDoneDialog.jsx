@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PlanPreviewPrint } from "./PlanPreviewPrint";
 import { buildWorkshopPlanPreview } from "../app/workshopPlanPreviewHelpers";
 import { printWithPartialBodyClass, waitForImages } from "../app/printHelpers";
-import { buildNotifyPayload } from "../app/runActionHelpers";
 import { OrderService } from "../services/orderService";
 
 export function WorkshopFinalDoneDialog({
