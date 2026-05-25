@@ -310,6 +310,7 @@ const RPC_MAP = {
   webSetStrapStock: "web_set_strap_stock",
   webReduceOrderQty: "web_reduce_order_qty",
   webFinalizeWorkshopOrder: "web_finalize_workshop_order",
+  webFinalizeAssemblyOrder: "web_finalize_assembly_order",
   webGetProductionPlanDebts: "web_get_production_plan_debts",
   webGetReplacementOrders: "web_get_replacement_orders",
   webCreateReplacementOrder: "web_create_replacement_order",
@@ -691,6 +692,12 @@ function buildRpcPayload(action, payload = {}) {
     };
   }
   if (action === "webFinalizeWorkshopOrder") {
+    return {
+      p_order_id: String(payload.orderId || payload.p_order_id || "").trim(),
+      p_qty_ready: Number(payload.qtyReady ?? payload.p_qty_ready ?? 0),
+    };
+  }
+  if (action === "webFinalizeAssemblyOrder") {
     return {
       p_order_id: String(payload.orderId || payload.p_order_id || "").trim(),
       p_qty_ready: Number(payload.qtyReady ?? payload.p_qty_ready ?? 0),

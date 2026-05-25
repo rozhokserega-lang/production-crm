@@ -48,11 +48,15 @@ export function WorkshopFinalDoneDialog({
 
   if (!open || !meta) return null;
 
+  const stage = meta.stage === "assembly" ? "assembly" : "final";
+  const stageTitle = stage === "assembly" ? "Сборка" : "Финал";
+  const nextStageLabel = stage === "assembly" ? "на финал" : "в финал";
+
   return (
     <>
       <div className="dialog-backdrop">
         <div className="dialog-card workshop-final-dialog" style={{ maxWidth: 520, width: "95vw" }}>
-          <h3 style={{ marginTop: 0, marginBottom: 8 }}>Финал — сколько комплектов готово?</h3>
+          <h3 style={{ marginTop: 0, marginBottom: 8 }}>{stageTitle} — сколько комплектов готово?</h3>
           <p style={{ margin: "0 0 12px", color: "#64748b", fontSize: 13 }}>
             {meta.itemLabel || "—"}
             {meta.material ? ` · ${meta.material}` : ""}
@@ -96,7 +100,7 @@ export function WorkshopFinalDoneDialog({
                 fontSize: 13,
               }}
             >
-              В финал уйдёт <strong>{readyQty}</strong> шт., в «Долг» — <strong>{debtQty}</strong> шт. по плану {meta.week || "—"}.
+              В {nextStageLabel} уйдёт <strong>{readyQty}</strong> шт., в «Долг» — <strong>{debtQty}</strong> шт. по плану {meta.week || "—"}.
             </div>
           ) : null}
           {error ? <div className="error" style={{ marginBottom: 10 }}>{error}</div> : null}
@@ -163,10 +167,12 @@ export function useWorkshopFinalDone({
 
   const openFinalDoneDialog = useCallback((orderId, orderMeta = {}) => {
     const qty = Number(orderMeta.qty || 0) || 1;
+    const stage = orderMeta.stage === "assembly" ? "assembly" : "final";
     setMeta({
       orderId: String(orderId || ""),
       order: orderMeta.order || orderMeta,
       qty,
+      stage,
       week: orderMeta.week,
       item: orderMeta.item,
       itemLabel: orderMeta.itemLabel || stripItemLabel(orderMeta.item),
@@ -205,7 +211,19 @@ export function useWorkshopFinalDone({
       setDialogError("");
       try {
         const orderId = meta?.orderId;
-        if (qtyReady >= orderQty) {
+        const stage = meta?.stage === "assembly" ? "assembly" : "final";
+
+        if (stage === "assembly") {
+          if (qtyReady >= orderQty) {
+            await runAction("webSetAssemblyDone", orderId);
+          } else {
+            await callBackend("webFinalizeAssemblyOrder", {
+              orderId,
+              qtyReady,
+            });
+            void mutationLoad();
+          }
+        } else if (qtyReady >= orderQty) {
           await runAction("webSetShippingDone", orderId, {}, {
             notifyOnFinalStage: true,
             ...(meta?.notifyMeta || {}),

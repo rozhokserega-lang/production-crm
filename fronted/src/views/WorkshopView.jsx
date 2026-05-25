@@ -466,7 +466,17 @@ export const WorkshopView = memo(function WorkshopView({
                   <button
                     className="mini ok"
                     disabled={isPending(`webSetAssemblyDone:${orderId}`) || assemblyDone || !canOperateProduction}
-                    onClick={() => runAction("webSetAssemblyDone", orderId)}
+                    onClick={() =>
+                      openFinalDoneDialog(orderId, {
+                        stage: "assembly",
+                        order: o,
+                        qty: orderQty,
+                        week: o.week,
+                        item: o.item,
+                        itemLabel: rawItem,
+                        material: getMaterialLabel(o.item, o.material || o.colorName || ""),
+                      })
+                    }
                   >
                     ✓ {tab === "assembly" ? "Готово" : "Сборка: Готово"}
                   </button>
@@ -477,6 +487,7 @@ export const WorkshopView = memo(function WorkshopView({
                     disabled={isPending(`webSetShippingDone:${orderId}`) || packagingDone || !canOperateProduction}
                     onClick={() =>
                       openFinalDoneDialog(orderId, {
+                        stage: "final",
                         order: o,
                         qty: orderQty,
                         week: o.week,

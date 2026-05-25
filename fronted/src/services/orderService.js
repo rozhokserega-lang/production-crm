@@ -442,6 +442,10 @@ export class OrderService {
     return await callBackend("webFinalizeWorkshopOrder", { orderId, qtyReady });
   }
 
+  static async finalizeAssemblyOrder(orderId, qtyReady) {
+    return await callBackend("webFinalizeAssemblyOrder", { orderId, qtyReady });
+  }
+
   static async getProductionPlanDebts() {
     return await callBackend("webGetProductionPlanDebts");
   }
