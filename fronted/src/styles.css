@@ -3,8 +3,12 @@
   --bg-main: #f7f9fc;
   --bg-surface: #ffffff;
   --bg-surface-soft: #f8fbff;
+  --bg-card: #ffffff;
+  --bg-hover: #f1f5f9;
   --text-main: #0f172a;
   --text-soft: #475569;
+  --text-muted: #64748b;
+  --border: #dbe3ef;
   --border-main: #dbe3ef;
   --border-strong: #cbd5e1;
   --accent: #1f6f7a;
@@ -7414,11 +7418,13 @@ button.mini.accent:hover:not(:disabled) {
   width: min(720px, 96vw);
   max-height: 88vh;
   overflow: auto;
-  background: var(--bg-card);
+  background: var(--bg-surface, #ffffff);
   border: 1px solid var(--border-main);
   border-radius: 12px;
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.2);
   padding: 14px 16px 16px;
+  position: relative;
+  z-index: 1;
 }
 .cv-catalog-dialog__head {
   display: flex;
@@ -7477,7 +7483,7 @@ button.mini.accent:hover:not(:disabled) {
   padding: 8px 10px;
   border: 1px solid var(--border-main);
   border-radius: 8px;
-  background: var(--bg-main);
+  background: var(--bg-surface, #ffffff);
   color: var(--text-main);
   margin-bottom: 10px;
 }
@@ -7492,14 +7498,14 @@ button.mini.accent:hover:not(:disabled) {
 .cv-catalog-list__item {
   text-align: left;
   border: 1px solid var(--border-main);
-  background: var(--bg-main);
+  background: var(--bg-surface, #ffffff);
   border-radius: 8px;
   padding: 8px 10px;
   cursor: pointer;
 }
 .cv-catalog-list__item--active {
   border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 8%, var(--bg-main));
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg-surface, #ffffff));
 }
 .cv-catalog-list__name {
   display: block;
@@ -7539,7 +7545,7 @@ button.mini.accent:hover:not(:disabled) {
   padding: 6px 8px;
   border: 1px solid var(--border-main);
   border-radius: 6px;
-  background: var(--bg-main);
+  background: var(--bg-surface, #ffffff);
   color: var(--text-main);
   font-size: 13px;
 }
@@ -7556,7 +7562,7 @@ button.mini.accent:hover:not(:disabled) {
   border: 1px solid var(--border-main);
   border-radius: 8px;
   padding: 8px 10px;
-  background: var(--bg-main);
+  background: var(--bg-surface, #ffffff);
 }
 .cv-catalog-manage__btns {
   display: flex;
@@ -7578,7 +7584,7 @@ button.mini.accent:hover:not(:disabled) {
   padding: 6px 8px;
   border: 1px solid var(--border-main);
   border-radius: 6px;
-  background: var(--bg-main);
+  background: var(--bg-surface, #ffffff);
 }
 .cv-catalog-editor__table-wrap {
   overflow: auto;
@@ -7601,7 +7607,7 @@ button.mini.accent:hover:not(:disabled) {
   padding: 4px 6px;
   border: 1px solid var(--border-main);
   border-radius: 4px;
-  background: var(--bg-main);
+  background: var(--bg-surface, #ffffff);
   color: var(--text-main);
 }
 .cv-catalog-editor__del {
