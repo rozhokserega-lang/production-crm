@@ -4,6 +4,7 @@ import { StrapDialog } from "./StrapDialog";
 import { PlanDialog } from "./PlanDialog";
 import { PackagingInboxDialog } from "./PackagingInboxDialog";
 import { StrapDoneDialog } from "./StrapDoneDialog";
+import { ShipmentSendToWorkDialog } from "./ShipmentSendToWorkDialog";
 import { WorkshopFinalDoneDialog } from "./WorkshopFinalDoneDialog";
 
 export function AppDialogs({
@@ -78,6 +79,20 @@ export function AppDialogs({
         onPrint={dialogs.workshopFinalDone?.print}
         articleLookupByItemKey={dialogs.workshopFinalDone?.articleLookupByItemKey}
         previewDeps={dialogs.workshopFinalDone?.previewDeps}
+        printAreaRef={dialogs.workshopFinalDone?.printAreaRef}
+      />
+
+      <ShipmentSendToWorkDialog
+        open={dialogs.sendToWork?.open}
+        items={dialogs.sendToWork?.items || []}
+        planPreviews={dialogs.sendToWork?.planPreviews || []}
+        loading={dialogs.sendToWork?.loading}
+        error={dialogs.sendToWork?.error}
+        printing={dialogs.sendToWork?.printing}
+        onClose={dialogs.sendToWork?.close}
+        onShowPrint={dialogs.sendToWork?.showPrintSheets}
+        articleLookupByItemKey={dialogs.sendToWork?.articleLookupByItemKey}
+        printAreaRef={dialogs.sendToWork?.printAreaRef}
       />
 
       <OrderDrawer

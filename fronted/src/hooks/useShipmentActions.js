@@ -7,6 +7,7 @@ import {
 } from "../app/errorCatalogHelpers";
 import {
   isShipmentCellMissingError,
+  normalizeOrder,
 } from "../app/rowHelpers";
 import {
   buildShipmentCellAttempts,
@@ -29,8 +30,9 @@ import {
 } from "../app/shipmentDialogHelpers";
 import {
   buildShipmentPreviewPlans,
-  enrichPreviewFromFurniture,
-  enrichPreviewWithStrapProduct,
+  attachOrderIdToPlans,
+  createShipmentPlanPreviewEnricher,
+  loadShipmentTableBySourceMap,
 } from "../app/shipmentPreviewHelpers";
 import {
   buildPreviewRowsFromFurnitureTemplate,
@@ -43,13 +45,6 @@ import {
   normalizeFurnitureKey,
   normalizeStrapProductKey,
 } from "../utils/furnitureUtils";
-import {
-  getPlanPreviewArticleCode,
-  extractPlanItemArticle,
-} from "../app/orderHelpers";
-import {
-  resolvePlanPreviewArticleByName,
-} from "../app/planPreviewHelpers";
 import {
   buildCuttingPlanFromSelection,
 } from "../app/cuttingPlanAlgorithm";
@@ -86,6 +81,8 @@ export function useShipmentActions({
   strapProductBySizeToken,
   strapProductsByArticleCode,
   strapTargetProduct,
+  productionRows = [],
+  openSendToWorkDialog,
 }) {
   const selectedShipmentsRef = useRef(selectedShipments);
   const importPlanFileRef = useRef(null);
@@ -106,6 +103,7 @@ export function useShipmentActions({
     }
     setActionLoading("shipment:bulk");
     setError("");
+    const sentResults = [];
     try {
       const metalDeficits = (selectedShipmentMetal.rows || []).filter((x) => Number(x.deficitQty || 0) > 0);
       const hasMetalDeficit = metalDeficits.length > 0;
@@ -130,16 +128,21 @@ export function useShipmentActions({
       }
       for (const s of sendable) {
         const attempts = buildShipmentCellAttempts(s);
-        await runShipmentCellActionWithFallback({
+        const orderRaw = await runShipmentCellActionWithFallback({
           actionFn: (params) => OrderService.sendShipmentToWork(params.row, params.col),
           attempts,
           isMissingError: isShipmentCellMissingError,
           requestBuilder: (p) => ({ row: p.row, col: p.col }),
         });
+        const order = normalizeOrder(orderRaw) || orderRaw;
+        sentResults.push({ selection: s, order });
       }
       setPlanPreviews([]);
       setSelectedShipments([]);
       await load();
+      if (typeof openSendToWorkDialog === "function" && sentResults.length) {
+        await openSendToWorkDialog(sentResults);
+      }
       if (hasMetalDeficit) {
         setError("Заказы отправлены в работу. Позиции по нехватке металла добавлены в очередь 'Металл в работу'.");
         if (view === "metal") {
@@ -151,7 +154,7 @@ export function useShipmentActions({
     } finally {
       setActionLoading("");
     }
-  }, [canOperateProduction, selectedShipmentMetal, setActionLoading, setError, setPlanPreviews, setSelectedShipments, load, view, loadMetalQueue, denyActionByRole]);
+  }, [canOperateProduction, selectedShipmentMetal, setActionLoading, setError, setPlanPreviews, setSelectedShipments, load, view, loadMetalQueue, denyActionByRole, openSendToWorkDialog]);
 
   const deleteSelectedShipmentPlan = useCallback(async () => {
     if (!canManageOrders) {
@@ -207,63 +210,33 @@ export function useShipmentActions({
     try {
       const generatedAt = formatDateTimeForPrint(new Date());
       const strapPreviews = buildStrapPreviewPlans(strapSelections, generatedAt);
-      let shipmentTableBySource = new Map();
+      const shipmentTableBySource = await loadShipmentTableBySourceMap();
+      let productionRowsForPreview = Array.isArray(productionRows) ? productionRows : [];
       try {
-        const tableRows = await OrderService.getShipmentTable();
-        const list = Array.isArray(tableRows) ? tableRows : [];
-        shipmentTableBySource = new Map(
-          list.map((row) => [
-            `${String(row?.source_row_id || row?.sourceRowId || "").trim()}|${String(row?.source_col_id || row?.sourceColId || "").trim()}`,
-            row,
-          ]),
-        );
+        const freshOrders = await OrderService.getAllOrders();
+        productionRowsForPreview = Array.isArray(freshOrders)
+          ? freshOrders.map(normalizeOrder)
+          : productionRowsForPreview;
       } catch (_) {
-        shipmentTableBySource = new Map();
+        // keep cached rows
       }
-      const enrichPreview = (preview, shipmentRow) => {
-        const withFurniture = enrichPreviewFromFurniture(preview, {
-          furnitureTemplates,
-          resolveFurnitureTemplateForPreview: resolveFurnitureTemplateForPreviewByArticle,
-          buildPreviewRowsFromFurnitureTemplate,
-          normalizeFurnitureKey,
-          furnitureLoading,
-          furnitureError,
-        });
-        const withStrapProduct = enrichPreviewWithStrapProduct(withFurniture, shipmentRow, {
-          canonicalStrapProductName,
-          normalizeFurnitureKey,
-          getPlanPreviewArticleCode,
-          resolvePlanPreviewArticleByName,
-          articleLookupByItemKey,
-          strapProductsByArticleCode,
-          normalizeStrapProductKey,
-          extractDetailSizeToken,
-          strapProductBySizeToken,
-          strapTargetProduct,
-        });
-        const sourceKey = `${String(shipmentRow?.row || "").trim()}|${String(shipmentRow?.col || "").trim()}`;
-        const sourceRowFromTable = shipmentTableBySource.get(sourceKey) || null;
-        const articleFromTable = String(
-          sourceRowFromTable?.product_article ||
-            sourceRowFromTable?.productArticle ||
-          sourceRowFromTable?.article_code ||
-            sourceRowFromTable?.articleCode ||
-            sourceRowFromTable?.article ||
-            sourceRowFromTable?.mapped_article_code ||
-            sourceRowFromTable?.mappedArticleCode ||
-            "",
-        ).trim();
-        const explicitArticle = String(
-          shipmentRow?.productArticle ||
-            extractPlanItemArticle(shipmentRow?.sourceItem || shipmentRow?.item || "") ||
-            articleFromTable ||
-            extractPlanItemArticle(sourceRowFromTable?.item || "") ||
-            "",
-        ).trim();
-        if (!explicitArticle) return withStrapProduct;
-        if (getPlanPreviewArticleCode(withStrapProduct)) return withStrapProduct;
-        return { ...withStrapProduct, article: explicitArticle };
-      };
+      const enrichPreview = createShipmentPlanPreviewEnricher({
+        shipmentTableBySource,
+        productionRows: productionRowsForPreview,
+        furnitureTemplates,
+        resolveFurnitureTemplateForPreview: resolveFurnitureTemplateForPreviewByArticle,
+        buildPreviewRowsFromFurnitureTemplate,
+        normalizeFurnitureKey,
+        furnitureLoading,
+        furnitureError,
+        canonicalStrapProductName,
+        articleLookupByItemKey,
+        strapProductsByArticleCode,
+        normalizeStrapProductKey,
+        extractDetailSizeToken,
+        strapProductBySizeToken,
+        strapTargetProduct,
+      });
       if (shipmentSelections.length === 0) {
         setPlanPreviews(strapPreviews);
         return;
@@ -272,24 +245,29 @@ export function useShipmentActions({
         const s = shipmentSelections[0];
         const preview = await OrderService.previewPlanFromShipment(s.row, s.col);
         const enriched = preview ? enrichPreview({ ...preview, _key: `${s.row}-${s.col}` }, s) : null;
-        const plans = enriched ? [enriched] : [];
+        const plans = attachOrderIdToPlans(
+          enriched ? [enriched] : [],
+          [],
+          productionRowsForPreview,
+        );
         plans.push(...strapPreviews);
         setPlanPreviews(plans);
       } else {
         const { plans = [], failedCount = 0, batchError } = await buildShipmentPreviewPlans(shipmentSelections, {
           enrichPreview,
         });
+        const plansWithOrders = attachOrderIdToPlans(plans, [], productionRowsForPreview);
         if (failedCount > 0) {
           setError(
             `Часть предпросмотров не построена (${failedCount} шт). ` +
             `Причина: ${extractErrorMessage(batchError)}`
           );
         }
-        if (!plans.length && strapPreviews.length === 0) {
+        if (!plansWithOrders.length && strapPreviews.length === 0) {
           throw new Error("Не удалось построить предпросмотр ни для одной выбранной позиции.");
         }
-        plans.push(...strapPreviews);
-        setPlanPreviews(plans);
+        plansWithOrders.push(...strapPreviews);
+        setPlanPreviews(plansWithOrders);
       }
     } catch (e) {
       setError(toUserError(e));
@@ -308,6 +286,7 @@ export function useShipmentActions({
     strapProductBySizeToken,
     strapProductsByArticleCode,
     strapTargetProduct,
+    productionRows,
   ]);
 
   const exportSelectedShipmentToExcel = useCallback(() => {

@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PlanPreviewPrint } from "./PlanPreviewPrint";
 import { buildWorkshopPlanPreview } from "../app/workshopPlanPreviewHelpers";
+import { printWithPartialBodyClass, waitForImages } from "../app/printHelpers";
 import { buildNotifyPayload } from "../app/runActionHelpers";
 import { OrderService } from "../services/orderService";
 
@@ -19,6 +20,7 @@ export function WorkshopFinalDoneDialog({
   onPrint,
   articleLookupByItemKey,
   previewDeps,
+  printAreaRef,
 }) {
   const orderQty = Number(meta?.qty || 0) || 0;
   const readyQty = Number(String(qtyInput || "").replace(",", "."));
@@ -125,7 +127,7 @@ export function WorkshopFinalDoneDialog({
         </div>
       </div>
       {hasDebt && planPreview ? (
-        <div className="print-area workshop-final-print-area" aria-hidden="true">
+        <div ref={printAreaRef} className="print-area workshop-final-print-area" aria-hidden="true">
           <PlanPreviewPrint planPreview={planPreview} articleLookupByItemKey={articleLookupByItemKey} />
         </div>
       ) : null}
@@ -151,6 +153,7 @@ export function useWorkshopFinalDone({
   const [dialogError, setDialogError] = useState("");
   const [saving, setSaving] = useState(false);
   const [productionDebts, setProductionDebts] = useState([]);
+  const printAreaRef = useRef(null);
 
   const refreshProductionDebts = useCallback(async () => {
     try {
@@ -265,15 +268,12 @@ export function useWorkshopFinalDone({
     ],
   );
 
-  const printAdjustedPlan = useCallback(() => {
-    document.body.classList.add("workshop-partial-print");
-    const cleanup = () => {
-      document.body.classList.remove("workshop-partial-print");
-      window.removeEventListener("afterprint", cleanup);
-    };
-    window.addEventListener("afterprint", cleanup);
-    window.print();
-    window.setTimeout(cleanup, 1000);
+  const printAdjustedPlan = useCallback(async () => {
+    await new Promise((resolve) => {
+      window.requestAnimationFrame(() => window.requestAnimationFrame(resolve));
+    });
+    await waitForImages(printAreaRef.current);
+    printWithPartialBodyClass("workshop-partial-print");
   }, []);
 
   const debtRows = useMemo(() => productionDebts, [productionDebts]);
@@ -294,6 +294,7 @@ export function useWorkshopFinalDone({
       print: printAdjustedPlan,
       articleLookupByItemKey,
       previewDeps,
+      printAreaRef,
     },
     openFinalDoneDialog,
     productionDebts: debtRows,

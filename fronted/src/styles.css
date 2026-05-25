@@ -3539,11 +3539,31 @@ button:disabled {
   object-fit: contain;
 }
 
+.plan-qr-image--pending {
+  background: repeating-linear-gradient(
+    45deg,
+    #f8fafc,
+    #f8fafc 6px,
+    #e2e8f0 6px,
+    #e2e8f0 12px
+  );
+}
+
 .plan-qr-caption {
   font-size: 10px;
   line-height: 1.2;
   text-align: center;
   color: #111827;
+}
+
+.plan-qr-order-id {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: center;
+  color: #0f766e;
+  word-break: break-all;
 }
 
 .plan-table {
@@ -3589,7 +3609,8 @@ button:disabled {
   margin-top: 16px;
 }
 
-.workshop-final-print-area {
+.workshop-final-print-area,
+.shipment-send-print-area {
   position: fixed;
   left: -10000px;
   top: 0;
@@ -3668,11 +3689,31 @@ button:disabled {
     visibility: visible !important;
   }
 
+  body.workshop-partial-print .shipment-send-print-area,
+  body.workshop-partial-print .shipment-send-print-area * {
+    visibility: visible !important;
+  }
+
   body.workshop-partial-print .workshop-final-print-area {
-    position: fixed !important;
-    inset: 0 !important;
-    left: 0 !important;
-    top: 0 !important;
+    position: static !important;
+    inset: auto !important;
+    left: auto !important;
+    top: auto !important;
+    width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+    pointer-events: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+    z-index: 2147483647 !important;
+  }
+
+  body.workshop-partial-print .shipment-send-print-area {
+    position: static !important;
+    inset: auto !important;
+    left: auto !important;
+    top: auto !important;
     width: 100% !important;
     height: auto !important;
     overflow: visible !important;
@@ -3688,9 +3729,20 @@ button:disabled {
     max-width: none !important;
     margin: 0 !important;
     box-shadow: none !important;
+    page-break-after: auto;
+    break-after: auto;
   }
 
-  .workshop-final-print-area {
+  body.workshop-partial-print .shipment-send-print-area .print-plan-page {
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+    page-break-after: always;
+  }
+
+  body:not(.workshop-partial-print) .workshop-final-print-area,
+  body:not(.workshop-partial-print) .shipment-send-print-area {
     position: static !important;
     left: auto !important;
     width: 100% !important;
@@ -3840,6 +3892,10 @@ button:disabled {
 
   .plan-qr-caption {
     font-size: 7px;
+  }
+
+  .plan-qr-order-id {
+    font-size: 9px;
   }
 
   .plan-table {
@@ -4431,6 +4487,36 @@ button:hover {
 
 .workshop-qr-scan-toggle.is-active {
   box-shadow: 0 0 0 2px rgba(14, 116, 144, 0.15);
+}
+
+.shipment-send-dialog__list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 42vh;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.shipment-send-dialog__row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.shipment-send-dialog__order {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-weight: 700;
+  color: #0f766e;
+}
+
+.shipment-send-dialog__meta {
+  font-size: 13px;
+  color: #475569;
 }
 
 .workshop-qr-scan-hint {

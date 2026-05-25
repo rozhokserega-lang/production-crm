@@ -19,17 +19,14 @@ export async function runShipmentCellActionWithFallback({
   isMissingError,
   requestBuilder,
 }) {
-  let done = false;
   let lastErr = null;
   for (const p of attempts) {
     try {
-      await actionFn(requestBuilder(p));
-      done = true;
-      break;
+      return await actionFn(requestBuilder(p));
     } catch (e) {
       lastErr = e;
       if (!isMissingError(e)) throw e;
     }
   }
-  if (!done) throw lastErr || new Error("Shipment cell not found");
+  throw lastErr || new Error("Shipment cell not found");
 }

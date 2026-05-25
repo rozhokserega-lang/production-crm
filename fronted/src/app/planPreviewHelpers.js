@@ -1,7 +1,18 @@
 import { normalizeFurnitureKey } from "../utils/furnitureUtils";
+import { normalizePlanWeek } from "./overviewPlansHelpers";
 import { getPlanPreviewArticleCode } from "./orderHelpers";
 import { extractPlanItemArticle } from "./orderHelpers";
 import { extractPlanItemQrQty } from "./orderHelpers";
+
+/** Как web_norm_item_key в Supabase (материал / изделие). */
+export function normShipmentItemKey(text) {
+  return String(text || "")
+    .trim()
+    .toLowerCase()
+    .replace(/х/g, "x")
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
 function extractSizeTokens(text) {
   const matches = [...String(text || "").matchAll(/(\d{2,4})\s*[_xх]\s*(\d{2,4})/gi)];
@@ -57,8 +68,9 @@ export function resolvePlanPreviewArticleByName(planPreview, articleLookupByItem
 }
 
 export function buildPlanPreviewQrPayload(planPreview, fallbackArticle = "") {
-  const article = getPlanPreviewArticleCode(planPreview) || String(fallbackArticle || "").trim() || "-";
-  const planNumber = String(planPreview?.planNumber || "-").trim() || "-";
+  const sanitize = (value) => String(value || "").trim().replace(/[;\r\n]+/g, " ");
+  const article = sanitize(getPlanPreviewArticleCode(planPreview) || fallbackArticle || "-") || "-";
+  const planNumber = sanitize(planPreview?.planNumber || "-") || "-";
   const qrQtyFromNames = [
     String(planPreview?.firstName || ""),
     String(planPreview?.detailedName || ""),
@@ -68,7 +80,53 @@ export function buildPlanPreviewQrPayload(planPreview, fallbackArticle = "") {
     .find((n) => Number.isFinite(n) && n > 0);
   const qtyRaw = Number(planPreview?.qrQty || qrQtyFromNames || planPreview?.qty || 0);
   const qty = Number.isFinite(qtyRaw) ? qtyRaw : 0;
-  return `ARTICLE:${article};PLAN:${planNumber};QTY:${qty}`;
+  const orderId = String(planPreview?.orderId || planPreview?.order_id || "")
+    .trim()
+    .toUpperCase();
+  const base = `ARTICLE:${article};PLAN:${planNumber};QTY:${qty}`;
+  if (/^SP-[A-F0-9]{6,}$/i.test(orderId)) {
+    return `${base};ORDER:${orderId}`;
+  }
+  return base;
+}
+
+function materialsCompatible(expectedMaterial, orderMaterial) {
+  const expected = normShipmentItemKey(expectedMaterial);
+  const actual = normShipmentItemKey(orderMaterial);
+  if (!expected) return true;
+  if (!actual) return true;
+  if (expected === actual) return true;
+  return expected.includes(actual) || actual.includes(expected);
+}
+
+export function resolveProductionOrderIdForShipment(rows = [], sourceRow = "", week = "", material = "") {
+  const rowKey = String(sourceRow || "").trim();
+  const weekKey = normalizePlanWeek(week) || String(week || "").trim();
+  if (!rowKey || !weekKey) return "";
+  const materialKey = normShipmentItemKey(material);
+  const candidates = [];
+  for (const order of rows) {
+    const source = String(order?.source_row_id ?? order?.sourceRowId ?? "").trim();
+    const orderWeek = normalizePlanWeek(order?.week ?? "") || String(order?.week ?? "").trim();
+    if (source !== rowKey || orderWeek !== weekKey) continue;
+    const orderId = String(order?.orderId || order?.order_id || "")
+      .trim()
+      .toUpperCase();
+    if (!/^SP-[A-F0-9]{6,}$/i.test(orderId)) continue;
+    candidates.push({
+      orderId,
+      material: normShipmentItemKey(order?.material || order?.colorName || order?.color_name || ""),
+    });
+  }
+  if (!candidates.length) return "";
+  if (candidates.length === 1) return candidates[0].orderId;
+  if (materialKey) {
+    const exact = candidates.find((entry) => entry.material === materialKey);
+    if (exact) return exact.orderId;
+    const fuzzy = candidates.find((entry) => materialsCompatible(materialKey, entry.material));
+    if (fuzzy) return fuzzy.orderId;
+  }
+  return candidates[0].orderId;
 }
 
 export function buildQrCodeUrl(payload, size = 160) {

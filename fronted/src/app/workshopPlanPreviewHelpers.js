@@ -42,6 +42,9 @@ export async function buildWorkshopPlanPreview(order, qtyReady, deps = {}) {
         preview?.article ||
         "",
     ).trim(),
+    orderId: String(order?.orderId || order?.order_id || "")
+      .trim()
+      .toUpperCase(),
     _key: `workshop-${String(order?.orderId || order?.order_id || "")}-${readyQty}`,
   };
 

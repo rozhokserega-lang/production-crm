@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useWorkshopFinalDone } from "../components/WorkshopFinalDoneDialog";
+import { useShipmentSendToWorkDialog } from "../components/ShipmentSendToWorkDialog";
 import { buildNotifyPayload } from "../app/runActionHelpers";
 import * as XLSX from "xlsx";
 import {
@@ -28,6 +29,8 @@ import {
 } from "../utils/shipmentUtils";
 import {
   buildFurnitureTemplates,
+  canonicalStrapProductName,
+  extractDetailSizeToken,
   normalizeFurnitureKey,
   normalizeStrapProductKey,
   resolveStrapMaterialByProduct,
@@ -1274,6 +1277,39 @@ export function useAppState({ auth }) {
     strapSheetHeight: STRAP_SHEET_HEIGHT,
     furnitureCustomTemplates,
   });
+
+  const shipmentPrintPreviewDeps = useMemo(
+    () => ({
+      productionRows: rows,
+      furnitureTemplates,
+      resolveFurnitureTemplateForPreview: resolveFurnitureTemplateForPreviewByArticle,
+      buildPreviewRowsFromFurnitureTemplate,
+      normalizeFurnitureKey,
+      furnitureLoading,
+      furnitureError,
+      canonicalStrapProductName,
+      articleLookupByItemKey,
+      strapProductsByArticleCode,
+      normalizeStrapProductKey,
+      extractDetailSizeToken,
+      strapProductBySizeToken,
+      strapTargetProduct,
+    }),
+    [
+      rows,
+      furnitureTemplates,
+      resolveFurnitureTemplateForPreviewByArticle,
+      furnitureLoading,
+      furnitureError,
+      articleLookupByItemKey,
+      strapProductsByArticleCode,
+      strapProductBySizeToken,
+      strapTargetProduct,
+    ],
+  );
+
+  const { sendToWorkDialog, openSendToWorkDialog } = useShipmentSendToWorkDialog(shipmentPrintPreviewDeps);
+
   const {
     importPlanFileRef,
     sendSelectedShipmentToWork,
@@ -1306,6 +1342,8 @@ export function useAppState({ auth }) {
     strapProductBySizeToken,
     strapProductsByArticleCode,
     strapTargetProduct,
+    productionRows: rows,
+    openSendToWorkDialog,
   });
 
 
@@ -1691,6 +1729,7 @@ export function useAppState({ auth }) {
         submit: submitStrapDone,
       },
       workshopFinalDone: finalDoneDialog,
+      sendToWork: sendToWorkDialog,
     },
     actions: {
       overrideOrderStageFromDrawer,

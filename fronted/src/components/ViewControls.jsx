@@ -245,7 +245,6 @@ export function ViewControls({
     view,
     tab,
     setQuery,
-    setWeekFilter,
     setWorkshopQrScan,
     searchInputRef: workshopQrSearchInputRef,
   });

@@ -6,10 +6,9 @@ import { useNavigation } from "../contexts/NavigationContext";
 import { useAuth } from "../contexts/AuthContext";
 import { useUiState } from "../contexts/UiStateContext";
 import {
-  buildPlanPreviewQrPayload,
-  buildQrCodeUrl,
   resolvePlanPreviewArticleByName,
 } from "../app/planPreviewHelpers";
+import { PlanQrImage } from "../components/PlanQrImage";
 import { getReadableTextColor } from "../utils/colorUtils";
 import { normalizeFurnitureKey } from "../utils/furnitureUtils";
 import { getShipmentStageKey, isStorageLikeName } from "../utils/shipmentUtils";
@@ -303,17 +302,11 @@ export const ShipmentView = memo(function ShipmentView() {
                           <div className="num">{planPreview.planNumber || "-"}</div>
                         </div>
                         <div className="plan-qr-box">
-                          {(() => {
-                            const fallbackArticle = resolvePlanPreviewArticleByName(planPreview, articleLookupByItemKey);
-                            return (
-                              <img
-                                className="plan-qr-image"
-                                src={buildQrCodeUrl(buildPlanPreviewQrPayload(planPreview, fallbackArticle))}
-                                alt="QR изделия/плана/количества"
-                              />
-                            );
-                          })()}
-                          <div className="plan-qr-caption">Артикул / план / количество</div>
+                          <PlanQrImage
+                            planPreview={planPreview}
+                            articleCode={resolvePlanPreviewArticleByName(planPreview, articleLookupByItemKey)}
+                          />
+                          <div className="plan-qr-caption">Артикул / план / заказ</div>
                         </div>
                       </div>
                     </div>

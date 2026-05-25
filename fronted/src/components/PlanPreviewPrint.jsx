@@ -1,9 +1,7 @@
-import {
-  buildPlanPreviewQrPayload,
-  buildQrCodeUrl,
-  resolvePlanPreviewArticleByName,
-} from "../app/planPreviewHelpers";
+import { useEffect, useMemo, useState } from "react";
+import { resolvePlanPreviewArticleByName } from "../app/planPreviewHelpers";
 import { getPlanPreviewArticleCode, stripPlanItemMeta } from "../app/orderHelpers";
+import { PlanQrImage } from "./PlanQrImage";
 
 function stripMaterialSuffix(name, material) {
   const rawName = stripPlanItemMeta(String(name || "")).trim();
@@ -50,12 +48,8 @@ export function PlanPreviewPrint({ planPreview, articleLookupByItemKey = null })
             <div className="num">{planPreview.planNumber || "-"}</div>
           </div>
           <div className="plan-qr-box">
-            <img
-              className="plan-qr-image"
-              src={buildQrCodeUrl(buildPlanPreviewQrPayload(planPreview, articleCode))}
-              alt="QR изделия/плана/количества"
-            />
-            <div className="plan-qr-caption">Артикул / план / количество</div>
+            <PlanQrImage planPreview={planPreview} articleCode={articleCode} />
+            <div className="plan-qr-caption">Артикул / план / заказ</div>
           </div>
         </div>
       </div>

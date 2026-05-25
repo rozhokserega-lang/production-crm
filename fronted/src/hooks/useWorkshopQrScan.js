@@ -9,7 +9,6 @@ export function useWorkshopQrScan({
   view,
   tab,
   setQuery,
-  setWeekFilter,
   setWorkshopQrScan,
   searchInputRef,
 }) {
@@ -34,16 +33,17 @@ export function useWorkshopQrScan({
   const applyScan = useCallback(
     (raw) => {
       const parsed = parseWorkshopQrScan(raw);
-      if (!parsed) return false;
+      if (!parsed?.orderId) {
+        setWorkshopQrScan(null);
+        setScanHint("В QR нет ID заказа — отправьте в производство и перепечатайте лист");
+        return false;
+      }
       setWorkshopQrScan(parsed);
       setQuery(workshopQrScanLabel(parsed));
-      if (parsed.type === "qr" && parsed.plan) {
-        setWeekFilter([parsed.plan]);
-      }
-      setScanHint("QR принят — показаны подходящие заказы");
+      setScanHint("Найден заказ " + parsed.orderId);
       return true;
     },
-    [setQuery, setWeekFilter, setWorkshopQrScan],
+    [setQuery, setWorkshopQrScan],
   );
 
   const toggle = useCallback(() => {
@@ -51,11 +51,9 @@ export function useWorkshopQrScan({
       const next = !prev;
       setWorkshopQrScan(null);
       setScanHint("");
+      setQuery("");
       if (next) {
-        setQuery("");
         window.setTimeout(() => searchInputRef.current?.focus(), 0);
-      } else {
-        setQuery("");
       }
       return next;
     });
@@ -67,9 +65,7 @@ export function useWorkshopQrScan({
       event.preventDefault();
       const raw = String(event.currentTarget.value || "").trim();
       if (!raw) return;
-      if (!applyScan(raw)) {
-        setScanHint("Не удалось распознать QR-код");
-      }
+      applyScan(raw);
     },
     [active, applyScan],
   );
@@ -92,7 +88,7 @@ export function useWorkshopQrScan({
   );
 
   const searchPlaceholder = active
-    ? "Сканируйте QR-код заказа…"
+    ? "Сканируйте ID заказа (SP-…)"
     : "Поиск по названию или ID";
 
   return {
