@@ -61,24 +61,26 @@ function KitPartsTable({
                   />
                 )}
               </td>
-              <td>
-                <input
-                  type="number"
-                  min="1"
-                  value={it.w}
-                  disabled={readOnly}
-                  onChange={(e) => updateItem(idx, "w", e.target.value)}
-                />
-              </td>
-              <td>
-                <input
-                  type="number"
-                  min="1"
-                  value={it.h}
-                  disabled={readOnly}
-                  onChange={(e) => updateItem(idx, "h", e.target.value)}
-                />
-              </td>
+                <td>
+                  <input
+                    type="number"
+                    min="0.5"
+                    step="0.5"
+                    value={it.w}
+                    disabled={readOnly}
+                    onChange={(e) => updateItem(idx, "w", e.target.value)}
+                  />
+                </td>
+                <td>
+                  <input
+                    type="number"
+                    min="0.5"
+                    step="0.5"
+                    value={it.h}
+                    disabled={readOnly}
+                    onChange={(e) => updateItem(idx, "h", e.target.value)}
+                  />
+                </td>
               {showPerUnit ? (
                 <td>
                   <input

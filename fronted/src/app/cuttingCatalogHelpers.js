@@ -1,9 +1,15 @@
 import { extractDetailSizeToken } from "../utils/furnitureUtils";
 
+/** Округление до 0.5 мм (для размеров раскроя). */
+export function roundCuttingDim(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.round(n * 2) / 2;
+}
+
 function readExplicitDim(value) {
   if (value === "" || value == null) return 0;
-  const n = Math.round(Number(value) || 0);
-  return n > 0 ? n : 0;
+  return roundCuttingDim(value);
 }
 
 /** Размер для раскроя: явные w/h важнее размера в названии «(736_350)». */

@@ -9,10 +9,19 @@ import {
 
 describe("cuttingCatalogHelpers", () => {
   it("prefers explicit cutting sizes over size token in name", () => {
-    expect(parseCuttingCatalogDims({ itemName: "Крышки (736_350)", w: 735, h: 350 })).toEqual({
-      w: 735,
+    expect(parseCuttingCatalogDims({ itemName: "Крышки (736_350)", w: 735.5, h: 350 })).toEqual({
+      w: 735.5,
       h: 350,
     });
+  });
+
+  it("rounds cutting sizes to 0.5 mm step", () => {
+    expect(normalizeCatalogItem({
+      itemName: "Планка",
+      w: "736.3",
+      h: "40.1",
+      perUnit: 2,
+    })).toMatchObject({ w: 736.5, h: 40 });
   });
 
   it("expands kit using saved cutting sizes", () => {
