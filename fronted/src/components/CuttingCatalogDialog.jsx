@@ -6,41 +6,133 @@ import {
   countCatalogKitPieces,
   normalizeCatalogItem,
   furnitureTemplateToCatalogItems,
+  catalogItemsToEditorRows,
+  catalogKitSizesChanged,
 } from "../app/cuttingCatalogHelpers";
 
 const EMPTY_ITEM = { itemName: "", w: "", h: "", perUnit: 1, material: "" };
 
+function parseApiError(e, fallback) {
+  const raw = e?.message || fallback;
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed?.message || raw;
+  } catch {
+    return raw;
+  }
+}
+
+function KitPartsTable({
+  items,
+  onChange,
+  readOnly = false,
+  showPerUnit = true,
+  showMaterial = true,
+  compact = false,
+}) {
+  const updateItem = (idx, field, value) => {
+    onChange(items.map((it, i) => (i === idx ? { ...it, [field]: value } : it)));
+  };
+
+  return (
+    <div className={`cv-catalog-editor__table-wrap${compact ? " cv-catalog-editor__table-wrap--compact" : ""}`}>
+      <table className="cv-catalog-editor__table">
+        <thead>
+          <tr>
+            <th>Деталь</th>
+            <th title="Размер для раскроя (мм)">Ш раскр.</th>
+            <th title="Размер для раскроя (мм)">В раскр.</th>
+            {showPerUnit ? <th>На компл.</th> : null}
+            {showMaterial ? <th>Материал</th> : null}
+            {!readOnly ? <th /> : null}
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((it, idx) => (
+            <tr key={idx}>
+              <td>
+                {readOnly ? (
+                  <span className="cv-catalog-editor__readonly-name" title={it.itemName}>{it.itemName}</span>
+                ) : (
+                  <input
+                    value={it.itemName}
+                    onChange={(e) => updateItem(idx, "itemName", e.target.value)}
+                    placeholder="Крышка (736×350)"
+                  />
+                )}
+              </td>
+              <td>
+                <input
+                  type="number"
+                  min="1"
+                  value={it.w}
+                  disabled={readOnly}
+                  onChange={(e) => updateItem(idx, "w", e.target.value)}
+                />
+              </td>
+              <td>
+                <input
+                  type="number"
+                  min="1"
+                  value={it.h}
+                  disabled={readOnly}
+                  onChange={(e) => updateItem(idx, "h", e.target.value)}
+                />
+              </td>
+              {showPerUnit ? (
+                <td>
+                  <input
+                    type="number"
+                    min="1"
+                    value={it.perUnit}
+                    disabled={readOnly}
+                    onChange={(e) => updateItem(idx, "perUnit", e.target.value)}
+                  />
+                </td>
+              ) : null}
+              {showMaterial ? (
+                <td>
+                  <input
+                    value={it.material}
+                    disabled={readOnly}
+                    onChange={(e) => updateItem(idx, "material", e.target.value)}
+                    placeholder="ЛДСП 16"
+                  />
+                </td>
+              ) : null}
+              {!readOnly ? (
+                <td>
+                  <button
+                    type="button"
+                    className="cv-catalog-editor__del"
+                    onClick={() => onChange(items.filter((_, i) => i !== idx))}
+                    title="Удалить строку"
+                  >
+                    ✕
+                  </button>
+                </td>
+              ) : null}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function KitEditor({ kit, furnitureTemplates, onSave, onDelete, onCancel, saving }) {
   const [name, setName] = useState(kit?.name || "");
-  const [items, setItems] = useState(
-    (kit?.items?.length ? kit.items : [{ ...EMPTY_ITEM }]).map((it) => ({
-      itemName: it.itemName || "",
-      w: it.w ?? "",
-      h: it.h ?? "",
-      perUnit: it.perUnit ?? 1,
-      material: it.material || "",
-    })),
-  );
+  const [items, setItems] = useState(catalogItemsToEditorRows(kit?.items));
   const [importProduct, setImportProduct] = useState("");
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
 
   useEffect(() => {
     setName(kit?.name || "");
-    setItems(
-      (kit?.items?.length ? kit.items : [{ ...EMPTY_ITEM }]).map((it) => ({
-        itemName: it.itemName || "",
-        w: it.w ?? "",
-        h: it.h ?? "",
-        perUnit: it.perUnit ?? 1,
-        material: it.material || "",
-      })),
-    );
+    setItems(catalogItemsToEditorRows(kit?.items));
     setError("");
+    setSuccess("");
   }, [kit]);
-
-  const updateItem = (idx, field, value) => {
-    setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, [field]: value } : it)));
-  };
 
   const handleImportFurniture = () => {
     const tpl = furnitureTemplates.find((t) => t.product_name === importProduct);
@@ -51,38 +143,46 @@ function KitEditor({ kit, furnitureTemplates, onSave, onDelete, onCancel, saving
       return;
     }
     if (!name.trim()) setName(tpl.product_name);
-    setItems(imported.map((it) => ({
-      itemName: it.itemName,
-      w: it.w,
-      h: it.h,
-      perUnit: it.perUnit,
-      material: it.material,
-    })));
+    setItems(catalogItemsToEditorRows(imported));
+    setSuccess("Состав загружен из конструктора — отредактируйте размеры для раскроя и сохраните");
     setError("");
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const trimmedName = name.trim();
     if (!trimmedName) {
       setError("Укажите название комплекта");
+      setSuccess("");
       return;
     }
-    const normalized = items
-      .map((it) => normalizeCatalogItem(it))
-      .filter(Boolean);
+    const normalized = items.map((it) => normalizeCatalogItem(it)).filter(Boolean);
     if (!normalized.length) {
       setError("Добавьте хотя бы одну деталь с размером (Ш×В)");
+      setSuccess("");
       return;
     }
-    onSave({
-      id: kit?.id || 0,
-      name: trimmedName,
-      items: normalized,
-    });
+    setError("");
+    try {
+      const saved = await onSave({
+        id: kit?.id || 0,
+        name: trimmedName,
+        items: normalized,
+      }, { keepEditing: true });
+      if (saved) {
+        setItems(catalogItemsToEditorRows(saved.items));
+        setSuccess("Размеры для раскроя сохранены в каталоге");
+      }
+    } catch {
+      setSuccess("");
+    }
   };
 
   return (
     <div className="cv-catalog-editor">
+      <p className="cv-catalog-editor__hint">
+        Размеры «Ш раскр.» и «В раскр.» сохраняются только в каталоге раскроя и не меняют конструктор мебели.
+      </p>
+
       <div className="cv-catalog-editor__row">
         <label className="cv-catalog-field cv-catalog-field--grow">
           <span>Название комплекта</span>
@@ -104,74 +204,7 @@ function KitEditor({ kit, furnitureTemplates, onSave, onDelete, onCancel, saving
         </div>
       )}
 
-      <div className="cv-catalog-editor__table-wrap">
-        <table className="cv-catalog-editor__table">
-          <thead>
-            <tr>
-              <th>Деталь</th>
-              <th>Ш</th>
-              <th>В</th>
-              <th>На компл.</th>
-              <th>Материал</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((it, idx) => (
-              <tr key={idx}>
-                <td>
-                  <input
-                    value={it.itemName}
-                    onChange={(e) => updateItem(idx, "itemName", e.target.value)}
-                    placeholder="Крышка (736×350)"
-                  />
-                </td>
-                <td>
-                  <input
-                    type="number"
-                    min="1"
-                    value={it.w}
-                    onChange={(e) => updateItem(idx, "w", e.target.value)}
-                  />
-                </td>
-                <td>
-                  <input
-                    type="number"
-                    min="1"
-                    value={it.h}
-                    onChange={(e) => updateItem(idx, "h", e.target.value)}
-                  />
-                </td>
-                <td>
-                  <input
-                    type="number"
-                    min="1"
-                    value={it.perUnit}
-                    onChange={(e) => updateItem(idx, "perUnit", e.target.value)}
-                  />
-                </td>
-                <td>
-                  <input
-                    value={it.material}
-                    onChange={(e) => updateItem(idx, "material", e.target.value)}
-                    placeholder="ЛДСП 16"
-                  />
-                </td>
-                <td>
-                  <button
-                    type="button"
-                    className="cv-catalog-editor__del"
-                    onClick={() => setItems((prev) => prev.filter((_, i) => i !== idx))}
-                    title="Удалить строку"
-                  >
-                    ✕
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <KitPartsTable items={items} onChange={setItems} />
 
       <button
         type="button"
@@ -182,10 +215,11 @@ function KitEditor({ kit, furnitureTemplates, onSave, onDelete, onCancel, saving
       </button>
 
       {error ? <div className="cv-catalog-editor__error">{error}</div> : null}
+      {success ? <div className="cv-catalog-editor__success">{success}</div> : null}
 
       <div className="cv-catalog-editor__actions">
         <button type="button" className="mini accent" disabled={saving} onClick={handleSave}>
-          {saving ? "Сохранение…" : "Сохранить комплект"}
+          {saving ? "Сохранение…" : "Сохранить размеры для раскроя"}
         </button>
         {kit?.id ? (
           <button type="button" className="mini" disabled={saving} onClick={() => onDelete(kit.id)}>
@@ -212,6 +246,7 @@ export function CuttingCatalogDialog({ open, onClose, onAddItems, existingMateri
   const [setsCount, setSetsCount] = useState(1);
   const [material, setMaterial] = useState("");
   const [editingKit, setEditingKit] = useState(null);
+  const [addRows, setAddRows] = useState([]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -224,13 +259,7 @@ export function CuttingCatalogDialog({ open, onClose, onAddItems, existingMateri
       setKits(Array.isArray(kitsRows) ? kitsRows : []);
       setFurnitureTemplates(Array.isArray(tplRows) ? tplRows : []);
     } catch (e) {
-      const raw = e?.message || "Не удалось загрузить каталог";
-      try {
-        const parsed = JSON.parse(raw);
-        setError(parsed?.message || raw);
-      } catch {
-        setError(raw);
-      }
+      setError(parseApiError(e, "Не удалось загрузить каталог"));
     } finally {
       setLoading(false);
     }
@@ -244,6 +273,7 @@ export function CuttingCatalogDialog({ open, onClose, onAddItems, existingMateri
     setSetsCount(1);
     setMaterial("");
     setEditingKit(null);
+    setAddRows([]);
     load();
   }, [open, load]);
 
@@ -258,14 +288,23 @@ export function CuttingCatalogDialog({ open, onClose, onAddItems, existingMateri
     [kits, selectedId],
   );
 
-  const previewCount = selectedKit ? countCatalogKitPieces(selectedKit, setsCount) : 0;
+  useEffect(() => {
+    if (!selectedKit) {
+      setAddRows([]);
+      return;
+    }
+    setAddRows(catalogItemsToEditorRows(selectedKit.items));
+  }, [selectedKit]);
+
+  const previewCount = selectedKit ? countCatalogKitPieces(selectedKit, setsCount, addRows) : 0;
+  const addSizesChanged = selectedKit ? catalogKitSizesChanged(selectedKit.items, addRows) : false;
 
   const handleAddToCutting = () => {
     if (!selectedKit) {
       setError("Выберите комплект из каталога");
       return;
     }
-    const items = expandCatalogKitToCuttingItems(selectedKit, setsCount, material);
+    const items = expandCatalogKitToCuttingItems(selectedKit, setsCount, material, addRows);
     if (!items.length) {
       setError("В комплекте нет деталей с размерами");
       return;
@@ -277,19 +316,48 @@ export function CuttingCatalogDialog({ open, onClose, onAddItems, existingMateri
     onClose();
   };
 
-  const handleSaveKit = async (payload) => {
+  const handleSaveKit = async (payload, { keepEditing = false } = {}) => {
     setSaving(true);
     setError("");
     try {
       const saved = await OrderService.upsertCuttingCatalogKit(payload);
       await load();
+      if (keepEditing && saved) {
+        setEditingKit(saved);
+        if (saved.id) setSelectedId(saved.id);
+        return saved;
+      }
       setEditingKit(null);
       setTab("add");
       if (saved?.id) setSelectedId(saved.id);
+      return saved;
     } catch (e) {
-      setError(e?.message || "Ошибка сохранения");
+      setError(parseApiError(e, "Ошибка сохранения"));
+      throw e;
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleSaveKitFromEditor = (payload, options) => handleSaveKit(payload, options);
+
+  const handleSaveAddTabSizes = async () => {
+    if (!selectedKit || !canManageCatalog) return;
+    const normalized = addRows.map((it) => normalizeCatalogItem(it)).filter(Boolean);
+    if (!normalized.length) {
+      setError("Укажите размеры деталей");
+      return;
+    }
+    try {
+      await handleSaveKit({
+        id: selectedKit.id,
+        name: selectedKit.name,
+        items: normalized,
+        sort_order: selectedKit.sort_order ?? 0,
+      });
+      setError("");
+    } catch {
+      // shown above
     }
   };
 
@@ -304,7 +372,7 @@ export function CuttingCatalogDialog({ open, onClose, onAddItems, existingMateri
       await load();
       setTab("add");
     } catch (e) {
-      setError(e?.message || "Ошибка удаления");
+      setError(parseApiError(e, "Ошибка удаления"));
     } finally {
       setSaving(false);
     }
@@ -379,6 +447,32 @@ export function CuttingCatalogDialog({ open, onClose, onAddItems, existingMateri
               )}
             </div>
 
+            {selectedKit && addRows.length > 0 && (
+              <div className="cv-catalog-add__sizes">
+                <div className="cv-catalog-add__sizes-head">
+                  <span>Размеры для раскроя</span>
+                  <span className="cv-catalog-add__sizes-note">можно изменить только для этого раскроя</span>
+                </div>
+                <KitPartsTable
+                  items={addRows}
+                  onChange={setAddRows}
+                  showPerUnit={false}
+                  showMaterial={false}
+                  compact
+                />
+                {canManageCatalog && addSizesChanged && (
+                  <button
+                    type="button"
+                    className="mini"
+                    disabled={saving}
+                    onClick={handleSaveAddTabSizes}
+                  >
+                    {saving ? "Сохранение…" : "Сохранить размеры в каталоге"}
+                  </button>
+                )}
+              </div>
+            )}
+
             <div className="cv-catalog-add__form">
               <label className="cv-catalog-field">
                 <span>Комплектов</span>
@@ -426,7 +520,7 @@ export function CuttingCatalogDialog({ open, onClose, onAddItems, existingMateri
             kit={editingKit}
             furnitureTemplates={furnitureTemplates}
             saving={saving}
-            onSave={handleSaveKit}
+            onSave={handleSaveKitFromEditor}
             onDelete={handleDeleteKit}
             onCancel={() => setEditingKit(null)}
           />

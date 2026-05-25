@@ -7572,6 +7572,54 @@ button.mini.accent:hover:not(:disabled) {
 .cv-catalog-editor__row {
   margin-bottom: 10px;
 }
+.cv-catalog-editor__hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 0 0 10px;
+  line-height: 1.45;
+}
+.cv-catalog-editor__success {
+  color: #15803d;
+  font-size: 12px;
+  margin: 8px 0;
+}
+.cv-catalog-editor__readonly-name {
+  display: block;
+  font-size: 12px;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 220px;
+}
+.cv-catalog-editor__table-wrap--compact {
+  max-height: 200px;
+}
+.cv-catalog-add__sizes {
+  margin-bottom: 12px;
+  border: 1px solid var(--border-main);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: var(--bg-surface-soft, #f8fbff);
+}
+.cv-catalog-add__sizes-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-main);
+}
+.cv-catalog-add__sizes-note {
+  font-weight: 400;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.cv-catalog-add__sizes .mini {
+  margin-top: 8px;
+}
 .cv-catalog-editor__import {
   display: flex;
   gap: 8px;
