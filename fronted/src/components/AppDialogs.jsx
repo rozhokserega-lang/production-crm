@@ -4,6 +4,7 @@ import { StrapDialog } from "./StrapDialog";
 import { PlanDialog } from "./PlanDialog";
 import { PackagingInboxDialog } from "./PackagingInboxDialog";
 import { StrapDoneDialog } from "./StrapDoneDialog";
+import { WorkshopFinalDoneDialog } from "./WorkshopFinalDoneDialog";
 
 export function AppDialogs({
   shell,
@@ -60,6 +61,23 @@ export function AppDialogs({
         saving={strapDone.saving}
         onClose={strapDone.close}
         onSubmit={strapDone.submit}
+      />
+
+      <WorkshopFinalDoneDialog
+        open={dialogs.workshopFinalDone?.open}
+        meta={dialogs.workshopFinalDone?.meta}
+        qtyInput={dialogs.workshopFinalDone?.qtyInput}
+        setQtyInput={dialogs.workshopFinalDone?.setQtyInput}
+        planPreview={dialogs.workshopFinalDone?.planPreview}
+        setPlanPreview={dialogs.workshopFinalDone?.setPlanPreview}
+        previewLoading={dialogs.workshopFinalDone?.previewLoading}
+        error={dialogs.workshopFinalDone?.error}
+        saving={dialogs.workshopFinalDone?.saving}
+        onClose={dialogs.workshopFinalDone?.close}
+        onConfirm={dialogs.workshopFinalDone?.confirm}
+        onPrint={dialogs.workshopFinalDone?.print}
+        articleLookupByItemKey={dialogs.workshopFinalDone?.articleLookupByItemKey}
+        previewDeps={dialogs.workshopFinalDone?.previewDeps}
       />
 
       <OrderDrawer

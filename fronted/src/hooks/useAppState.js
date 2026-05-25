@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useWorkshopFinalDone } from "../components/WorkshopFinalDoneDialog";
+import { buildNotifyPayload } from "../app/runActionHelpers";
 import * as XLSX from "xlsx";
 import {
   callBackend,
@@ -976,6 +978,29 @@ export function useAppState({ auth }) {
     refreshStrapStock,
   });
 
+  const {
+    finalDoneDialog,
+    openFinalDoneDialog,
+    productionDebts,
+    refreshProductionDebts,
+  } = useWorkshopFinalDone({
+    callBackend,
+    mutationLoad,
+    setError,
+    runAction,
+    notifyFinalStageTelegram,
+    buildNotifyPayload,
+    articleLookupByItemKey,
+    previewDeps: {
+      furnitureTemplates,
+      resolveFurnitureTemplateForPreview: resolveFurnitureTemplateForPreviewByArticle,
+      buildPreviewRowsFromFurnitureTemplate,
+      normalizeFurnitureKey,
+      furnitureLoading,
+      furnitureError,
+    },
+  });
+
   // Load strap stock globally so WorkshopView can show strap availability
   useEffect(() => {
     callBackend("webGetStrapStock", {})
@@ -1506,6 +1531,9 @@ export function useAppState({ auth }) {
       setExecutorByOrder,
       executorOptions,
       strapStock: strapStockGlobal,
+      productionDebts,
+      refreshProductionDebts,
+      openFinalDoneDialog,
     },
     warehouse: {
       warehouseRows,
@@ -1657,6 +1685,7 @@ export function useAppState({ auth }) {
         close: closeStrapDoneDialog,
         submit: submitStrapDone,
       },
+      workshopFinalDone: finalDoneDialog,
     },
     actions: {
       overrideOrderStageFromDrawer,

@@ -82,7 +82,7 @@ export function useWorkshopRows({
   return useMemo(() => {
     /** На «Склад обвязки» нужен тот же набор заказов, что в цеху при вкладке «Все» — для колонки нехватки. */
     const strapStockPlanning = view === "strapStock";
-    if ((view !== "workshop" && !strapStockPlanning) || tab === "stats") return [];
+    if ((view !== "workshop" && !strapStockPlanning) || tab === "stats" || tab === "debt") return [];
     const effectiveTab = strapStockPlanning ? "all" : tab;
     const arr = [...filtered].filter((o) => {
       const pilkaStatus = String(o.pilkaStatus || o.pilka || "");

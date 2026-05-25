@@ -3589,6 +3589,17 @@ button:disabled {
   margin-top: 16px;
 }
 
+.workshop-final-print-area {
+  position: fixed;
+  left: -10000px;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  pointer-events: none;
+  visibility: hidden;
+}
+
 @media print {
   @page {
     size: A4 landscape;
@@ -3641,6 +3652,20 @@ button:disabled {
   .empty,
   .actions button:not(:first-child) {
     display: none !important;
+  }
+
+  .dialog-backdrop {
+    display: none !important;
+  }
+
+  .workshop-final-print-area {
+    position: static !important;
+    left: auto !important;
+    width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+    pointer-events: auto !important;
+    visibility: visible !important;
   }
 
   .print-area .actions {

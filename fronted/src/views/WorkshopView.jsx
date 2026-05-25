@@ -1,4 +1,4 @@
-import { memo, useMemo } from "react";
+import { memo, useEffect, useMemo } from "react";
 import { KROMKA_EXECUTORS, PRAS_EXECUTORS } from "../config";
 import { extractPlanItemArticle, extractPlanItemQrQty, stripPlanItemMeta } from "../app/orderHelpers";
 import { sheetsFromTemplateKits } from "../app/appUtils";
@@ -53,6 +53,9 @@ export const WorkshopView = memo(function WorkshopView({
     furnitureTemplates,
     normalizeFurnitureKey,
     strapStock,
+    productionDebts,
+    refreshProductionDebts,
+    openFinalDoneDialog,
   } = workshop;
   const { canOperateProduction } = permissions;
   const {
@@ -107,6 +110,69 @@ export const WorkshopView = memo(function WorkshopView({
       return { strapNeeds, strapDeficit };
     });
   }, [workshopRows, strapStockByType, strapDeps]);
+
+  useEffect(() => {
+    if (tab === "debt" && typeof refreshProductionDebts === "function") {
+      refreshProductionDebts();
+    }
+  }, [tab, refreshProductionDebts]);
+
+  const debtByPlan = useMemo(() => {
+    const map = new Map();
+    (Array.isArray(productionDebts) ? productionDebts : []).forEach((row) => {
+      const week = String(row?.week || "—").trim() || "—";
+      const item = String(row?.item || "—").trim() || "—";
+      const key = `${week}|${item}|${String(row?.material || "").trim()}`;
+      if (!map.has(key)) {
+        map.set(key, {
+          week,
+          item: stripPlanItemMeta(item),
+          material: String(row?.material || "").trim(),
+          qty: 0,
+          rows: [],
+        });
+      }
+      const bucket = map.get(key);
+      bucket.qty += Number(row?.qty || 0) || 0;
+      bucket.rows.push(row);
+    });
+    return Array.from(map.values()).sort((a, b) => {
+      const wa = Number(String(a.week).replace(/\D/g, "")) || 0;
+      const wb = Number(String(b.week).replace(/\D/g, "")) || 0;
+      if (wa !== wb) return wb - wa;
+      return String(a.item || "").localeCompare(String(b.item || ""), "ru");
+    });
+  }, [productionDebts]);
+
+  if (tab === "debt") {
+    return (
+      <>
+        {!debtByPlan.length && !loading && (
+          <div className="empty">Нет долга по планам — все комплекты закрыты.</div>
+        )}
+        {debtByPlan.map((group) => (
+          <article key={`${group.week}-${group.item}-${group.material}`} className="card">
+            <div className="line1">
+              <strong>{group.item}</strong>
+              <span className="badge">План {group.week}</span>
+              <span className="badge meta-inline" style={{ background: "#fff7ed", borderColor: "#fdba74", color: "#9a3412" }}>
+                Долг: {group.qty} шт.
+              </span>
+            </div>
+            <div className="line2" style={{ color: "#64748b", fontSize: 13 }}>
+              {group.material ? <span>Материал: {group.material}</span> : null}
+              {group.rows.map((r) => (
+                <span key={r.id} style={{ display: "block", marginTop: 4 }}>
+                  {Number(r.qty || 0)} шт. · заказ {r.order_id}
+                  {r.created_at ? ` · ${new Date(r.created_at).toLocaleString("ru-RU")}` : ""}
+                </span>
+              ))}
+            </div>
+          </article>
+        ))}
+      </>
+    );
+  }
 
   return (
     <>
@@ -410,13 +476,21 @@ export const WorkshopView = memo(function WorkshopView({
                     className="mini ok"
                     disabled={isPending(`webSetShippingDone:${orderId}`) || packagingDone || !canOperateProduction}
                     onClick={() =>
-                      runAction("webSetShippingDone", orderId, {}, {
-                        notifyOnFinalStage: true,
-                        item: o.item,
-                        material: getMaterialLabel(o.item, o.material || o.colorName || ""),
+                      openFinalDoneDialog(orderId, {
+                        order: o,
+                        qty: orderQty,
                         week: o.week,
-                        qty: o.qty,
-                        executor: executorByOrder[orderId] || o.prasExecutor || "",
+                        item: o.item,
+                        itemLabel: rawItem,
+                        material: getMaterialLabel(o.item, o.material || o.colorName || ""),
+                        notifyMeta: {
+                          notifyOnFinalStage: true,
+                          item: o.item,
+                          material: getMaterialLabel(o.item, o.material || o.colorName || ""),
+                          week: o.week,
+                          qty: o.qty,
+                          executor: executorByOrder[orderId] || o.prasExecutor || "",
+                        },
                       })
                     }
                   >

@@ -1,0 +1,284 @@
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { PlanPreviewPrint } from "./PlanPreviewPrint";
+import { buildWorkshopPlanPreview } from "../app/workshopPlanPreviewHelpers";
+import { buildNotifyPayload } from "../app/runActionHelpers";
+import { OrderService } from "../services/orderService";
+
+export function WorkshopFinalDoneDialog({
+  open,
+  meta,
+  qtyInput,
+  setQtyInput,
+  planPreview,
+  setPlanPreview,
+  previewLoading,
+  error,
+  saving,
+  onClose,
+  onConfirm,
+  onPrint,
+  articleLookupByItemKey,
+  previewDeps,
+}) {
+  const orderQty = Number(meta?.qty || 0) || 0;
+  const readyQty = Number(String(qtyInput || "").replace(",", "."));
+  const hasDebt = Number.isFinite(readyQty) && readyQty > 0 && readyQty < orderQty;
+  const debtQty = hasDebt ? Math.max(0, orderQty - readyQty) : 0;
+
+  useEffect(() => {
+    if (!open || !meta?.orderId) return;
+    let cancelled = false;
+    (async () => {
+      const qty = Number(String(qtyInput || meta?.qty || "").replace(",", "."));
+      if (!Number.isFinite(qty) || qty <= 0) {
+        setPlanPreview(null);
+        return;
+      }
+      try {
+        const preview = await buildWorkshopPlanPreview(meta.order, qty, previewDeps);
+        if (!cancelled) setPlanPreview(preview);
+      } catch (_) {
+        if (!cancelled) setPlanPreview(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, meta, qtyInput, previewDeps, setPlanPreview]);
+
+  if (!open || !meta) return null;
+
+  return (
+    <>
+      <div className="dialog-backdrop">
+        <div className="dialog-card workshop-final-dialog" style={{ maxWidth: 520, width: "95vw" }}>
+          <h3 style={{ marginTop: 0, marginBottom: 8 }}>Финал — сколько комплектов готово?</h3>
+          <p style={{ margin: "0 0 12px", color: "#64748b", fontSize: 13 }}>
+            {meta.itemLabel || "—"}
+            {meta.material ? ` · ${meta.material}` : ""}
+            {meta.week ? ` · план ${meta.week}` : ""}
+          </p>
+          <p style={{ margin: "0 0 14px", color: "#475569", fontSize: 13 }}>
+            В заказе <strong>{orderQty}</strong> шт. Если часть испортилась на цепочке, укажите фактически готовое количество.
+            Остаток попадёт в колонку «Долг».
+          </p>
+          <label style={{ display: "block", marginBottom: 10, fontWeight: 500 }}>
+            Готово комплектов:
+            <input
+              type="number"
+              min={1}
+              max={orderQty || undefined}
+              step={1}
+              style={{
+                display: "block",
+                width: "100%",
+                marginTop: 6,
+                padding: "8px 10px",
+                fontSize: 16,
+                borderRadius: 6,
+                border: "1px solid #cbd5e1",
+                boxSizing: "border-box",
+              }}
+              value={qtyInput}
+              onChange={(e) => setQtyInput(e.target.value)}
+              autoFocus
+            />
+          </label>
+          {hasDebt ? (
+            <div
+              style={{
+                marginBottom: 12,
+                padding: "10px 12px",
+                borderRadius: 8,
+                background: "#fff7ed",
+                border: "1px solid #fed7aa",
+                color: "#9a3412",
+                fontSize: 13,
+              }}
+            >
+              В финал уйдёт <strong>{readyQty}</strong> шт., в «Долг» — <strong>{debtQty}</strong> шт. по плану {meta.week || "—"}.
+            </div>
+          ) : null}
+          {error ? <div className="error" style={{ marginBottom: 10 }}>{error}</div> : null}
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" }}>
+            <button type="button" className="mini ghost" onClick={onClose} disabled={saving}>
+              Отмена
+            </button>
+            {hasDebt && planPreview ? (
+              <button type="button" className="mini" onClick={onPrint} disabled={saving || previewLoading}>
+                Печать листа ({readyQty} шт.)
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="mini ok"
+              disabled={saving || !qtyInput}
+              onClick={() => onConfirm(readyQty)}
+            >
+              {saving ? "Сохраняю..." : "Подтвердить"}
+            </button>
+          </div>
+        </div>
+      </div>
+      {hasDebt && planPreview ? (
+        <div className="print-area workshop-final-print-area" aria-hidden="true">
+          <PlanPreviewPrint planPreview={planPreview} articleLookupByItemKey={articleLookupByItemKey} />
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+export function useWorkshopFinalDone({
+  callBackend,
+  mutationLoad,
+  setError,
+  runAction,
+  notifyFinalStageTelegram,
+  buildNotifyPayload,
+  previewDeps,
+  articleLookupByItemKey,
+}) {
+  const [open, setOpen] = useState(false);
+  const [meta, setMeta] = useState(null);
+  const [qtyInput, setQtyInput] = useState("");
+  const [planPreview, setPlanPreview] = useState(null);
+  const [previewLoading] = useState(false);
+  const [dialogError, setDialogError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [productionDebts, setProductionDebts] = useState([]);
+
+  const refreshProductionDebts = useCallback(async () => {
+    try {
+      const rows = await callBackend("webGetProductionPlanDebts");
+      setProductionDebts(Array.isArray(rows) ? rows : []);
+    } catch (_) {
+      setProductionDebts([]);
+    }
+  }, [callBackend]);
+
+  useEffect(() => {
+    refreshProductionDebts();
+  }, [refreshProductionDebts]);
+
+  const openFinalDoneDialog = useCallback((orderId, orderMeta = {}) => {
+    const qty = Number(orderMeta.qty || 0) || 1;
+    setMeta({
+      orderId: String(orderId || ""),
+      order: orderMeta.order || orderMeta,
+      qty,
+      week: orderMeta.week,
+      item: orderMeta.item,
+      itemLabel: orderMeta.itemLabel || stripItemLabel(orderMeta.item),
+      material: orderMeta.material,
+      notifyMeta: orderMeta.notifyMeta || orderMeta,
+    });
+    setQtyInput(String(qty));
+    setDialogError("");
+    setPlanPreview(null);
+    setOpen(true);
+  }, []);
+
+  const closeFinalDoneDialog = useCallback(() => {
+    setOpen(false);
+    setMeta(null);
+    setQtyInput("");
+    setPlanPreview(null);
+    setDialogError("");
+    void refreshProductionDebts();
+    void mutationLoad();
+  }, [mutationLoad, refreshProductionDebts]);
+
+  const confirmFinalDone = useCallback(
+    async (qtyReadyRaw) => {
+      const orderQty = Number(meta?.qty || 0) || 0;
+      const qtyReady = Math.round(Number(qtyReadyRaw));
+      if (!Number.isFinite(qtyReady) || qtyReady <= 0) {
+        setDialogError("Укажите количество больше 0");
+        return;
+      }
+      if (qtyReady > orderQty) {
+        setDialogError(`Не больше ${orderQty} шт.`);
+        return;
+      }
+      setSaving(true);
+      setDialogError("");
+      try {
+        const orderId = meta?.orderId;
+        if (qtyReady >= orderQty) {
+          await runAction("webSetShippingDone", orderId, {}, {
+            notifyOnFinalStage: true,
+            ...(meta?.notifyMeta || {}),
+          });
+        } else {
+          await callBackend("webFinalizeWorkshopOrder", {
+            orderId,
+            qtyReady,
+          });
+          try {
+            await OrderService.completeReplacementForWorkshopOrder(orderId);
+          } catch (_) {}
+          if (typeof notifyFinalStageTelegram === "function") {
+            notifyFinalStageTelegram(buildNotifyPayload(orderId, { ...(meta?.notifyMeta || {}), qty: qtyReady }));
+          }
+          void mutationLoad();
+        }
+        setOpen(false);
+        setMeta(null);
+        setQtyInput("");
+        setPlanPreview(null);
+        await refreshProductionDebts();
+      } catch (e) {
+        setDialogError(String(e?.message || e || "Не удалось завершить заказ"));
+        setError(String(e?.message || e || "Не удалось завершить заказ"));
+      } finally {
+        setSaving(false);
+      }
+    },
+    [
+      meta,
+      runAction,
+      callBackend,
+      notifyFinalStageTelegram,
+      buildNotifyPayload,
+      mutationLoad,
+      refreshProductionDebts,
+      setError,
+    ],
+  );
+
+  const printAdjustedPlan = useCallback(() => {
+    window.print();
+  }, []);
+
+  const debtRows = useMemo(() => productionDebts, [productionDebts]);
+
+  return {
+    finalDoneDialog: {
+      open,
+      meta,
+      qtyInput,
+      setQtyInput,
+      planPreview,
+      setPlanPreview,
+      previewLoading,
+      error: dialogError,
+      saving,
+      close: closeFinalDoneDialog,
+      confirm: confirmFinalDone,
+      print: printAdjustedPlan,
+      articleLookupByItemKey,
+      previewDeps,
+    },
+    openFinalDoneDialog,
+    productionDebts: debtRows,
+    refreshProductionDebts,
+  };
+}
+
+function stripItemLabel(item) {
+  const raw = String(item || "").trim();
+  if (!raw) return "—";
+  const idx = raw.indexOf("[");
+  return idx > 0 ? raw.slice(0, idx).trim() : raw;
+}

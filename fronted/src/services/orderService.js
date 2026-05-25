@@ -438,6 +438,14 @@ export class OrderService {
 
   // ==================== Этапы производства (Stage actions) ====================
 
+  static async finalizeWorkshopOrder(orderId, qtyReady) {
+    return await callBackend("webFinalizeWorkshopOrder", { orderId, qtyReady });
+  }
+
+  static async getProductionPlanDebts() {
+    return await callBackend("webGetProductionPlanDebts");
+  }
+
   static async setStageInWork(orderId, executor) {
     return await callBackend("webSetPilkaInWork", { orderId, executor });
   }

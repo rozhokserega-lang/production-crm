@@ -19,6 +19,7 @@ export const TABS = [
   { id: "pras", label: "Присадка" },
   { id: "assembly", label: "Сборка" },
   { id: "done", label: "Финал" },
+  { id: "debt", label: "Долг" },
 ];
 
 export const CRM_ROLES = ["viewer", "warehouse", "operator", "manager", "admin"];
