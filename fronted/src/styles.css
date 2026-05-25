@@ -7658,10 +7658,13 @@ button.mini.accent:hover:not(:disabled) {
   background: var(--bg-surface, #ffffff);
   color: var(--text-main);
 }
-.cv-catalog-editor__del {
-  border: none;
-  background: transparent;
-  color: var(--text-muted);
+.cv-catalog-editor__check-cell {
+  text-align: center;
+  width: 52px;
+}
+.cv-catalog-editor__check-cell input {
+  width: auto;
+  min-width: 0;
   cursor: pointer;
 }
 .cv-catalog-editor__error {

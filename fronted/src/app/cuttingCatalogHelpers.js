@@ -7,6 +7,13 @@ export function roundCuttingDim(value) {
   return Math.round(n * 2) / 2;
 }
 
+/** Формат размера для UI: 350 или 349.5 */
+export function formatCuttingDim(value) {
+  const n = roundCuttingDim(value);
+  if (!Number.isFinite(n) || n <= 0) return "";
+  return Number.isInteger(n) ? String(n) : n.toFixed(1);
+}
+
 function readExplicitDim(value) {
   if (value === "" || value == null) return 0;
   return roundCuttingDim(value);
@@ -36,12 +43,13 @@ export function normalizeCatalogItem(raw) {
     h: dims.h,
     perUnit: Math.max(1, Math.round(Number(raw?.perUnit ?? raw?.qty ?? 1) || 1)),
     material: String(raw?.material || "").trim(),
+    pairByTexture: raw?.pairByTexture === true || raw?.pairByTexture === "true",
   };
 }
 
 /** Строки редактора каталога раскроя. */
 export function catalogItemsToEditorRows(items = []) {
-  const source = items.length ? items : [{ itemName: "", w: "", h: "", perUnit: 1, material: "" }];
+  const source = items.length ? items : [{ itemName: "", w: "", h: "", perUnit: 1, material: "", pairByTexture: false }];
   return source.map((it) => {
     const norm = normalizeCatalogItem(it);
     return {
@@ -50,6 +58,7 @@ export function catalogItemsToEditorRows(items = []) {
       h: norm?.h ?? "",
       perUnit: norm?.perUnit ?? it?.perUnit ?? 1,
       material: norm?.material || it?.material || "",
+      pairByTexture: norm?.pairByTexture ?? !!it?.pairByTexture,
     };
   });
 }
@@ -84,6 +93,7 @@ export function expandCatalogKitToCuttingItems(kit, setsCount, materialOverride 
       h: norm.h,
       qty: norm.perUnit * sets,
       material: norm.material || defaultMaterial,
+      pairByTexture: norm.pairByTexture,
     });
   }
 
@@ -103,6 +113,6 @@ export function catalogKitSizesChanged(catalogItems = [], editorRows = []) {
     const a = normalizeCatalogItem(base[idx]);
     const b = normalizeCatalogItem(row);
     if (!a || !b) return false;
-    return a.w !== b.w || a.h !== b.h;
+    return a.w !== b.w || a.h !== b.h || a.pairByTexture !== b.pairByTexture;
   });
 }

@@ -10,7 +10,7 @@ import {
   catalogKitSizesChanged,
 } from "../app/cuttingCatalogHelpers";
 
-const EMPTY_ITEM = { itemName: "", w: "", h: "", perUnit: 1, material: "" };
+const EMPTY_ITEM = { itemName: "", w: "", h: "", perUnit: 1, material: "", pairByTexture: false };
 
 function parseApiError(e, fallback) {
   const raw = e?.message || fallback;
@@ -28,10 +28,16 @@ function KitPartsTable({
   readOnly = false,
   showPerUnit = true,
   showMaterial = true,
+  showTexturePair = true,
   compact = false,
 }) {
   const updateItem = (idx, field, value) => {
-    onChange(items.map((it, i) => (i === idx ? { ...it, [field]: value } : it)));
+    onChange(items.map((it, i) => {
+      if (i !== idx) return it;
+      const next = { ...it, [field]: value };
+      if (field === "perUnit" && Number(value) !== 2) next.pairByTexture = false;
+      return next;
+    }));
   };
 
   return (
@@ -43,6 +49,9 @@ function KitPartsTable({
             <th title="Размер для раскроя (мм)">Ш раскр.</th>
             <th title="Размер для раскроя (мм)">В раскр.</th>
             {showPerUnit ? <th>На компл.</th> : null}
+            {showTexturePair ? (
+              <th title="2 детали в комплекте — пилить рядом по текстуре">По текст.</th>
+            ) : null}
             {showMaterial ? <th>Материал</th> : null}
             {!readOnly ? <th /> : null}
           </tr>
@@ -89,6 +98,19 @@ function KitPartsTable({
                     value={it.perUnit}
                     disabled={readOnly}
                     onChange={(e) => updateItem(idx, "perUnit", e.target.value)}
+                  />
+                </td>
+              ) : null}
+              {showTexturePair ? (
+                <td className="cv-catalog-editor__check-cell">
+                  <input
+                    type="checkbox"
+                    checked={!!it.pairByTexture}
+                    disabled={readOnly || Number(it.perUnit) !== 2}
+                    title={Number(it.perUnit) === 2
+                      ? "Пилить 2 детали рядом по одной текстуре"
+                      : "Доступно при «На компл.» = 2"}
+                    onChange={(e) => updateItem(idx, "pairByTexture", e.target.checked)}
                   />
                 </td>
               ) : null}
@@ -460,6 +482,7 @@ export function CuttingCatalogDialog({ open, onClose, onAddItems, existingMateri
                   onChange={setAddRows}
                   showPerUnit={false}
                   showMaterial={false}
+                  showTexturePair
                   compact
                 />
                 {canManageCatalog && addSizesChanged && (

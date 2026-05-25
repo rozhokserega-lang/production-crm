@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useCutting } from "../contexts/CuttingContext";
 import { buildCuttingPlan, CUTTING_ALGORITHMS, cuttingPieceSize } from "../app/cuttingPlanAlgorithm";
+import { formatCuttingDim } from "../app/cuttingCatalogHelpers";
 import { CuttingPlanView } from "../components/CuttingPlanView";
 import { readExcelFile } from "../app/cuttingExcelImport";
 import { CuttingCatalogDialog } from "../components/CuttingCatalogDialog";
@@ -119,10 +120,10 @@ function ItemRow({ item, idx, accountEdgeBand, onQty, onTurn, onRemove }) {
       <div className="cv-item__main">
         <div className="cv-item__name" title={item.itemName}>{item.itemName}</div>
         <div className="cv-item__dims">
-          {item.w}×{item.h} мм
+          {formatCuttingDim(item.w)}×{formatCuttingDim(item.h)} мм
           {showCutDims ? (
             <span className="cv-item__chip cv-item__chip--cut" title="Размер в раскрое с учётом кромки">
-              → {cut.w}×{cut.h}
+              → {formatCuttingDim(cut.w)}×{formatCuttingDim(cut.h)}
             </span>
           ) : null}
           {item.turned && <span className="cv-item__chip cv-item__chip--turn">↺ повёрнута</span>}

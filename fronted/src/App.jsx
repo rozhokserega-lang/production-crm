@@ -96,6 +96,13 @@ function AppInner({ onAuthChangeRef }) {
     callBackend: services.callBackend,
     mutationLoad: shell.mutationLoad,
     setError: shell.setError,
+    onPackagingAccepted: ({ entryStage }) => {
+      if (entryStage === "assembly") {
+        shipment.setShowReadyAssembly(true);
+      } else {
+        shipment.setShowOnPilka(true);
+      }
+    },
   });
 
   const shipmentTableRowsForView = useMemo(

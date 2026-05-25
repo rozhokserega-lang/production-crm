@@ -295,7 +295,11 @@ export const WarehouseMissingView = memo(function WarehouseMissingView({
                 <span style={{ fontSize: 12, color: "#6b7280" }}>Цех: {o.workshop_order_id}</span>
               )}
               {o.sent_to_work && o.packaging_accepted && !isOrderDone(o) && (
-                <button
+                <>
+                  {o.workshop_order_id && (
+                    <span style={{ fontSize: 12, color: "#6b7280" }}>Цех: {o.workshop_order_id}</span>
+                  )}
+                  <button
                   type="button"
                   className="mini"
                   title="Вернуть в очередь «Упаковка» на отгрузке для повторного приёма"
@@ -303,6 +307,7 @@ export const WarehouseMissingView = memo(function WarehouseMissingView({
                 >
                   ↩ В упаковку
                 </button>
+                </>
               )}
               {!isOrderDone(o) && (
                 <button type="button" className="mini warn" onClick={() => deleteOrder(o.id)}>Удалить</button>

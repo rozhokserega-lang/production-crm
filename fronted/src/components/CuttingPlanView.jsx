@@ -2,6 +2,7 @@ import { useMemo, useState, useRef, useCallback, useEffect, useId } from "react"
 import { downloadAllDXF } from "../app/dxfExport";
 import { downloadAllCUT } from "../app/cutExport";
 import { downloadAllNXCut } from "../app/nxcutExport";
+import { formatCuttingDim, roundCuttingDim } from "../app/cuttingCatalogHelpers";
 
 const DISPLAY_W = 560;
 const PALETTE = [
@@ -63,8 +64,8 @@ function tryRotatePiece(piece, pieces, idx, settings, sheetW, sheetH) {
 }
 
 function tryResizePiece(piece, pieces, idx, nw, nh, settings, sheetW, sheetH) {
-  const w = Math.max(1, Math.round(Number(nw) || piece.w));
-  const h = Math.max(1, Math.round(Number(nh) || piece.h));
+  const w = Math.max(0.5, roundCuttingDim(nw) || piece.w);
+  const h = Math.max(0.5, roundCuttingDim(nh) || piece.h);
   if (pieceFitsAt(pieces, idx, piece.x, piece.y, w, h, settings, sheetW, sheetH)) {
     return { w, h };
   }
@@ -77,6 +78,12 @@ const EDGE_SNAP_MM = 20;
 
 function roundMm(v) {
   return Math.round(Number(v) || 0);
+}
+
+function formatPieceSize(w, h, rotated = false) {
+  return rotated
+    ? `${formatCuttingDim(h)}×${formatCuttingDim(w)}`
+    : `${formatCuttingDim(w)}×${formatCuttingDim(h)}`;
 }
 
 /** Сетка X/Y из координат всех деталей на листе. */
@@ -174,8 +181,8 @@ function normalizeSheetPieces(sheet) {
   for (const p of sheet.pieces) {
     p.x = roundMm(p.x);
     p.y = roundMm(p.y);
-    p.w = roundMm(p.w);
-    p.h = roundMm(p.h);
+    p.w = roundCuttingDim(p.w);
+    p.h = roundCuttingDim(p.h);
   }
 }
 
@@ -257,7 +264,7 @@ function PieceEditor({ piece, settings, sheetW, sheetH, pieces, pieceIdx, onUpda
     applyPatch({ x, y });
   };
 
-  const sizeLabel = piece.rotated ? `${piece.h}×${piece.w}` : `${piece.w}×${piece.h}`;
+  const sizeLabel = formatPieceSize(piece.w, piece.h, piece.rotated);
 
   return (
     <div className="cutting-plan__piece-editor no-print">
@@ -292,11 +299,11 @@ function PieceEditor({ piece, settings, sheetW, sheetH, pieces, pieceIdx, onUpda
       <div className="cutting-plan__piece-editor-size">
         <label className="cutting-plan__piece-editor-field">
           <span>Ш, мм</span>
-          <input type="number" min="1" value={draftW} onChange={(e) => setDraftW(e.target.value)} />
+          <input type="number" min="0.5" step="0.5" value={draftW} onChange={(e) => setDraftW(e.target.value)} />
         </label>
         <label className="cutting-plan__piece-editor-field">
           <span>В, мм</span>
-          <input type="number" min="1" value={draftH} onChange={(e) => setDraftH(e.target.value)} />
+          <input type="number" min="0.5" step="0.5" value={draftH} onChange={(e) => setDraftH(e.target.value)} />
         </label>
         <button type="button" className="mini accent" onClick={handleApplySize}>Размер</button>
       </div>
@@ -547,7 +554,7 @@ function SheetDiagram({
         const cy = y + h / 2;
         const fontSize = Math.min(11, Math.max(7, Math.min(w, h) * 0.18));
         const nameFontSize = Math.max(6, fontSize * 0.85);
-        const sizeLabel = p.rotated ? `${p.h}×${p.w}↺` : `${p.w}×${p.h}`;
+        const sizeLabel = `${formatPieceSize(p.w, p.h, p.rotated)}${p.rotated ? "↺" : ""}`;
         const nameLabel = truncateLabel(p.label, w - 6, nameFontSize);
         const isDragged = drag?.idx === i;
         const isSelected = selectedIdx === i;
@@ -689,7 +696,7 @@ function SheetTable({ pieces }) {
   const rows = useMemo(() => {
     const map = new Map();
     for (const p of pieces) {
-      const size = p.rotated ? `${p.h}×${p.w}` : `${p.w}×${p.h}`;
+      const size = formatPieceSize(p.w, p.h, p.rotated);
       const key = `${p.label}|${size}`;
       if (!map.has(key)) map.set(key, { label: p.label, size, count: 0 });
       map.get(key).count++;

@@ -27,6 +27,8 @@
  *               Наименее эффективен по материалу, но самый читаемый раскрой.
  */
 
+import { roundCuttingDim } from "./cuttingCatalogHelpers";
+
 // ─── helpers ────────────────────────────────────────────────────────────────
 
 function fingerprint(pieces) {
@@ -50,6 +52,36 @@ function groupIdentical(allSheets, sheetW, sheetH) {
     }
   }
   return grouped;
+}
+
+function pieceAllowRotate(p, allowRotate) {
+  return allowRotate && !p.__noRotate;
+}
+
+function buildPairSplitLookup(pieces) {
+  const map = new Map();
+  for (const p of pieces) {
+    if (p.__pairSplit) {
+      map.set(`${p.label}\0${p.w}\0${p.h}`, p.__pairSplit);
+    }
+  }
+  return map;
+}
+
+function unpackTexturePairSheets(sheets, lookup) {
+  if (!lookup.size) return sheets;
+  return sheets.map((sh) => ({
+    ...sh,
+    pieces: sh.pieces.flatMap((p) => {
+      const split = lookup.get(`${p.label}\0${p.w}\0${p.h}`);
+      if (!split) return [p];
+      const { w, h, kerf } = split;
+      return [
+        { label: p.label, x: p.x, y: p.y, w, h, rotated: !!p.rotated },
+        { label: p.label, x: p.x + w + kerf, y: p.y, w, h, rotated: !!p.rotated },
+      ];
+    }),
+  }));
 }
 
 // Low-level sheet packer — shared by all algorithms.
@@ -193,7 +225,7 @@ function packSaw(pieces, settings) {
     // The piece must be STRICTLY shorter than the strip (gap-fill semantics).
     function tryGapFill(shelf, p, i) {
       if (p.h < shelf.height && placeOnShelf(shelf, p, i, p.w, p.h, false)) return true;
-      if (allowRotate && p.w !== p.h && p.w < shelf.height &&
+      if (pieceAllowRotate(p, allowRotate) && p.w !== p.h && p.w < shelf.height &&
           placeOnShelf(shelf, p, i, p.h, p.w, true)) return true;
       return false;
     }
@@ -207,7 +239,7 @@ function packSaw(pieces, settings) {
         if (shelf.height !== p.h) continue;
         if (placeOnShelf(shelf, p, i, p.w, p.h, false)) { placed = true; break; }
         // Same-height rotated (w×h → h×w must still equal strip height)
-        if (allowRotate && p.w !== p.h && p.w === shelf.height &&
+        if (pieceAllowRotate(p, allowRotate) && p.w !== p.h && p.w === shelf.height &&
             placeOnShelf(shelf, p, i, p.h, p.w, true)) { placed = true; break; }
       }
       if (placed) continue;
@@ -215,7 +247,7 @@ function packSaw(pieces, settings) {
       // ── B. Right-edge gap of a taller strip (largest gap first) ───────
       {
         const byFreeWidth = shelves
-          .filter(s => p.h < s.height || (allowRotate && p.w < s.height && p.w !== p.h))
+          .filter(s => p.h < s.height || (pieceAllowRotate(p, allowRotate) && p.w < s.height && p.w !== p.h))
           .sort((a, b) => (innerW - b.usedW) - (innerW - a.usedW));
         for (const shelf of byFreeWidth) {
           if (tryGapFill(shelf, p, i)) { placed = true; break; }
@@ -235,7 +267,7 @@ function packSaw(pieces, settings) {
         continue;
       }
       // Try with rotated piece for opening
-      if (allowRotate && p.w !== p.h && canOpenShelf(p.w)) {
+      if (pieceAllowRotate(p, allowRotate) && p.w !== p.h && canOpenShelf(p.w)) {
         const uh = usedH();
         const gap = shelves.length === 0 ? 0 : kerf;
         const shelfY = shelves.length === 0 ? 0 : uh + gap;
@@ -270,7 +302,7 @@ function packSaw(pieces, settings) {
         const p = remaining[i];
 
         const candidates = subStrips
-          .filter(ss => (p.h <= ss.height || (allowRotate && p.w <= ss.height && p.w !== p.h)))
+          .filter(ss => (p.h <= ss.height || (pieceAllowRotate(p, allowRotate) && p.w <= ss.height && p.w !== p.h)))
           .sort((a, b) => (b.maxW - b.usedW) - (a.maxW - a.usedW));
 
         for (const ss of candidates) {
@@ -284,7 +316,7 @@ function packSaw(pieces, settings) {
             usedIdx.add(i);
             break;
           }
-          if (allowRotate && p.w !== p.h && p.w <= ss.height && p.h <= free) {
+          if (pieceAllowRotate(p, allowRotate) && p.w !== p.h && p.w <= ss.height && p.h <= free) {
             const x = marginX + ss.xStart + ss.usedW + gap;
             ss.usedW += gap + p.h;
             sheetPieces.push({ label: p.label, x, y: marginY + ss.y, w: p.h, h: p.w, rotated: true });
@@ -433,7 +465,7 @@ function packMaxRects(pieces, settings) {
     // Single pass over remaining (largest first).
     // Every piece that fits somewhere on this sheet is placed; others deferred.
     for (const p of remaining) {
-      const { fi, rotated } = _mrFindBest(freeRects, p.w, p.h, kerf, allowRotate);
+      const { fi, rotated } = _mrFindBest(freeRects, p.w, p.h, kerf, pieceAllowRotate(p, allowRotate));
       if (fi === -1) {
         deferred.push(p);
         continue;
@@ -535,14 +567,16 @@ function packGreedy(pieces, settings) {
     shelves.push({ y, height: ph, usedW: 0 });
     placePiece(shelves.length - 1, pw, ph, label, rotated);
   }
-  function orient(shelf, pw, ph) {
-    if (!allowRotate || pw === ph) return { pw, ph, rotated: false };
+  function orient(shelf, p) {
+    const { w: pw, h: ph } = p;
+    if (!pieceAllowRotate(p, allowRotate) || pw === ph) return { pw, ph, rotated: false };
     if (fitsOnShelf(shelf, pw, ph)) return { pw, ph, rotated: false };
     if (fitsOnShelf(shelf, ph, pw)) return { pw: ph, ph: pw, rotated: true };
     return { pw, ph, rotated: false };
   }
-  function orientOpen(pw, ph) {
-    if (!allowRotate || pw === ph) return { pw, ph, rotated: false };
+  function orientOpen(p) {
+    const { w: pw, h: ph } = p;
+    if (!pieceAllowRotate(p, allowRotate) || pw === ph) return { pw, ph, rotated: false };
     if (canOpenShelf(ph)) return { pw, ph, rotated: false };
     if (canOpenShelf(pw)) return { pw: ph, ph: pw, rotated: true };
     return { pw, ph, rotated: false };
@@ -558,7 +592,7 @@ function packGreedy(pieces, settings) {
     for (let si = 0; si < shelves.length && !placed; si++) {
       for (let ri = 0; ri < remaining.length; ri++) {
         const p = remaining[ri];
-        const { pw, ph, rotated } = orient(shelves[si], p.w, p.h);
+        const { pw, ph, rotated } = orient(shelves[si], p);
         if (fitsOnShelf(shelves[si], pw, ph)) {
           placePiece(si, pw, ph, p.label, rotated);
           remaining.splice(ri, 1);
@@ -572,13 +606,13 @@ function packGreedy(pieces, settings) {
 
     // Open new shelf with the largest remaining piece
     const p = remaining[0];
-    const { pw, ph, rotated } = orientOpen(p.w, p.h);
+    const { pw, ph, rotated } = orientOpen(p);
 
     if (canOpenShelf(ph)) {
       openShelf(pw, ph, p.label, rotated);
     } else {
       flush();
-      const { pw: pw2, ph: ph2, rotated: r2 } = orientOpen(p.w, p.h);
+      const { pw: pw2, ph: ph2, rotated: r2 } = orientOpen(p);
       if (canOpenShelf(ph2)) {
         openShelf(pw2, ph2, p.label, r2);
       } else {
@@ -648,9 +682,10 @@ function packFFDH(pieces, settings) {
 
   const sorted = [...pieces].sort((a, b) => b.h - a.h);
 
-  for (const { label, w, h } of sorted) {
+  for (const p of sorted) {
+    const { label, w, h } = p;
     let pw = w, ph = h, rotated = false;
-    if (allowRotate && w !== h) {
+    if (pieceAllowRotate(p, allowRotate) && w !== h) {
       const ni = tryOnShelf(w, h);
       const ri = tryOnShelf(h, w);
       if (ni === -1 && ri >= 0) { pw = h; ph = w; rotated = true; }
@@ -700,13 +735,46 @@ function packGrouped(pieces, settings) {
 
 /** Размер детали для раскладки (с учётом кромки −1 мм с каждой стороны). */
 export function cuttingPieceSize(w, h, settings) {
-  let pw = Number(w) || 0;
-  let ph = Number(h) || 0;
+  let pw = roundCuttingDim(Number(w) || 0);
+  let ph = roundCuttingDim(Number(h) || 0);
   if (settings?.accountEdgeBand) {
-    pw = Math.max(1, pw - 1);
-    ph = Math.max(1, ph - 1);
+    pw = Math.max(0.5, roundCuttingDim(pw - 1));
+    ph = Math.max(0.5, roundCuttingDim(ph - 1));
   }
   return { w: pw, h: ph };
+}
+
+function itemsToPackingPieces(items, settings) {
+  const { kerf } = settings;
+  const pieces = [];
+
+  for (const item of items) {
+    const qty = Math.max(1, item.qty || 1);
+    const { w, h } = cuttingPieceSize(item.w, item.h, settings);
+    const label = item.itemName;
+
+    if (item.pairByTexture && qty >= 2) {
+      const pairs = Math.floor(qty / 2);
+      for (let i = 0; i < pairs; i++) {
+        pieces.push({
+          label,
+          w: 2 * w + kerf,
+          h,
+          __pairSplit: { w, h, kerf },
+          __noRotate: true,
+        });
+      }
+      for (let i = 0; i < qty % 2; i++) {
+        pieces.push({ label, w, h });
+      }
+    } else {
+      for (let i = 0; i < qty; i++) {
+        pieces.push({ label, w, h });
+      }
+    }
+  }
+
+  return pieces;
 }
 
 export const CUTTING_ALGORITHMS = [
@@ -745,20 +813,17 @@ export function buildCuttingPlan(items, settings) {
 
   const byMaterial = new Map();
   for (const item of items) {
-    const qty = Math.max(1, item.qty || 1);
     const mat = item.material || "—";
     if (!byMaterial.has(mat)) byMaterial.set(mat, []);
-    const group = byMaterial.get(mat);
-    for (let i = 0; i < qty; i++) {
-      const { w, h } = cuttingPieceSize(item.w, item.h, safe);
-      group.push({ label: item.itemName, w, h });
-    }
+    byMaterial.get(mat).push(item);
   }
 
   const result = [];
-  for (const [material, pieces] of byMaterial.entries()) {
-    const sheets = packer(pieces, safe);
-    const totalPieces = pieces.length;
+  for (const [material, matItems] of byMaterial.entries()) {
+    const pieces = itemsToPackingPieces(matItems, safe);
+    const pairLookup = buildPairSplitLookup(pieces);
+    const sheets = unpackTexturePairSheets(packer(pieces, safe), pairLookup);
+    const totalPieces = matItems.reduce((s, it) => s + Math.max(1, it.qty || 1), 0);
     const totalSheets = sheets.reduce((s, sh) => s + sh.repeatCount, 0);
     result.push({ material, sheets, totalPieces, totalSheets });
   }

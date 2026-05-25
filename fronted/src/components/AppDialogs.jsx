@@ -46,6 +46,7 @@ export function AppDialogs({
         orders={packaging.packagingOrders}
         acceptingId={packaging.packagingAcceptingId}
         actionError={packaging.packagingActionError}
+        successMessage={packaging.packagingSuccessMessage}
         onAccept={packaging.acceptPackagingOrder}
         onClose={packaging.closePackagingDialog}
       />

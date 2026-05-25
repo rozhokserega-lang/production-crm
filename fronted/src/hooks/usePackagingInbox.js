@@ -40,11 +40,13 @@ export function usePackagingInbox({
   callBackend,
   mutationLoad,
   setError,
+  onPackagingAccepted,
 }) {
   const [packagingDialogOpen, setPackagingDialogOpen] = useState(false);
   const [packagingOrders, setPackagingOrders] = useState([]);
   const [packagingAcceptingId, setPackagingAcceptingId] = useState("");
   const [packagingActionError, setPackagingActionError] = useState("");
+  const [packagingSuccessMessage, setPackagingSuccessMessage] = useState("");
   const [showPackagingOnly, setShowPackagingOnly] = useState(false);
 
   const refreshPackagingOrders = useCallback(async () => {
@@ -94,12 +96,23 @@ export function usePackagingInbox({
           throw new Error("Заказ создан, но не удалось получить ID для цеха");
         }
 
+        const workshopId = workshopOrderId(createdOrder);
         await callBackend("webAcceptReplacementOrderPackaging", {
           p_id: String(orderId),
-          p_workshop_order_id: workshopOrderId(createdOrder),
+          p_workshop_order_id: workshopId,
         });
         await Promise.all([refreshPackagingOrders(), mutationLoad()]);
         setPackagingActionError("");
+        setShowPackagingOnly(true);
+        const successHint = stage === "assembly"
+          ? `Заказ ${workshopId} отправлен в сборку (секция «Упаковка», неделя X).`
+          : `Заказ ${workshopId} на пиле (секция «Упаковка», неделя X). Включён фильтр «На пиле».`;
+        setPackagingSuccessMessage(successHint);
+        onPackagingAccepted?.({
+          entryStage: stage,
+          workshopOrderId: workshopId,
+          itemLabel,
+        });
       } catch (e) {
         const message = toUserError(e) || String(e?.message || e || "Не удалось принять заказ в работу");
         setPackagingActionError(message);
@@ -108,11 +121,12 @@ export function usePackagingInbox({
         setPackagingAcceptingId("");
       }
     },
-    [callBackend, mutationLoad, packagingOrders, refreshPackagingOrders, setError],
+    [callBackend, mutationLoad, onPackagingAccepted, packagingOrders, refreshPackagingOrders, setError],
   );
 
   const openPackagingDialog = useCallback(() => {
     setPackagingActionError("");
+    setPackagingSuccessMessage("");
     setPackagingDialogOpen(true);
   }, []);
 
@@ -127,6 +141,7 @@ export function usePackagingInbox({
       packagingOrders,
       packagingAcceptingId,
       packagingActionError,
+      packagingSuccessMessage,
       packagingInboxCount: packagingOrders.length,
       showPackagingOnly,
       setShowPackagingOnly,
@@ -141,6 +156,7 @@ export function usePackagingInbox({
       openPackagingDialog,
       packagingAcceptingId,
       packagingActionError,
+      packagingSuccessMessage,
       packagingDialogOpen,
       packagingOrders,
       refreshPackagingOrders,

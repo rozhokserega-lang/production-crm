@@ -3,6 +3,7 @@ export function PackagingInboxDialog({
   orders,
   acceptingId,
   actionError,
+  successMessage,
   onAccept,
   onClose,
 }) {
@@ -23,6 +24,11 @@ export function PackagingInboxDialog({
         {String(actionError || "").trim() ? (
           <div className="error" style={{ marginBottom: 12 }}>
             {actionError}
+          </div>
+        ) : null}
+        {String(successMessage || "").trim() ? (
+          <div style={{ marginBottom: 12, padding: "10px 12px", borderRadius: 8, background: "#ecfdf5", color: "#065f46", fontSize: 13 }}>
+            {successMessage}
           </div>
         ) : null}
         {orders.length === 0 ? (

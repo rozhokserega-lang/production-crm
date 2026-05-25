@@ -47,6 +47,21 @@ describe("cuttingCatalogHelpers", () => {
     expect(catalogKitSizesChanged(kit.items, rows)).toBe(true);
   });
 
+  it("passes pairByTexture to cutting items", () => {
+    const kit = {
+      items: [{
+        itemName: "Крышки (736_350)",
+        w: 736,
+        h: 350,
+        perUnit: 2,
+        pairByTexture: true,
+      }],
+    };
+    const items = expandCatalogKitToCuttingItems(kit, 1);
+    expect(items[0].pairByTexture).toBe(true);
+    expect(items[0].qty).toBe(2);
+  });
+
   it("normalizes editor rows for save", () => {
     expect(normalizeCatalogItem({
       itemName: "Стойка (305_266)",
@@ -60,6 +75,7 @@ describe("cuttingCatalogHelpers", () => {
       h: 265,
       perUnit: 2,
       material: "ЛДСП 16",
+      pairByTexture: false,
     });
   });
 });
