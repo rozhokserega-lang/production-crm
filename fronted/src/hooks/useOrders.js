@@ -2,6 +2,7 @@ import { useMemo, useState, useCallback, useEffect } from "react";
 import { OrderService } from "../services/orderService";
 import { matchesWeekFilter } from "../app/weekFilterUtils";
 import { orderCountsTowardStrapDemand } from "../app/workshopStrapNeeds";
+import { orderMatchesWorkshopQrScan } from "../app/workshopQrSearchHelpers";
 
 export function useOrders({
   autoLoad = true
@@ -9,6 +10,7 @@ export function useOrders({
   const [tab, setTab] = useState("all");
   const [rows, setRows] = useState([]);
   const [query, setQuery] = useState("");
+  const [workshopQrScan, setWorkshopQrScan] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
@@ -61,6 +63,8 @@ export function useOrders({
     setRows,
     query,
     setQuery,
+    workshopQrScan,
+    setWorkshopQrScan,
     loading,
     setLoading,
     error,
@@ -141,6 +145,7 @@ export function useBaseOrderFilter({
   tab = "all",
   query = "",
   weekFilter = "all",
+  workshopQrScan = null,
   getOverviewLaneId = () => "",
   isStorageLikeName = () => false,
   isObvyazkaSectionName = () => false,
@@ -192,10 +197,18 @@ export function useBaseOrderFilter({
           (isObvyazkaSectionName(sectionName) || sourceRowId.startsWith("manual:") || hasArticleLikeCode(x)));
       if ((storageLike && !allowStorageLike) || isGarbageShipmentItemName(x.item)) return false;
       const byWeek = matchesWeekFilter(x.week, weekFilter);
+      const qrMatch =
+        view === "workshop" &&
+        workshopQrScan &&
+        (tab === "kromka" || tab === "pras")
+          ? orderMatchesWorkshopQrScan(x, workshopQrScan)
+          : true;
       const byQuery =
-        !q ||
-        String(x.item || "").toLowerCase().includes(q) ||
-        String(x.orderId || x.order_id || "").toLowerCase().includes(q);
+        workshopQrScan && view === "workshop" && (tab === "kromka" || tab === "pras")
+          ? qrMatch
+          : !q ||
+            String(x.item || "").toLowerCase().includes(q) ||
+            String(x.orderId || x.order_id || "").toLowerCase().includes(q);
       if (!byWeek || !byQuery) return false;
       if (view === "stats" || view === "overview") return true;
       // Производство: те же «дорожки», что и в «Обзор заказов» (pipeline), иначе вкладки и канбан расходятся.
@@ -214,6 +227,7 @@ export function useBaseOrderFilter({
     tab,
     view,
     weekFilter,
+    workshopQrScan,
   ]);
 }
 

@@ -203,6 +203,8 @@ export function useAppState({ auth }) {
     setRows,
     query,
     setQuery,
+    workshopQrScan,
+    setWorkshopQrScan,
   } = useOrders({ autoLoad: false });
   const {
     shipmentBoard,
@@ -1015,6 +1017,7 @@ export function useAppState({ auth }) {
     tab,
     query,
     weekFilter,
+    workshopQrScan,
     getOverviewLaneId,
     isStorageLikeName,
     isObvyazkaSectionName,
@@ -1377,6 +1380,8 @@ export function useAppState({ auth }) {
       setRows,
       query,
       setQuery,
+      workshopQrScan,
+      setWorkshopQrScan,
       loading,
       setLoading,
       overviewShippedOnly,

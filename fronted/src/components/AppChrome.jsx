@@ -80,6 +80,7 @@ export function AppChrome({
           setLaborSubView={shell.setLaborSubView}
           query={shell.query}
           setQuery={shell.setQuery}
+          setWorkshopQrScan={shell.setWorkshopQrScan}
           weekFilter={shipment.weekFilter}
           setWeekFilter={shipment.setWeekFilter}
           weeks={shipment.weeks}

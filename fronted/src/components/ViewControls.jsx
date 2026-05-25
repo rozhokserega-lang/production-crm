@@ -1,6 +1,7 @@
 ﻿import { useEffect, useMemo, useRef, useState } from "react";
 import { TABS } from "../app/appConstants";
 import { normalizeWeekFilter } from "../app/weekFilterUtils";
+import { useWorkshopQrScan } from "../hooks/useWorkshopQrScan";
 
 function WeekFilterDropdown({ value, onChange, weeks = [] }) {
   const allWeeksLabel = "\u0412\u0441\u0435 \u043d\u0435\u0434\u0435\u043b\u0438";
@@ -173,6 +174,7 @@ export function ViewControls({
   setLaborSubView,
   query,
   setQuery,
+  setWorkshopQrScan,
   weekFilter,
   setWeekFilter,
   weeks,
@@ -229,6 +231,14 @@ export function ViewControls({
   setShowPackagingOnly,
   canOperateWarehouse,
 }) {
+  const workshopQr = useWorkshopQrScan({
+    view,
+    tab,
+    setQuery,
+    setWeekFilter,
+    setWorkshopQrScan,
+  });
+
   const stageValues = {
     showAwaiting,
     showOnPilka,
@@ -521,14 +531,46 @@ export function ViewControls({
       <div className="filters">
         {view !== "furniture" && view !== "metalProcess" && view !== "db" && (
           <input
-            placeholder={view === "warehouse" ? (warehouseSubView === "leftovers" ? "Поиск по цвету или размеру" : warehouseSubView === "history" ? "Поиск: заказ, материал, комментарий" : "Поиск материала") : view === "metal" ? "Поиск по артикулу или названию металла" : "Поиск по названию или ID"}
+            ref={workshopQr.searchInputRef}
+            className={workshopQr.searchClassName}
+            placeholder={
+              view === "warehouse"
+                ? warehouseSubView === "leftovers"
+                  ? "Поиск по цвету или размеру"
+                  : warehouseSubView === "history"
+                    ? "Поиск: заказ, материал, комментарий"
+                    : "Поиск материала"
+                : view === "metal"
+                  ? "Поиск по артикулу или названию металла"
+                  : workshopQr.active
+                    ? workshopQr.searchPlaceholder
+                    : "Поиск по названию или ID"
+            }
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => workshopQr.handleSearchChange(e.target.value)}
+            onKeyDown={workshopQr.handleSearchKeyDown}
           />
         )}
         {view !== "warehouse" && view !== "furniture" && view !== "metal" && view !== "metalProcess" && view !== "shipment" && view !== "db" && !(view === "labor" && laborSubView === "stages") && (
           <>
           <WeekFilterDropdown value={weekFilter} onChange={setWeekFilter} weeks={weeks} />
+          {workshopQr.show && (
+            <button
+              type="button"
+              className={`workshop-qr-scan-toggle${workshopQr.active ? " is-active" : ""}`}
+              onClick={workshopQr.toggle}
+              title={workshopQr.active ? "Выключить сканирование QR" : "Сканировать QR-код заказа"}
+              aria-pressed={workshopQr.active}
+              aria-label={workshopQr.active ? "Выключить сканирование QR" : "Сканировать QR-код заказа"}
+            >
+              <i className="ti ti-qrcode" aria-hidden="true" />
+            </button>
+          )}
+          {workshopQr.scanHint && (
+            <span className="workshop-qr-scan-hint" role="status">
+              {workshopQr.scanHint}
+            </span>
+          )}
           </>
         )}
         {view === "stats" && (
