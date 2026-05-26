@@ -70,6 +70,25 @@ export class OrderService {
     return await callBackend("webDeleteCuttingCatalogKit", { p_id: Number(id) || 0 });
   }
 
+  static async getGxShelfCatalog() {
+    return await callBackend("webGetGxShelfCatalog");
+  }
+
+  static async upsertGxShelfCatalogItem({ id, code, name, color, pairs, sort_order }) {
+    return await callBackend("webUpsertGxShelfCatalogItem", {
+      p_id: id ? Number(id) : 0,
+      p_code: code,
+      p_name: name,
+      p_color: color || null,
+      p_pairs: pairs,
+      p_sort_order: sort_order ?? 0,
+    });
+  }
+
+  static async deleteGxShelfCatalogItem(id) {
+    return await callBackend("webDeleteGxShelfCatalogItem", { p_id: Number(id) || 0 });
+  }
+
   // --- Overview plan months ---
   static async getOverviewPlanMonths() {
     return await callBackend("webGetOverviewPlanMonths");

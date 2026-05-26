@@ -6,7 +6,7 @@ import {
   resolvePlanCatalogSelection,
 } from "../app/shipmentDialogHelpers";
 import { getMaterialLabel } from "../app/orderHelpers";
-import { normText, sectionNamesMatch } from "../utils/shipmentUtils";
+import { normText, catalogSectionMatchesPlanSection, itemMatchesPlanSectionVariant } from "../utils/shipmentUtils";
 
 export function useShipmentPlanningDerivedData({
   view,
@@ -81,7 +81,6 @@ export function useShipmentPlanningDerivedData({
   }, [sectionCatalogNames, shipmentSectionNames]);
 
   const sectionArticles = useMemo(() => {
-    const hasWhiteAliasSection = sectionOptions.includes(`${planSection} белый`);
     const list = (sectionArticleRows || [])
       .map((x) => ({
         sectionName: String(x.section_name || x.sectionName || "").trim(),
@@ -89,11 +88,8 @@ export function useShipmentPlanningDerivedData({
         itemName: normalizeCatalogItemName(String(x.item_name || x.itemName || "").trim()),
         material: String(x.material || "").trim(),
       }))
-      .filter((x) => sectionNamesMatch(x.sectionName, planSection) && x.article && x.itemName)
-      .filter((x) => {
-        if (!hasWhiteAliasSection) return true;
-        return !/(белый|белые ноги)/i.test(x.itemName);
-      })
+      .filter((x) => catalogSectionMatchesPlanSection(x.sectionName, planSection) && x.article && x.itemName)
+      .filter((x) => itemMatchesPlanSectionVariant(x.itemName, planSection, sectionOptions))
       .sort((a, b) => a.itemName.localeCompare(b.itemName, "ru"));
     const byKey = new Map();
     list.forEach((row) => {
@@ -107,7 +103,6 @@ export function useShipmentPlanningDerivedData({
     const section = String(planSection || "").trim();
     const selectKey = String(planArticle || "").trim();
     if (!section || !selectKey) return [];
-    const hasWhiteAliasSection = sectionOptions.includes(`${section} белый`);
     const list = (sectionArticleRows || [])
       .map((x) => ({
         sectionName: String(x.section_name || x.sectionName || "").trim(),
@@ -117,16 +112,13 @@ export function useShipmentPlanningDerivedData({
       }))
       .filter(
         (x) =>
-          sectionNamesMatch(x.sectionName, section) &&
+          catalogSectionMatchesPlanSection(x.sectionName, section) &&
           x.article &&
           x.itemName &&
           x.material &&
           matchPlanCatalogRowSelectKey(x, selectKey),
       )
-      .filter((x) => {
-        if (!hasWhiteAliasSection) return true;
-        return !/(белый|белые ноги)/i.test(x.itemName);
-      })
+      .filter((x) => itemMatchesPlanSectionVariant(x.itemName, section, sectionOptions))
       .sort((a, b) => a.material.localeCompare(b.material, "ru"));
     const seen = new Set();
     return list.filter((x) => {

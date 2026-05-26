@@ -10,8 +10,44 @@ export function normSectionKey(name) {
   return normText(String(name || "").replace(/ё/g, "е"));
 }
 
+export function getPlanSectionVariant(planSection) {
+  const key = normSectionKey(planSection);
+  if (key.endsWith(" белый")) {
+    return { base: key.slice(0, -" белый".length).trim(), variant: "white" };
+  }
+  if (key.endsWith(" черный")) {
+    return { base: key.slice(0, -" черный".length).trim(), variant: "black" };
+  }
+  return { base: key, variant: null };
+}
+
 export function sectionNamesMatch(a, b) {
   return normSectionKey(a) === normSectionKey(b);
+}
+
+/** Строка каталога подходит для выбранной секции плана (учитывает «… белый» / «… черный»). */
+export function catalogSectionMatchesPlanSection(catalogSection, planSection) {
+  const cat = normSectionKey(catalogSection);
+  const plan = normSectionKey(planSection);
+  if (cat === plan) return true;
+  const { base, variant } = getPlanSectionVariant(planSection);
+  return Boolean(variant) && cat === base;
+}
+
+export function isWhitePlanCatalogItemName(itemName) {
+  return /(белый|белые ноги)/i.test(String(itemName || ""));
+}
+
+export function itemMatchesPlanSectionVariant(itemName, planSection, sectionOptions = []) {
+  const { base, variant } = getPlanSectionVariant(planSection);
+  const options = Array.isArray(sectionOptions) ? sectionOptions : [];
+  const hasWhiteAlias = options.some((name) => normSectionKey(name) === `${base} белый`);
+  const isWhiteItem = isWhitePlanCatalogItemName(itemName);
+
+  if (variant === "white") return isWhiteItem;
+  if (variant === "black") return !isWhiteItem;
+  if (hasWhiteAlias && normSectionKey(planSection) === base) return !isWhiteItem;
+  return true;
 }
 
 export function sectionSortKey(name, sectionOrder = []) {

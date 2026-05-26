@@ -1,7 +1,9 @@
 import { useMemo } from "react";
 import { extractPlanItemArticle, shipmentOrderKey, stripPlanItemMeta } from "../app/orderHelpers";
 import { ceilWholeSheets } from "../app/appUtils";
-import { resolveKitsPerSheetForItem } from "../app/furnitureMaterialYield";
+import { resolvePlanItemSheets } from "../app/planSheetEstimation";
+import { applyLoftPairedSheetAdjustment } from "../app/loftPairedSheetEstimation";
+import { buildShipmentMaterialPlan } from "../app/shipmentMaterialPlanHelpers";
 import { shipmentOrderItemWeekKey } from "../utils/shipmentUtils";
 
 export function useShipmentTableData({
@@ -21,21 +23,41 @@ export function useShipmentTableData({
     if (view !== "shipment" && view !== "warehouse") return [];
     const n = (v) => (typeof normalizeFurnitureKey === "function" ? normalizeFurnitureKey(v) : String(v || "").toLowerCase().trim());
     const templates = Array.isArray(furnitureCustomTemplates) ? furnitureCustomTemplates : [];
-    const resolveKitsPerSheet = (itemName, materialName = "") => {
+    const resolveSheets = ({
+      itemName,
+      sectionName,
+      materialName,
+      qty,
+      articleCode,
+    }) => {
       const rawItem = stripPlanItemMeta(String(itemName || "")).trim();
-      if (!rawItem) return 0;
-      let output = resolveKitsPerSheetForItem(templates, rawItem, materialName, n);
-      if (output > 0) return output;
+      if (!rawItem) return { sheets: 0, outputPerSheet: 0 };
+      const primary = resolvePlanItemSheets({
+        itemName: rawItem,
+        sectionName,
+        materialName,
+        qty,
+        articleCode,
+        templates,
+        normalizeKey: n,
+      });
+      if (primary.sheets > 0) return primary;
       const materialKey = n(materialName);
       if (materialKey) {
         const parts = rawItem.split(".").map((x) => String(x || "").trim()).filter(Boolean);
         if (parts.length >= 2 && n(parts[parts.length - 1]) === materialKey) {
-          const noMaterial = parts.slice(0, -1).join(". ");
-          output = resolveKitsPerSheetForItem(templates, noMaterial, materialName, n);
-          if (output > 0) return output;
+          return resolvePlanItemSheets({
+            itemName: parts.slice(0, -1).join(". "),
+            sectionName,
+            materialName,
+            qty,
+            articleCode,
+            templates,
+            normalizeKey: n,
+          });
         }
       }
-      return 0;
+      return { sheets: 0, outputPerSheet: 0 };
     };
     const rowsFlat = [];
     shipmentRenderSections.forEach((section) => {
@@ -55,26 +77,35 @@ export function useShipmentTableData({
           const qty = Number(c.qty || 0);
           const sheetsRaw = ceilWholeSheets(c.sheetsNeeded || 0);
           const outputRaw = Number(c.outputPerSheet || 0);
-          // If backend did not store per-sheet output, try to derive it from constructor templates
-          // (kits_per_sheet) using the item name and material.
-          const fallbackOutput = !(outputRaw > 0)
-            ? resolveKitsPerSheet(it.item, it.material || "")
-            : 0;
-          const outputPerSheet = outputRaw > 0 ? outputRaw : fallbackOutput;
-          const sheets = sheetsRaw > 0
-            ? sheetsRaw
-            : outputPerSheet > 0 && qty > 0
-              ? ceilWholeSheets(qty / outputPerSheet)
-              : 0;
+          const productArticle = String(
+            it.productArticle || it.article_code || it.articleCode || it.article || it.mapped_article_code || it.mappedArticleCode || "",
+          ).trim() || extractPlanItemArticle(it.item);
+          const fallback =
+            !(sheetsRaw > 0) && !(outputRaw > 0)
+              ? resolveSheets({
+                  itemName: it.item,
+                  sectionName: section.name,
+                  materialName: it.material || "",
+                  qty,
+                  articleCode: productArticle,
+                })
+              : { sheets: 0, outputPerSheet: 0 };
+          const outputPerSheet = outputRaw > 0 ? outputRaw : Number(fallback.outputPerSheet || 0);
+          const sheets =
+            sheetsRaw > 0
+              ? sheetsRaw
+              : fallback.sheets > 0
+                ? fallback.sheets
+                : outputPerSheet > 0 && qty > 0
+                  ? ceilWholeSheets(qty / outputPerSheet)
+                  : 0;
           rowsFlat.push({
             key: `${sourceRow}-${sourceCol}`,
             section: section.name,
             sourceItem,
             item: stripPlanItemMeta(it.item),
             orderId: String(relatedOrder?.orderId || relatedOrder?.order_id || "").trim(),
-            productArticle: String(
-              it.productArticle || it.article_code || it.articleCode || it.article || it.mapped_article_code || it.mappedArticleCode || "",
-            ).trim() || extractPlanItemArticle(it.item),
+            productArticle,
             strapProduct: String(it.strapProduct || ""),
             material: it.material || "",
             week,
@@ -93,7 +124,7 @@ export function useShipmentTableData({
         });
       });
     });
-    return rowsFlat;
+    return applyLoftPairedSheetAdjustment(rowsFlat, { templates, normalizeKey: n });
   }, [
     view,
     shipmentRenderSections,
@@ -168,88 +199,15 @@ export function useShipmentTableData({
     );
   }, [shipmentTableRowsWithStockStatus, hiddenShipmentGroups]);
 
-  const shipmentPlanDeficits = useMemo(() => {
-    const byMaterial = new Map();
-    shipmentTableRowsWithStockStatus.forEach((row) => {
-      if (row.stageKey !== "awaiting") return;
-      const material = String(row.material || "Материал не указан").trim();
-      const key = normalizeFurnitureKey(material);
-      if (!byMaterial.has(key)) {
-        const totals = shipmentMaterialBalance.get(key) || { needed: 0, available: 0 };
-        byMaterial.set(key, {
-          material,
-          needed: Number(totals.needed || 0),
-          available: Number(totals.available || 0),
-          rows: [],
-        });
-      }
-      byMaterial.get(key).rows.push({
-        key: row.key,
-        orderId: row.orderId,
-        section: row.section,
-        item: row.item,
-        article: row.productArticle,
-        week: row.week || "-",
-        qty: Number(row.qty || 0),
-        sheets: Number(row.sheets || 0),
-        sourceRow: row.sourceRow,
-        sourceCol: row.sourceCol,
-      });
-    });
+  const shipmentMaterialPlan = useMemo(
+    () => buildShipmentMaterialPlan(shipmentTableRowsWithStockStatus, shipmentMaterialBalance, normalizeFurnitureKey),
+    [shipmentTableRowsWithStockStatus, shipmentMaterialBalance, normalizeFurnitureKey],
+  );
 
-    return [...byMaterial.values()]
-      .map((x) => {
-        const deficit = Math.max(0, Number(x.needed || 0) - Number(x.available || 0));
-        const rows = x.rows
-          .filter((row) => Number(row.sheets || 0) > 0)
-          .sort((a, b) =>
-            String(a.week || "").localeCompare(String(b.week || ""), "ru", { numeric: true }) ||
-            Number(b.sheets || 0) - Number(a.sheets || 0),
-          );
-        let remainingAvailable = Number(x.available || 0);
-        const weekMap = new Map();
-        rows.forEach((row) => {
-          const week = String(row.week || "-").trim() || "-";
-          if (!weekMap.has(week)) weekMap.set(week, { week, needed: 0, deficit: 0, rows: [] });
-          const bucket = weekMap.get(week);
-          bucket.needed += Number(row.sheets || 0);
-          bucket.rows.push(row);
-        });
-        const weeks = [...weekMap.values()].map((week) => {
-          const weekDeficit = Math.max(0, Number(week.needed || 0) - remainingAvailable);
-          remainingAvailable = Math.max(0, remainingAvailable - Number(week.needed || 0));
-          return {
-            ...week,
-            needed: Number(week.needed || 0),
-            deficit: weekDeficit,
-          };
-        });
-        let rowRemainingAvailable = Number(x.available || 0);
-        const blockedRows = [];
-        rows.forEach((row) => {
-          const sheets = Number(row.sheets || 0);
-          if (sheets > rowRemainingAvailable) {
-            blockedRows.push({
-              ...row,
-              shortage: Math.max(0, sheets - rowRemainingAvailable),
-            });
-          }
-          rowRemainingAvailable = Math.max(0, rowRemainingAvailable - sheets);
-        });
-        return {
-          material: x.material,
-          needed: Number(x.needed || 0),
-          available: Number(x.available || 0),
-          deficit,
-          firstWeek: weeks[0]?.week || "-",
-          weeks,
-          blockerRows: blockedRows.slice(0, 8),
-          blockedCount: blockedRows.length,
-        };
-      })
-      .filter((x) => x.deficit > 0)
-      .sort((a, b) => b.deficit - a.deficit || a.material.localeCompare(b.material, "ru"));
-  }, [shipmentTableRowsWithStockStatus, shipmentMaterialBalance, normalizeFurnitureKey]);
+  const shipmentPlanDeficits = useMemo(
+    () => shipmentMaterialPlan.filter((x) => x.deficit > 0),
+    [shipmentMaterialPlan],
+  );
 
   return {
     shipmentTableRows,
@@ -257,6 +215,7 @@ export function useShipmentTableData({
     shipmentTableRowsWithStockStatus,
     shipmentTableGroupNames,
     visibleShipmentTableRows,
+    shipmentMaterialPlan,
     shipmentPlanDeficits,
   };
 }

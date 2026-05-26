@@ -8,7 +8,7 @@ import {
   matchPlanCatalogRowSelectKey,
   planCatalogRowSelectKey,
 } from "../app/shipmentDialogHelpers";
-import { sectionNamesMatch } from "../utils/shipmentUtils";
+import { catalogSectionMatchesPlanSection } from "../utils/shipmentUtils";
 import { toUserError } from "../app/errorCatalogHelpers";
 
 /**
@@ -78,7 +78,7 @@ export function usePlanDialog({
           itemName: String(x.item_name || x.itemName || "").trim(),
           material: String(x.material || "").trim(),
         }))
-        .find((x) => sectionNamesMatch(x.sectionName, nextSection) && (x.article || x.itemName));
+        .find((x) => catalogSectionMatchesPlanSection(x.sectionName, nextSection) && (x.article || x.itemName));
       setPlanArticle(firstArticle ? planCatalogRowSelectKey(firstArticle) : "");
       setPlanMaterial(resolvePlanMaterial(firstArticle));
     },

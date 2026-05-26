@@ -1,6 +1,6 @@
 import { firstSelectedWeek } from "./weekFilterUtils";
 import { normalizeCatalogItemName } from "./errorCatalogHelpers";
-import { normText, sectionNamesMatch } from "../utils/shipmentUtils";
+import { normText, catalogSectionMatchesPlanSection, sectionNamesMatch } from "../utils/shipmentUtils";
 
 export function buildStrapDialogInit({
   strapItems = [],
@@ -39,7 +39,7 @@ export function buildCreatePlanDialogInit({
   const firstSection = sectionOptions[0] || "Прочее";
   const firstWeek = weeks[0] || "";
   const firstArticle = normalizeSectionArticles(sectionArticleRows).find(
-    (x) => sectionNamesMatch(x.sectionName, firstSection) && (x.article || x.itemName),
+    (x) => catalogSectionMatchesPlanSection(x.sectionName, firstSection) && (x.article || x.itemName),
   );
   return {
     section: firstSection,
@@ -193,7 +193,7 @@ export function resolvePlanCatalogSelection({
       ? sectionArticles
       : (sectionArticleRows || [])
           .map(normalizePlanCatalogRow)
-          .filter((x) => sectionNamesMatch(x.sectionName, section) && x.article && x.itemName)
+          .filter((x) => catalogSectionMatchesPlanSection(x.sectionName, section) && x.article && x.itemName)
   ).map((x) => (x.itemName ? x : normalizePlanCatalogRow(x)));
 
   if (!selectKey && !materialKey) return null;

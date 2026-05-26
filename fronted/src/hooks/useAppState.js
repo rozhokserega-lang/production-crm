@@ -1198,6 +1198,7 @@ export function useAppState({ auth }) {
     shipmentMaterialBalance,
     shipmentTableRowsWithStockStatus,
     shipmentTableGroupNames,
+    shipmentMaterialPlan,
     shipmentPlanDeficits,
   } = useShipmentTableData({
     view,
@@ -1212,11 +1213,12 @@ export function useAppState({ auth }) {
     furnitureCustomTemplates,
     warehouseRows,
   });
-  /** Те же цифры, что в красном блоке «Нехватка по всему плану» на отгрузке (awaiting + фильтры недели/этапов + шаблоны листов). */
-  const warehouseOrderPlanRows = useMemo(
+  /** Потребность по всем материалам плана (в т.ч. когда на складе хватает). */
+  const warehouseMaterialPlanRows = useMemo(
     () =>
-      shipmentPlanDeficits.map((d) => ({
+      shipmentMaterialPlan.map((d) => ({
         material: d.material,
+        materialKey: d.materialKey,
         needed: d.needed,
         available: d.available,
         toOrder: d.deficit,
@@ -1225,7 +1227,12 @@ export function useAppState({ auth }) {
         blockerRows: d.blockerRows || [],
         blockedCount: d.blockedCount || 0,
       })),
-    [shipmentPlanDeficits],
+    [shipmentMaterialPlan],
+  );
+  /** Те же цифры, что в красном блоке «Нехватка по всему плану» на отгрузке (awaiting + фильтры недели/этапов + шаблоны листов). */
+  const warehouseOrderPlanRows = useMemo(
+    () => warehouseMaterialPlanRows.filter((d) => Number(d.toOrder || 0) > 0),
+    [warehouseMaterialPlanRows],
   );
 
   const { printWarehouseOrderPlanPdf } = useWarehouseActions({
@@ -1549,6 +1556,7 @@ export function useAppState({ auth }) {
       shipmentTableRowsWithStockStatus,
       shipmentTableGroupNames,
       shipmentPlanDeficits,
+      warehouseMaterialPlanRows,
       warehouseOrderPlanRows,
       selectedShipmentSummary,
       sendableSelectedCount,

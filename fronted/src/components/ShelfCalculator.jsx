@@ -1,49 +1,45 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  buildCatalogMap,
+  catalogDraftToUpsertPayload,
+  catalogItemToDraft,
+  clearCustomCatalogItemsStorage,
+  createEmptyCatalogDraft,
+  createEmptyCatalogPair,
+  dbRowToCatalogItem,
+  dbRowsToCatalogItems,
+  DEFAULT_GX_SHELF_CATALOG,
+  inferShelfColorFromItem,
+  loadCustomCatalogItems,
+  mergeShelfCatalog,
+  normalizeCatalogCode,
+  removeDbCatalogItemById,
+  resolveShelfColor,
+  SHELF_COLOR_SUGGESTIONS,
+  sortShelfColors,
+  upsertDbCatalogItem,
+  validateCatalogDraft,
+} from "../app/shelfCatalogHelpers";
+import { OrderService } from "../services/orderService";
 
-const CATALOG = {
-  furniture_items: [
-    { primary: { code: "GXss2-900hBVO", name: "Система хранения. 2 секции 900 мм. 3 полки с вешалкой. Чёрная. Дуб вотан" }, pairs: [{ text: "полка 887x340", qty: 4 }, { text: "полка 887x330", qty: 2 }] },
-    { primary: { code: "GXss2-900hWOS", name: "Система хранения. 2 секции 900 мм. 3 полки с вешалкой. Белая. Дуб сонома" }, pairs: [{ text: "полка 887x340", qty: 4 }, { text: "полка 887x330", qty: 2 }] },
-    { primary: { code: "GXss1-900BVO", name: "Система хранения. 1 секция 900 мм. 5 полок. Чёрная. Дуб вотан" }, pairs: [{ text: "полка 887x340", qty: 5 }] },
-    { primary: { code: "GXss1-900WOS", name: "Система хранения. 1 секция 900 мм. 5 полок. Белая. Дуб сонома" }, pairs: [{ text: "полка 887x340", qty: 5 }] },
-    { primary: { code: "GXss1-900hBVO", name: "Система хранения. 1 секция 900 мм. 3 полки с вешалкой. Чёрная. Дуб вотан" }, pairs: [{ text: "полка 887x340", qty: 2 }, { text: "полка 887x330", qty: 1 }] },
-    { primary: { code: "GXss1-900hWOS", name: "Система хранения. 1 секция 900 мм. 3 полки с вешалкой. Белая. Дуб сонома" }, pairs: [{ text: "полка 887x340", qty: 2 }, { text: "полка 887x330", qty: 1 }] },
-    { primary: { code: "GXss1-600BVO", name: "Система хранения. 1 секция 600 мм. 5 полок. Чёрная. Дуб вотан" }, pairs: [{ text: "полка 587x340", qty: 5 }] },
-    { primary: { code: "GXss1-600WOS", name: "Система хранения. 1 секция 600 мм. 5 полок. Белая. Дуб сонома" }, pairs: [{ text: "полка 587x340", qty: 5 }] },
-    { primary: { code: "GXss2-400-600hBVO", name: "Система хранения. 400+600 мм, полки + вешалка. Чёрная. Дуб вотан" }, pairs: [{ text: "полка 387x340", qty: 5 }, { text: "полка 587x330", qty: 1 }] },
-    { primary: { code: "GXss2-400-600hWOS", name: "Система хранения. 400+600 мм, полки + вешалка. Белая. Дуб сонома" }, pairs: [{ text: "полка 387x340", qty: 5 }, { text: "полка 587x330", qty: 1 }] },
-    { primary: { code: "GXssShelf900BVO", name: "Полка с кронштейном 900, Чёрная. Дуб вотан" }, pairs: [{ text: "полка 887x340", qty: 1 }] },
-    { primary: { code: "GXssShelf900WOS", name: "Полка с кронштейном 900, Белая. Дуб сонома" }, pairs: [{ text: "полка 887x340", qty: 1 }] },
-    { primary: { code: "GXssShelf600BVO", name: "Полка с кронштейном 600, Чёрная. Дуб вотан" }, pairs: [{ text: "полка 587x340", qty: 1 }] },
-    { primary: { code: "GXssShelf600WOS", name: "Полка с кронштейном 600, Белая. Дуб сонома" }, pairs: [{ text: "полка 587x340", qty: 1 }] },
-    { primary: { code: "GXssShelf400BVO", name: "Полка с кронштейном 400, Чёрная. Дуб вотан" }, pairs: [{ text: "полка 387x340", qty: 1 }] },
-    { primary: { code: "GXssShelf400WOS", name: "Полка с кронштейном 400, Белая. Дуб сонома" }, pairs: [{ text: "полка 387x340", qty: 1 }] },
-    { primary: { code: "GXssShShelf900BVO", name: "Полка обувная с кронштейном 900, Чёрная. Дуб вотан" }, pairs: [{ text: "полка 887x330", qty: 1 }] },
-    { primary: { code: "GXssShShelf900WOS", name: "Полка обувная с кронштейном 900, Белая. Дуб сонома" }, pairs: [{ text: "полка 887x330", qty: 1 }] },
-    { primary: { code: "GXssShShelf600BVO", name: "Полка обувная с кронштейном 600, Чёрная. Дуб вотан" }, pairs: [{ text: "полка 587x330", qty: 1 }] },
-    { primary: { code: "GXssShShelf600WOS", name: "Полка обувная с кронштейном 600, Белая. Дуб сонома" }, pairs: [{ text: "полка 587x330", qty: 1 }] },
-    { primary: { code: "GXssShShelf400BVO", name: "Полка обувная с кронштейном 400, Чёрная. Дуб вотан" }, pairs: [{ text: "полка 387x330", qty: 1 }] },
-    { primary: { code: "GXssShShelf400WOS", name: "Полка обувная с кронштейном 400, Белая. Дуб сонома" }, pairs: [{ text: "полка 387x330", qty: 1 }] },
-  ],
-};
-
-function normalizeCatalogCode(code) {
-  return String(code || "").trim().toUpperCase();
+function parseApiError(error, fallback) {
+  const raw = error?.message || fallback;
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed?.message || raw;
+  } catch {
+    return raw;
+  }
 }
 
-const CATALOG_MAP = Object.fromEntries(
-  CATALOG.furniture_items.map((item) => [normalizeCatalogCode(item.primary.code), item]),
-);
-
-function getCatalogItemByCode(code) {
-  return CATALOG_MAP[normalizeCatalogCode(code)] || null;
+function getCatalogItemByCode(catalogMap, code) {
+  return catalogMap[normalizeCatalogCode(code)] || null;
 }
 const SHEET_FORMATS = [
   { key: "2800x2070", label: "Лист 2800 x 2070 мм", width: 2800, height: 2070 },
   { key: "2750x1830", label: "Лист 2750 x 1830 мм", width: 2750, height: 1830 },
   { key: "2440x1830", label: "Лист 2440 x 1830 мм", width: 2440, height: 1830 },
 ];
-const COLOR_ORDER = ["Вотан", "Сонома", "Не определен"];
 const MATERIAL_OPTIONS = ["Дуб Вотан", "сонома / бардолино"];
 let idCounter = 0;
 
@@ -52,15 +48,15 @@ function makeRow(code = "", qty = "") {
   return { id: idCounter, code, qty };
 }
 
-function calcTotals(rows) {
+function calcTotals(rows, catalogMap) {
   const totals = {};
   const byColor = {};
   for (const row of rows) {
     const qty = Number(row.qty);
     if (!qty || qty <= 0) continue;
-    const item = getCatalogItemByCode(row.code);
+    const item = getCatalogItemByCode(catalogMap, row.code);
     if (!item) continue;
-    const color = resolveColor(item);
+    const color = resolveShelfColor(item);
     if (!byColor[color]) byColor[color] = {};
     for (const pair of item.pairs) {
       totals[pair.text] = (totals[pair.text] || 0) + pair.qty * qty;
@@ -74,17 +70,9 @@ function formatQty(value) {
   return Number.isInteger(value) ? String(value) : Number(value || 0).toFixed(1);
 }
 
-function resolveColor(item) {
-  const code = String(item?.primary?.code || "").toUpperCase();
-  const name = String(item?.primary?.name || "").toLowerCase();
-  if (code.includes("BVO") || name.includes("вотан")) return "Вотан";
-  if (code.includes("WOS") || name.includes("сонома")) return "Сонома";
-  return "Не определен";
-}
-
 function defaultMaterialByColor(color) {
   if (color === "Вотан") return "Дуб Вотан";
-  if (color === "Сонома") return "сонома / бардолино";
+  if (color === "Сонома" || color === "Бардолино") return "сонома / бардолино";
   return "Дуб Бардолино";
 }
 
@@ -210,11 +198,24 @@ function ShelfBadge({ text, qty }) {
   );
 }
 
-export default function ShelfCalculator({ canOperateProduction = false, onCreatePlanOrder }) {
+export default function ShelfCalculator({ canOperateProduction = false, canManageCatalog = false, onCreatePlanOrder }) {
+  const [dbCatalogItems, setDbCatalogItems] = useState([]);
+  const [catalogLoading, setCatalogLoading] = useState(true);
+  const [catalogLoadError, setCatalogLoadError] = useState("");
+  const [catalogSaving, setCatalogSaving] = useState(false);
+  const catalogItems = useMemo(
+    () => mergeShelfCatalog(DEFAULT_GX_SHELF_CATALOG, dbCatalogItems),
+    [dbCatalogItems],
+  );
+  const catalogMap = useMemo(() => buildCatalogMap(catalogItems), [catalogItems]);
   const [rows, setRows] = useState([makeRow()]);
   const [activeRowId, setActiveRowId] = useState(0);
   const [search, setSearch] = useState("");
   const [isCatalogOpen, setIsCatalogOpen] = useState(false);
+  const [catalogEditorOpen, setCatalogEditorOpen] = useState(false);
+  const [catalogDraft, setCatalogDraft] = useState(() => createEmptyCatalogDraft());
+  const [catalogEditCode, setCatalogEditCode] = useState("");
+  const [catalogFormError, setCatalogFormError] = useState("");
   const [sheetFormatKey, setSheetFormatKey] = useState(SHEET_FORMATS[0].key);
   const [cutGap, setCutGap] = useState("3");
   const [cutColor, setCutColor] = useState("all");
@@ -226,22 +227,22 @@ export default function ShelfCalculator({ canOperateProduction = false, onCreate
   const suggestions = useMemo(() => {
     const q = String(search || "").trim().toLowerCase();
     if (!q) return [];
-    return CATALOG.furniture_items.filter((it) =>
+    return catalogItems.filter((it) =>
       it.primary.code.toLowerCase().includes(q) || it.primary.name.toLowerCase().includes(q)
     ).slice(0, 8);
-  }, [search]);
+  }, [search, catalogItems]);
 
-  const totalsData = useMemo(() => calcTotals(rows), [rows]);
+  const totalsData = useMemo(() => calcTotals(rows, catalogMap), [rows, catalogMap]);
   const totalEntries = Object.entries(totalsData.totals).sort((a, b) => a[0].localeCompare(b[0], "ru"));
   const totalDisplayCards = useMemo(() => {
     const cards = [];
     totalEntries.forEach(([name, qty]) => {
-      const parts = COLOR_ORDER
-        .map((colorName) => ({
-          colorName,
-          colorQty: Number(totalsData.byColor[colorName]?.[name] || 0),
-        }))
-        .filter((x) => x.colorQty > 0);
+      const parts = sortShelfColors(
+        Object.keys(totalsData.byColor).filter((colorName) => Number(totalsData.byColor[colorName]?.[name] || 0) > 0),
+      ).map((colorName) => ({
+        colorName,
+        colorQty: Number(totalsData.byColor[colorName]?.[name] || 0),
+      }));
       if (parts.length > 1) {
         parts.forEach((p) => {
           cards.push({
@@ -262,18 +263,22 @@ export default function ShelfCalculator({ canOperateProduction = false, onCreate
     });
     return cards;
   }, [totalEntries, totalsData.byColor]);
-  const activeRows = rows.filter((r) => Number(r.qty) > 0 && getCatalogItemByCode(r.code));
+  const cutColorOptions = useMemo(
+    () => sortShelfColors(Object.keys(totalsData.byColor)),
+    [totalsData.byColor],
+  );
+  const activeRows = rows.filter((r) => Number(r.qty) > 0 && getCatalogItemByCode(catalogMap, r.code));
   const defaultArticleByCardKey = useMemo(() => {
     const byCard = new Map();
     const byCardArticleSystems = new Map();
     activeRows.forEach((r) => {
-      const item = getCatalogItemByCode(r.code);
+      const item = getCatalogItemByCode(catalogMap, r.code);
       if (!item) return;
       const article = String(item?.primary?.code || "").trim();
       if (!article) return;
       const rowQty = Number(r.qty || 0);
       if (!(rowQty > 0)) return;
-      const color = resolveColor(item);
+      const color = resolveShelfColor(item);
       item.pairs.forEach((pair) => {
         const pairQty = Number(pair?.qty || 0);
         if (!(pairQty > 0)) return;
@@ -297,7 +302,122 @@ export default function ShelfCalculator({ canOperateProduction = false, onCreate
       qrQtyMap.set(k, Number(articleSystems.get(article) || 0));
     });
     return { articleByCard: map, qrQtyByCard: qrQtyMap };
-  }, [activeRows]);
+  }, [activeRows, catalogMap]);
+
+  const refreshGxShelfCatalog = useCallback(async () => {
+    setCatalogLoading(true);
+    setCatalogLoadError("");
+    try {
+      const rows = await OrderService.getGxShelfCatalog();
+      setDbCatalogItems(dbRowsToCatalogItems(rows));
+    } catch (error) {
+      setCatalogLoadError(parseApiError(error, "Не удалось загрузить справочник из БД."));
+      setDbCatalogItems([]);
+    } finally {
+      setCatalogLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadCatalog() {
+      setCatalogLoading(true);
+      setCatalogLoadError("");
+      try {
+        const rows = await OrderService.getGxShelfCatalog();
+        if (cancelled) return;
+        let items = dbRowsToCatalogItems(rows);
+
+        if (canManageCatalog) {
+          const localItems = loadCustomCatalogItems();
+          if (localItems.length) {
+            for (const item of localItems) {
+              const payload = catalogDraftToUpsertPayload(catalogItemToDraft(item), item.dbId || 0);
+              const saved = await OrderService.upsertGxShelfCatalogItem(payload);
+              if (cancelled) return;
+              items = upsertDbCatalogItem(items, dbRowToCatalogItem(saved));
+            }
+            clearCustomCatalogItemsStorage();
+          }
+        }
+
+        if (cancelled) return;
+        setDbCatalogItems(items);
+      } catch (error) {
+        if (cancelled) return;
+        setCatalogLoadError(parseApiError(error, "Не удалось загрузить справочник из БД."));
+        setDbCatalogItems([]);
+      } finally {
+        if (!cancelled) setCatalogLoading(false);
+      }
+    }
+    loadCatalog();
+    return () => {
+      cancelled = true;
+    };
+  }, [canManageCatalog]);
+
+  function openCatalogEditor(item = null) {
+    setCatalogEditCode(item ? normalizeCatalogCode(item.primary?.code) : "");
+    setCatalogDraft(catalogItemToDraft(item));
+    setCatalogFormError("");
+    setCatalogEditorOpen(true);
+    setIsCatalogOpen(true);
+  }
+
+  function closeCatalogEditor() {
+    setCatalogEditorOpen(false);
+    setCatalogEditCode("");
+    setCatalogDraft(createEmptyCatalogDraft());
+    setCatalogFormError("");
+  }
+
+  function updateCatalogDraftPair(index, patch) {
+    setCatalogDraft((prev) => ({
+      ...prev,
+      pairs: prev.pairs.map((pair, idx) => (idx === index ? { ...pair, ...patch } : pair)),
+    }));
+  }
+
+  async function saveCatalogDraft() {
+    const error = validateCatalogDraft(catalogDraft);
+    if (error) {
+      setCatalogFormError(error);
+      return;
+    }
+    const editItem = catalogEditCode ? getCatalogItemByCode(catalogMap, catalogEditCode) : null;
+    const payload = catalogDraftToUpsertPayload(catalogDraft, editItem?.dbId || catalogDraft.dbId || 0);
+    setCatalogSaving(true);
+    setCatalogFormError("");
+    try {
+      const saved = await OrderService.upsertGxShelfCatalogItem(payload);
+      setDbCatalogItems((prev) => upsertDbCatalogItem(prev, dbRowToCatalogItem(saved)));
+      closeCatalogEditor();
+    } catch (saveError) {
+      setCatalogFormError(parseApiError(saveError, "Не удалось сохранить позицию в БД."));
+    } finally {
+      setCatalogSaving(false);
+    }
+  }
+
+  async function deleteCatalogItem(code) {
+    const key = normalizeCatalogCode(code);
+    const item = getCatalogItemByCode(catalogMap, key);
+    if (!item?.dbId) return;
+    const ok = window.confirm(`Удалить из справочника позицию ${item.primary.code}?`);
+    if (!ok) return;
+    setCatalogSaving(true);
+    setCatalogFormError("");
+    try {
+      await OrderService.deleteGxShelfCatalogItem(item.dbId);
+      setDbCatalogItems((prev) => removeDbCatalogItemById(prev, item.dbId));
+      if (normalizeCatalogCode(catalogEditCode) === key) closeCatalogEditor();
+    } catch (deleteError) {
+      window.alert(parseApiError(deleteError, "Не удалось удалить позицию из БД."));
+    } finally {
+      setCatalogSaving(false);
+    }
+  }
 
   function updateRow(id, patch) {
     setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
@@ -364,9 +484,9 @@ export default function ShelfCalculator({ canOperateProduction = false, onCreate
         const inferred =
           activeRows
             .map((r) => {
-              const catalogItem = getCatalogItemByCode(r.code);
+              const catalogItem = getCatalogItemByCode(catalogMap, r.code);
               if (!catalogItem) return null;
-              const color = resolveColor(catalogItem);
+              const color = resolveShelfColor(catalogItem);
               if (String(s.color || "") !== String(color || "")) return null;
               const pair = (catalogItem.pairs || []).find((p) => String(p?.text || "").trim() === String(s.name || "").trim());
               if (!pair) return null;
@@ -442,7 +562,7 @@ export default function ShelfCalculator({ canOperateProduction = false, onCreate
 
       <div style={{ display: "grid", gap: 8 }}>
         {rows.map((row, idx) => {
-          const item = getCatalogItemByCode(row.code);
+          const item = getCatalogItemByCode(catalogMap, row.code);
           const isValid = Boolean(item);
           const isActive = activeRowId === row.id;
 
@@ -554,20 +674,153 @@ export default function ShelfCalculator({ canOperateProduction = false, onCreate
       </div>
 
       <div style={{ marginTop: 16 }}>
-        <button
-          type="button"
-          onClick={() => setIsCatalogOpen((v) => !v)}
-          style={{
-            border: "none",
-            background: "transparent",
-            color: "#64748b",
-            fontSize: 14,
-            padding: 0,
-            cursor: "pointer",
-          }}
-        >
-          {isCatalogOpen ? "▼" : "▶"} Справочник артикулов ({CATALOG.furniture_items.length} позиций)
-        </button>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginBottom: 8 }}>
+          <button
+            type="button"
+            onClick={() => setIsCatalogOpen((v) => !v)}
+            style={{
+              border: "none",
+              background: "transparent",
+              color: "#64748b",
+              fontSize: 14,
+              padding: 0,
+              cursor: "pointer",
+            }}
+          >
+            {isCatalogOpen ? "▼" : "▶"} Справочник артикулов ({catalogItems.length} позиций)
+            {catalogLoading ? " · загрузка…" : ""}
+          </button>
+          {canManageCatalog ? (
+            <button type="button" className="mini" onClick={() => openCatalogEditor()} disabled={catalogLoading || catalogSaving}>
+              + Добавить в справочник
+            </button>
+          ) : null}
+          {canManageCatalog && !catalogLoading ? (
+            <button type="button" className="mini ghost" onClick={refreshGxShelfCatalog} disabled={catalogSaving}>
+              Обновить
+            </button>
+          ) : null}
+        </div>
+        {catalogLoadError ? <div className="error" style={{ marginBottom: 8 }}>{catalogLoadError}</div> : null}
+
+        {canManageCatalog && catalogEditorOpen ? (
+          <div
+            style={{
+              marginBottom: 10,
+              border: "1px solid #cbd5e1",
+              borderRadius: 12,
+              background: "#f8fafc",
+              padding: 12,
+            }}
+          >
+            <div style={{ fontWeight: 700, color: "#0f172a", marginBottom: 10 }}>
+              {catalogEditCode ? `Редактирование: ${catalogEditCode}` : "Новая позиция справочника"}
+            </div>
+            <div style={{ display: "grid", gap: 10 }}>
+              <div>
+                <div style={{ fontSize: 12, color: "#64748b", marginBottom: 4 }}>Артикул</div>
+                <input
+                  value={catalogDraft.code}
+                  onChange={(e) => setCatalogDraft((prev) => ({ ...prev, code: e.target.value }))}
+                  placeholder="GXss1-900WOS"
+                  style={{ fontFamily: "monospace" }}
+                />
+              </div>
+              <div>
+                <div style={{ fontSize: 12, color: "#64748b", marginBottom: 4 }}>Наименование</div>
+                <input
+                  value={catalogDraft.name}
+                  onChange={(e) => setCatalogDraft((prev) => ({ ...prev, name: e.target.value }))}
+                  placeholder="Система хранения. 1 секция 900 мм..."
+                />
+              </div>
+              <div>
+                <div style={{ fontSize: 12, color: "#64748b", marginBottom: 4 }}>Цвет</div>
+                <input
+                  list="gx-shelf-color-suggestions"
+                  value={catalogDraft.color}
+                  onChange={(e) => setCatalogDraft((prev) => ({ ...prev, color: e.target.value }))}
+                  placeholder="Авто (из артикула и названия)"
+                />
+                <datalist id="gx-shelf-color-suggestions">
+                  {SHELF_COLOR_SUGGESTIONS.map((colorName) => (
+                    <option key={colorName} value={colorName} />
+                  ))}
+                </datalist>
+                <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 4 }}>
+                  {String(catalogDraft.color || "").trim()
+                    ? "Будет использован указанный цвет."
+                    : `Авто: ${inferShelfColorFromItem({
+                      primary: { code: catalogDraft.code, name: catalogDraft.name },
+                    })}`}
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: 12, color: "#64748b", marginBottom: 6 }}>Состав полок</div>
+                <div style={{ display: "grid", gap: 8 }}>
+                  {catalogDraft.pairs.map((pair, index) => (
+                    <div key={`catalog-pair-${index}`} style={{ display: "grid", gridTemplateColumns: "1fr 90px 34px", gap: 8, alignItems: "center" }}>
+                      <input
+                        value={pair.text}
+                        onChange={(e) => updateCatalogDraftPair(index, { text: e.target.value })}
+                        placeholder="полка 887x340"
+                      />
+                      <input
+                        value={pair.qty}
+                        onChange={(e) => updateCatalogDraftPair(index, { qty: e.target.value.replace(/[^0-9.,]/g, "") })}
+                        placeholder="1"
+                        style={{ textAlign: "center" }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setCatalogDraft((prev) => ({
+                            ...prev,
+                            pairs: prev.pairs.length <= 1 ? prev.pairs : prev.pairs.filter((_, idx) => idx !== index),
+                          }))
+                        }
+                        disabled={catalogDraft.pairs.length <= 1}
+                        style={{
+                          width: 30,
+                          height: 30,
+                          border: "none",
+                          borderRadius: 8,
+                          background: "#fbe8e8",
+                          color: "#ef4444",
+                          cursor: catalogDraft.pairs.length <= 1 ? "not-allowed" : "pointer",
+                        }}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  className="mini secondary"
+                  style={{ marginTop: 8 }}
+                  onClick={() =>
+                    setCatalogDraft((prev) => ({
+                      ...prev,
+                      pairs: [...prev.pairs, createEmptyCatalogPair()],
+                    }))
+                  }
+                >
+                  + Добавить полку
+                </button>
+              </div>
+            </div>
+            {catalogFormError ? <div className="error" style={{ marginTop: 10 }}>{catalogFormError}</div> : null}
+            <div className="actions" style={{ marginTop: 12 }}>
+              <button type="button" className="mini ok" onClick={saveCatalogDraft} disabled={catalogSaving}>
+                {catalogSaving ? "Сохранение…" : "Сохранить"}
+              </button>
+              <button type="button" className="mini ghost" onClick={closeCatalogEditor} disabled={catalogSaving}>
+                Отмена
+              </button>
+            </div>
+          </div>
+        ) : null}
 
         <div
           style={{
@@ -579,45 +832,101 @@ export default function ShelfCalculator({ canOperateProduction = false, onCreate
             visibility: isCatalogOpen ? "visible" : "hidden",
           }}
         >
-          <div style={{ display: "grid", gridTemplateColumns: "210px 1fr auto", gap: 8, background: "#e9f5e9", color: "#1d6b2c", fontWeight: 700, padding: "8px 12px" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "210px 110px 1fr auto 72px", gap: 8, background: "#e9f5e9", color: "#1d6b2c", fontWeight: 700, padding: "8px 12px" }}>
             <span>Артикул</span>
+            <span>Цвет</span>
             <span>Наименование</span>
             <span>Полки</span>
+            <span />
           </div>
           <div style={{ maxHeight: 244, overflowY: "auto" }}>
-            {CATALOG.furniture_items.map((it) => (
-              <button
+            {catalogItems.map((it) => (
+              <div
                 key={it.primary.code}
-                type="button"
-                onClick={() => {
-                  const empty = rows.find((r) => !r.code);
-                  if (empty) {
-                    updateRow(empty.id, { code: it.primary.code });
-                  } else {
-                    addRow(it.primary.code, 1);
-                  }
-                }}
                 style={{
                   width: "100%",
-                  border: "none",
                   borderTop: "1px solid #eef3ee",
                   background: "#fff",
-                  textAlign: "left",
                   padding: "8px 12px",
                   display: "grid",
-                  gridTemplateColumns: "210px 1fr auto",
+                  gridTemplateColumns: "210px 110px 1fr auto 72px",
                   gap: 8,
-                  cursor: "pointer",
+                  alignItems: "center",
                 }}
               >
-                <span style={{ fontFamily: "monospace", color: "#1f6b2d", fontWeight: 700 }}>{it.primary.code}</span>
-                <span style={{ color: "#334155" }}>{it.primary.name}</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const empty = rows.find((r) => !r.code);
+                    if (empty) {
+                      updateRow(empty.id, { code: it.primary.code });
+                    } else {
+                      addRow(it.primary.code, 1);
+                    }
+                  }}
+                  style={{
+                    border: "none",
+                    background: "transparent",
+                    textAlign: "left",
+                    padding: 0,
+                    cursor: "pointer",
+                    fontFamily: "monospace",
+                    color: "#1f6b2d",
+                    fontWeight: 700,
+                  }}
+                >
+                  {it.primary.code}
+                  {it.isCustom ? (
+                    <span style={{ marginLeft: 6, fontSize: 11, color: "#64748b", fontWeight: 500 }}>своя</span>
+                  ) : null}
+                </button>
+                <span style={{ fontSize: 12, color: "#64748b" }}>
+                  {resolveShelfColor(it)}
+                  {it.color ? (
+                    <span style={{ display: "block", fontSize: 10, color: "#94a3b8" }}>задан</span>
+                  ) : null}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const empty = rows.find((r) => !r.code);
+                    if (empty) {
+                      updateRow(empty.id, { code: it.primary.code });
+                    } else {
+                      addRow(it.primary.code, 1);
+                    }
+                  }}
+                  style={{
+                    border: "none",
+                    background: "transparent",
+                    textAlign: "left",
+                    padding: 0,
+                    cursor: "pointer",
+                    color: "#334155",
+                  }}
+                >
+                  {it.primary.name}
+                </button>
                 <span style={{ display: "inline-flex", flexWrap: "wrap", gap: 6, justifyContent: "flex-end" }}>
                   {it.pairs.map((p) => (
                     <ShelfBadge key={p.text} text={p.text} qty={p.qty} />
                   ))}
                 </span>
-              </button>
+                {canManageCatalog ? (
+                  <span style={{ display: "inline-flex", gap: 4, justifyContent: "flex-end" }}>
+                    <button type="button" className="mini ghost" onClick={() => openCatalogEditor(it)} title={it.isCustom ? "Изменить" : "Изменить (сохранится как своя копия)"}>
+                      ✎
+                    </button>
+                    {it.dbId ? (
+                      <button type="button" className="mini ghost" onClick={() => deleteCatalogItem(it.primary.code)} title="Удалить" disabled={catalogSaving}>
+                        ×
+                      </button>
+                    ) : null}
+                  </span>
+                ) : (
+                  <span />
+                )}
+              </div>
             ))}
           </div>
         </div>
@@ -753,8 +1062,9 @@ export default function ShelfCalculator({ canOperateProduction = false, onCreate
                 <div style={{ fontSize: 12, color: "#64748b", marginBottom: 4 }}>Цвет</div>
                 <select value={cutColor} onChange={(e) => setCutColor(e.target.value)}>
                   <option value="all">Все цвета</option>
-                  <option value="Вотан">Вотан</option>
-                  <option value="Сонома">Сонома</option>
+                  {cutColorOptions.map((colorName) => (
+                    <option key={colorName} value={colorName}>{colorName}</option>
+                  ))}
                 </select>
               </div>
               <div style={{ minWidth: 220 }}>
@@ -804,7 +1114,7 @@ export default function ShelfCalculator({ canOperateProduction = false, onCreate
             <div style={{ fontSize: 16, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>Разбивка по строкам</div>
             <div style={{ display: "grid", gap: 6 }}>
               {activeRows.map((r) => {
-                const item = getCatalogItemByCode(r.code);
+                const item = getCatalogItemByCode(catalogMap, r.code);
                 const qty = Number(r.qty);
                 return (
                   <div key={r.id} style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, paddingBottom: 6, borderBottom: "1px dashed #dbe5d9" }}>
@@ -812,7 +1122,7 @@ export default function ShelfCalculator({ canOperateProduction = false, onCreate
                       <b>{r.code}</b> x{qty}
                     </span>
                     <span style={{ fontSize: 12, color: "#64748b" }}>
-                      [{resolveColor(item)}]
+                      [{resolveShelfColor(item)}]
                     </span>
                     <span style={{ color: "#64748b" }}>→</span>
                     <span style={{ display: "inline-flex", flexWrap: "wrap", gap: 6 }}>

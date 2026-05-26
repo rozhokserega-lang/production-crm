@@ -176,6 +176,7 @@ function AppInner({ onAuthChangeRef }) {
             warehouseTableRows={warehouse.warehouseTableRows}
             leftoversTableRows={warehouse.leftoversTableRows}
             consumeHistoryTableRows={warehouse.consumeHistoryTableRows}
+            warehouseMaterialPlanRows={shipment.warehouseMaterialPlanRows}
             warehouseOrderPlanRows={shipment.warehouseOrderPlanRows}
             loading={shell.loading}
             canOperateWarehouse={auth.canOperateWarehouse}
@@ -274,7 +275,7 @@ function AppInner({ onAuthChangeRef }) {
               ...furniture,
               sectionCatalogRows: shipment.sectionCatalogRows,
             }}
-            permissions={{ canOperateProduction: auth.canOperateProduction }}
+            permissions={{ canOperateProduction: auth.canOperateProduction, canManageOrders: auth.canManageOrders }}
             actions={{
               createShelfPlanOrder: actions.createShelfPlanOrder,
               createFurniturePlanOrder: actions.createFurniturePlanOrder,

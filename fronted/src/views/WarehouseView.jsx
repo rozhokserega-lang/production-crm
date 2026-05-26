@@ -1,5 +1,6 @@
 import { Fragment, memo, useMemo, useState } from "react";
 import { buildMaterialCard } from "../app/materialCardHelpers";
+import { normalizeFurnitureKey } from "../utils/furnitureUtils";
 
 const HISTORY_LABELS = {
   consume: "Списание",
@@ -12,6 +13,7 @@ export const WarehouseView = memo(function WarehouseView({
   warehouseTableRows,
   leftoversTableRows,
   consumeHistoryTableRows,
+  warehouseMaterialPlanRows,
   warehouseOrderPlanRows,
   loading,
   canOperateWarehouse,
@@ -20,16 +22,22 @@ export const WarehouseView = memo(function WarehouseView({
   const [selectedMaterial, setSelectedMaterial] = useState("");
   const materialCard = useMemo(
     () =>
-      buildMaterialCard(selectedMaterial, {
-        warehouseTableRows,
-        warehouseOrderPlanRows,
-        consumeHistoryTableRows,
-        leftoversTableRows,
-      }),
+      buildMaterialCard(
+        selectedMaterial,
+        {
+          warehouseTableRows,
+          warehouseMaterialPlanRows,
+          warehouseOrderPlanRows,
+          consumeHistoryTableRows,
+          leftoversTableRows,
+        },
+        { normalizeMaterialKey: normalizeFurnitureKey },
+      ),
     [
       consumeHistoryTableRows,
       leftoversTableRows,
       selectedMaterial,
+      warehouseMaterialPlanRows,
       warehouseOrderPlanRows,
       warehouseTableRows,
     ],

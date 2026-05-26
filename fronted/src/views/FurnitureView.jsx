@@ -29,7 +29,7 @@ export function FurnitureView({
     furnitureCustomTemplates,
     sectionCatalogRows,
   } = furniture;
-  const { canOperateProduction } = permissions;
+  const { canOperateProduction, canManageOrders } = permissions;
   const { createShelfPlanOrder, createFurniturePlanOrder, load, refreshPlanCatalogs } = actions;
   const { furnitureProductLabel } = helpers;
 
@@ -1469,6 +1469,7 @@ export function FurnitureView({
           {furnitureSubTab === "storage" && (
             <ShelfCalculator
               canOperateProduction={canOperateProduction}
+              canManageCatalog={canOperateProduction || canManageOrders}
               onCreatePlanOrder={createShelfPlanOrder}
             />
           )}

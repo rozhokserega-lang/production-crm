@@ -1,8 +1,9 @@
-function normalizeMaterial(value) {
-  return String(value || "")
-    .toLowerCase()
-    .replace(/\s+/g, " ")
-    .trim();
+import { normalizeFurnitureKey as defaultNormalizeMaterialKey } from "../utils/furnitureUtils";
+
+function resolveMaterialKey(value, normalizeMaterialKey) {
+  const normalize =
+    typeof normalizeMaterialKey === "function" ? normalizeMaterialKey : defaultNormalizeMaterialKey;
+  return normalize(value);
 }
 
 function toNumber(value) {
@@ -21,8 +22,12 @@ function addDays(date, days) {
   return d;
 }
 
-function materialMatches(row, materialKey) {
-  return materialKey && normalizeMaterial(row?.material) === materialKey;
+function materialMatches(row, materialKey, normalizeMaterialKey) {
+  if (!materialKey) return false;
+  const rowKey =
+    String(row?.materialKey || "").trim() ||
+    resolveMaterialKey(row?.material, normalizeMaterialKey);
+  return rowKey === materialKey;
 }
 
 function flattenPlanRows(plan) {
@@ -38,32 +43,37 @@ function flattenPlanRows(plan) {
 
 export function buildMaterialCard(material, {
   warehouseTableRows,
+  warehouseMaterialPlanRows,
   warehouseOrderPlanRows,
   consumeHistoryTableRows,
   leftoversTableRows,
 } = {}, {
   now = new Date(),
+  normalizeMaterialKey = defaultNormalizeMaterialKey,
 } = {}) {
   const materialName = String(material || "").trim();
-  const materialKey = normalizeMaterial(materialName);
+  const materialKey = resolveMaterialKey(materialName, normalizeMaterialKey);
   if (!materialKey) return null;
 
   const stockRows = (Array.isArray(warehouseTableRows) ? warehouseTableRows : [])
-    .filter((row) => materialMatches(row, materialKey));
+    .filter((row) => materialMatches(row, materialKey, normalizeMaterialKey));
   const stockTotal = stockRows.reduce((sum, row) => sum + toNumber(row?.qtySheets), 0);
   const updatedAt = stockRows.reduce((latest, row) => {
     const current = String(row?.updatedAt || "").trim();
     return current && (!latest || current > latest) ? current : latest;
   }, "");
 
-  const plan = (Array.isArray(warehouseOrderPlanRows) ? warehouseOrderPlanRows : [])
-    .find((row) => materialMatches(row, materialKey)) || null;
+  const demandPlan = (Array.isArray(warehouseMaterialPlanRows) ? warehouseMaterialPlanRows : [])
+    .find((row) => materialMatches(row, materialKey, normalizeMaterialKey)) || null;
+  const deficitPlan = (Array.isArray(warehouseOrderPlanRows) ? warehouseOrderPlanRows : [])
+    .find((row) => materialMatches(row, materialKey, normalizeMaterialKey)) || null;
+  const plan = demandPlan || deficitPlan;
   const requiredRows = flattenPlanRows(plan)
     .sort((a, b) =>
       String(a.week || "").localeCompare(String(b.week || ""), "ru", { numeric: true }) ||
       toNumber(b.sheets) - toNumber(a.sheets),
     );
-  const blockerRows = (Array.isArray(plan?.blockerRows) ? plan.blockerRows : [])
+  const blockerRows = (Array.isArray(deficitPlan?.blockerRows) ? deficitPlan.blockerRows : [])
     .slice()
     .sort((a, b) =>
       String(a.week || "").localeCompare(String(b.week || ""), "ru", { numeric: true }) ||
@@ -71,10 +81,10 @@ export function buildMaterialCard(material, {
     );
 
   const historyRows = (Array.isArray(consumeHistoryTableRows) ? consumeHistoryTableRows : [])
-    .filter((row) => materialMatches(row, materialKey))
+    .filter((row) => materialMatches(row, materialKey, normalizeMaterialKey))
     .sort((a, b) => asTimestamp(b?.createdAt) - asTimestamp(a?.createdAt));
   const leftoverRows = (Array.isArray(leftoversTableRows) ? leftoversTableRows : [])
-    .filter((row) => materialMatches(row, materialKey))
+    .filter((row) => materialMatches(row, materialKey, normalizeMaterialKey))
     .sort((a, b) => asTimestamp(b?.createdAt) - asTimestamp(a?.createdAt));
 
   const nowMs = asTimestamp(now);
@@ -87,21 +97,21 @@ export function buildMaterialCard(material, {
   const daysLeft = avgDailyConsumption > 0 ? stockTotal / avgDailyConsumption : null;
   const runsOutAt = daysLeft != null ? addDays(now, Math.ceil(daysLeft)).toISOString() : "";
 
-  const needed = toNumber(plan?.needed);
-  const toOrder = toNumber(plan?.toOrder ?? plan?.deficit);
+  const needed = toNumber(demandPlan?.needed ?? plan?.needed);
+  const toOrder = toNumber(deficitPlan?.toOrder ?? deficitPlan?.deficit);
   return {
     material: materialName || stockRows[0]?.material || plan?.material || "",
     stockRows,
     stockTotal,
     updatedAt,
     needed,
-    available: toNumber(plan?.available ?? stockTotal),
+    available: toNumber(demandPlan?.available ?? plan?.available ?? stockTotal),
     toOrder,
-    firstWeek: String(plan?.firstWeek || "").trim(),
-    weeks: Array.isArray(plan?.weeks) ? plan.weeks : [],
+    firstWeek: String(demandPlan?.firstWeek || plan?.firstWeek || "").trim(),
+    weeks: Array.isArray(demandPlan?.weeks) ? demandPlan.weeks : Array.isArray(plan?.weeks) ? plan.weeks : [],
     requiredRows,
     blockerRows,
-    blockedCount: toNumber(plan?.blockedCount ?? blockerRows.length),
+    blockedCount: toNumber(deficitPlan?.blockedCount ?? blockerRows.length),
     historyRows,
     leftoverRows,
     consumedLast30Days,
