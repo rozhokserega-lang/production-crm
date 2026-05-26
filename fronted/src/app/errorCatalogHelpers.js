@@ -52,7 +52,7 @@ export function toUserError(e) {
   ) {
     return "Сервер слишком долго считал данные (лимит времени запроса). Попробуйте обновить страницу через минуту или обратитесь к администратору БД.";
   }
-  if (msg.includes("Failed to fetch") || msg.includes("NetworkError")) {
+  if (msg.includes("Failed to fetch") || msg.includes("NetworkError") || msg === "NETWORK_UNAVAILABLE") {
     return "Нет связи с сервером. Проверьте интернет и повторите.";
   }
   return msg || "Неизвестная ошибка";

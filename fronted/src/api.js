@@ -101,7 +101,22 @@ function getSupabaseBaseUrl() {
   return String(SUPABASE_URL || "").replace(/\/$/, "");
 }
 
+function getBrowserOrigin() {
+  if (typeof window === "undefined") return "";
+  return String(window.location?.origin || "").trim().replace(/\/$/, "");
+}
+
+function isCrmProductionHost(origin = getBrowserOrigin()) {
+  return /^https:\/\/(www\.)?crm-v175\.ru$/i.test(origin);
+}
+
+function getSameOriginSupabaseProxy(origin = getBrowserOrigin()) {
+  return origin ? `${origin}/supabase` : "";
+}
+
 function getSupabaseRpcBaseUrl() {
+  const sameOriginProxy = getSameOriginSupabaseProxy();
+  if (isCrmProductionHost() && sameOriginProxy) return sameOriginProxy;
   const proxy = String(SUPABASE_PROXY_URL || "").trim().replace(/\/$/, "");
   if (proxy) return proxy;
   return getSupabaseBaseUrl();
@@ -109,14 +124,11 @@ function getSupabaseRpcBaseUrl() {
 
 function getSupabaseRpcBaseUrls() {
   const proxy = String(SUPABASE_PROXY_URL || "").trim().replace(/\/$/, "");
-  const originProxy = typeof window !== "undefined"
-    ? String(window.location?.origin || "").trim().replace(/\/$/, "")
-    : "";
+  const originProxy = getBrowserOrigin();
   const direct = getSupabaseBaseUrl();
-  const sameOriginProxy = originProxy ? `${originProxy}/supabase` : "";
-  const isCrmProductionHost = /^https:\/\/(www\.)?crm-v175\.ru$/i.test(originProxy);
+  const sameOriginProxy = getSameOriginSupabaseProxy(originProxy);
   // На проде сначала same-origin /supabase — стабильнее для телефонов и локальной сети.
-  const candidates = isCrmProductionHost
+  const candidates = isCrmProductionHost(originProxy)
     ? [sameOriginProxy, proxy, direct]
     : [proxy, direct, sameOriginProxy];
   return Array.from(new Set(candidates.filter(Boolean)));
