@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { PlanPreviewPrint } from "./PlanPreviewPrint";
 import { buildShipmentPrintPlansForSentOrders, getSentOrderId, loadShipmentTableBySourceMap } from "../app/shipmentPreviewHelpers";
 import { printWithPartialBodyClass, waitForImages } from "../app/printHelpers";
@@ -65,17 +66,20 @@ export function ShipmentSendToWorkDialog({
           </div>
         </div>
       </div>
-      {planPreviews.length > 0 ? (
-        <div ref={printAreaRef} className="print-area shipment-send-print-area" aria-hidden="true">
-          {planPreviews.map((planPreview, idx) => (
-            <PlanPreviewPrint
-              key={planPreview._key || planPreview.orderId || idx}
-              planPreview={planPreview}
-              articleLookupByItemKey={articleLookupByItemKey}
-            />
-          ))}
-        </div>
-      ) : null}
+      {planPreviews.length > 0
+        ? createPortal(
+            <div ref={printAreaRef} className="print-area shipment-send-print-area" aria-hidden="true">
+              {planPreviews.map((planPreview, idx) => (
+                <PlanPreviewPrint
+                  key={planPreview._key || planPreview.orderId || idx}
+                  planPreview={planPreview}
+                  articleLookupByItemKey={articleLookupByItemKey}
+                />
+              ))}
+            </div>,
+            document.body,
+          )
+        : null}
     </>
   );
 }

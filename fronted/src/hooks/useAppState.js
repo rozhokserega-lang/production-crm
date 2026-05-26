@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useWorkshopFinalDone } from "../components/WorkshopFinalDoneDialog";
+import { useWorkshopPlanPrintDialog } from "../components/WorkshopPlanPrintDialog";
 import { useShipmentSendToWorkDialog } from "../components/ShipmentSendToWorkDialog";
 import { buildNotifyPayload } from "../app/runActionHelpers";
 import * as XLSX from "xlsx";
@@ -983,6 +984,25 @@ export function useAppState({ auth }) {
     refreshStrapStock,
   });
 
+  const workshopPreviewDeps = useMemo(
+    () => ({
+      furnitureTemplates,
+      resolveFurnitureTemplateForPreview: resolveFurnitureTemplateForPreviewByArticle,
+      buildPreviewRowsFromFurnitureTemplate,
+      normalizeFurnitureKey,
+      furnitureLoading,
+      furnitureError,
+      articleLookupByItemKey,
+    }),
+    [
+      furnitureTemplates,
+      resolveFurnitureTemplateForPreviewByArticle,
+      furnitureLoading,
+      furnitureError,
+      articleLookupByItemKey,
+    ],
+  );
+
   const {
     finalDoneDialog,
     openFinalDoneDialog,
@@ -996,15 +1016,10 @@ export function useAppState({ auth }) {
     notifyFinalStageTelegram,
     buildNotifyPayload,
     articleLookupByItemKey,
-    previewDeps: {
-      furnitureTemplates,
-      resolveFurnitureTemplateForPreview: resolveFurnitureTemplateForPreviewByArticle,
-      buildPreviewRowsFromFurnitureTemplate,
-      normalizeFurnitureKey,
-      furnitureLoading,
-      furnitureError,
-    },
+    previewDeps: workshopPreviewDeps,
   });
+
+  const { planPrintDialog, openPlanPrint } = useWorkshopPlanPrintDialog(workshopPreviewDeps);
 
   // Load strap stock globally so WorkshopView can show strap availability
   useEffect(() => {
@@ -1585,6 +1600,7 @@ export function useAppState({ auth }) {
       productionDebts,
       refreshProductionDebts,
       openFinalDoneDialog,
+      openPlanPrint,
     },
     warehouse: {
       warehouseRows,
@@ -1737,6 +1753,7 @@ export function useAppState({ auth }) {
         submit: submitStrapDone,
       },
       workshopFinalDone: finalDoneDialog,
+      workshopPlanPrint: planPrintDialog,
       sendToWork: sendToWorkDialog,
     },
     actions: {

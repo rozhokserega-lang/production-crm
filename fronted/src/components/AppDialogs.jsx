@@ -6,6 +6,7 @@ import { PackagingInboxDialog } from "./PackagingInboxDialog";
 import { StrapDoneDialog } from "./StrapDoneDialog";
 import { ShipmentSendToWorkDialog } from "./ShipmentSendToWorkDialog";
 import { WorkshopFinalDoneDialog } from "./WorkshopFinalDoneDialog";
+import { WorkshopPlanPrintDialog } from "./WorkshopPlanPrintDialog";
 
 export function AppDialogs({
   shell,
@@ -62,6 +63,17 @@ export function AppDialogs({
         saving={strapDone.saving}
         onClose={strapDone.close}
         onSubmit={strapDone.submit}
+      />
+
+      <WorkshopPlanPrintDialog
+        open={dialogs.workshopPlanPrint?.open}
+        loading={dialogs.workshopPlanPrint?.loading}
+        error={dialogs.workshopPlanPrint?.error}
+        planPreview={dialogs.workshopPlanPrint?.planPreview}
+        onClose={dialogs.workshopPlanPrint?.close}
+        onPrint={dialogs.workshopPlanPrint?.print}
+        articleLookupByItemKey={dialogs.workshopPlanPrint?.articleLookupByItemKey}
+        printAreaRef={dialogs.workshopPlanPrint?.printAreaRef}
       />
 
       <WorkshopFinalDoneDialog

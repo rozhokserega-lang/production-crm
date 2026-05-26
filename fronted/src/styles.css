@@ -2488,6 +2488,71 @@ button:disabled {
   overflow: auto;
 }
 
+.workshop-card__row {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.workshop-card__body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.workshop-print-sheet-btn {
+  flex: 0 0 auto;
+  align-self: center;
+  width: 44px;
+  height: 44px;
+  margin-right: 2px;
+  border-radius: 12px;
+  border: 1px solid #94b8bf;
+  background: #ffffff;
+  color: #155e66;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.workshop-print-sheet-btn:hover {
+  background: #e8f4f5;
+  border-color: #155e66;
+}
+
+.workshop-print-sheet-btn:active {
+  transform: translateY(1px);
+}
+
+.workshop-plan-print-backdrop {
+  z-index: 1200;
+}
+
+.workshop-plan-print-shell {
+  width: min(96vw, 1120px);
+  max-height: 92vh;
+  overflow: auto;
+  background: #fff;
+  border-radius: 12px;
+  padding: 12px;
+  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.18);
+}
+
+.workshop-plan-print-status {
+  margin: 12px;
+  color: #64748b;
+  font-size: 14px;
+}
+
+.workshop-plan-print-preview .plan-preview {
+  margin: 0;
+}
+
+.workshop-plan-print-actions {
+  margin-top: 12px;
+}
+
 .mini {
   min-height: 36px;
   min-width: 104px;
@@ -2500,7 +2565,6 @@ button:disabled {
   text-align: center;
 }
 
-/* ???????? ?? ??????? ?? ??????? ? ??????????? ??? (????????? ?? ????????? = ?? ??????) */
 .mini.ghost {
   background: #ffffff;
   color: #155e66;
@@ -3610,7 +3674,8 @@ button:disabled {
 }
 
 .workshop-final-print-area,
-.shipment-send-print-area {
+.shipment-send-print-area,
+.workshop-plan-print-area {
   position: fixed;
   left: -10000px;
   top: 0;
@@ -3679,26 +3744,27 @@ button:disabled {
     display: none !important;
   }
 
-  /* Печать листа из диалога сборки/финала — только plan-preview, без карточек цеха. */
-  body.workshop-partial-print * {
-    visibility: hidden !important;
+  /* Печать листа из диалога — только plan-preview, без интерфейса CRM. */
+  body.workshop-partial-print #root {
+    display: none !important;
   }
 
   body.workshop-partial-print .workshop-final-print-area,
-  body.workshop-partial-print .workshop-final-print-area * {
-    visibility: visible !important;
-  }
-
+  body.workshop-partial-print .workshop-final-print-area *,
   body.workshop-partial-print .shipment-send-print-area,
-  body.workshop-partial-print .shipment-send-print-area * {
+  body.workshop-partial-print .shipment-send-print-area *,
+  body.workshop-partial-print .workshop-plan-print-area,
+  body.workshop-partial-print .workshop-plan-print-area * {
     visibility: visible !important;
   }
 
-  body.workshop-partial-print .workshop-final-print-area {
-    position: static !important;
-    inset: auto !important;
-    left: auto !important;
-    top: auto !important;
+  body.workshop-partial-print .workshop-final-print-area,
+  body.workshop-partial-print .shipment-send-print-area,
+  body.workshop-partial-print .workshop-plan-print-area {
+    position: absolute !important;
+    inset: 0 auto auto 0 !important;
+    left: 0 !important;
+    top: 0 !important;
     width: 100% !important;
     height: auto !important;
     overflow: visible !important;
@@ -3707,30 +3773,17 @@ button:disabled {
     padding: 0 !important;
     background: #fff !important;
     z-index: 2147483647 !important;
+    display: block !important;
   }
 
-  body.workshop-partial-print .shipment-send-print-area {
-    position: static !important;
-    inset: auto !important;
-    left: auto !important;
-    top: auto !important;
-    width: 100% !important;
-    height: auto !important;
-    overflow: visible !important;
-    pointer-events: auto !important;
-    margin: 0 !important;
-    padding: 0 !important;
-    background: #fff !important;
-    z-index: 2147483647 !important;
-  }
-
-  body.workshop-partial-print .workshop-final-print-area .print-plan-page {
+  body.workshop-partial-print .workshop-final-print-area .print-plan-page,
+  body.workshop-partial-print .workshop-plan-print-area .print-plan-page {
     width: 100% !important;
     max-width: none !important;
     margin: 0 !important;
     box-shadow: none !important;
-    page-break-after: auto;
-    break-after: auto;
+    page-break-after: avoid !important;
+    break-after: avoid !important;
   }
 
   body.workshop-partial-print .shipment-send-print-area .print-plan-page {
@@ -3738,18 +3791,24 @@ button:disabled {
     max-width: none !important;
     margin: 0 !important;
     box-shadow: none !important;
-    page-break-after: always;
+    page-break-after: always !important;
+    break-after: page !important;
   }
 
-  body:not(.workshop-partial-print) .workshop-final-print-area,
-  body:not(.workshop-partial-print) .shipment-send-print-area {
-    position: static !important;
-    left: auto !important;
-    width: 100% !important;
-    height: auto !important;
-    overflow: visible !important;
-    pointer-events: auto !important;
-    visibility: visible !important;
+  body.workshop-partial-print .workshop-final-print-area .print-plan-page:last-child,
+  body.workshop-partial-print .workshop-plan-print-area .print-plan-page:last-child,
+  body.workshop-partial-print .shipment-send-print-area .print-plan-page:last-child {
+    page-break-after: avoid !important;
+    break-after: avoid !important;
+  }
+
+  body.workshop-partial-print .workshop-final-print-area .plan-preview,
+  body.workshop-partial-print .workshop-plan-print-area .plan-preview,
+  body.workshop-partial-print .shipment-send-print-area .plan-preview {
+    border: none !important;
+    border-radius: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
   }
 
   .print-area .actions {

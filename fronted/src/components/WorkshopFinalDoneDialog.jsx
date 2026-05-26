@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { PlanPreviewPrint } from "./PlanPreviewPrint";
 import { buildWorkshopPlanPreview } from "../app/workshopPlanPreviewHelpers";
 import { printWithPartialBodyClass, waitForImages } from "../app/printHelpers";
@@ -125,11 +126,14 @@ export function WorkshopFinalDoneDialog({
           </div>
         </div>
       </div>
-      {hasDebt && planPreview ? (
-        <div ref={printAreaRef} className="print-area workshop-final-print-area" aria-hidden="true">
-          <PlanPreviewPrint planPreview={planPreview} articleLookupByItemKey={articleLookupByItemKey} />
-        </div>
-      ) : null}
+      {hasDebt && planPreview
+        ? createPortal(
+            <div ref={printAreaRef} className="print-area workshop-final-print-area" aria-hidden="true">
+              <PlanPreviewPrint planPreview={planPreview} articleLookupByItemKey={articleLookupByItemKey} />
+            </div>,
+            document.body,
+          )
+        : null}
     </>
   );
 }

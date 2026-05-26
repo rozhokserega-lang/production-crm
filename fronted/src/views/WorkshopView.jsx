@@ -10,6 +10,7 @@ import {
   orderCountsTowardStrapDemand,
 } from "../app/workshopStrapNeeds";
 import { resolvePipelineStage, getOrderStageDisplayLabel } from "../orderPipeline";
+import { WorkshopPlanPrintSheetIcon } from "../components/WorkshopPlanPrintDialog";
 
 const STAGE_PILL_CLASS = {
   pilka:            "stage-pill stage-pill--pilka",
@@ -56,6 +57,7 @@ export const WorkshopView = memo(function WorkshopView({
     productionDebts,
     refreshProductionDebts,
     openFinalDoneDialog,
+    openPlanPrint,
   } = workshop;
   const { canOperateProduction } = permissions;
   const {
@@ -252,7 +254,9 @@ export const WorkshopView = memo(function WorkshopView({
         const stageIcon = STAGE_ICON[pipelineStage] || "🪚";
 
         return (
-          <article key={orderId || `${o.item}-${o.row}`} className={`card ${statusClass(o)}`}>
+          <article key={orderId || `${o.item}-${o.row}`} className={`card workshop-card ${statusClass(o)}`}>
+            <div className="workshop-card__row">
+              <div className="workshop-card__body">
             <div className="card__content">
               <div className="card__main">
                 <div className="line1">
@@ -510,6 +514,17 @@ export const WorkshopView = memo(function WorkshopView({
                 )}
               </div>
             )}
+              </div>
+              <button
+                type="button"
+                className="workshop-print-sheet-btn"
+                title="Лист для печати"
+                aria-label="Лист для печати"
+                onClick={() => openPlanPrint?.(o)}
+              >
+                <WorkshopPlanPrintSheetIcon />
+              </button>
+            </div>
           </article>
         );
       })}
