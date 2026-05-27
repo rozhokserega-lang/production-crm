@@ -32,11 +32,16 @@ describe("Environment smoke tests", () => {
 
   it("VITE_SUPABASE_PROXY_URL: dev path or omitted when using direct HTTPS URL", () => {
     if (!SUPABASE_PROXY_URL) {
-      // Продакшен (VPS): в .env.production часто только VITE_SUPABASE_URL=https://supabase-proxy...
+      // Продакшен (VPS): в .env.production часто только VITE_SUPABASE_URL=https://...
       expect(
         SUPABASE_URL.startsWith("https://"),
         "без VITE_SUPABASE_PROXY_URL адрес Supabase должен быть полным https://"
       ).toBe(true);
+      return;
+    }
+    if (SUPABASE_PROXY_URL === "/supabase") {
+      // Локальная разработка: Vite проксирует same-origin /supabase.
+      expect(SUPABASE_URL.startsWith("https://")).toBe(true);
       return;
     }
     expect(

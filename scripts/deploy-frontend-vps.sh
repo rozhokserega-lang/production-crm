@@ -20,7 +20,7 @@ set -euo pipefail
 : "${WEB_ROOT:=/var/www/crm-v175/current}"
 : "${FRONTEND_REL:=fronted}"
 : "${REQUIRE_PROXY:=1}"
-: "${EXPECTED_SUPABASE_URL:=https://supabase-proxy.crm-v175.ru}"
+: "${EXPECTED_SUPABASE_URL:=https://nsdwypcbhmfseotclkrm.supabase.co}"
 
 need_sudo() {
   local target="$1"

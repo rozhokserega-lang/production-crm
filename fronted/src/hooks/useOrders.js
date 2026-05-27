@@ -271,26 +271,81 @@ export function isOrdersDomainView(view) {
   return !["shipment", "sheetMirror", "warehouse", "labor", "furniture", "metal", "metalProcess"].includes(String(view || ""));
 }
 
-export async function loadOrdersDomainData({ view }) {
-  if (view === "overview") {
-    return OrderService.getAllOrders();
+function mergeOrdersById(chunks) {
+  const byId = new Map();
+  for (const chunk of chunks) {
+    if (!Array.isArray(chunk)) continue;
+    for (const row of chunk) {
+      const id = String(row?.order_id || row?.orderId || "").trim();
+      if (id) byId.set(id, row);
+    }
   }
+  return Array.from(byId.values());
+}
+
+export async function fetchOrdersStagedFallback() {
+  const [pilka, kromka, pras, shipped, postWorkshop] = await Promise.all([
+    OrderService.getOrdersByStage("pilka").catch(() => []),
+    OrderService.getOrdersByStage("kromka").catch(() => []),
+    OrderService.getOrdersByStage("pras").catch(() => []),
+    OrderService.getOrdersByStage("shipped").catch(() => []),
+    OrderService.getOrdersByStage("post_workshop").catch(() => []),
+  ]);
+  const merged = mergeOrdersById([pilka, kromka, pras, shipped, postWorkshop]);
+  if (merged.length) return merged;
+  throw new Error("Не удалось загрузить заказы по этапам");
+}
+
+export async function fetchAllOrdersWithRetry(options = {}) {
+  const maxAttempts = Number(options.maxAttempts ?? 2);
+  const preferStaged = options.preferStaged !== false;
+
+  if (preferStaged) {
+    try {
+      const staged = await fetchOrdersStagedFallback();
+      if (staged.length) return staged;
+    } catch (_) {
+      /* fall through to full list */
+    }
+  }
+
+  let lastError = null;
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    try {
+      return await OrderService.getAllOrders();
+    } catch (e) {
+      lastError = e;
+      if (attempt < maxAttempts - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 400 * (attempt + 1)));
+      }
+    }
+  }
+
+  if (!preferStaged) {
+    try {
+      return await fetchOrdersStagedFallback();
+    } catch (stagedError) {
+      throw lastError || stagedError || new Error("NETWORK_UNAVAILABLE");
+    }
+  }
+
+  throw lastError || new Error("NETWORK_UNAVAILABLE");
+}
+
+export async function loadOrdersDomainData({ view }) {
   if (view === "stats") {
     try {
       return await OrderService.getOrderStats();
     } catch (_) {
-      return OrderService.getAllOrders();
+      return fetchAllOrdersWithRetry({ preferStaged: false, maxAttempts: 3 });
     }
   }
-  // Для согласованности с "Обзор заказов" всегда берем полный список
-  // и уже на фронте раскладываем по табам этапов.
-  return OrderService.getAllOrders();
+  return fetchAllOrdersWithRetry({ preferStaged: true, maxAttempts: 1 });
 }
 
-export async function loadShipmentDomainData({
+export async function loadShipmentBoardPayload({
   normalizeShipmentBoard,
   mergeShipmentBoardWithTable,
-  normalizeOrder,
 }) {
   const [
     boardDataResult,
@@ -298,7 +353,6 @@ export async function loadShipmentDomainData({
     catalogDataResult,
     sectionsDataResult,
     articlesDataResult,
-    shipmentOrdersDataResult,
     detailArticlesResult,
     templatesResult,
     stockDataResult,
@@ -308,7 +362,6 @@ export async function loadShipmentDomainData({
     OrderService.getPlanCatalog().catch(() => null),
     OrderService.getSectionCatalog().catch(() => null),
     OrderService.getSectionArticles().catch(() => null),
-    OrderService.getAllOrders().catch(() => null),
     OrderService.getFurnitureDetailArticles().catch(() => null),
     OrderService.getFurnitureCustomTemplates().catch(() => null),
     OrderService.getMaterialsStock().catch(() => null),
@@ -328,12 +381,32 @@ export async function loadShipmentDomainData({
     planCatalogRows: Array.isArray(catalogDataResult) ? catalogDataResult : [],
     sectionCatalogRows: Array.isArray(sectionsDataResult) ? sectionsDataResult : [],
     sectionArticleRows: Array.isArray(articlesDataResult) ? articlesDataResult : [],
-    shipmentOrders: Array.isArray(shipmentOrdersDataResult)
-      ? shipmentOrdersDataResult.map(normalizeOrder)
-      : [],
     furnitureDetailArticleRows: Array.isArray(detailArticlesResult) ? detailArticlesResult : [],
     furnitureCustomTemplates: Array.isArray(templatesResult) ? templatesResult : [],
     materialsStockRows: Array.isArray(stockDataResult) ? stockDataResult : [],
+  };
+}
+
+export async function loadShipmentOrdersPayload({ normalizeOrder }) {
+  const shipmentOrdersDataResult = await fetchAllOrdersWithRetry(2).catch(() => null);
+  return Array.isArray(shipmentOrdersDataResult)
+    ? shipmentOrdersDataResult.map(normalizeOrder)
+    : [];
+}
+
+export async function loadShipmentDomainData({
+  normalizeShipmentBoard,
+  mergeShipmentBoardWithTable,
+  normalizeOrder,
+}) {
+  const [boardPayload, shipmentOrders] = await Promise.all([
+    loadShipmentBoardPayload({ normalizeShipmentBoard, mergeShipmentBoardWithTable }),
+    loadShipmentOrdersPayload({ normalizeOrder }),
+  ]);
+
+  return {
+    ...boardPayload,
+    shipmentOrders,
   };
 }
 
@@ -496,7 +569,7 @@ export function useShipmentFilter({
           const visibleCells = (it.cells || []).filter((c) => {
             const qtyOk = (Number(c.qty) || 0) > 0;
             if (!qtyOk) return false;
-            const stageKey = getShipmentStageKey(c, sourceRow, shipmentOrderMaps, it.item);
+            const stageKey = getShipmentStageKey(c, sourceRow, shipmentOrderMaps, it.item, it.material);
             return passesShipmentStageFilter(stageKey);
           });
           const byWeek = visibleCells.some((c) => matchesWeekFilter(c.week, weekFilter));

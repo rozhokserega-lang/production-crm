@@ -6,6 +6,7 @@ import {
   normalizePlanWeek,
   sortPlanWeeks,
 } from "../app/overviewPlansHelpers";
+import { toUserError } from "../app/errorCatalogHelpers";
 import { OrderService } from "../services/orderService";
 
 function readSavedRow(result) {
@@ -45,7 +46,7 @@ export function useOverviewPlanMonths() {
 
       setMonths(normalized);
     } catch (e) {
-      setError(String(e?.message || e || "Ошибка загрузки месяцев"));
+      setError(toUserError(e));
       setMonths(loadPlanMonthsFromLocalStorage());
     } finally {
       setLoading(false);
@@ -80,7 +81,7 @@ export function useOverviewPlanMonths() {
       }
       return true;
     } catch (e) {
-      setError(String(e?.message || e || "Ошибка сохранения месяца"));
+      setError(toUserError(e));
       return false;
     } finally {
       setSaving(false);
@@ -114,7 +115,7 @@ export function useOverviewPlanMonths() {
       }
       return true;
     } catch (e) {
-      setError(String(e?.message || e || "Ошибка обновления месяца"));
+      setError(toUserError(e));
       return false;
     } finally {
       setSaving(false);
@@ -129,7 +130,7 @@ export function useOverviewPlanMonths() {
       setMonths((prev) => prev.filter((m) => String(m.id) !== String(id)));
       return true;
     } catch (e) {
-      setError(String(e?.message || e || "Ошибка удаления месяца"));
+      setError(toUserError(e));
       return false;
     } finally {
       setSaving(false);

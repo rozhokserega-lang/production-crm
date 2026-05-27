@@ -733,7 +733,7 @@ export function useAppState({ auth }) {
       reloadTimer = window.setTimeout(() => {
         reloadTimer = null;
         load({ background: true }).catch(() => {});
-      }, 300);
+      }, 1500);
     };
     const ensureFallbackPolling = () => {
       if (disposed || fallbackId) return;

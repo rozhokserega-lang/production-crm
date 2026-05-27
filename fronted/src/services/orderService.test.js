@@ -19,6 +19,14 @@ describe("OrderService", () => {
     expect(callBackend).toHaveBeenCalledWith("webGetOrdersKromka");
   });
 
+  it("maps shipped stage to webGetOrdersShipped", async () => {
+    callBackend.mockResolvedValueOnce([]);
+
+    await OrderService.getOrdersByStage("shipped");
+
+    expect(callBackend).toHaveBeenCalledWith("webGetOrdersShipped");
+  });
+
   it("falls back to webGetOrdersAll for unknown stage", async () => {
     callBackend.mockResolvedValueOnce([]);
 

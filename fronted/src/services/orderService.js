@@ -16,6 +16,8 @@ export class OrderService {
       pilka: "webGetOrdersPilka",
       kromka: "webGetOrdersKromka",
       pras: "webGetOrdersPras",
+      shipped: "webGetOrdersShipped",
+      post_workshop: "webGetOrdersPostWorkshop",
     };
     const action = actions[stage] || "webGetOrdersAll";
     return await callBackend(action);

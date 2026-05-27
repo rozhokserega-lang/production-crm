@@ -34,6 +34,7 @@ export function stageLabel(stageKey) {
   if (stageKey === "ready_assembly") return "Готово к сборке";
   if (stageKey === "assembled_wait_ship") return "Собран, ждет отправку";
   if (stageKey === "shipped") return "Отправлен";
+  if (stageKey === "plan_idle") return "Не в очереди";
   return "Статус неизвестен";
 }
 

@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { CRM_SUPABASE_PROXY_PREF_EVENT } from "./app/supabaseProxyPreference";
 import { useAppState } from "./hooks/useAppState";
 import { useAppShellEffects } from "./hooks/useAppShellEffects";
 import { usePackagingInbox } from "./hooks/usePackagingInbox";
@@ -77,6 +78,14 @@ function AppInner({ onAuthChangeRef }) {
     actions,
     services,
   } = useAppState({ auth });
+
+  useEffect(() => {
+    const reloadAfterProxyChange = () => {
+      void shell.mutationLoad?.();
+    };
+    window.addEventListener(CRM_SUPABASE_PROXY_PREF_EVENT, reloadAfterProxyChange);
+    return () => window.removeEventListener(CRM_SUPABASE_PROXY_PREF_EVENT, reloadAfterProxyChange);
+  }, [shell.mutationLoad]);
 
   useEffect(() => {
     preloadCriticalViews();
@@ -335,6 +344,8 @@ function AppInner({ onAuthChangeRef }) {
             consumeLogSheetSaving={admin.consumeLogSheetSaving}
             loadConsumeLogSheetSetting={admin.loadConsumeLogSheetSetting}
             saveConsumeLogSheetSetting={admin.saveConsumeLogSheetSetting}
+            supabaseProxyEnabled={auth.supabaseProxyEnabled}
+            setSupabaseProxyEnabled={auth.setSupabaseProxyEnabled}
           />
         );
       case "workshop":

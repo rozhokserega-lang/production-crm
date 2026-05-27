@@ -92,7 +92,7 @@ export function collectAwaitingPlanOrders(shipmentBoard, shipmentOrderMaps, week
         if ((Number(c.qty) || 0) <= 0) continue;
         if (!matchesWeekFilter(c.week, weekFilter)) continue;
 
-        const stageKey = getShipmentStageKey(c, sourceRow, shipmentOrderMaps, it.item);
+        const stageKey = getShipmentStageKey(c, sourceRow, shipmentOrderMaps, it.item, it.material);
         if (stageKey !== "awaiting") continue;
 
         const sourceCol = c.sourceColId != null ? String(c.sourceColId) : String(c.col || "");

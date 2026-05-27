@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { mergeOrderPreferNewer, shipmentOrderKey } from "../app/orderHelpers";
+import { mergeOrderPreferNewer, shipmentOrderKey, stripPlanItemMeta } from "../app/orderHelpers";
 import { shipmentOrderItemWeekKey } from "../utils/shipmentUtils";
 
 export function useShipmentOrderIndexes({ shipmentOrders, rows }) {
@@ -16,6 +16,11 @@ export function useShipmentOrderIndexes({ shipmentOrders, rows }) {
       if (item) {
         mergeOrderPreferNewer(byItemWeek, shipmentOrderItemWeekKey(item, week, material), o);
         mergeOrderPreferNewer(byItemWeek, shipmentOrderItemWeekKey(item, week), o);
+        const stripped = stripPlanItemMeta(item);
+        if (stripped && stripped !== item) {
+          mergeOrderPreferNewer(byItemWeek, shipmentOrderItemWeekKey(stripped, week, material), o);
+          mergeOrderPreferNewer(byItemWeek, shipmentOrderItemWeekKey(stripped, week), o);
+        }
       }
     });
     return { byRowWeek, byItemWeek };

@@ -16,6 +16,8 @@ export function AppHeader({
   crmAuthStrict,
   toggleCrmAuthStrict,
   crmAuthStrictSaving,
+  supabaseProxyEnabled,
+  toggleSupabaseProxy,
 }) {
   useEffect(() => {
     if (typeof document === "undefined") return;
@@ -98,6 +100,18 @@ export function AppHeader({
               : `Strict mode: ${crmAuthStrict ? "ON" : "OFF"}`}
           </button>
         )}
+        <button
+          type="button"
+          className={`strict-mode-toggle ${supabaseProxyEnabled ? "enabled" : ""}`}
+          onClick={toggleSupabaseProxy}
+          title={
+            supabaseProxyEnabled
+              ? "Прокси включён: запросы идут через CRM-сервер (рекомендуется)."
+              : "Прокси выключен: сначала прямой Supabase, затем резерв через CRM. Нажмите, чтобы включить прокси."
+          }
+        >
+          {`Прокси: ${supabaseProxyEnabled ? "Вкл" : "Выкл"}`}
+        </button>
       </div>
     </header>
   );

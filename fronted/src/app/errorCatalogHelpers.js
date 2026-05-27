@@ -1,3 +1,5 @@
+import { readSupabaseProxyEnabled } from "./supabaseProxyPreference";
+
 export function normalizeCatalogItemName(name) {
   return String(name || "")
     .replace(/^стол\s+(письменный|кухонный)\s+/i, "")
@@ -53,6 +55,9 @@ export function toUserError(e) {
     return "Сервер слишком долго считал данные (лимит времени запроса). Попробуйте обновить страницу через минуту или обратитесь к администратору БД.";
   }
   if (msg.includes("Failed to fetch") || msg.includes("NetworkError") || msg === "NETWORK_UNAVAILABLE") {
+    if (!readSupabaseProxyEnabled()) {
+      return "Нет связи с сервером. Прямой доступ к Supabase недоступен — включите прокси CRM кнопкой «Прокси» в шапке.";
+    }
     return "Нет связи с сервером. Проверьте интернет и повторите.";
   }
   return msg || "Неизвестная ошибка";

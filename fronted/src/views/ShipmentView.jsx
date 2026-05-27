@@ -563,7 +563,7 @@ export const ShipmentView = memo(function ShipmentView() {
                             : c.inWork
                               ? "ship-cell-lg inwork"
                               : "ship-cell-lg blocked";
-                          const stageKey = getShipmentStageKey(c, sourceRow, shipmentOrderMaps, it.item);
+                          const stageKey = getShipmentStageKey(c, sourceRow, shipmentOrderMaps, it.item, it.material);
                           const displayBg = stageBg(stageKey, c.bg || "#ffffff");
                           const sheetsN = Number(c.sheetsNeeded || 0);
                           const bottomPill =

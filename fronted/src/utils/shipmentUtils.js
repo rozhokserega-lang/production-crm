@@ -1,4 +1,5 @@
 import { PipelineStage, resolvePipelineStage } from "../orderPipeline";
+import { stripPlanItemMeta } from "../app/orderHelpers";
 import { isBlueCell, isRedCell, isYellowCell, parseColor } from "./colorUtils";
 
 export function normText(v) {
@@ -115,28 +116,48 @@ function shipmentOrderKey(sourceRow, week) {
   return `${String(sourceRow || "").trim()}|${String(week || "").trim()}`;
 }
 
-export function getShipmentStageKey(c, sourceRow, orderMaps, itemName) {
+function lookupItemWeekOrder(orderMaps, itemName, week, material = "") {
+  if (!itemName || !orderMaps?.byItemWeek) return null;
+  const mat = String(material || "").trim();
+  const names = [String(itemName || "").trim()];
+  const stripped = stripPlanItemMeta(names[0]);
+  if (stripped && stripped !== names[0]) names.push(stripped);
+  for (const name of names) {
+    let order = orderMaps.byItemWeek.get(shipmentOrderItemWeekKey(name, week, mat));
+    if (order) return order;
+    order = orderMaps.byItemWeek.get(shipmentOrderItemWeekKey(name, week));
+    if (order) return order;
+  }
+  return null;
+}
+
+function resolveCellFallbackStageKey(c) {
+  if (!c) return "plan_idle";
+  if (c.canSendToWork && !c.inWork) return "awaiting";
+  // Активная работа: цвет ячейки ещё может подсказать этап.
+  if (c.inWork) {
+    if (isRedCell(c.bg)) return "shipped";
+    if (isBlueCell(c.bg)) return "on_kromka_work";
+    return "on_pilka_work";
+  }
+  // Без in_work цвет часто «застрял» после прохождения производства — не трактуем жёлтый как «на пиле».
+  if (isRedCell(c.bg)) return "shipped";
+  if (isBlueCell(c.bg)) return "on_kromka_wait";
+  return "plan_idle";
+}
+
+export function getShipmentStageKey(c, sourceRow, orderMaps, itemName, materialName = "") {
   if (!c) return "awaiting";
+  const material = String(materialName || (c?.material ?? c?.material_name ?? "")).trim();
   const rowKey = shipmentOrderKey(sourceRow, c.week);
   let order = orderMaps?.byRowWeek?.get(rowKey);
-  if (!order && itemName && orderMaps?.byItemWeek) {
-    const material = c?.material ?? c?.material_name ?? "";
-    order = orderMaps.byItemWeek.get(shipmentOrderItemWeekKey(itemName, c.week, material));
-    if (!order) {
-      order = orderMaps.byItemWeek.get(shipmentOrderItemWeekKey(itemName, c.week));
-    }
+  if (!order && itemName) {
+    order = lookupItemWeekOrder(orderMaps, itemName, c.week, material);
   }
   if (order) {
     return mapPipelineStageToShipmentKey(order);
   }
-  if (c.canSendToWork && !c.inWork) return "awaiting";
-  // Fallback for cells without bound order: if already in work,
-  // show active pilka stage instead of "waiting launch".
-  if (c.inWork) return "on_pilka_work";
-  if (isRedCell(c.bg)) return "shipped";
-  if (isBlueCell(c.bg)) return "on_kromka_work";
-  if (isYellowCell(c.bg)) return "on_pilka_work";
-  return "awaiting";
+  return resolveCellFallbackStageKey(c);
 }
 
 export function getShipmentCellStatus(c) {

@@ -1,5 +1,20 @@
 import { useEffect, useMemo, useState } from "react";
 import { CONSUME_LOG_SHEET_NAME } from "../app/appConstants";
+import { getSupabaseRpcRoutePlan } from "../api";
+
+function formatRpcRouteLabel(url) {
+  const raw = String(url || "").trim();
+  if (!raw) return "—";
+  try {
+    const parsed = new URL(raw);
+    if (parsed.pathname === "/supabase" || parsed.pathname.startsWith("/supabase/")) {
+      return `${parsed.host}/supabase`;
+    }
+    return parsed.host;
+  } catch (_) {
+    return raw;
+  }
+}
 
 export function AdminView({
   canAdminSettings,
@@ -41,6 +56,8 @@ export function AdminView({
   consumeLogSheetSaving,
   loadConsumeLogSheetSetting,
   saveConsumeLogSheetSetting,
+  supabaseProxyEnabled,
+  setSupabaseProxyEnabled,
 }) {
   const dayLabels = {
     mon: "Пн",
@@ -63,10 +80,42 @@ export function AdminView({
     setConsumeLogDraft(consumeLogSheetName);
   }, [consumeLogSheetName]);
 
+  const supabaseRoutePlan = useMemo(() => getSupabaseRpcRoutePlan(), [supabaseProxyEnabled]);
+  const supabaseRouteLabels = useMemo(
+    () => supabaseRoutePlan.routes.map(formatRpcRouteLabel),
+    [supabaseRoutePlan.routes],
+  );
+
   if (!canAdminSettings) return null;
 
   return (
     <div className="admin-panel">
+      <div className="admin-panel__head">
+        <div className="admin-panel__title">Подключение к Supabase</div>
+        <button
+          type="button"
+          className={`mini ${supabaseProxyEnabled ? "ok" : "warn"}`}
+          onClick={() => setSupabaseProxyEnabled(!supabaseProxyEnabled)}
+          title="Переключить маршрут запросов к базе данных"
+        >
+          {supabaseProxyEnabled ? "Прокси: включён" : "Прокси: выключен"}
+        </button>
+      </div>
+      <div className="empty" style={{ marginBottom: 14 }}>
+        {supabaseProxyEnabled
+          ? "Запросы идут через прокси CRM (сначала тот же домен /supabase, затем резервные маршруты). Рекомендуется для crm-v175.ru."
+          : "Сначала прямой Supabase, затем резерв через прокси CRM. Если экран пустой — включите прокси."}
+        {" "}
+        Если часто появляется «Нет связи с сервером», попробуйте переключить режим.
+        {" "}
+        Настройка сохраняется только в этом браузере.
+        {supabaseRouteLabels.length > 0 && (
+          <>
+            {" "}
+            Активные маршруты: <b>{supabaseRouteLabels.join(" → ")}</b>.
+          </>
+        )}
+      </div>
       <div className="admin-panel__head">
         <div className="admin-panel__title">Управление ролями пользователей</div>
         <button className="mini" disabled={crmUsersLoading || crmUsersSaving !== ""} onClick={loadCrmUsers}>

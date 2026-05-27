@@ -38,6 +38,8 @@ export function AppChrome({
         crmAuthStrict={auth.crmAuthStrict}
         toggleCrmAuthStrict={auth.toggleCrmAuthStrict}
         crmAuthStrictSaving={auth.crmAuthStrictSaving}
+        supabaseProxyEnabled={auth.supabaseProxyEnabled}
+        toggleSupabaseProxy={auth.toggleSupabaseProxy}
       />
       <button
         type="button"
@@ -146,6 +148,11 @@ export function AppChrome({
       {!shell.isOnline && (
         <div className="network-banner" role="status">
           Нет подключения к интернету. Данные могут быть устаревшими.
+        </div>
+      )}
+      {!auth.supabaseProxyEnabled && (
+        <div className="network-banner" role="status">
+          Прокси CRM выключен — сначала пробуем прямой Supabase. Если данные не грузятся, нажмите «Прокси: Выкл» в шапке, чтобы включить прокси.
         </div>
       )}
       {String(shell.error || "").trim() && String(shell.error || "").trim().toLowerCase() !== "null" && (

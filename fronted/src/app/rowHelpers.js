@@ -28,6 +28,8 @@ export function normalizeOrder(row) {
     createdAt: row.createdAt ?? row.created_at ?? "",
     sheetsNeeded: row.sheetsNeeded ?? row.sheets_needed ?? 0,
     adminComment: row.adminComment ?? row.admin_comment ?? "",
+    sourceRowId: row.sourceRowId ?? row.source_row_id ?? "",
+    source_row_id: row.source_row_id ?? row.sourceRowId ?? "",
   };
   out.pipelineStage = row.pipeline_stage ?? row.pipelineStage ?? null;
   out.pipelineStage = resolvePipelineStage(out);

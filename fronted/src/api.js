@@ -3,7 +3,10 @@ import {
   SUPABASE_ANON_KEY,
   SUPABASE_URL,
   SUPABASE_PROXY_URL,
+  SUPABASE_DIRECT_URL,
 } from "./config";
+import { readSupabaseProxyEnabled } from "./app/supabaseProxyPreference";
+import { buildSupabaseRpcRouteCandidates, finalizeSupabaseRpcRoutes } from "./app/supabaseRpcRoutes";
 
 export const CRM_SUPABASE_AUTH_STORAGE_KEY = "crm_supabase_auth_session";
 
@@ -101,6 +104,31 @@ function getSupabaseBaseUrl() {
   return String(SUPABASE_URL || "").replace(/\/$/, "");
 }
 
+function extractSupabaseProjectRefFromAnonKey() {
+  const token = String(SUPABASE_ANON_KEY || "").trim();
+  if (!token) return "";
+  const parts = token.split(".");
+  if (parts.length < 2) return "";
+  try {
+    let b64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const pad = b64.length % 4;
+    if (pad) b64 += "=".repeat(4 - pad);
+    const payload = JSON.parse(atob(b64));
+    return String(payload?.ref || "").trim();
+  } catch (_) {
+    return "";
+  }
+}
+
+function getSupabaseDirectBaseUrl() {
+  const fromEnv = String(SUPABASE_DIRECT_URL || "").trim().replace(/\/$/, "");
+  if (fromEnv) return fromEnv;
+  const base = getSupabaseBaseUrl();
+  if (/\.supabase\.co$/i.test(base)) return base;
+  const ref = extractSupabaseProjectRefFromAnonKey();
+  return ref ? `https://${ref}.supabase.co` : base;
+}
+
 function getBrowserOrigin() {
   if (typeof window === "undefined") return "";
   return String(window.location?.origin || "").trim().replace(/\/$/, "");
@@ -110,28 +138,26 @@ function isCrmProductionHost(origin = getBrowserOrigin()) {
   return /^https:\/\/(www\.)?crm-v175\.ru$/i.test(origin);
 }
 
-function getSameOriginSupabaseProxy(origin = getBrowserOrigin()) {
-  return origin ? `${origin}/supabase` : "";
-}
-
 function getSupabaseRpcBaseUrl() {
-  const sameOriginProxy = getSameOriginSupabaseProxy();
-  if (isCrmProductionHost() && sameOriginProxy) return sameOriginProxy;
-  const proxy = String(SUPABASE_PROXY_URL || "").trim().replace(/\/$/, "");
-  if (proxy) return proxy;
-  return getSupabaseBaseUrl();
+  const routes = getSupabaseRpcBaseUrls();
+  return routes[0] || getSupabaseDirectBaseUrl();
 }
 
 function getSupabaseRpcBaseUrls() {
-  const proxy = String(SUPABASE_PROXY_URL || "").trim().replace(/\/$/, "");
-  const originProxy = getBrowserOrigin();
-  const direct = getSupabaseBaseUrl();
-  const sameOriginProxy = getSameOriginSupabaseProxy(originProxy);
-  // На проде сначала same-origin /supabase — стабильнее для телефонов и локальной сети.
-  const candidates = isCrmProductionHost(originProxy)
-    ? [sameOriginProxy, proxy, direct]
-    : [proxy, direct, sameOriginProxy];
-  return Array.from(new Set(candidates.filter(Boolean)));
+  return finalizeSupabaseRpcRoutes(buildSupabaseRpcRouteCandidates({
+    origin: getBrowserOrigin(),
+    directUrl: getSupabaseDirectBaseUrl(),
+    proxyUrl: SUPABASE_PROXY_URL,
+    proxyEnabled: readSupabaseProxyEnabled(),
+  }));
+}
+
+export function getSupabaseRpcRoutePlan() {
+  const routes = getSupabaseRpcBaseUrls();
+  return {
+    proxyEnabled: readSupabaseProxyEnabled(),
+    routes,
+  };
 }
 
 export function getSupabaseAuthSession() {
@@ -295,6 +321,50 @@ function reportRpcEvent(event) {
   printer(label, enriched);
 }
 
+const SHORT_RPC_TIMEOUT_MS = 8000;
+const LONG_RPC_TIMEOUT_MS = 15000;
+const LONG_RUNNING_RPC_ACTIONS = new Set([
+  "webGetOrdersAll",
+  "webGetOrdersPilka",
+  "webGetOrdersKromka",
+  "webGetOrdersPras",
+  "webGetOrdersShipped",
+  "webGetOrdersPostWorkshop",
+  "webGetOrderStats",
+  "webGetShipmentBoard",
+  "webGetShipmentTable",
+  "webGetOverviewPlanMonths",
+  "webGetConsumeOptions",
+  "webConsumeSheetsByOrderId",
+  "webConsumeSheetsLinesByOrderId",
+  "webSetPilkaInWork",
+  "webSetKromkaInWork",
+  "webSetPrasInWork",
+  "webSetPilkaDone",
+  "webSetKromkaDone",
+  "webSetPrasDone",
+  "webSetAssemblyDone",
+  "webSetShippingDone",
+  "webSetPilkaPause",
+  "webSetKromkaPause",
+  "webSetPrasPause",
+  "webSetPilkaWait",
+  "webSetKromkaWait",
+  "webSetPrasWait",
+]);
+
+function getRpcCandidateTimeoutMs(action, isLastCandidate) {
+  if (isLastCandidate) return 0;
+  if (LONG_RUNNING_RPC_ACTIONS.has(action)) return LONG_RPC_TIMEOUT_MS;
+  return SHORT_RPC_TIMEOUT_MS;
+}
+
+function shouldRetryRpcOnNetworkError(action) {
+  return /^webSet(Pilka|Kromka|Pras|Assembly|Shipping)/.test(action)
+    || action.startsWith("webConsume")
+    || action === "webGetConsumeOptions";
+}
+
 const RPC_MAP = {
   webGetShipmentBoard: "web_get_shipment_board",
   webGetShipmentTable: "web_get_shipment_table",
@@ -302,6 +372,8 @@ const RPC_MAP = {
   webGetOrdersPilka: "web_get_orders_pilka",
   webGetOrdersKromka: "web_get_orders_kromka",
   webGetOrdersPras: "web_get_orders_pras",
+  webGetOrdersShipped: "web_get_orders_shipped",
+  webGetOrdersPostWorkshop: "web_get_orders_post_workshop",
   webGetMaterialsStock: "web_get_materials_stock",
   webGetConsumeHistory: "web_get_consume_history",
   webGetSectionCatalog: "web_get_section_catalog",
@@ -784,7 +856,21 @@ function buildRpcPayload(action, payload = {}) {
   return payload || {};
 }
 
+const inflightRpcCalls = new Map();
+
 export async function supabaseCall(action, payload = {}) {
+  const dedupeKey = `${action}:${hashPayload(payload)}:${readSupabaseProxyEnabled() ? "1" : "0"}`;
+  if (inflightRpcCalls.has(dedupeKey)) {
+    return inflightRpcCalls.get(dedupeKey);
+  }
+  const promise = supabaseCallImpl(action, payload).finally(() => {
+    inflightRpcCalls.delete(dedupeKey);
+  });
+  inflightRpcCalls.set(dedupeKey, promise);
+  return promise;
+}
+
+async function supabaseCallImpl(action, payload = {}) {
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
     throw new Error("Заполните SUPABASE_URL и SUPABASE_ANON_KEY в src/config.js");
   }
@@ -832,33 +918,40 @@ export async function supabaseCall(action, payload = {}) {
   for (let i = 0; i < rpcBases.length; i++) {
     const rpcBase = rpcBases[i];
     const isLastCandidate = i === rpcBases.length - 1;
-    const candidateTimeout = isLastCandidate ? 0 : 3000;
-    try {
-      ({ res, json } = await callWithToken(rpcBase, currentToken, candidateTimeout));
-      if (!res.ok && currentToken && shouldRetryRpcWithoutExpiredJwt(json)) {
-        // Сессия протухла: убираем токен и синхронизируем UI — иначе бейдж роли расходится с фактическими RPC.
-        persistSupabaseSession(null);
-        dispatchSessionInvalidated({ reason: "jwt-expired-or-invalid" });
-        ({ res, json } = await callWithToken(rpcBase, ""));
-      }
-      if (!res.ok) {
-        // Some deployments expose a same-origin proxy base that might be missing (404),
-        // or temporarily unhealthy (5xx). In that case, try the next candidate base.
-        const status = Number(res.status || 0);
-        if (status === 404 || status === 405 || status >= 500) {
-          lastRetryableHttpError = new Error(typeof json === "string" ? json : JSON.stringify(json));
-          continue;
+    const candidateTimeout = getRpcCandidateTimeoutMs(action, isLastCandidate);
+    const maxNetworkAttempts = shouldRetryRpcOnNetworkError(action) ? 2 : 1;
+    for (let attempt = 0; attempt < maxNetworkAttempts; attempt += 1) {
+      try {
+        ({ res, json } = await callWithToken(rpcBase, currentToken, candidateTimeout));
+        if (!res.ok && currentToken && shouldRetryRpcWithoutExpiredJwt(json)) {
+          // Сессия протухла: убираем токен и синхронизируем UI — иначе бейдж роли расходится с фактическими RPC.
+          persistSupabaseSession(null);
+          dispatchSessionInvalidated({ reason: "jwt-expired-or-invalid" });
+          ({ res, json } = await callWithToken(rpcBase, ""));
         }
-        throw new Error(typeof json === "string" ? json : JSON.stringify(json));
+        if (!res.ok) {
+          // Some deployments expose a same-origin proxy base that might be missing (404),
+          // or temporarily unhealthy (5xx). In that case, try the next candidate base.
+          const status = Number(res.status || 0);
+          if (status === 404 || status === 405 || status >= 500) {
+            lastRetryableHttpError = new Error(typeof json === "string" ? json : JSON.stringify(json));
+            break;
+          }
+          throw new Error(typeof json === "string" ? json : JSON.stringify(json));
+        }
+        return json;
+      } catch (error) {
+        const normalized = normalizeApiError(error);
+        if (normalized?.isNetworkError === true) {
+          lastNetworkError = normalized;
+          if (attempt < maxNetworkAttempts - 1) {
+            await new Promise((resolve) => setTimeout(resolve, 350));
+            continue;
+          }
+          break;
+        }
+        throw normalized;
       }
-      return json;
-    } catch (error) {
-      const normalized = normalizeApiError(error);
-      if (normalized?.isNetworkError === true) {
-        lastNetworkError = normalized;
-        continue;
-      }
-      throw normalized;
     }
   }
   if (lastNetworkError) {

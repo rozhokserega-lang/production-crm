@@ -51,7 +51,7 @@ export function useShipmentBoardRenderDerived({
         if (!qtyOk) return false;
         const byWeek = matchesWeekFilter(c.week, weekFilter);
         if (!byWeek) return false;
-        const stageKey = getShipmentStageKey(c, sourceRow, shipmentOrderMaps, it.item);
+        const stageKey = getShipmentStageKey(c, sourceRow, shipmentOrderMaps, it.item, it.material);
         return passesShipmentStageFilter(stageKey);
       });
     },

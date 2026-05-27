@@ -6,6 +6,19 @@ import { applyLoftPairedSheetAdjustment } from "../app/loftPairedSheetEstimation
 import { buildShipmentMaterialPlan } from "../app/shipmentMaterialPlanHelpers";
 import { shipmentOrderItemWeekKey } from "../utils/shipmentUtils";
 
+function formatShipmentTableItemLabel(item, sectionName) {
+  const raw = stripPlanItemMeta(String(item || "")).trim();
+  if (!raw) return "";
+  if (
+    String(sectionName || "").trim().toLowerCase() === "обвязка"
+    || /^\d{3,4}_\d{2,3}$/.test(raw)
+  ) {
+    const sizeMatch = raw.match(/^(\d{3,4}_\d{2,3})$/);
+    if (sizeMatch) return `Обвязка (${sizeMatch[1]})`;
+  }
+  return raw;
+}
+
 export function useShipmentTableData({
   view,
   shipmentRenderSections,
@@ -65,7 +78,7 @@ export function useShipmentTableData({
         visibleCellsForItem(it).forEach((c) => {
           const sourceRow = it.sourceRowId != null ? String(it.sourceRowId) : String(it.row);
           const sourceCol = c.sourceColId != null ? String(c.sourceColId) : String(c.col);
-          const stageKey = getShipmentStageKey(c, sourceRow, shipmentOrderMaps, it.item);
+          const stageKey = getShipmentStageKey(c, sourceRow, shipmentOrderMaps, it.item, it.material);
           const sourceItem = String(it.item || "");
           const week = c.week || "-";
           const relatedOrder =
@@ -103,7 +116,7 @@ export function useShipmentTableData({
             key: `${sourceRow}-${sourceCol}`,
             section: section.name,
             sourceItem,
-            item: stripPlanItemMeta(it.item),
+            item: formatShipmentTableItemLabel(it.item, section.name),
             orderId: String(relatedOrder?.orderId || relatedOrder?.order_id || "").trim(),
             productArticle,
             strapProduct: String(it.strapProduct || ""),

@@ -1,6 +1,43 @@
 import { useCallback, useEffect, useRef } from "react";
 import { OrderService } from "../services/orderService";
 import { getViewCache, setViewCache } from "./viewCache";
+import {
+  loadOrdersDomainData,
+  loadShipmentBoardPayload,
+  loadShipmentOrdersPayload,
+  loadShipmentDomainData,
+  loadWarehouseDomainData,
+  loadFurnitureDomainData,
+  isOrdersDomainView,
+} from "./useOrders";
+
+async function loadOrdersWithCacheFallback({ view, callBackend }) {
+  try {
+    return await loadOrdersDomainData({ view, callBackend });
+  } catch (e) {
+    const overviewCache = getViewCache("overview");
+    const shipmentCache = getViewCache("shipment");
+    const cachedOrders =
+      (Array.isArray(overviewCache?.rows) && overviewCache.rows.length ? overviewCache.rows : null)
+      || (Array.isArray(shipmentCache?.shipmentOrders) && shipmentCache.shipmentOrders.length
+        ? shipmentCache.shipmentOrders
+        : null);
+    if (cachedOrders?.length) {
+      return cachedOrders;
+    }
+    throw e;
+  }
+}
+
+function readCachedOrderRows() {
+  const overviewCache = getViewCache("overview");
+  const shipmentCache = getViewCache("shipment");
+  if (Array.isArray(overviewCache?.rows) && overviewCache.rows.length) return overviewCache.rows;
+  if (Array.isArray(shipmentCache?.shipmentOrders) && shipmentCache.shipmentOrders.length) {
+    return shipmentCache.shipmentOrders;
+  }
+  return [];
+}
 
 function clearViewState(view, setters) {
   const {
@@ -98,16 +135,18 @@ function applyViewSnapshot(view, snapshot, setters) {
     if (Array.isArray(snapshot.shipmentOrders)) {
       setShipmentOrders(snapshot.shipmentOrders);
     }
-    if (view === "workshop") {
+    if (view === "workshop" || view === "overview") {
       if (snapshot.shipmentBoard) {
         setShipmentBoard(snapshot.shipmentBoard);
       }
-      if (typeof setFurnitureCustomTemplates === "function" && Array.isArray(snapshot.furnitureCustomTemplates)) {
-        setFurnitureCustomTemplates(snapshot.furnitureCustomTemplates);
+      if (view === "workshop") {
+        if (typeof setFurnitureCustomTemplates === "function" && Array.isArray(snapshot.furnitureCustomTemplates)) {
+          setFurnitureCustomTemplates(snapshot.furnitureCustomTemplates);
+        }
+        setFurnitureDetailArticleRows(
+          Array.isArray(snapshot.furnitureDetailArticleRows) ? snapshot.furnitureDetailArticleRows : [],
+        );
       }
-      setFurnitureDetailArticleRows(
-        Array.isArray(snapshot.furnitureDetailArticleRows) ? snapshot.furnitureDetailArticleRows : [],
-      );
     }
     return true;
   }
@@ -122,6 +161,7 @@ function buildViewSnapshot({
   furniturePayload,
   normalizedRows,
   workshopBoard,
+  overviewBoard,
   workshopTemplates,
   workshopDetailArticles,
 }) {
@@ -171,6 +211,9 @@ function buildViewSnapshot({
       shipmentBoard: workshopBoard || null,
       furnitureCustomTemplates: workshopTemplates || [],
     };
+    if (view === "overview" && overviewBoard) {
+      snap.shipmentBoard = overviewBoard;
+    }
     if (view === "workshop") {
       snap.furnitureDetailArticleRows = Array.isArray(workshopDetailArticles) ? workshopDetailArticles : [];
     }
@@ -232,15 +275,102 @@ export function useDataLoader({
       let workshopTemplates = [];
       let workshopDetailArticles = [];
       if (view === "shipment") {
-        shipmentPayload = await loadShipmentDomainData({
-          callBackend,
+        const boardPayload = await loadShipmentBoardPayload({
           normalizeShipmentBoard,
           mergeShipmentBoardWithTable,
-          normalizeOrder,
         });
-        data = shipmentPayload.data;
+        if (seq !== loadSeqRef.current) return;
+        shipmentPayload = { ...boardPayload, shipmentOrders: [] };
+        data = boardPayload.data;
+        const normalizedBoard = normalizeShipmentBoard(data);
+        setPlanCatalogRows(boardPayload.planCatalogRows || []);
+        setSectionCatalogRows(boardPayload.sectionCatalogRows || []);
+        setSectionArticleRows(boardPayload.sectionArticleRows || []);
+        setShipmentOrders([]);
+        setFurnitureDetailArticleRows(boardPayload.furnitureDetailArticleRows || []);
+        if (typeof setFurnitureCustomTemplates === "function") {
+          setFurnitureCustomTemplates(boardPayload.furnitureCustomTemplates || []);
+        }
+        setMaterialsStockRows(boardPayload.materialsStockRows || []);
+        setShipmentBoard(normalizedBoard);
+        if (!background) {
+          setLoading(false);
+        }
+        setViewCache(view, buildViewSnapshot({
+          view,
+          data: normalizedBoard,
+          shipmentPayload,
+        }));
+
+        void (async () => {
+          const shipmentOrders = await loadShipmentOrdersPayload({ normalizeOrder });
+          if (seq !== loadSeqRef.current) return;
+          const fullPayload = { ...boardPayload, shipmentOrders };
+          setShipmentOrders(shipmentOrders);
+          setViewCache(view, buildViewSnapshot({
+            view,
+            data: normalizedBoard,
+            shipmentPayload: fullPayload,
+          }));
+        })();
       } else if (view === "overview") {
-        data = await loadOrdersDomainData({ view, callBackend });
+        const cachedRows = readCachedOrderRows();
+        let overviewBoard =
+          getViewCache("overview")?.shipmentBoard
+          || getViewCache("shipment")?.shipmentBoard
+          || null;
+
+        if (cachedRows.length) {
+          const initialRows = cachedRows.map(normalizeOrder);
+          setRows(initialRows);
+          setShipmentOrders(initialRows);
+        }
+        if (overviewBoard) {
+          setShipmentBoard(overviewBoard);
+        }
+        if ((cachedRows.length || overviewBoard) && !background) {
+          setLoading(false);
+        }
+
+        void (async () => {
+          const boardPayload = await loadShipmentBoardPayload({
+            normalizeShipmentBoard,
+            mergeShipmentBoardWithTable,
+          }).catch(() => null);
+          if (seq !== loadSeqRef.current) return;
+          if (boardPayload?.data) {
+            overviewBoard = normalizeShipmentBoard(boardPayload.data);
+            setShipmentBoard(overviewBoard);
+            setViewCache(view, buildViewSnapshot({
+              view,
+              normalizedRows: cachedRows.length ? cachedRows.map(normalizeOrder) : undefined,
+              overviewBoard,
+            }));
+          }
+        })();
+
+        try {
+          const fresh = await loadOrdersWithCacheFallback({ view, callBackend });
+          if (seq !== loadSeqRef.current) return;
+          const rows = Array.isArray(fresh) ? fresh.map(normalizeOrder) : [];
+          setRows(rows);
+          setShipmentOrders(rows);
+          setViewCache(view, buildViewSnapshot({
+            view,
+            normalizedRows: rows,
+            overviewBoard,
+          }));
+          setError("");
+        } catch (e) {
+          if (seq !== loadSeqRef.current) return;
+          if (!cachedRows.length && !background) {
+            setError(toUserError(e));
+          }
+        } finally {
+          if (seq === loadSeqRef.current && !background) {
+            setLoading(false);
+          }
+        }
       } else if (view === "sheetMirror") {
         data = await OrderService.getSheetOrdersMirror(SHEET_MIRROR_GID);
       } else if (view === "warehouse") {
@@ -249,34 +379,21 @@ export function useDataLoader({
       } else if (view === "labor") {
         data = await OrderService.getLaborTable();
       } else if (view === "stats") {
-        data = await loadOrdersDomainData({ view, callBackend });
+        data = await loadOrdersWithCacheFallback({ view, callBackend });
       } else if (view === "furniture") {
         furniturePayload = await loadFurnitureDomainData({ callBackend });
         data = furniturePayload.data;
       } else if (view === "metalProcess") {
         data = [];
       } else {
-        data = await loadOrdersDomainData({ view, callBackend });
+        data = await loadOrdersWithCacheFallback({ view, callBackend });
       }
 
       if (seq !== loadSeqRef.current) return;
       if (view === "shipment") {
-        const normalizedBoard = normalizeShipmentBoard(data);
-        setPlanCatalogRows(shipmentPayload?.planCatalogRows || []);
-        setSectionCatalogRows(shipmentPayload?.sectionCatalogRows || []);
-        setSectionArticleRows(shipmentPayload?.sectionArticleRows || []);
-        setShipmentOrders(shipmentPayload?.shipmentOrders || []);
-        setFurnitureDetailArticleRows(shipmentPayload?.furnitureDetailArticleRows || []);
-        if (typeof setFurnitureCustomTemplates === "function") {
-          setFurnitureCustomTemplates(shipmentPayload?.furnitureCustomTemplates || []);
-        }
-        setMaterialsStockRows(shipmentPayload?.materialsStockRows || []);
-        setShipmentBoard(normalizedBoard);
-        setViewCache(view, buildViewSnapshot({
-          view,
-          data: normalizedBoard,
-          shipmentPayload,
-        }));
+        // Shipment state is applied above with progressive orders loading.
+      } else if (view === "overview") {
+        // Overview state is applied above with progressive orders loading.
       } else if (view === "sheetMirror") {
         setRows(Array.isArray(data) ? data : []);
         setViewCache(view, buildViewSnapshot({ view, data }));
@@ -388,6 +505,8 @@ export function useDataLoader({
     isOrdersDomainView,
     loadFurnitureDomainData,
     loadOrdersDomainData,
+    loadShipmentBoardPayload,
+    loadShipmentOrdersPayload,
     loadShipmentDomainData,
     loadWarehouseDomainData,
     mergeShipmentBoardWithTable,

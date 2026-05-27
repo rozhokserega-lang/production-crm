@@ -10,6 +10,7 @@ import {
 } from "../api";
 import { useAuth as useAuthHook } from "../hooks/useAuth";
 import { useCrmRole } from "../hooks/useCrmRole";
+import { useSupabaseProxyPreference } from "../hooks/useSupabaseProxyPreference";
 import { SUPABASE_ANON_KEY, SUPABASE_URL } from "../config";
 import { CRM_ROLE_LABELS } from "../app/appConstants";
 import { toUserError as toUserErrorFn } from "../app/errorCatalogHelpers";
@@ -77,6 +78,12 @@ export function AuthProvider({ children, view, onAuthChange, setError }) {
     setError,
     authUser,
   });
+
+  const {
+    supabaseProxyEnabled,
+    setSupabaseProxyEnabled,
+    toggleSupabaseProxy,
+  } = useSupabaseProxyPreference();
 
   const crmRoleLabel = useMemo(
     () => CRM_ROLE_LABELS[crmRole] || CRM_ROLE_LABELS.viewer,
@@ -146,6 +153,9 @@ export function AuthProvider({ children, view, onAuthChange, setError }) {
       updateCrmUserRole,
       removeCrmUserRole,
       createCrmUserRole,
+      supabaseProxyEnabled,
+      setSupabaseProxyEnabled,
+      toggleSupabaseProxy,
     }),
     [
       authEnabled,
@@ -189,6 +199,9 @@ export function AuthProvider({ children, view, onAuthChange, setError }) {
       updateCrmUserRole,
       removeCrmUserRole,
       createCrmUserRole,
+      supabaseProxyEnabled,
+      setSupabaseProxyEnabled,
+      toggleSupabaseProxy,
     ],
   );
 
