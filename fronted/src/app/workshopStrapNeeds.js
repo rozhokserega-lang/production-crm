@@ -12,6 +12,17 @@ import {
 /** План для заказов обвязки со склада — не привязан к неделе мебели. */
 export const STRAP_LAUNCH_PLAN_WEEK = "обвязка";
 
+/** Цвета ЛДСП для фасадов при добавлении в план со склада обвязки. */
+export const STRAP_FACADE_LAUNCH_COLORS = ["Графит", "Эра", "Герион"];
+
+const STRAP_LAUNCH_COLOR_CODES = new Set(["396_305", "153_320", "153x320"]);
+
+export function strapRequiresLaunchColorChoice(strapType) {
+  const code = normalizeStrapInventoryCode(strapType);
+  if (STRAP_LAUNCH_COLOR_CODES.has(code)) return true;
+  return /^фасад/i.test(String(strapDisplayNameForCode(code) || ""));
+}
+
 /** Единый формат кода размера (как в strap_stock.strap_type). */
 export function normalizeStrapInventoryCode(code) {
   return String(code || "")

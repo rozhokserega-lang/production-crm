@@ -6,7 +6,9 @@ import {
   computeWorkshopStrapDemandByInventoryKey,
   formatStrapProductGroups,
   normalizeStrapInventoryCode,
+  STRAP_FACADE_LAUNCH_COLORS,
   STRAP_LAUNCH_PLAN_WEEK,
+  strapRequiresLaunchColorChoice,
   strapWarehouseDemandQty,
   strapWarehouseShortage,
 } from "../app/workshopStrapNeeds";
@@ -30,12 +32,6 @@ function ProductGroupsCell({ productsByCode, code }) {
       {label}
     </td>
   );
-}
-
-function readCellSourceKeys(cell) {
-  const row = String(cell?.source_row_id ?? cell?.sourceRowId ?? "").trim();
-  const col = String(cell?.source_col_id ?? cell?.sourceColId ?? "").trim();
-  return { row, col };
 }
 
 /**
@@ -104,7 +100,7 @@ function StrapRowActions({
     <>
       {canOperateProduction ? (
         <button type="button" className="mini ok" onClick={onLaunchOpen}>
-          В работу
+          В план
         </button>
       ) : null}
       <button type="button" className="mini ghost" onClick={onEditStart}>
@@ -132,6 +128,7 @@ export function StrapStockView({
   const [saving, setSaving] = useState(false);
   const [launchDialog, setLaunchDialog] = useState(null);
   const [launchQty, setLaunchQty] = useState("");
+  const [launchMaterial, setLaunchMaterial] = useState("");
   const [launchError, setLaunchError] = useState("");
   const [launchSaving, setLaunchSaving] = useState(false);
 
@@ -217,6 +214,7 @@ export function StrapStockView({
     if (launchSaving) return;
     setLaunchDialog(null);
     setLaunchQty("");
+    setLaunchMaterial("");
     setLaunchError("");
   };
 
@@ -224,32 +222,38 @@ export function StrapStockView({
     const shortage = strapWarehouseShortage(demandByKey, strapType, color, qtyOnHand);
     setLaunchDialog({ strapType, color, label });
     setLaunchQty(shortage > 0 ? String(shortage) : "");
+    setLaunchMaterial(
+      strapRequiresLaunchColorChoice(strapType) ? STRAP_FACADE_LAUNCH_COLORS[0] : String(color || ""),
+    );
     setLaunchError("");
   };
 
   const handleLaunchSubmit = async () => {
     if (!launchDialog) return;
     const qty = Number.parseInt(String(launchQty || "").trim(), 10);
+    const needsColor = strapRequiresLaunchColorChoice(launchDialog.strapType);
+    const material = needsColor
+      ? String(launchMaterial || "").trim()
+      : String(launchDialog.color || "").trim();
     if (!Number.isFinite(qty) || qty <= 0) {
       setLaunchError("Укажите количество планок (целое число > 0)");
+      return;
+    }
+    if (needsColor && !material) {
+      setLaunchError("Выберите цвет");
       return;
     }
 
     setLaunchSaving(true);
     setLaunchError("");
     try {
-      const cell = await OrderService.createShipmentPlanCell({
+      await OrderService.createShipmentPlanCell({
         sectionName: "Обвязка",
         item: launchDialog.strapType,
-        material: launchDialog.color,
+        material,
         week: STRAP_LAUNCH_PLAN_WEEK,
         qty,
       });
-      const { row, col } = readCellSourceKeys(cell);
-      if (!row || !col) {
-        throw new Error("Не удалось получить координаты ячейки плана");
-      }
-      await OrderService.sendShipmentToWork(row, col);
       closeLaunchDialog();
       await load();
       if (typeof onDataChanged === "function") {
@@ -442,6 +446,13 @@ export function StrapStockView({
         meta={launchDialog}
         qtyInput={launchQty}
         setQtyInput={setLaunchQty}
+        materialInput={launchMaterial}
+        setMaterialInput={setLaunchMaterial}
+        materialOptions={
+          launchDialog && strapRequiresLaunchColorChoice(launchDialog.strapType)
+            ? STRAP_FACADE_LAUNCH_COLORS
+            : []
+        }
         error={launchError}
         saving={launchSaving}
         onClose={closeLaunchDialog}

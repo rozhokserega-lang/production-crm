@@ -190,6 +190,7 @@ function AppInner({ onAuthChangeRef }) {
             loading={shell.loading}
             canOperateWarehouse={auth.canOperateWarehouse}
             onManualConsume={actions.openPilkaDoneConsumeDialog}
+            onUpdateMaterialSheetSize={warehouse.updateMaterialSheetSize}
             onSendMissingToWork={async ({ name, qty }) => {
               await services.callBackend("webSendPlanksToWork", { items: [{ name, qty }] });
             }}

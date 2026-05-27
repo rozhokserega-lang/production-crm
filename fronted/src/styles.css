@@ -776,12 +776,22 @@ button:disabled {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px 12px;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.shipment-toolbar-panel__filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 320px;
+  min-width: 0;
 }
 
 .shipment-toolbar-panel__title {
   margin: 0;
-  font-size: 1.15rem;
+  font-size: 1rem;
   font-weight: 800;
   letter-spacing: -0.02em;
   color: var(--text-main);
@@ -789,15 +799,15 @@ button:disabled {
 }
 
 .shipment-toolbar-panel__search.topbar-search {
-  flex: 1 1 220px;
-  min-width: 180px;
-  max-width: 360px;
+  flex: 0 1 120px;
+  min-width: 96px;
+  max-width: 150px;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 12px;
-  min-height: 38px;
-  border-radius: 10px;
+  gap: 4px;
+  padding: 0 8px;
+  min-height: 34px;
+  border-radius: 8px;
   border: 1px solid var(--border-main);
   background: var(--bg-surface);
   box-shadow: none;
@@ -814,7 +824,7 @@ button:disabled {
   min-width: 0;
   border: 0;
   background: transparent;
-  font-size: 14px;
+  font-size: 12px;
   color: var(--text-main);
   outline: none;
 }
@@ -831,18 +841,30 @@ button:disabled {
 .shipment-panel__week-btn {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  min-height: 38px;
-  padding: 0 12px;
-  border-radius: 10px;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 10px;
+  border-radius: 8px;
   border: 1px solid var(--border-main);
   background: var(--bg-surface);
   color: var(--text-main);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   cursor: pointer;
   box-shadow: none;
   transition: border-color 0.12s, background 0.12s;
+  max-width: 100%;
+}
+
+.shipment-panel__week-btn--filter {
+  max-width: min(148px, 34vw);
+}
+
+.shipment-panel__week-btn-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 .shipment-panel__week-btn:hover,
@@ -939,42 +961,75 @@ button:disabled {
   flex-shrink: 0;
 }
 
-.shipment-toolbar-panel__sort {
-  min-height: 38px;
-  padding: 0 12px;
-  border-radius: 10px;
+.shipment-toolbar-panel__special-weeks {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+.shipment-toolbar-panel__week-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 0 8px;
+  border-radius: 8px;
   border: 1px solid var(--border-main);
   background: var(--bg-surface);
   color: var(--text-main);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   cursor: pointer;
-  flex: 0 0 auto;
+  box-shadow: none;
+  transition: border-color 0.12s, background 0.12s;
+}
+
+.shipment-toolbar-panel__week-chip:hover,
+.shipment-toolbar-panel__week-chip.is-active {
+  border-color: color-mix(in srgb, var(--accent-teal, #0f766e) 55%, var(--border-main) 45%);
+  background: color-mix(in srgb, var(--bg-surface) 78%, var(--accent-teal, #0f766e) 22%);
+}
+
+.shipment-toolbar-panel__sort {
+  min-height: 34px;
+  max-width: 118px;
+  padding: 0 8px;
+  border-radius: 8px;
+  border: 1px solid var(--border-main);
+  background: var(--bg-surface);
+  color: var(--text-main);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  flex: 0 1 auto;
 }
 
 .shipment-toolbar-panel__actions {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  flex: 0 0 auto;
   margin-left: auto;
 }
 
 .shipment-toolbar-panel__btn {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  min-height: 38px;
-  padding: 0 14px;
-  border-radius: 10px;
+  gap: 4px;
+  min-height: 34px;
+  padding: 0 10px;
+  border-radius: 8px;
   border: 1px solid var(--border-main);
   background: var(--bg-surface);
   color: var(--text-main);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   cursor: pointer;
   box-shadow: none;
   transition: opacity 0.12s, border-color 0.12s, background 0.12s;
+  white-space: nowrap;
 }
 
 .shipment-toolbar-panel__btn:disabled {
@@ -5384,6 +5439,31 @@ button:hover {
   border-radius: 16px;
   border: 2px dashed #e5e7eb;
 }
+
+.warehouse-sheet-size-input {
+  width: 108px;
+  max-width: 100%;
+  min-height: 28px;
+  padding: 2px 8px;
+  border: 1px solid var(--border-main);
+  border-radius: 6px;
+  background: var(--bg-surface);
+  color: var(--text-main);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.warehouse-sheet-size-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.warehouse-sheet-size-input.is-saving,
+.warehouse-sheet-size-input:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
 .missing-order-card {
   border-left: 4px solid #2f6aa5;
 }
@@ -6797,6 +6877,11 @@ button.mini.accent:hover:not(:disabled) {
   border-color: var(--accent);
 }
 
+.cv-header__name-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
 .cv-header__name {
   font-size: 14px;
   font-weight: 600;
@@ -6816,9 +6901,19 @@ button.mini.accent:hover:not(:disabled) {
 }
 
 .cv-header__saving {
+  position: absolute;
+  left: calc(100% + 6px);
+  top: 50%;
+  transform: translateY(-50%);
   font-size: 11px;
   color: var(--text-soft);
   white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
+}
+
+.cv-header__saving.is-visible {
   opacity: 0.8;
 }
 

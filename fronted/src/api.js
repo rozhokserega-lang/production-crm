@@ -375,6 +375,7 @@ const RPC_MAP = {
   webGetOrdersShipped: "web_get_orders_shipped",
   webGetOrdersPostWorkshop: "web_get_orders_post_workshop",
   webGetMaterialsStock: "web_get_materials_stock",
+  webUpdateMaterialsStockSheetSize: "web_update_materials_stock_sheet_size",
   webGetConsumeHistory: "web_get_consume_history",
   webGetSectionCatalog: "web_get_section_catalog",
   webGetSectionArticles: "web_get_section_articles",
@@ -514,6 +515,12 @@ function buildRpcPayload(action, payload = {}) {
       p_order_id: payload.orderId,
       p_material: payload.material,
       p_qty: Number(payload.qty || 0),
+    };
+  }
+  if (action === "webUpdateMaterialsStockSheetSize") {
+    return {
+      p_material: String(payload.p_material ?? payload.material ?? "").trim(),
+      p_size_label: String(payload.p_size_label ?? payload.sizeLabel ?? payload.size_label ?? "").trim(),
     };
   }
   if (action === "webConsumeSheetsLinesByOrderId") {

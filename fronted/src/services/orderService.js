@@ -246,6 +246,13 @@ export class OrderService {
     return await callBackend("webGetMaterialsStock");
   }
 
+  static async updateMaterialsStockSheetSize(material, sizeLabel) {
+    return await callBackend("webUpdateMaterialsStockSheetSize", {
+      material,
+      sizeLabel,
+    });
+  }
+
   static async getLeftovers() {
     return await callBackend("webGetLeftovers");
   }

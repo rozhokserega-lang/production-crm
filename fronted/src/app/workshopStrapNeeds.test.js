@@ -8,6 +8,7 @@ import {
   inventoryCodeFromStrapStockType,
   orderCountsTowardStrapDemand,
   orderKeysForStrapCatalogMatch,
+  strapRequiresLaunchColorChoice,
   strapWarehouseDemandQty,
   strapWarehouseShortage,
 } from "./workshopStrapNeeds";
@@ -207,5 +208,11 @@ describe("buildStrapProductGroupsByCode", () => {
   it("formatStrapProductGroups joins product names", () => {
     expect(formatStrapProductGroups(["Donini", "Avella"])).toBe("Donini, Avella");
     expect(formatStrapProductGroups([])).toBe("—");
+  });
+
+  it("strapRequiresLaunchColorChoice is true for facade strap codes", () => {
+    expect(strapRequiresLaunchColorChoice("396_305")).toBe(true);
+    expect(strapRequiresLaunchColorChoice("153x320")).toBe(true);
+    expect(strapRequiresLaunchColorChoice("1000_80")).toBe(false);
   });
 });

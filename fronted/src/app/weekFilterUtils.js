@@ -1,3 +1,10 @@
+/** Специальные недели плана отгрузки — не в выпадающем списке, отдельные кнопки в тулбаре. */
+export const SHIPMENT_SPECIAL_WEEKS = ["обвязка", "X"];
+
+export function isShipmentSpecialWeek(week) {
+  return SHIPMENT_SPECIAL_WEEKS.includes(String(week || "").trim());
+}
+
 export function normalizeWeekFilter(value) {
   if (Array.isArray(value)) {
     return Array.from(

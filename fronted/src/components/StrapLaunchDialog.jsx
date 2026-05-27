@@ -3,6 +3,9 @@ export function StrapLaunchDialog({
   meta,
   qtyInput,
   setQtyInput,
+  materialInput = "",
+  setMaterialInput,
+  materialOptions = [],
   error,
   saving,
   onClose,
@@ -10,19 +13,39 @@ export function StrapLaunchDialog({
 }) {
   if (!open || !meta) return null;
 
+  const showColorSelect = materialOptions.length > 0;
+
   return (
     <div className="dialog-backdrop">
       <div className="dialog-card strap-launch-dialog" style={{ maxWidth: 420, width: "95vw" }}>
-        <h3 style={{ marginTop: 0, marginBottom: 12 }}>Запуск планок в работу</h3>
+        <h3 style={{ marginTop: 0, marginBottom: 12 }}>Добавить обвязку в план</h3>
         <p style={{ margin: "0 0 16px", color: "#64748b", fontSize: 13 }}>
           Тип: <strong>{meta.label || meta.strapType || "—"}</strong>
-          {meta.color ? ` / ${meta.color}` : ""}
+          {!showColorSelect && meta.color ? ` / ${meta.color}` : ""}
         </p>
         <p style={{ margin: "0 0 16px", color: "#475569", fontSize: 13 }}>
-          План: <strong>обвязка</strong> (без номера недели мебели)
+          План: <strong>обвязка</strong>. Позиция появится на вкладке «Отгрузка» в статусе <strong>«Ожидаю заказ»</strong>.
         </p>
+        {showColorSelect ? (
+          <label className="strap-launch-field">
+            Цвет
+            <select
+              className="strap-qty-dialog-input"
+              value={materialInput}
+              onChange={(e) => setMaterialInput(e.target.value)}
+              autoFocus
+            >
+              <option value="">Выберите цвет</option>
+              {materialOptions.map((color) => (
+                <option key={color} value={color}>
+                  {color}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
         <label className="strap-launch-field">
-          Сколько планок запустить
+          Сколько планок добавить
           <input
             type="number"
             min={1}
@@ -30,7 +53,7 @@ export function StrapLaunchDialog({
             value={qtyInput}
             onChange={(e) => setQtyInput(e.target.value)}
             placeholder="Например: 600"
-            autoFocus
+            autoFocus={!showColorSelect}
             onKeyDown={(e) => {
               if (e.key === "Enter") onSubmit();
               if (e.key === "Escape") onClose();
@@ -43,7 +66,7 @@ export function StrapLaunchDialog({
             Отмена
           </button>
           <button type="button" className="mini ok" onClick={onSubmit} disabled={saving}>
-            {saving ? "Запускаю..." : "Запустить в работу"}
+            {saving ? "Добавляю..." : "Добавить в план"}
           </button>
         </div>
       </div>

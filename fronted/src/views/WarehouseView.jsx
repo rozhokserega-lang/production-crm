@@ -1,5 +1,9 @@
-import { Fragment, memo, useMemo, useState } from "react";
+import { Fragment, memo, useEffect, useMemo, useState } from "react";
 import { buildMaterialCard } from "../app/materialCardHelpers";
+import {
+  formatWarehouseSheetSizeLabel,
+  normalizeWarehouseSheetSizeInput,
+} from "../app/warehouseSheetSizeHelpers";
 import { normalizeFurnitureKey } from "../utils/furnitureUtils";
 
 const HISTORY_LABELS = {
@@ -7,6 +11,54 @@ const HISTORY_LABELS = {
   leftover: "Остаток",
   pilka_done: "Пила готово",
 };
+
+function WarehouseSheetSizeCell({ material, sizeLabel, canEdit, saving, onSave }) {
+  const [draft, setDraft] = useState(sizeLabel || "");
+
+  useEffect(() => {
+    setDraft(sizeLabel || "");
+  }, [sizeLabel]);
+
+  if (!canEdit) {
+    return formatWarehouseSheetSizeLabel(sizeLabel);
+  }
+
+  const commit = async () => {
+    const next = normalizeWarehouseSheetSizeInput(draft);
+    const current = normalizeWarehouseSheetSizeInput(sizeLabel);
+    if (next === current) {
+      setDraft(current || "");
+      return;
+    }
+    const ok = await onSave?.(material, draft);
+    if (!ok) setDraft(sizeLabel || "");
+  };
+
+  return (
+    <input
+      className={`warehouse-sheet-size-input${saving ? " is-saving" : ""}`}
+      value={draft}
+      placeholder="2800x2070"
+      title="Размер листа, формат 2800x2070"
+      disabled={saving}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={() => {
+        void commit();
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          e.currentTarget.blur();
+        }
+        if (e.key === "Escape") {
+          e.preventDefault();
+          setDraft(sizeLabel || "");
+          e.currentTarget.blur();
+        }
+      }}
+    />
+  );
+}
 
 export const WarehouseView = memo(function WarehouseView({
   warehouseSubView,
@@ -18,8 +70,10 @@ export const WarehouseView = memo(function WarehouseView({
   loading,
   canOperateWarehouse,
   onManualConsume,
+  onUpdateMaterialSheetSize,
 }) {
   const [selectedMaterial, setSelectedMaterial] = useState("");
+  const [savingSizeMaterial, setSavingSizeMaterial] = useState("");
   const materialCard = useMemo(
     () =>
       buildMaterialCard(
@@ -72,7 +126,23 @@ export const WarehouseView = memo(function WarehouseView({
                   <tr key={`${r.material}-${r.sizeLabel}`}>
                     <td>{renderMaterialButton(r.material)}</td>
                     <td><b>{r.qtySheets}</b></td>
-                    <td>{r.sizeLabel || "-"}</td>
+                    <td>
+                      <WarehouseSheetSizeCell
+                        material={r.material}
+                        sizeLabel={r.sizeLabel}
+                        canEdit={canOperateWarehouse}
+                        saving={savingSizeMaterial === r.material}
+                        onSave={async (material, sizeLabel) => {
+                          if (!onUpdateMaterialSheetSize) return false;
+                          setSavingSizeMaterial(material);
+                          try {
+                            return await onUpdateMaterialSheetSize(material, sizeLabel);
+                          } finally {
+                            setSavingSizeMaterial("");
+                          }
+                        }}
+                      />
+                    </td>
                     <td>{r.updatedAt ? new Date(r.updatedAt).toLocaleString("ru-RU", { timeZone: "Europe/Moscow" }) : "-"}</td>
                   </tr>
                 ))}

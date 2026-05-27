@@ -1252,8 +1252,10 @@ export function useAppState({ auth }) {
     [warehouseMaterialPlanRows],
   );
 
-  const { printWarehouseOrderPlanPdf } = useWarehouseActions({
+  const { printWarehouseOrderPlanPdf, updateMaterialSheetSize } = useWarehouseActions({
     warehouseOrderPlanRows,
+    canOperateWarehouse,
+    setWarehouseRows,
     setError,
   });
   const { laborTableRows, laborOrdersRows } = useLaborDerivedData({
@@ -1624,6 +1626,7 @@ export function useAppState({ auth }) {
       consumeHistoryTableRows,
       syncWarehouseFromGoogleSheet,
       syncLeftoversToGoogleSheet,
+      updateMaterialSheetSize,
     },
     labor: {
       laborSort,

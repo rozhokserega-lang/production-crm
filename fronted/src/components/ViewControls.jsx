@@ -1,7 +1,11 @@
 ﻿import { useEffect, useMemo, useRef, useState } from "react";
 import { TABS } from "../app/appConstants";
 import { findPlanMonthByWeekFilter } from "../app/overviewPlansHelpers";
-import { normalizeWeekFilter } from "../app/weekFilterUtils";
+import {
+  isShipmentSpecialWeek,
+  normalizeWeekFilter,
+  SHIPMENT_SPECIAL_WEEKS,
+} from "../app/weekFilterUtils";
 import { useWorkshopQrScan } from "../hooks/useWorkshopQrScan";
 
 function WeekFilterDropdown({ value, onChange, weeks = [] }) {
@@ -78,12 +82,75 @@ function WeekFilterDropdown({ value, onChange, weeks = [] }) {
   );
 }
 
+function sortWeekFilterKeys(keys) {
+  return [...keys].sort((a, b) => {
+    const na = Number(a);
+    const nb = Number(b);
+    if (Number.isFinite(na) && Number.isFinite(nb) && na !== nb) return na - nb;
+    return String(a).localeCompare(String(b), "ru", { numeric: true });
+  });
+}
+
+function formatNumericWeekFilterLabel(selected) {
+  if (!selected.length) return "Все недели";
+  if (selected.length === 1) return `Нед. ${selected[0]}`;
+  const nums = selected.map(Number).filter((n) => Number.isFinite(n)).sort((a, b) => a - b);
+  if (nums.length === selected.length && nums.length >= 2) {
+    const consecutive = nums.every((n, i) => i === 0 || n === nums[i - 1] + 1);
+    if (consecutive) return `Нед. ${nums[0]}–${nums[nums.length - 1]}`;
+  }
+  if (selected.length > 2) return `Нед: ${selected.length} шт.`;
+  return `Нед: ${selected.join(", ")}`;
+}
+
+function ShipmentSpecialWeekButtons({ value, onChange }) {
+  const selected = useMemo(() => normalizeWeekFilter(value), [value]);
+  const selectedSet = useMemo(() => new Set(selected), [selected]);
+
+  const toggleWeek = (week) => {
+    const key = String(week || "").trim();
+    if (!key) return;
+    const next = selectedSet.has(key)
+      ? selected.filter((x) => x !== key)
+      : sortWeekFilterKeys([...selected, key]);
+    onChange(next.length ? next : "all");
+  };
+
+  return (
+    <div className="shipment-toolbar-panel__special-weeks">
+      {SHIPMENT_SPECIAL_WEEKS.map((key) => (
+        <button
+          key={key}
+          type="button"
+          className={`shipment-toolbar-panel__week-chip${selectedSet.has(key) ? " is-active" : ""}`}
+          onClick={() => toggleWeek(key)}
+          title={key === "обвязка" ? "Неделя обвязка" : "Неделя X (упаковка)"}
+        >
+          {key}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 /** Недели в стиле topbar (иконки Tabler) — только для панели отгрузки */
 function ShipmentWeekFilterTopbar({ value, onChange, weeks = [] }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef(null);
   const selected = useMemo(() => normalizeWeekFilter(value), [value]);
   const selectedSet = useMemo(() => new Set(selected), [selected]);
+  const numericWeeks = useMemo(
+    () =>
+      weeks
+        .map((week) => String(week || "").trim())
+        .filter((week) => week && !isShipmentSpecialWeek(week))
+        .sort((a, b) => Number(a) - Number(b)),
+    [weeks],
+  );
+  const numericSelected = useMemo(
+    () => selected.filter((week) => !isShipmentSpecialWeek(week)),
+    [selected],
+  );
 
   useEffect(() => {
     if (!open) return undefined;
@@ -101,25 +168,23 @@ function ShipmentWeekFilterTopbar({ value, onChange, weeks = [] }) {
     if (!key) return;
     const next = selectedSet.has(key)
       ? selected.filter((x) => x !== key)
-      : [...selected, key].sort((a, b) => Number(a) - Number(b));
+      : sortWeekFilterKeys([...selected, key]);
     onChange(next.length ? next : "all");
   };
-  const label =
-    selected.length === 0
-      ? "Все недели"
-      : selected.length === 1
-        ? `Нед. ${selected[0]}`
-        : `Нед: ${selected.join(", ")}`;
+  const label = formatNumericWeekFilterLabel(numericSelected);
+  const labelTitle =
+    numericSelected.length > 2 ? `Недели: ${numericSelected.join(", ")}` : undefined;
 
   return (
     <div className="wf-root" ref={rootRef}>
       <button
         type="button"
-        className={`shipment-panel__week-btn ${open ? "active" : ""}`}
+        className={`shipment-panel__week-btn shipment-panel__week-btn--filter ${open ? "active" : ""}`}
         onClick={() => setOpen((x) => !x)}
+        title={labelTitle}
       >
         <i className="ti ti-calendar" aria-hidden="true" />
-        <span>{label}</span>
+        <span className="shipment-panel__week-btn-label">{label}</span>
         <i className="ti ti-chevron-down" aria-hidden="true" />
       </button>
       {open && (
@@ -131,7 +196,7 @@ function ShipmentWeekFilterTopbar({ value, onChange, weeks = [] }) {
           >
             Все недели
           </button>
-          {weeks.map((week) => {
+          {numericWeeks.map((week) => {
             const key = String(week || "").trim();
             const active = selectedSet.has(key);
             return (
@@ -507,41 +572,44 @@ export function ViewControls({
       {view === "shipment" && (
         <div className="shipment-toolbar-panel">
           <div className="shipment-toolbar-panel__main">
-            <h2 className="shipment-toolbar-panel__title">Отгрузка</h2>
-            <label className="shipment-toolbar-panel__search topbar-search">
-              <i className="ti ti-search" aria-hidden="true" />
-              <input
-                type="search"
-                placeholder="Название или ID…"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
+            <div className="shipment-toolbar-panel__filters">
+              <label className="shipment-toolbar-panel__search topbar-search">
+                <i className="ti ti-search" aria-hidden="true" />
+                <input
+                  type="search"
+                  placeholder="Поиск…"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                />
+              </label>
+              <ShipmentMonthFilterTopbar
+                months={planMonths}
+                loading={planMonthsLoading}
+                weekFilter={weekFilter}
+                setWeekFilter={setWeekFilter}
               />
-            </label>
-            <ShipmentMonthFilterTopbar
-              months={planMonths}
-              loading={planMonthsLoading}
-              weekFilter={weekFilter}
-              setWeekFilter={setWeekFilter}
-            />
-            <ShipmentWeekFilterTopbar value={weekFilter} onChange={setWeekFilter} weeks={weeks} />
-            <select
-              className="shipment-toolbar-panel__sort"
-              value={shipmentSort}
-              onChange={(e) => setShipmentSort(e.target.value)}
-            >
-              <option value="name">По названию</option>
-              <option value="week">По неделе плана</option>
-              <option value="color">По цвету</option>
-            </select>
+              <ShipmentWeekFilterTopbar value={weekFilter} onChange={setWeekFilter} weeks={weeks} />
+              <select
+                className="shipment-toolbar-panel__sort"
+                value={shipmentSort}
+                onChange={(e) => setShipmentSort(e.target.value)}
+              >
+                <option value="name">По названию</option>
+                <option value="week">По неделе</option>
+                <option value="color">По цвету</option>
+              </select>
+              <ShipmentSpecialWeekButtons value={weekFilter} onChange={setWeekFilter} />
+            </div>
             <div className="shipment-toolbar-panel__actions">
               <button
                 type="button"
                 className="shipment-toolbar-panel__btn shipment-toolbar-panel__btn--primary"
                 disabled={!canOperateProduction}
                 onClick={openCreatePlanDialog}
+                title="Добавить план"
               >
                 <i className="ti ti-plus" aria-hidden="true" />
-                Добавить план
+                План
               </button>
               <button
                 type="button"

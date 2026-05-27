@@ -445,13 +445,17 @@ export function CuttingView() {
           >
             ☰
           </button>
-          <input
-            className="cv-header__name"
-            value={activeJob.name}
-            onChange={(e) => setJobName(e.target.value)}
-            placeholder="Название раскроя"
-          />
-          {saving && <span className="cv-header__saving">сохранение…</span>}
+          <div className="cv-header__name-wrap">
+            <input
+              className="cv-header__name"
+              value={activeJob.name}
+              onChange={(e) => setJobName(e.target.value)}
+              placeholder="Название раскроя"
+            />
+            <span className={`cv-header__saving${saving ? " is-visible" : ""}`} aria-live="polite">
+              сохранение…
+            </span>
+          </div>
         </div>
 
         <SettingsRow settings={activeJob.settings} onChange={updateSettings} />

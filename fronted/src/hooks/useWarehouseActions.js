@@ -1,10 +1,15 @@
 import { useCallback } from "react";
+import { OrderService } from "../services/orderService";
+import { normalizeWarehouseSheetSizeInput } from "../app/warehouseSheetSizeHelpers";
+import { normalizeFurnitureKey } from "../utils/furnitureUtils";
 
 /**
- * Warehouse actions: print order plan PDF.
+ * Warehouse actions: print order plan PDF, update sheet size.
  */
 export function useWarehouseActions({
   warehouseOrderPlanRows,
+  canOperateWarehouse = false,
+  setWarehouseRows,
   setError,
 }) {
   const printWarehouseOrderPlanPdf = useCallback(() => {
@@ -67,5 +72,45 @@ export function useWarehouseActions({
     popup.print();
   }, [warehouseOrderPlanRows, setError]);
 
-  return { printWarehouseOrderPlanPdf };
+  const updateMaterialSheetSize = useCallback(async (material, sizeLabel) => {
+    const materialName = String(material || "").trim();
+    if (!materialName) return false;
+    if (!canOperateWarehouse) {
+      setError("Недостаточно прав для изменения размера листа.");
+      return false;
+    }
+    const normalized = normalizeWarehouseSheetSizeInput(sizeLabel);
+    if (String(sizeLabel || "").trim() && normalized === null) {
+      setError("Формат размера: 2800x2070");
+      return false;
+    }
+    try {
+      const raw = await OrderService.updateMaterialsStockSheetSize(materialName, normalized || "");
+      const row = Array.isArray(raw) ? raw[0] : raw;
+      if (row && typeof setWarehouseRows === "function") {
+        const targetKey = normalizeFurnitureKey(materialName);
+        setWarehouseRows((prev) =>
+          prev.map((item) => {
+            if (normalizeFurnitureKey(item.material) !== targetKey) return item;
+            return {
+              ...item,
+              material: row.material ?? item.material,
+              size_label: row.size_label ?? row.sizeLabel ?? null,
+              sizeLabel: row.size_label ?? row.sizeLabel ?? "",
+              sheet_width_mm: row.sheet_width_mm ?? row.sheetWidthMm ?? null,
+              sheet_height_mm: row.sheet_height_mm ?? row.sheetHeightMm ?? null,
+              updated_at: row.updated_at ?? row.updatedAt ?? new Date().toISOString(),
+              updatedAt: row.updated_at ?? row.updatedAt ?? new Date().toISOString(),
+            };
+          }),
+        );
+      }
+      return true;
+    } catch (e) {
+      setError(String(e?.message || e || "Ошибка сохранения размера"));
+      return false;
+    }
+  }, [canOperateWarehouse, setError, setWarehouseRows]);
+
+  return { printWarehouseOrderPlanPdf, updateMaterialSheetSize };
 }
