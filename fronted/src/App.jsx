@@ -210,6 +210,8 @@ function AppInner({ onAuthChangeRef }) {
         return (
           <StrapStockView
             callBackend={services.callBackend}
+            canOperateProduction={auth.canOperateProduction}
+            onDataChanged={shell.mutationLoad}
             workshopRows={workshop.workshopRows}
             furnitureTemplates={furniture.furnitureTemplates}
             furnitureCustomTemplates={furniture.furnitureCustomTemplates}

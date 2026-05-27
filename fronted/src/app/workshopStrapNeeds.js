@@ -9,6 +9,9 @@ import {
   resolveStrapMaterialByProduct,
 } from "../utils/furnitureUtils";
 
+/** План для заказов обвязки со склада — не привязан к неделе мебели. */
+export const STRAP_LAUNCH_PLAN_WEEK = "обвязка";
+
 /** Единый формат кода размера (как в strap_stock.strap_type). */
 export function normalizeStrapInventoryCode(code) {
   return String(code || "")
@@ -36,6 +39,59 @@ export function strapDisplayNameForCode(code) {
     return m && normalizeStrapInventoryCode(m[1]) === c;
   });
   return hit || `Обвязка (${c})`;
+}
+
+function strapOptionNameToInventoryCode(optionName) {
+  const m = String(optionName || "").match(/\((\d{2,5}[_x]\d{2,5})\)/i);
+  return m ? normalizeStrapInventoryCode(m[1]) : "";
+}
+
+/** Изделия (группы), для которых в каталоге указана обвязка с данным кодом размера. */
+export function buildStrapProductGroupsByCode(furnitureDetailArticleRows = []) {
+  const byCode = new Map();
+
+  const linkProductToCode = (productName, code) => {
+    const normalized = normalizeStrapInventoryCode(code);
+    if (!normalized || !productName) return;
+    if (!byCode.has(normalized)) byCode.set(normalized, new Set());
+    byCode.get(normalized).add(productName);
+  };
+
+  (furnitureDetailArticleRows || []).forEach((row) => {
+    const isActive = row?.is_active ?? row?.isActive;
+    if (isActive === false) return;
+    const productName = canonicalStrapProductName(String(row?.product_name || row?.productName || "").trim());
+    const pattern = String(row?.detail_name_pattern || row?.detailNamePattern || "").trim();
+    if (!productName || !pattern) return;
+
+    const optionName = detailPatternToStrapName(pattern);
+    if (!optionName) return;
+
+    if (optionName === "Обвязка") {
+      const productKey = normalizeStrapProductKey(productName);
+      if (productKey === "донини" || productKey === "донини белый") {
+        linkProductToCode(productName, "1000_80");
+        linkProductToCode(productName, "558_80");
+        return;
+      }
+    }
+
+    const code = strapOptionNameToInventoryCode(optionName);
+    if (code) linkProductToCode(productName, code);
+  });
+
+  return new Map(
+    [...byCode.entries()].map(([code, products]) => [
+      code,
+      [...products].sort((a, b) => a.localeCompare(b, "ru")),
+    ]),
+  );
+}
+
+export function formatStrapProductGroups(products) {
+  const list = Array.isArray(products) ? products.filter(Boolean) : [];
+  if (!list.length) return "—";
+  return list.join(", ");
 }
 
 /** Заказ только планок (размер в названии / «Планки обвязки») — без расхода «мебельной» обвязки. */

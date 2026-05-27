@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildStrapProductGroupsByCode,
   calcStrapNeedsFromDetailArticles,
   computeWorkshopStrapDemandByInventoryKey,
+  formatStrapProductGroups,
   getResolvedWorkshopStrapNeeds,
   inventoryCodeFromStrapStockType,
   orderCountsTowardStrapDemand,
@@ -186,5 +188,24 @@ describe("inventoryCodeFromStrapStockType / strapWarehouseShortage", () => {
     const map = computeWorkshopStrapDemandByInventoryKey(workshopRows, deps);
     expect(map.get("1000_80|Черный")).toBe(48);
     expect(map.get("558_80|Черный")).toBe(96);
+  });
+});
+
+describe("buildStrapProductGroupsByCode", () => {
+  it("maps strap size codes to product groups from detail catalog", () => {
+    const map = buildStrapProductGroupsByCode([
+      { product_name: "Донини", detail_name_pattern: "Обвязка", is_active: true },
+      { product_name: "Avella lite", detail_name_pattern: "Обвязка (1158_50)", is_active: true },
+      { product_name: "Solito", detail_name_pattern: "Бока (316_167)", is_active: true },
+    ]);
+    expect(map.get("1000_80")).toEqual(["Донини"]);
+    expect(map.get("558_80")).toEqual(["Донини"]);
+    expect(map.get("1158_50")).toEqual(["Авелла Лайт"]);
+    expect(map.get("316_167")).toEqual(["Solito"]);
+  });
+
+  it("formatStrapProductGroups joins product names", () => {
+    expect(formatStrapProductGroups(["Donini", "Avella"])).toBe("Donini, Avella");
+    expect(formatStrapProductGroups([])).toBe("—");
   });
 });

@@ -1,10 +1,17 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { STRAP_OPTIONS } from "../app/appConstants";
+import { toUserError } from "../app/errorCatalogHelpers";
 import {
+  buildStrapProductGroupsByCode,
   computeWorkshopStrapDemandByInventoryKey,
+  formatStrapProductGroups,
+  normalizeStrapInventoryCode,
+  STRAP_LAUNCH_PLAN_WEEK,
   strapWarehouseDemandQty,
   strapWarehouseShortage,
 } from "../app/workshopStrapNeeds";
+import { StrapLaunchDialog } from "../components/StrapLaunchDialog";
+import { OrderService } from "../services/orderService";
 
 /**
  * Extracts the size code from a STRAP_OPTIONS display name.
@@ -12,7 +19,23 @@ import {
  */
 function strapOptionToCode(name) {
   const m = String(name || "").match(/\((\d[\d_x]+)\)/);
-  return m ? m[1] : String(name || "").trim();
+  return m ? normalizeStrapInventoryCode(m[1]) : normalizeStrapInventoryCode(name);
+}
+
+function ProductGroupsCell({ productsByCode, code }) {
+  const products = productsByCode.get(normalizeStrapInventoryCode(code)) || [];
+  const label = formatStrapProductGroups(products);
+  return (
+    <td className="strap-stock-products" title={label === "—" ? "Нет привязки в каталоге деталей" : label}>
+      {label}
+    </td>
+  );
+}
+
+function readCellSourceKeys(cell) {
+  const row = String(cell?.source_row_id ?? cell?.sourceRowId ?? "").trim();
+  const col = String(cell?.source_col_id ?? cell?.sourceColId ?? "").trim();
+  return { row, col };
 }
 
 /**
@@ -55,8 +78,46 @@ function ShortageCell({ demandByKey, strapType, color, qty }) {
   );
 }
 
+function StrapRowActions({
+  canOperateProduction,
+  isEditing,
+  saving,
+  onEditStart,
+  onEditSave,
+  onEditCancel,
+  onLaunchOpen,
+}) {
+  if (isEditing) {
+    return (
+      <>
+        <button type="button" className="mini ok" disabled={saving} onClick={onEditSave}>
+          ✓
+        </button>
+        <button type="button" className="mini ghost" disabled={saving} onClick={onEditCancel}>
+          ✕
+        </button>
+      </>
+    );
+  }
+
+  return (
+    <>
+      {canOperateProduction ? (
+        <button type="button" className="mini ok" onClick={onLaunchOpen}>
+          В работу
+        </button>
+      ) : null}
+      <button type="button" className="mini ghost" onClick={onEditStart}>
+        Изменить
+      </button>
+    </>
+  );
+}
+
 export function StrapStockView({
   callBackend,
+  canOperateProduction = false,
+  onDataChanged,
   workshopRows = [],
   furnitureTemplates = [],
   furnitureCustomTemplates = [],
@@ -69,6 +130,10 @@ export function StrapStockView({
   const [editKey, setEditKey] = useState(null); // "strapType|color"
   const [editQty, setEditQty] = useState("");
   const [saving, setSaving] = useState(false);
+  const [launchDialog, setLaunchDialog] = useState(null);
+  const [launchQty, setLaunchQty] = useState("");
+  const [launchError, setLaunchError] = useState("");
+  const [launchSaving, setLaunchSaving] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -103,6 +168,11 @@ export function StrapStockView({
   const demandByKey = useMemo(
     () => computeWorkshopStrapDemandByInventoryKey(workshopRows, strapDeps),
     [workshopRows, strapDeps],
+  );
+
+  const productsByCode = useMemo(
+    () => buildStrapProductGroupsByCode(furnitureDetailArticleRows),
+    [furnitureDetailArticleRows],
   );
 
   const stockMap = buildStockMap(stockRows);
@@ -143,6 +213,55 @@ export function StrapStockView({
     setError("");
   };
 
+  const closeLaunchDialog = () => {
+    if (launchSaving) return;
+    setLaunchDialog(null);
+    setLaunchQty("");
+    setLaunchError("");
+  };
+
+  const openLaunchDialog = ({ strapType, color, label, qtyOnHand }) => {
+    const shortage = strapWarehouseShortage(demandByKey, strapType, color, qtyOnHand);
+    setLaunchDialog({ strapType, color, label });
+    setLaunchQty(shortage > 0 ? String(shortage) : "");
+    setLaunchError("");
+  };
+
+  const handleLaunchSubmit = async () => {
+    if (!launchDialog) return;
+    const qty = Number.parseInt(String(launchQty || "").trim(), 10);
+    if (!Number.isFinite(qty) || qty <= 0) {
+      setLaunchError("Укажите количество планок (целое число > 0)");
+      return;
+    }
+
+    setLaunchSaving(true);
+    setLaunchError("");
+    try {
+      const cell = await OrderService.createShipmentPlanCell({
+        sectionName: "Обвязка",
+        item: launchDialog.strapType,
+        material: launchDialog.color,
+        week: STRAP_LAUNCH_PLAN_WEEK,
+        qty,
+      });
+      const { row, col } = readCellSourceKeys(cell);
+      if (!row || !col) {
+        throw new Error("Не удалось получить координаты ячейки плана");
+      }
+      await OrderService.sendShipmentToWork(row, col);
+      closeLaunchDialog();
+      await load();
+      if (typeof onDataChanged === "function") {
+        await onDataChanged();
+      }
+    } catch (e) {
+      setLaunchError(toUserError(e));
+    } finally {
+      setLaunchSaving(false);
+    }
+  };
+
   return (
     <div className="strap-stock-view">
       <div className="strap-stock-header">
@@ -164,11 +283,12 @@ export function StrapStockView({
             <thead>
               <tr>
                 <th>Тип обвязки</th>
+                <th>Изделия</th>
                 <th>Цвет</th>
                 <th className="strap-stock-th-numeric">Кол-во (шт)</th>
                 <th
                   className="strap-stock-th-numeric"
-                  title="Сумма потребности по заказам в активных этапах цеха (пила, кромка, присадка, ожидание сборки)"
+                  title="Сумма потребности по заказам в активных этапах цеха (пила, кромка, присадка, oжидание сборки)"
                 >
                   Требуется
                 </th>
@@ -194,6 +314,7 @@ export function StrapStockView({
                   return (
                     <tr key={code} className="strap-stock-row strap-stock-row--zero">
                       <td className="strap-stock-type">{label}</td>
+                      <ProductGroupsCell productsByCode={productsByCode} code={strapType} />
                       <td className="strap-stock-color">{color}</td>
                       <td className="strap-stock-qty">
                         {isEditing ? (
@@ -217,34 +338,22 @@ export function StrapStockView({
                       <ShortageCell demandByKey={demandByKey} strapType={strapType} color={color} qty={qtyForShortage} />
                       <td className="strap-stock-updated">—</td>
                       <td className="strap-stock-actions">
-                        {isEditing ? (
-                          <>
-                            <button
-                              type="button"
-                              className="mini ok"
-                              disabled={saving}
-                              onClick={() => handleEditSave(strapType, color)}
-                            >
-                              ✓
-                            </button>
-                            <button
-                              type="button"
-                              className="mini ghost"
-                              disabled={saving}
-                              onClick={handleEditCancel}
-                            >
-                              ✕
-                            </button>
-                          </>
-                        ) : (
-                          <button
-                            type="button"
-                            className="mini ghost"
-                            onClick={() => handleEditStart(strapType, color, 0)}
-                          >
-                            Изменить
-                          </button>
-                        )}
+                        <StrapRowActions
+                          canOperateProduction={canOperateProduction}
+                          isEditing={isEditing}
+                          saving={saving}
+                          onEditStart={() => handleEditStart(strapType, color, 0)}
+                          onEditSave={() => handleEditSave(strapType, color)}
+                          onEditCancel={handleEditCancel}
+                          onLaunchOpen={() =>
+                            openLaunchDialog({
+                              strapType,
+                              color,
+                              label,
+                              qtyOnHand: qtyForShortage,
+                            })
+                          }
+                        />
                       </td>
                     </tr>
                   );
@@ -271,6 +380,7 @@ export function StrapStockView({
                       className={`strap-stock-row ${row.qty === 0 ? "strap-stock-row--zero" : ""}`}
                     >
                       <td className="strap-stock-type">{label}</td>
+                      <ProductGroupsCell productsByCode={productsByCode} code={row.strap_type} />
                       <td className="strap-stock-color">{row.color || "—"}</td>
                       <td className="strap-stock-qty">
                         {isEditing ? (
@@ -301,34 +411,22 @@ export function StrapStockView({
                       />
                       <td className="strap-stock-updated">{updatedAt}</td>
                       <td className="strap-stock-actions">
-                        {isEditing ? (
-                          <>
-                            <button
-                              type="button"
-                              className="mini ok"
-                              disabled={saving}
-                              onClick={() => handleEditSave(row.strap_type, row.color)}
-                            >
-                              ✓
-                            </button>
-                            <button
-                              type="button"
-                              className="mini ghost"
-                              disabled={saving}
-                              onClick={handleEditCancel}
-                            >
-                              ✕
-                            </button>
-                          </>
-                        ) : (
-                          <button
-                            type="button"
-                            className="mini ghost"
-                            onClick={() => handleEditStart(row.strap_type, row.color, row.qty)}
-                          >
-                            Изменить
-                          </button>
-                        )}
+                        <StrapRowActions
+                          canOperateProduction={canOperateProduction}
+                          isEditing={isEditing}
+                          saving={saving}
+                          onEditStart={() => handleEditStart(row.strap_type, row.color, row.qty)}
+                          onEditSave={() => handleEditSave(row.strap_type, row.color)}
+                          onEditCancel={handleEditCancel}
+                          onLaunchOpen={() =>
+                            openLaunchDialog({
+                              strapType: row.strap_type,
+                              color: row.color,
+                              label,
+                              qtyOnHand: qtyForShortage,
+                            })
+                          }
+                        />
                       </td>
                     </tr>
                   );
@@ -338,6 +436,17 @@ export function StrapStockView({
           </table>
         </div>
       )}
+
+      <StrapLaunchDialog
+        open={Boolean(launchDialog)}
+        meta={launchDialog}
+        qtyInput={launchQty}
+        setQtyInput={setLaunchQty}
+        error={launchError}
+        saving={launchSaving}
+        onClose={closeLaunchDialog}
+        onSubmit={handleLaunchSubmit}
+      />
     </div>
   );
 }

@@ -5604,6 +5604,12 @@ button:hover {
 .strap-stock-row:last-child td { border-bottom: none; }
 .strap-stock-row--zero td { background: #fafafa; }
 .strap-stock-type { font-weight: 500; color: #1e293b; }
+.strap-stock-products {
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.35;
+  max-width: 220px;
+}
 .strap-stock-color { color: #475569; }
 .strap-qty-value { font-weight: 700; font-size: 15px; color: #1e293b; }
 .strap-qty-zero { color: #94a3b8; font-weight: 400; }
@@ -5654,6 +5660,35 @@ button:hover {
 .strap-stock-shortage--ok .strap-stock-shortage-zero {
   color: #94a3b8;
   font-weight: 400;
+}
+
+.strap-stock-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.strap-launch-field {
+  display: block;
+  margin-bottom: 12px;
+  font-weight: 500;
+  color: #334155;
+}
+
+.strap-launch-field .strap-qty-dialog-input {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  padding: 6px 10px;
+  font-size: 16px;
+  border-radius: 6px;
+  border: 1px solid #cbd5e1;
+  box-sizing: border-box;
+}
+
+.strap-launch-dialog .strap-stock-error {
+  margin-top: 4px;
 }
 
 /* ========== ????????? UI (?600px), ????? max-width:900px ? ?????????? ??????? .page ? ?.?. ========== */
