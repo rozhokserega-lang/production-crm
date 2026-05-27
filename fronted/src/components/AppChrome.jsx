@@ -84,6 +84,8 @@ export function AppChrome({
           weekFilter={shipment.weekFilter}
           setWeekFilter={shipment.setWeekFilter}
           weeks={shipment.weeks}
+          planMonths={shipment.planMonths}
+          planMonthsLoading={shipment.planMonthsLoading}
           statsSort={shell.statsSort}
           setStatsSort={shell.setStatsSort}
           shipmentSort={shipment.shipmentSort}

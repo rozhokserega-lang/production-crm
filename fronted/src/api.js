@@ -793,25 +793,34 @@ export async function supabaseCall(action, payload = {}) {
     throw new Error(`Supabase RPC не настроен для action: ${action}`);
   }
   const body = buildRpcPayload(action, payload);
-  const callWithToken = async (rpcBaseUrl, bearerToken) => {
+  const callWithToken = async (rpcBaseUrl, bearerToken, timeoutMs = 0) => {
     const url = `${rpcBaseUrl}/rest/v1/rpc/${rpcName}`;
-    const res = await fetch(url, {
-      method: "POST",
-      headers: {
-        apikey: SUPABASE_ANON_KEY,
-        Authorization: `Bearer ${bearerToken || SUPABASE_ANON_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(body),
-    });
-    const text = await res.text();
-    let json = null;
+    const controller = timeoutMs > 0 ? new AbortController() : null;
+    const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
     try {
-      json = text ? JSON.parse(text) : null;
-    } catch (_) {
-      json = text;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${bearerToken || SUPABASE_ANON_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+        signal: controller ? controller.signal : undefined,
+      });
+      if (timer) clearTimeout(timer);
+      const text = await res.text();
+      let json = null;
+      try {
+        json = text ? JSON.parse(text) : null;
+      } catch (_) {
+        json = text;
+      }
+      return { res, json };
+    } catch (err) {
+      if (timer) clearTimeout(timer);
+      throw err;
     }
-    return { res, json };
   };
 
   const currentToken = getSupabaseAccessToken();
@@ -820,9 +829,12 @@ export async function supabaseCall(action, payload = {}) {
   const rpcBases = getSupabaseRpcBaseUrls();
   let lastNetworkError = null;
   let lastRetryableHttpError = null;
-  for (const rpcBase of rpcBases) {
+  for (let i = 0; i < rpcBases.length; i++) {
+    const rpcBase = rpcBases[i];
+    const isLastCandidate = i === rpcBases.length - 1;
+    const candidateTimeout = isLastCandidate ? 0 : 3000;
     try {
-      ({ res, json } = await callWithToken(rpcBase, currentToken));
+      ({ res, json } = await callWithToken(rpcBase, currentToken, candidateTimeout));
       if (!res.ok && currentToken && shouldRetryRpcWithoutExpiredJwt(json)) {
         // Сессия протухла: убираем токен и синхронизируем UI — иначе бейдж роли расходится с фактическими RPC.
         persistSupabaseSession(null);

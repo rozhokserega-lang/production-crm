@@ -292,71 +292,48 @@ export async function loadShipmentDomainData({
   mergeShipmentBoardWithTable,
   normalizeOrder,
 }) {
-  let boardData;
-  try {
-    boardData = await OrderService.getShipmentBoard();
-  } catch (_) {
-    boardData = await OrderService.getShipmentTable();
+  const [
+    boardDataResult,
+    tableDataResult,
+    catalogDataResult,
+    sectionsDataResult,
+    articlesDataResult,
+    shipmentOrdersDataResult,
+    detailArticlesResult,
+    templatesResult,
+    stockDataResult,
+  ] = await Promise.all([
+    OrderService.getShipmentBoard().catch(() => null),
+    OrderService.getShipmentTable().catch(() => null),
+    OrderService.getPlanCatalog().catch(() => null),
+    OrderService.getSectionCatalog().catch(() => null),
+    OrderService.getSectionArticles().catch(() => null),
+    OrderService.getAllOrders().catch(() => null),
+    OrderService.getFurnitureDetailArticles().catch(() => null),
+    OrderService.getFurnitureCustomTemplates().catch(() => null),
+    OrderService.getMaterialsStock().catch(() => null),
+  ]);
+
+  let data = normalizeShipmentBoard(boardDataResult ?? tableDataResult);
+  if (boardDataResult != null && tableDataResult != null) {
+    try {
+      data = mergeShipmentBoardWithTable(data, tableDataResult);
+    } catch (_) {
+      // keep shipment board data if merge fails
+    }
   }
-  let data = normalizeShipmentBoard(boardData);
-  try {
-    const tableData = await OrderService.getShipmentTable();
-    data = mergeShipmentBoardWithTable(data, tableData);
-  } catch (_) {
-    // keep shipment board data if table snapshot is unavailable
-  }
-
-  let planCatalogRows = [];
-  try {
-    const catalogData = await OrderService.getPlanCatalog();
-    planCatalogRows = Array.isArray(catalogData) ? catalogData : [];
-  } catch (_) {}
-
-  let sectionCatalogRows = [];
-  try {
-    const sectionsData = await OrderService.getSectionCatalog();
-    sectionCatalogRows = Array.isArray(sectionsData) ? sectionsData : [];
-  } catch (_) {}
-
-  let sectionArticleRows = [];
-  try {
-    const articlesData = await OrderService.getSectionArticles();
-    sectionArticleRows = Array.isArray(articlesData) ? articlesData : [];
-  } catch (_) {}
-
-  let shipmentOrders = [];
-  try {
-    const shipmentOrdersData = await OrderService.getAllOrders();
-    shipmentOrders = Array.isArray(shipmentOrdersData) ? shipmentOrdersData.map(normalizeOrder) : [];
-  } catch (_) {}
-
-  let furnitureDetailArticleRows = [];
-  try {
-    const detailArticles = await OrderService.getFurnitureDetailArticles();
-    furnitureDetailArticleRows = Array.isArray(detailArticles) ? detailArticles : [];
-  } catch (_) {}
-
-  let furnitureCustomTemplates = [];
-  try {
-    const templates = await OrderService.getFurnitureCustomTemplates();
-    furnitureCustomTemplates = Array.isArray(templates) ? templates : [];
-  } catch (_) {}
-
-  let materialsStockRows = [];
-  try {
-    const stockData = await OrderService.getMaterialsStock();
-    materialsStockRows = Array.isArray(stockData) ? stockData : [];
-  } catch (_) {}
 
   return {
     data,
-    planCatalogRows,
-    sectionCatalogRows,
-    sectionArticleRows,
-    shipmentOrders,
-    furnitureDetailArticleRows,
-    furnitureCustomTemplates,
-    materialsStockRows,
+    planCatalogRows: Array.isArray(catalogDataResult) ? catalogDataResult : [],
+    sectionCatalogRows: Array.isArray(sectionsDataResult) ? sectionsDataResult : [],
+    sectionArticleRows: Array.isArray(articlesDataResult) ? articlesDataResult : [],
+    shipmentOrders: Array.isArray(shipmentOrdersDataResult)
+      ? shipmentOrdersDataResult.map(normalizeOrder)
+      : [],
+    furnitureDetailArticleRows: Array.isArray(detailArticlesResult) ? detailArticlesResult : [],
+    furnitureCustomTemplates: Array.isArray(templatesResult) ? templatesResult : [],
+    materialsStockRows: Array.isArray(stockDataResult) ? stockDataResult : [],
   };
 }
 
@@ -476,29 +453,17 @@ export async function loadWarehouseDomainData() {
 }
 
 export async function loadFurnitureDomainData() {
-  let furnitureArticleRows = [];
-  try {
-    const mappingData = await OrderService.getFurnitureProductArticles();
-    furnitureArticleRows = Array.isArray(mappingData) ? mappingData : [];
-  } catch (_) {}
-
-  let furnitureDetailArticleRows = [];
-  try {
-    const detailArticles = await OrderService.getFurnitureDetailArticles();
-    furnitureDetailArticleRows = Array.isArray(detailArticles) ? detailArticles : [];
-  } catch (_) {}
-
-  let furnitureCustomTemplates = [];
-  try {
-    const templates = await OrderService.getFurnitureCustomTemplates();
-    furnitureCustomTemplates = Array.isArray(templates) ? templates : [];
-  } catch (_) {}
+  const [mappingData, detailArticles, templates] = await Promise.all([
+    OrderService.getFurnitureProductArticles().catch(() => null),
+    OrderService.getFurnitureDetailArticles().catch(() => null),
+    OrderService.getFurnitureCustomTemplates().catch(() => null),
+  ]);
 
   return {
     data: [],
-    furnitureArticleRows,
-    furnitureDetailArticleRows,
-    furnitureCustomTemplates,
+    furnitureArticleRows: Array.isArray(mappingData) ? mappingData : [],
+    furnitureDetailArticleRows: Array.isArray(detailArticles) ? detailArticles : [],
+    furnitureCustomTemplates: Array.isArray(templates) ? templates : [],
   };
 }
 

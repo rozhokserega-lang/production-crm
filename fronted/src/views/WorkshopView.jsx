@@ -490,22 +490,13 @@ export const WorkshopView = memo(function WorkshopView({
                     className="mini ok"
                     disabled={isPending(`webSetShippingDone:${orderId}`) || packagingDone || !canOperateProduction}
                     onClick={() =>
-                      openFinalDoneDialog(orderId, {
-                        stage: "final",
-                        order: o,
-                        qty: orderQty,
-                        week: o.week,
+                      runAction("webSetShippingDone", orderId, {}, {
+                        notifyOnFinalStage: true,
                         item: o.item,
-                        itemLabel: rawItem,
                         material: getMaterialLabel(o.item, o.material || o.colorName || ""),
-                        notifyMeta: {
-                          notifyOnFinalStage: true,
-                          item: o.item,
-                          material: getMaterialLabel(o.item, o.material || o.colorName || ""),
-                          week: o.week,
-                          qty: o.qty,
-                          executor: executorByOrder[orderId] || o.prasExecutor || "",
-                        },
+                        week: o.week,
+                        qty: o.qty,
+                        executor: executorByOrder[orderId] || o.prasExecutor || "",
                       })
                     }
                   >

@@ -321,38 +321,32 @@ export function useDataLoader({
         if (view === "workshop" || view === "overview" || view === "stats") {
           setShipmentOrders(normalizedRows);
         }
-        if (view === "workshop") {
-          try {
-            const boardData = await OrderService.getShipmentBoard();
-            if (seq !== loadSeqRef.current) return;
-            workshopBoard = normalizeShipmentBoard(boardData);
-            setShipmentBoard(workshopBoard);
-          } catch (_) {
-            // keep previous shipment board snapshot
-          }
-        }
         if (view === "workshop" || view === "strapStock") {
-          // Load furniture custom templates + detail map (как в цеху) — для расчёта обвязки на складе и в карточках
-          if (typeof setFurnitureCustomTemplates === "function") {
+          const [boardResult, templatesResult, detailArticlesResult] = await Promise.all([
+            view === "workshop" ? OrderService.getShipmentBoard().catch(() => null) : Promise.resolve(null),
+            typeof setFurnitureCustomTemplates === "function"
+              ? OrderService.getFurnitureCustomTemplates().catch(() => null)
+              : Promise.resolve(null),
+            OrderService.getFurnitureDetailArticles().catch(() => null),
+          ]);
+          if (seq !== loadSeqRef.current) return;
+
+          if (view === "workshop" && boardResult != null) {
             try {
-              const templates = await OrderService.getFurnitureCustomTemplates();
-              if (seq !== loadSeqRef.current) return;
-              if (Array.isArray(templates)) {
-                workshopTemplates = templates;
-                setFurnitureCustomTemplates(templates);
-              }
+              workshopBoard = normalizeShipmentBoard(boardResult);
+              setShipmentBoard(workshopBoard);
             } catch (_) {
-              // non-critical: strap availability display will be limited
+              // keep previous shipment board snapshot
             }
           }
-          try {
-            const detailArticles = await OrderService.getFurnitureDetailArticles();
-            if (seq !== loadSeqRef.current) return;
-            workshopDetailArticles = Array.isArray(detailArticles) ? detailArticles : [];
-            setFurnitureDetailArticleRows(workshopDetailArticles);
-          } catch (_) {
-            // same source as shipment strap dialog; workshop strap badges degrade without it
+          if (Array.isArray(templatesResult)) {
+            workshopTemplates = templatesResult;
+            if (typeof setFurnitureCustomTemplates === "function") {
+              setFurnitureCustomTemplates(templatesResult);
+            }
           }
+          workshopDetailArticles = Array.isArray(detailArticlesResult) ? detailArticlesResult : [];
+          setFurnitureDetailArticleRows(workshopDetailArticles);
         }
         setViewCache(view, buildViewSnapshot({
           view,

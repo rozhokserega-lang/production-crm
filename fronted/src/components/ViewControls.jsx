@@ -1,5 +1,6 @@
 ﻿import { useEffect, useMemo, useRef, useState } from "react";
 import { TABS } from "../app/appConstants";
+import { findPlanMonthByWeekFilter } from "../app/overviewPlansHelpers";
 import { normalizeWeekFilter } from "../app/weekFilterUtils";
 import { useWorkshopQrScan } from "../hooks/useWorkshopQrScan";
 
@@ -152,6 +153,84 @@ function ShipmentWeekFilterTopbar({ value, onChange, weeks = [] }) {
   );
 }
 
+function ShipmentMonthFilterTopbar({ months = [], loading = false, weekFilter, setWeekFilter }) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef(null);
+  const activeMonth = useMemo(() => findPlanMonthByWeekFilter(months, weekFilter), [months, weekFilter]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    function onPointerDown(event) {
+      if (!rootRef.current || rootRef.current.contains(event.target)) return;
+      setOpen(false);
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [open]);
+
+  const label = loading && !months.length
+    ? "Месяцы…"
+    : activeMonth?.name || "Все месяцы";
+
+  return (
+    <div className="wf-root shipment-month-filter" ref={rootRef}>
+      <button
+        type="button"
+        className={`shipment-panel__week-btn shipment-panel__month-btn ${open ? "active" : ""}${activeMonth ? " is-selected" : ""}`}
+        onClick={() => setOpen((x) => !x)}
+        title="Фильтр по месяцу плана"
+      >
+        <i className="ti ti-calendar-month" aria-hidden="true" />
+        <span>{label}</span>
+        <i className="ti ti-chevron-down" aria-hidden="true" />
+      </button>
+      {open && (
+        <div className="wf-menu wf-menu--months">
+          <button
+            type="button"
+            className={!activeMonth ? "wf-opt active" : "wf-opt"}
+            onClick={() => {
+              setWeekFilter("all");
+              setOpen(false);
+            }}
+          >
+            Все месяцы
+          </button>
+          {months.map((month) => {
+            const active = String(activeMonth?.id) === String(month.id);
+            const weeksLabel = (month.weeks || []).join(", ");
+            return (
+              <button
+                key={month.id}
+                type="button"
+                className={active ? "wf-opt active wf-opt--month" : "wf-opt wf-opt--month"}
+                onClick={() => {
+                  setWeekFilter(month.weeks?.length ? [...month.weeks] : "all");
+                  setOpen(false);
+                }}
+              >
+                {active && <i className="ti ti-check" aria-hidden="true" />}
+                {!active && <span className="wf-opt__spacer" />}
+                <span className="wf-opt__month-body">
+                  <span className="wf-opt__month-name">{month.name}</span>
+                  {weeksLabel ? (
+                    <span className="wf-opt__month-weeks">Планы {weeksLabel}</span>
+                  ) : null}
+                </span>
+              </button>
+            );
+          })}
+          {!loading && !months.length ? (
+            <div className="wf-opt wf-opt--hint">
+              Месяцы создаются в разделе «Обзор заказов» → «Планы»
+            </div>
+          ) : null}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const SHIPMENT_STAGE_FILTERS = [
   { key: "showAwaiting", label: "Ожидаю заказ", dot: "#94a3b8" },
   { key: "showOnPilka", label: "На пиле", dot: "#3b82f6" },
@@ -178,6 +257,8 @@ export function ViewControls({
   weekFilter,
   setWeekFilter,
   weeks,
+  planMonths,
+  planMonthsLoading,
   statsSort,
   setStatsSort,
   shipmentSort,
@@ -436,6 +517,12 @@ export function ViewControls({
                 onChange={(e) => setQuery(e.target.value)}
               />
             </label>
+            <ShipmentMonthFilterTopbar
+              months={planMonths}
+              loading={planMonthsLoading}
+              weekFilter={weekFilter}
+              setWeekFilter={setWeekFilter}
+            />
             <ShipmentWeekFilterTopbar value={weekFilter} onChange={setWeekFilter} weeks={weeks} />
             <select
               className="shipment-toolbar-panel__sort"

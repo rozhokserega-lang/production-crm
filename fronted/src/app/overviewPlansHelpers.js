@@ -1,7 +1,7 @@
 import { PipelineStage, getOrderStageDisplayLabel, getOverviewLaneId, resolvePipelineStage } from "../orderPipeline";
 import { formatEmbeddedPlanItem } from "./orderHelpers";
 import { isWorkshopStrapOrderItem } from "./workshopStrapNeeds";
-import { matchesWeekFilter } from "./weekFilterUtils";
+import { matchesWeekFilter, normalizeWeekFilter } from "./weekFilterUtils";
 import { getShipmentStageKey, isGarbageShipmentItemName, isObvyazkaSectionName } from "../utils/shipmentUtils";
 
 export const PLAN_MONTHS_STORAGE_KEY = "crm_overview_plan_months";
@@ -267,6 +267,20 @@ export function normalizePlanMonthRow(row) {
     name: String(row?.name || "").trim(),
     weeks: sortPlanWeeks((row?.weeks || []).map(normalizePlanWeek).filter(Boolean)),
   };
+}
+
+/** Найти месяц, чьи недели точно совпадают с текущим фильтром недель. */
+export function findPlanMonthByWeekFilter(months, weekFilter) {
+  const selected = normalizeWeekFilter(weekFilter);
+  if (!selected.length) return null;
+  const selectedSet = new Set(selected);
+  return (
+    (months || []).find((month) => {
+      const weeks = (month?.weeks || []).map((w) => String(w).trim()).filter(Boolean);
+      if (!weeks.length || weeks.length !== selectedSet.size) return false;
+      return weeks.every((w) => selectedSet.has(w));
+    }) || null
+  );
 }
 
 /** Однократная миграция из localStorage (legacy). */
