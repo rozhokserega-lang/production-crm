@@ -84,6 +84,20 @@ export function useShipmentActions({
   productionRows = [],
   openSendToWorkDialog,
 }) {
+  const withTimeout = useCallback((promise, ms, label) => {
+    const timeoutMs = Math.max(0, Number(ms || 0));
+    if (!timeoutMs) return promise;
+    let timer = null;
+    const timeoutPromise = new Promise((_, reject) => {
+      timer = setTimeout(() => {
+        reject(new Error(`Таймаут: ${String(label || "операция")} (${timeoutMs}мс).`));
+      }, timeoutMs);
+    });
+    return Promise.race([promise, timeoutPromise]).finally(() => {
+      if (timer) clearTimeout(timer);
+    });
+  }, []);
+
   const selectedShipmentsRef = useRef(selectedShipments);
   const importPlanFileRef = useRef(null);
   useEffect(() => {
@@ -205,15 +219,28 @@ export function useShipmentActions({
     if (!current.length) return;
     const strapSelections = current.filter((s) => isStrapVirtualRowId(s.row));
     const shipmentSelections = current.filter((s) => !isStrapVirtualRowId(s.row));
+    try {
+      if (import.meta?.env?.DEV) console.info("[CRM PREVIEW] start", { count: current.length });
+    } catch (_) {
+      // ignore
+    }
     setActionLoading("preview:batch");
     setError("");
     try {
       const generatedAt = formatDateTimeForPrint(new Date());
       const strapPreviews = buildStrapPreviewPlans(strapSelections, generatedAt);
-      const shipmentTableBySource = await loadShipmentTableBySourceMap();
+      const shipmentTableBySource = await withTimeout(
+        loadShipmentTableBySourceMap(),
+        20000,
+        "загрузка таблицы отгрузки",
+      );
       let productionRowsForPreview = Array.isArray(productionRows) ? productionRows : [];
       try {
-        const freshOrders = await OrderService.getAllOrders();
+        const freshOrders = await withTimeout(
+          OrderService.getAllOrders(),
+          20000,
+          "загрузка списка заказов",
+        );
         productionRowsForPreview = Array.isArray(freshOrders)
           ? freshOrders.map(normalizeOrder)
           : productionRowsForPreview;
@@ -243,7 +270,27 @@ export function useShipmentActions({
       }
       if (shipmentSelections.length === 1) {
         const s = shipmentSelections[0];
-        const preview = await OrderService.previewPlanFromShipment(s.row, s.col);
+        try {
+          if (import.meta?.env?.DEV) {
+            console.info("[CRM PREVIEW] selection", {
+              row: String(s?.row ?? ""),
+              col: String(s?.col ?? ""),
+              week: String(s?.week ?? ""),
+              item: String(s?.item ?? ""),
+              section: String(s?.section ?? ""),
+            });
+          }
+        } catch (_) {
+          // ignore
+        }
+        const preview = await withTimeout(
+          OrderService.previewPlanFromShipment(s.row, s.col),
+          20000,
+          "предпросмотр плана",
+        );
+        if (!preview) {
+          throw new Error(`Не удалось построить предпросмотр (row=${String(s.row || "")}, col=${String(s.col || "")}).`);
+        }
         const enriched = preview ? enrichPreview({ ...preview, _key: `${s.row}-${s.col}` }, s) : null;
         const plans = attachOrderIdToPlans(
           enriched ? [enriched] : [],
@@ -253,9 +300,11 @@ export function useShipmentActions({
         plans.push(...strapPreviews);
         setPlanPreviews(plans);
       } else {
-        const { plans = [], failedCount = 0, batchError } = await buildShipmentPreviewPlans(shipmentSelections, {
-          enrichPreview,
-        });
+        const { plans = [], failedCount = 0, batchError } = await withTimeout(
+          buildShipmentPreviewPlans(shipmentSelections, { enrichPreview }),
+          30000,
+          "предпросмотр планов (пакет)",
+        );
         const plansWithOrders = attachOrderIdToPlans(plans, [], productionRowsForPreview);
         if (failedCount > 0) {
           setError(
@@ -273,6 +322,11 @@ export function useShipmentActions({
       setError(toUserError(e));
     } finally {
       setActionLoading("");
+      try {
+        if (import.meta?.env?.DEV) console.info("[CRM PREVIEW] end");
+      } catch (_) {
+        // ignore
+      }
     }
   }, [
     articleLookupByItemKey,

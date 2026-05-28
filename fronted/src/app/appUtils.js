@@ -266,6 +266,8 @@ export function mergeShipmentBoardWithTable(board, tableRows) {
   if (!rows.length) return normalized;
 
   const bySource = new Map();
+  const byContent = new Map();
+  const norm = (v) => normalizeFurnitureKey(String(v || ""));
   rows.forEach((r) => {
     const sourceRow = String(r?.source_row_id || r?.sourceRowId || "").trim();
     const sourceCol = String(r?.source_col_id || r?.sourceColId || "").trim();
@@ -278,6 +280,17 @@ export function mergeShipmentBoardWithTable(board, tableRows) {
           ? (r?.materialEnoughForOrder == null ? undefined : !!r?.materialEnoughForOrder)
           : !!r?.material_enough_for_order,
     });
+
+    // Fallback mapping: some shipment_board payloads may omit source_row_id / source_col_id.
+    // Then preview RPCs (web_preview_plan_from_shipment) fail because they require source ids.
+    // Try to match by (section, item, material, week) and backfill source ids.
+    const sectionName = String(r?.section_name || r?.sectionName || r?.section || "").trim();
+    const itemName = String(r?.item || "").trim();
+    const materialName = String(r?.material || "").trim();
+    const week = String(r?.week || "").trim();
+    if (!sectionName || !itemName || !week) return;
+    const contentKey = `${norm(sectionName)}|${norm(itemName)}|${norm(materialName)}|${week}`;
+    if (!byContent.has(contentKey)) byContent.set(contentKey, { sourceRow, sourceCol });
   });
 
   return {
@@ -286,10 +299,43 @@ export function mergeShipmentBoardWithTable(board, tableRows) {
       ...section,
       items: (section.items || []).map((item) => ({
         ...item,
+        // Ensure item has correct sourceRowId so selection->preview uses stable identifiers.
+        sourceRowId: (() => {
+          const existing = String(item?.sourceRowId || item?.source_row_id || "").trim();
+          if (existing) return existing;
+          const sectionName = String(section?.name || "").trim();
+          const itemName = String(item?.item || "").trim();
+          const materialName = String(item?.material || "").trim();
+          // Try to infer sourceRowId from any week cell content match.
+          const cells = Array.isArray(item?.cells) ? item.cells : [];
+          for (const cell of cells) {
+            const week = String(cell?.week || "").trim();
+            if (!week) continue;
+            const contentKey = `${norm(sectionName)}|${norm(itemName)}|${norm(materialName)}|${week}`;
+            const inferred = byContent.get(contentKey);
+            if (inferred?.sourceRow) return inferred.sourceRow;
+          }
+          return existing;
+        })(),
         cells: (item.cells || []).map((cell) => {
           const key = `${String(item?.sourceRowId || item?.row || "").trim()}|${String(cell?.sourceColId || cell?.col || "").trim()}`;
           const fromTable = bySource.get(key);
-          if (!fromTable) return cell;
+          if (!fromTable) {
+            const sectionName = String(section?.name || "").trim();
+            const itemName = String(item?.item || "").trim();
+            const materialName = String(item?.material || "").trim();
+            const week = String(cell?.week || "").trim();
+            const contentKey = `${norm(sectionName)}|${norm(itemName)}|${norm(materialName)}|${week}`;
+            const inferred = byContent.get(contentKey);
+            if (inferred?.sourceRow && inferred?.sourceCol) {
+              return {
+                ...cell,
+                sourceColId: inferred.sourceCol,
+                col: inferred.sourceCol,
+              };
+            }
+            return cell;
+          }
           return {
             ...cell,
             availableSheets: fromTable.availableSheets,

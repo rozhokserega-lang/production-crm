@@ -50,9 +50,9 @@ export function normalizeDetailPatternKey(v) {
 export function extractDetailSizeToken(v) {
   const raw = String(v || "").trim();
   if (!raw) return "";
-  const m = raw.match(/(\d{2,4})\s*[_xх]\s*(\d{2,4})/i);
+  const m = raw.match(/(\d{2,4})\s*[_xх]\s*(\d{2,4}(?:[.,]\d+)?)/i);
   if (!m) return "";
-  return `${m[1]}_${m[2]}`;
+  return `${m[1]}_${String(m[2]).replace(",", ".")}`;
 }
 
 export function resolveFurnitureAliasKey(candidates) {
@@ -109,7 +109,7 @@ function resolveDetailQtyOverride({ productName, detailName, baseQty, detailQty 
   const size = extractDetailSizeToken(detailName);
   // Some rows in furniture.xlsx contain non-piece quantities for specific details.
   // For "Донини R" the row "Обвязка (520_80)" must behave like a piece-count (×2 per изделие).
-  if (pKey === "донини r" && size === "520_80" && baseQty > 0) {
+  if (pKey === "донини r" && size === "520_75.5" && baseQty > 0) {
     return baseQty * 2;
   }
   return detailQty;
@@ -179,7 +179,7 @@ export function buildFurnitureTemplates(workbook, sheetName) {
 export function detailPatternToStrapName(pattern) {
   const raw = String(pattern || "").trim();
   if (!raw) return "";
-  const sizeMatch = raw.match(/(\d{3,4}_\d{2,3})/);
+  const sizeMatch = raw.match(/(\d{3,4}_\d{2,3}(?:[.,]\d+)?)/);
   if (sizeMatch) return `Обвязка (${sizeMatch[1]})`;
   if (raw.toLowerCase().includes("обвязк")) return "Обвязка";
   return "";
@@ -188,8 +188,8 @@ export function detailPatternToStrapName(pattern) {
 export function strapNameToOrderItem(name) {
   const raw = String(name || "").trim();
   if (!raw) return "";
-  const sizeMatch = raw.match(/(\d{3,4}_\d{2,3})/);
-  if (sizeMatch) return sizeMatch[1];
+  const sizeMatch = raw.match(/(\d{3,4}_\d{2,3}(?:[.,]\d+)?)/);
+  if (sizeMatch) return String(sizeMatch[1]).replace(",", ".");
   return raw.replace(/^обвязка\s*/i, "").replace(/[()]/g, "").trim() || raw;
 }
 

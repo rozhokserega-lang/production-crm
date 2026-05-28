@@ -27,18 +27,19 @@ export function strapRequiresLaunchColorChoice(strapType) {
 export function normalizeStrapInventoryCode(code) {
   return String(code || "")
     .trim()
-    .replace(/x/gi, "_");
+    .replace(/x/gi, "_")
+    .replace(/,/g, ".");
 }
 
 const STRAP_TYPE_CODES = new Set(
   STRAP_OPTIONS.map((opt) => {
-    const m = String(opt).match(/\((\d{2,5}[_x]\d{2,5})\)/);
+    const m = String(opt).match(/\((\d{2,5}[_x]\d{2,5}(?:[.,]\d+)?)\)/);
     return m ? normalizeStrapInventoryCode(m[1]) : null;
   }).filter(Boolean),
 );
 
 function extractStrapCodeFromDetailName(detailName) {
-  const m = String(detailName || "").match(/\((\d{2,5}[_x]\d{2,5})\)/);
+  const m = String(detailName || "").match(/\((\d{2,5}[_x]\d{2,5}(?:[.,]\d+)?)\)/);
   return m ? normalizeStrapInventoryCode(m[1]) : "";
 }
 
@@ -46,14 +47,14 @@ export function strapDisplayNameForCode(code) {
   const c = normalizeStrapInventoryCode(code);
   if (!c) return "";
   const hit = STRAP_OPTIONS.find((opt) => {
-    const m = String(opt).match(/\((\d{2,5}[_x]\d{2,5})\)/);
+    const m = String(opt).match(/\((\d{2,5}[_x]\d{2,5}(?:[.,]\d+)?)\)/);
     return m && normalizeStrapInventoryCode(m[1]) === c;
   });
   return hit || `Обвязка (${c})`;
 }
 
 function strapOptionNameToInventoryCode(optionName) {
-  const m = String(optionName || "").match(/\((\d{2,5}[_x]\d{2,5})\)/i);
+  const m = String(optionName || "").match(/\((\d{2,5}[_x]\d{2,5}(?:[.,]\d+)?)\)/i);
   return m ? normalizeStrapInventoryCode(m[1]) : "";
 }
 
@@ -108,7 +109,7 @@ export function formatStrapProductGroups(products) {
 /** Заказ только планок (размер в названии / «Планки обвязки») — без расхода «мебельной» обвязки. */
 export function isWorkshopStrapOrderItem(item) {
   const s = String(item || "").trim();
-  return s.includes("Планки обвязки") || /^\d{3,5}[_x]\d{2,5}$/.test(s);
+  return s.includes("Планки обвязки") || /^\d{3,5}[_x]\d{2,5}(?:[.,]\d+)?$/.test(s);
 }
 
 /** Потребность в планках для склада/карточки: только пила, кромка, присадка и «готов» к сборке (до «собрано» и финала). */
@@ -156,7 +157,7 @@ function applyWorkshopStrapQtyOverrides(productLine, orderQty, needs) {
   if (!(Q > 0)) return needs || [];
 
   if (productLine === "donini_r") {
-    const rulesR = { "288_80": 4, "502_80": 2, "520_80": 2, "544_80": 2 };
+    const rulesR = { "288_80": 4, "502_80": 2, "520_75.5": 2, "544_80": 2 };
     const out = [];
     Object.entries(rulesR).forEach(([codeRaw, mul]) => {
       const code = normalizeStrapInventoryCode(codeRaw);
@@ -338,7 +339,7 @@ export function getResolvedWorkshopStrapNeeds(order, { furnitureTemplates, furni
 
 /** Код размера из strap_stock.strap_type (короткий или подпись «Обвязка (1000_80)»). */
 export function inventoryCodeFromStrapStockType(strapType) {
-  const m = String(strapType || "").match(/\((\d[\d_x]+)\)/i);
+  const m = String(strapType || "").match(/\((\d[\d_x.,]+)\)/i);
   return m ? normalizeStrapInventoryCode(m[1]) : normalizeStrapInventoryCode(strapType);
 }
 

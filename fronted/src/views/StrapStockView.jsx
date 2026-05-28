@@ -5,6 +5,7 @@ import {
   buildStrapProductGroupsByCode,
   computeWorkshopStrapDemandByInventoryKey,
   formatStrapProductGroups,
+  inventoryCodeFromStrapStockType,
   normalizeStrapInventoryCode,
   STRAP_FACADE_LAUNCH_COLORS,
   STRAP_LAUNCH_PLAN_WEEK,
@@ -20,12 +21,12 @@ import { OrderService } from "../services/orderService";
  * "Обвязка (1000_80)" → "1000_80"
  */
 function strapOptionToCode(name) {
-  const m = String(name || "").match(/\((\d[\d_x]+)\)/);
-  return m ? normalizeStrapInventoryCode(m[1]) : normalizeStrapInventoryCode(name);
+  return inventoryCodeFromStrapStockType(name);
 }
 
 function ProductGroupsCell({ productsByCode, code }) {
-  const products = productsByCode.get(normalizeStrapInventoryCode(code)) || [];
+  const key = inventoryCodeFromStrapStockType(code);
+  const products = productsByCode.get(normalizeStrapInventoryCode(key)) || [];
   const label = formatStrapProductGroups(products);
   return (
     <td className="strap-stock-products" title={label === "—" ? "Нет привязки в каталоге деталей" : label}>

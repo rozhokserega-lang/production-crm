@@ -111,7 +111,7 @@ describe("getResolvedWorkshopStrapNeeds", () => {
     const by = Object.fromEntries(needs.map((x) => [x.code, x.needed]));
     expect(by["288_80"]).toBe(48);
     expect(by["502_80"]).toBe(24);
-    expect(by["520_80"]).toBe(24);
+    expect(by["520_75.5"]).toBe(24);
     expect(by["544_80"]).toBe(24);
     expect(by["522_80"]).toBeUndefined();
     expect(by["1000_80"]).toBeUndefined();

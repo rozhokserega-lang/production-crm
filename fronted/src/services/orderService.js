@@ -229,11 +229,39 @@ export class OrderService {
   }
 
   static async previewPlanFromShipment(row, col) {
-    return await callBackend("webPreviewPlanFromShipment", { row, col });
+    const res = await callBackend("webPreviewPlanFromShipment", { row, col });
+    // Backend returns jsonb and the REST RPC wrapper may serialize it as:
+    // - { preview: <plan> }
+    // - [ { preview: <plan> } ]
+    // - <plan>
+    // Normalize to the actual plan object.
+    if (Array.isArray(res)) {
+      const first = res[0];
+      if (first && typeof first === "object" && first.preview && typeof first.preview === "object") return first.preview;
+      if (first && typeof first === "object" && (first.qty != null || first.rows != null)) return first;
+      return null;
+    }
+    if (res && typeof res === "object" && res.preview && typeof res.preview === "object") return res.preview;
+    if (res && typeof res === "object" && (res.qty != null || res.rows != null)) return res;
+    return null;
   }
 
   static async previewPlansBatch(items) {
-    return await callBackend("webPreviewPlansBatch", { items });
+    const res = await callBackend("webPreviewPlansBatch", { items });
+    // Normalize to { plans, failedCount, batchError } shape expected by buildShipmentPreviewPlans().
+    // Backend may return:
+    // - { plans: [...] }
+    // - [ { batch: { plans: [...] } } ]
+    // - { batch: { plans: [...] } }
+    const unwrap = (v) => {
+      if (!v) return null;
+      if (Array.isArray(v)) return unwrap(v[0]);
+      if (typeof v !== "object") return null;
+      if (v.batch && typeof v.batch === "object") return v.batch;
+      return v;
+    };
+    const normalized = unwrap(res) || {};
+    return normalized;
   }
 
   static async getConsumeOptions(orderId) {

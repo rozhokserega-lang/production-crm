@@ -261,17 +261,24 @@ export async function callBackend(action, payload = {}) {
       throw new Error(`Supabase RPC не настроен для action: ${action}`);
     }
     const result = await supabaseCall(action, payload);
+    reportRpcEvent(attachDevRpcPayloadDebug(action, payload, {
+      status: "ok",
+      provider: "supabase",
+      action,
+      requestId,
+      payloadHash,
+    }));
     return result;
   } catch (error) {
     const normalized = normalizeApiError(error);
-    reportRpcEvent({
+    reportRpcEvent(attachDevRpcPayloadDebug(action, payload, {
       status: "error",
       provider: "supabase",
       action,
       requestId,
       payloadHash,
       error: String(normalized?.message || normalized),
-    });
+    }));
     throw normalized;
   }
 }
@@ -319,6 +326,37 @@ function reportRpcEvent(event) {
         ? console.warn
         : console.info;
   printer(label, enriched);
+  // Cursor console capture sometimes serializes objects as "[object Object]".
+  // Print a JSON string too so we can search row/col quickly in dev.
+  try {
+    if (import.meta?.env?.DEV) printer(label, JSON.stringify(enriched));
+  } catch (_) {
+    // ignore
+  }
+}
+
+function attachDevRpcPayloadDebug(action, payload, event) {
+  // Local-only diagnostics: log the exact row/col for preview RPCs.
+  // This helps debug cases where shipment_board misses source_row_id and UI sends a wrong identifier.
+  try {
+    if (!import.meta?.env?.DEV) return event;
+    if (action !== "webPreviewPlanFromShipment" && action !== "webPreviewPlansBatch") return event;
+    const p = payload && typeof payload === "object" ? payload : {};
+    if (action === "webPreviewPlanFromShipment") {
+      return { ...event, payloadDebug: { row: String(p.row ?? ""), col: String(p.col ?? "") } };
+    }
+    if (action === "webPreviewPlansBatch") {
+      const items = Array.isArray(p.items) ? p.items : [];
+      const first = items[0] && typeof items[0] === "object" ? items[0] : {};
+      return {
+        ...event,
+        payloadDebug: { batchSize: items.length, first: { row: String(first.row ?? ""), col: String(first.col ?? "") } },
+      };
+    }
+  } catch (_) {
+    // ignore
+  }
+  return event;
 }
 
 const SHORT_RPC_TIMEOUT_MS = 8000;

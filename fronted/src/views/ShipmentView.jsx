@@ -1,4 +1,4 @@
-import { memo, useCallback } from "react";
+import { memo, useCallback, useEffect, useRef } from "react";
 import { stripPlanItemMeta, getMaterialLabel } from "../app/orderHelpers";
 import { useShipment } from "../contexts/ShipmentContext";
 import { useCutting } from "../contexts/CuttingContext";
@@ -61,6 +61,33 @@ export const ShipmentView = memo(function ShipmentView() {
   const tableGroupNames = shipmentTableGroupNamesForView ?? shipmentTableGroupNames;
 
   const isPlanPreviewOpen = planPreviews.length > 0;
+  const planPreviewRef = useRef(null);
+
+  useEffect(() => {
+    if (!isPlanPreviewOpen) return;
+    // Opening preview does not necessarily change scroll position; if the user is deep in the table,
+    // bring the preview sheet into view automatically.
+    const el = planPreviewRef.current;
+    // Defer one tick to ensure layout is committed.
+    requestAnimationFrame(() => {
+      // Jump close to the top first to avoid weird nested scroll containers.
+      try {
+        window.scrollTo?.(0, 0);
+        document.documentElement.scrollTop = 0;
+        document.body.scrollTop = 0;
+        document.querySelector?.(".shipment-layout")?.scrollTo?.(0, 0);
+      } catch (_) {
+        // no-op
+      }
+      if (el?.scrollIntoView) {
+        // Use default behavior ("auto") for broad browser compatibility.
+        el.scrollIntoView({ block: "start" });
+        return;
+      }
+      // Fallback: jump to top so the preview is visible.
+      window.scrollTo?.({ top: 0, left: 0 });
+    });
+  }, [isPlanPreviewOpen]);
   const storageSelected = selectedShipments.filter(
     (s) => isStorageLikeName(s.item) || isStorageLikeName(s.section),
   );
@@ -245,7 +272,7 @@ export const ShipmentView = memo(function ShipmentView() {
       </aside>}
       <div className="shipment-main">
         {isPlanPreviewOpen && (
-          <div className="print-area">
+          <div ref={planPreviewRef} className="print-area">
             {planPreviews.map((planPreview, idx) => (
               <div key={planPreview._key || idx} className="plan-preview print-plan-page">
                 {planPreview.isStrapPlan ? (
@@ -292,7 +319,15 @@ export const ShipmentView = memo(function ShipmentView() {
                         <div className="color">{planPreview.colorName || "-"}</div>
                         {!!String(planPreview.strapTargetProduct || "").trim() && (
                           <div className="strap-target">
-                            Обвязка для изделия: {planPreview.strapTargetProduct}
+                            {(() => {
+                              const planWeek = String(planPreview.planNumber || planPreview.week || "").trim().toLowerCase();
+                              const target = String(planPreview.strapTargetProduct || "").trim();
+                              const targetNorm = target.toLowerCase().replace(/[ё]/g, "е");
+                              // Special case: for the Siena facades workflow we reuse the "обвязка" plan week,
+                              // but the print caption should mention facades + Siena instead of strap + Avella.
+                              if (planWeek === "обвязка" && targetNorm === "авелла") return "Фасады для Сиена";
+                              return `Обвязка для изделия: ${target}`;
+                            })()}
                           </div>
                         )}
                       </div>
@@ -661,7 +696,26 @@ export const ShipmentView = memo(function ShipmentView() {
               <button
                 className="mini"
                 disabled={actionLoading === "preview:batch" || selectedShipments.length === 0}
-                onClick={previewSelectedShipmentPlan}
+                onClick={() => {
+                  try {
+                    if (import.meta?.env?.DEV) {
+                      const first = selectedShipments?.[0] || {};
+                      console.info("[CRM PREVIEW] click", {
+                        count: Number(selectedShipments?.length || 0),
+                        actionLoading,
+                        first: {
+                          row: String(first?.row ?? ""),
+                          col: String(first?.col ?? ""),
+                          week: String(first?.week ?? ""),
+                          item: String(first?.item ?? ""),
+                        },
+                      });
+                    }
+                  } catch (_) {
+                    // ignore
+                  }
+                  previewSelectedShipmentPlan?.();
+                }}
               >
                 Предпросмотр плана
                 {selectedShipments.length > 1 ? ` (${selectedShipments.length})` : ""}
