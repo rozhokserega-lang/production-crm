@@ -135,7 +135,27 @@ describe("getShipmentStageKey", () => {
     ).toBe("awaiting");
   });
 
-  it("prefers shipped order over canSendToWork flag on plan cell", () => {
+  it("treats relaunch-ready plan cell as awaiting when only a shipped order matches row+week", () => {
+    const maps = buildOrderMaps([
+      {
+        item: "1000_80",
+        week: "обвязка",
+        source_row_id: "manual:05918475f348741a",
+        pipeline_stage: "shipped",
+      },
+    ]);
+    expect(
+      getShipmentStageKey(
+        { ...inactiveCell, week: "обвязка", canSendToWork: true },
+        "manual:05918475f348741a",
+        maps,
+        "1000_80",
+        "Черный",
+      ),
+    ).toBe("awaiting");
+  });
+
+  it("still maps inactive plan cell to shipped when linked order is shipped", () => {
     const maps = buildOrderMaps([
       {
         item: "Donini 750 мм. Бетон Чикаго светло-серый.",
@@ -146,7 +166,7 @@ describe("getShipmentStageKey", () => {
     ]);
     expect(
       getShipmentStageKey(
-        { ...inactiveCell, canSendToWork: true },
+        inactiveCell,
         "manual:05918475f348741a",
         maps,
         "Donini 750 мм. Бетон Чикаго светло-серый.",

@@ -131,6 +131,13 @@ function lookupItemWeekOrder(orderMaps, itemName, week, material = "") {
   return null;
 }
 
+function isShipmentOrderTerminal(order) {
+  if (!order) return false;
+  if (resolvePipelineStage(order) === PipelineStage.SHIPPED) return true;
+  if (order.shipped === true || String(order.shipped || "").toLowerCase() === "true") return true;
+  return false;
+}
+
 function resolveCellFallbackStageKey(c) {
   if (!c) return "plan_idle";
   if (c.canSendToWork && !c.inWork) return "awaiting";
@@ -155,6 +162,11 @@ export function getShipmentStageKey(c, sourceRow, orderMaps, itemName, materialN
     order = lookupItemWeekOrder(orderMaps, itemName, c.week, material);
   }
   if (order) {
+    // Повторный пуск с «Склад обвязки»: ячейка снова «Ожидаю заказ», но по row+week
+    // остаётся старый отгруженный заказ — не скрываем новую позицию.
+    if (c.canSendToWork && !c.inWork && isShipmentOrderTerminal(order)) {
+      return resolveCellFallbackStageKey(c);
+    }
     return mapPipelineStageToShipmentKey(order);
   }
   return resolveCellFallbackStageKey(c);
