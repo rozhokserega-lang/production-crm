@@ -1,8 +1,8 @@
 export const PRODUCTS_CATALOG = {
   "Avella": [
     { name: "Столешка (1250х650)", hasColor: true },
-    { name: "Обвязка (1158х50)", hasColor: true },
-    { name: "Обвязка (600х50)", hasColor: true },
+    { name: "Обвязка (1158х56)", hasColor: true },
+    { name: "Обвязка (600х56)", hasColor: true },
     { name: "Дно (320х568)", hasColor: false },
     { name: "Бок (360х568)", hasColor: true },
     { name: "Фасад (396х305)", hasColor: true },
@@ -11,8 +11,8 @@ export const PRODUCTS_CATALOG = {
   ],
   "Avella lite": [
     { name: "Столешка (1250х650)", hasColor: true },
-    { name: "Обвязка (1158х50)", hasColor: true },
-    { name: "Обвязка (600х50)", hasColor: true },
+    { name: "Обвязка (1158х56)", hasColor: true },
+    { name: "Обвязка (600х56)", hasColor: true },
     { name: "Дно (320х568)", hasColor: false },
     { name: "Бок (360х568)", hasColor: true },
   ],

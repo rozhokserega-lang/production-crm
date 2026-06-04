@@ -149,7 +149,7 @@ export function detectWorkshopStrapProductLine(rawItem) {
 
 /**
  * Множители «штук на 1 единицу заказа» по коду планки (после базового расчёта из шаблона или каталога).
- * Avella lite: 1158_50 и 600_50 — по 2; Donini: 1000_80 — 2, 558_80 — 4; Donini Grande: как в ТЗ.
+ * Avella lite: 1158_56 и 600_56 — по 2; Donini: 1000_80 — 2, 558_80 — 4; Donini Grande: как в ТЗ.
  * Donini R: фиксированный набор (каталог/шаблон не смешиваем с обычным Donini).
  */
 function applyWorkshopStrapQtyOverrides(productLine, orderQty, needs) {
@@ -170,7 +170,7 @@ function applyWorkshopStrapQtyOverrides(productLine, orderQty, needs) {
 
   const rules =
     productLine === "avella_lite"
-      ? { "1158_50": 2, "600_50": 2 }
+      ? { "1158_56": 2, "600_56": 2 }
       : productLine === "donini"
         ? { "1000_80": 2, "558_80": 4 }
         : productLine === "donini_grande"

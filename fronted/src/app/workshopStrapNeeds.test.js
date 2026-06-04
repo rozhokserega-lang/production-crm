@@ -66,13 +66,13 @@ describe("getResolvedWorkshopStrapNeeds", () => {
     expect(by["558_80"]).toBe(96);
   });
 
-  it("applies Avella lite multipliers: 1158_50 and 600_50 x2 per unit (from furniture template)", () => {
+  it("applies Avella lite multipliers: 1158_56 and 600_56 x2 per unit (from furniture template)", () => {
     const furnitureTemplates = [
       {
         productName: "Avella lite",
         details: [
-          { detailName: "Обвязка (1158_50)", perUnit: 1 },
-          { detailName: "Обвязка (600_50)", perUnit: 1 },
+          { detailName: "Обвязка (1158_56)", perUnit: 1 },
+          { detailName: "Обвязка (600_56)", perUnit: 1 },
         ],
       },
     ];
@@ -81,8 +81,8 @@ describe("getResolvedWorkshopStrapNeeds", () => {
       { ...emptyDeps, furnitureTemplates },
     );
     const by = Object.fromEntries(needs.map((x) => [x.code, x.needed]));
-    expect(by["1158_50"]).toBe(78);
-    expect(by["600_50"]).toBe(78);
+    expect(by["1158_56"]).toBe(78);
+    expect(by["600_56"]).toBe(78);
   });
 
   it("applies Donini Grande multipliers from catalog straps", () => {
@@ -196,12 +196,12 @@ describe("buildStrapProductGroupsByCode", () => {
   it("maps strap size codes to product groups from detail catalog", () => {
     const map = buildStrapProductGroupsByCode([
       { product_name: "Донини", detail_name_pattern: "Обвязка", is_active: true },
-      { product_name: "Avella lite", detail_name_pattern: "Обвязка (1158_50)", is_active: true },
+      { product_name: "Avella lite", detail_name_pattern: "Обвязка (1158_56)", is_active: true },
       { product_name: "Solito", detail_name_pattern: "Бока (316_167)", is_active: true },
     ]);
     expect(map.get("1000_80")).toEqual(["Донини"]);
     expect(map.get("558_80")).toEqual(["Донини"]);
-    expect(map.get("1158_50")).toEqual(["Авелла Лайт"]);
+    expect(map.get("1158_56")).toEqual(["Авелла Лайт"]);
     expect(map.get("316_167")).toEqual(["Solito"]);
   });
 
