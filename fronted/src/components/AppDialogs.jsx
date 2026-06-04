@@ -1,5 +1,6 @@
 import { OrderDrawer } from "./OrderDrawer";
 import { ConsumeDialog } from "./ConsumeDialog";
+import { HardwareConsumeDialog } from "./HardwareConsumeDialog";
 import { StrapDialog } from "./StrapDialog";
 import { PlanDialog } from "./PlanDialog";
 import { PackagingInboxDialog } from "./PackagingInboxDialog";
@@ -140,6 +141,19 @@ export function AppDialogs({
         onClose={actions.closeConsumeDialog}
         onMaterialChange={consume.setMaterial}
         onQtyChange={consume.setQty}
+      />
+
+      <HardwareConsumeDialog
+        open={dialogs.hardwareConsume?.open}
+        orderId={dialogs.hardwareConsume?.orderId}
+        item={dialogs.hardwareConsume?.item}
+        lines={dialogs.hardwareConsume?.lines || []}
+        loading={dialogs.hardwareConsume?.loading}
+        saving={dialogs.hardwareConsume?.saving}
+        error={dialogs.hardwareConsume?.error}
+        onSetLineQty={dialogs.hardwareConsume?.setLineQty}
+        onSubmit={dialogs.hardwareConsume?.submit}
+        onClose={dialogs.hardwareConsume?.close}
       />
 
       <StrapDialog

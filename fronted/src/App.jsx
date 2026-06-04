@@ -25,6 +25,7 @@ const StatsView = lazy(() => import("./views/StatsView").then((m) => ({ default:
 const SheetMirrorView = lazy(() => import("./views/SheetMirrorView").then((m) => ({ default: m.SheetMirrorView })));
 const FurnitureView = lazy(() => import("./views/FurnitureView").then((m) => ({ default: m.FurnitureView })));
 const MetalView = lazy(() => import("./views/MetalView").then((m) => ({ default: m.MetalView })));
+const HardwareView = lazy(() => import("./views/HardwareView").then((m) => ({ default: m.HardwareView })));
 const MetalProcessView = lazy(() => import("./views/MetalProcessView").then((m) => ({ default: m.MetalProcessView })));
 const CuttingView = lazy(() => import("./views/CuttingView").then((m) => ({ default: m.CuttingView })));
 import {
@@ -235,6 +236,13 @@ function AppInner({ onAuthChangeRef }) {
             canOperateProduction={auth.canOperateProduction}
             savingKey={metal.metalSavingArticle}
             onAdjustStock={metal.adjustMetalStock}
+          />
+        );
+      case "hardware":
+        return (
+          <HardwareView
+            canOperateWarehouse={auth.canOperateWarehouse}
+            planWeeks={shipment.weeks}
           />
         );
       case "cutting":

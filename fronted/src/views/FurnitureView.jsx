@@ -1,5 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import ShelfCalculator from "../components/ShelfCalculator";
+
+const FurnitureBomGraph = lazy(() =>
+  import("./FurnitureBomGraph").then((m) => ({ default: m.FurnitureBomGraph })),
+);
 import {
   buildMaterialYieldsFromVariants,
   normalizeMaterialKey,
@@ -476,6 +480,13 @@ export function FurnitureView({
               onClick={() => setFurnitureSubTab("storage")}
             >
               Система хранения
+            </button>
+            <button
+              type="button"
+              className={furnitureSubTab === "graph" ? "tab active" : "tab"}
+              onClick={() => setFurnitureSubTab("graph")}
+            >
+              Схема (блупринт)
             </button>
           </div>
           {furnitureSubTab === "main" && (
@@ -1472,6 +1483,25 @@ export function FurnitureView({
               canManageCatalog={canOperateProduction || canManageOrders}
               onCreatePlanOrder={createShelfPlanOrder}
             />
+          )}
+          {furnitureSubTab === "graph" && (
+            <Suspense fallback={<div className="empty">Загружаю схему…</div>}>
+              <FurnitureBomGraph
+                canOperate={canOperateProduction}
+                furnitureTemplates={furnitureTemplates}
+                furnitureCustomTemplates={furnitureCustomTemplates}
+                furnitureArticleSearchRows={furnitureArticleSearchRows}
+                furnitureProductLabel={furnitureProductLabel}
+                reload={async () => {
+                  if (typeof refreshPlanCatalogs === "function") {
+                    try { await refreshPlanCatalogs(); } catch (_) { /* ignore */ }
+                  }
+                  if (typeof load === "function") {
+                    try { await load(); } catch (_) { /* ignore */ }
+                  }
+                }}
+              />
+            </Suspense>
           )}
         </div>
       )}

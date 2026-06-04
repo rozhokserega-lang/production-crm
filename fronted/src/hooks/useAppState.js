@@ -71,6 +71,7 @@ import { useLaborState } from "./useLaborState";
 import { useLaborActions } from "./useLaborActions";
 import { useStageActions } from "./useStageActions";
 import { useConsumeDialog } from "./useConsumeDialog";
+import { useHardwareConsumeDialog } from "./useHardwareConsumeDialog";
 import { usePlanDialog } from "./usePlanDialog";
 import { useStrapDialog } from "./useStrapDialog";
 import { useMetalState } from "./useMetalState";
@@ -507,6 +508,12 @@ export function useAppState({ auth }) {
     load: mutationLoad,
     furnitureCustomTemplates,
     normalizeFurnitureKey,
+  });
+
+  const { hardwareConsume, openHardwareConsumeDialog } = useHardwareConsumeDialog({
+    canOperateWarehouse,
+    canOperateProduction,
+    setError,
   });
 
   const openPrasDoneStrapDialog = useCallback((orderId, meta = {}) => {
@@ -981,6 +988,7 @@ export function useAppState({ auth }) {
     notifyFinalStageTelegram,
     openPilkaDoneConsumeDialog,
     openPilkaDoneConsumeDialogOnError,
+    openHardwareConsumeDialog,
     openPrasDoneStrapDialog,
     workshopStrapDeps,
     refreshStrapStock,
@@ -1762,6 +1770,7 @@ export function useAppState({ auth }) {
       workshopFinalDone: finalDoneDialog,
       workshopPlanPrint: planPrintDialog,
       sendToWork: sendToWorkDialog,
+      hardwareConsume,
     },
     actions: {
       overrideOrderStageFromDrawer,
@@ -1779,9 +1788,10 @@ export function useAppState({ auth }) {
       printWarehouseOrderPlanPdf,
       closeConsumeDialog,
       submitConsume,
-      openPilkaDoneConsumeDialog,
-      openPilkaDoneConsumeDialogOnError,
-      handlePlanSectionChange,
+    openPilkaDoneConsumeDialog,
+    openPilkaDoneConsumeDialogOnError,
+    openHardwareConsumeDialog,
+    handlePlanSectionChange,
       handlePlanArticleChange,
       openCreatePlanDialog,
       closeCreatePlanDialog,

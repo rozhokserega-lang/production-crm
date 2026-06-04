@@ -563,6 +563,83 @@ export class OrderService {
     return { board, table, catalog, sections, articles, detailArticles, customTemplates, stock, orders };
   }
 
+  // ==================== Фурнитура (Hardware) ====================
+
+  static async getHardwareStock() {
+    return await callBackend("webGetHardwareStock");
+  }
+
+  static async setHardwareStock(itemId, qty) {
+    return await callBackend("webSetHardwareStock", { itemId, qty });
+  }
+
+  static async addHardwareStock(itemId, delta) {
+    return await callBackend("webAddHardwareStock", { itemId, delta });
+  }
+
+  static async upsertHardwareItem(data) {
+    return await callBackend("webUpsertHardwareItem", data);
+  }
+
+  static async getHardwareBom() {
+    return await callBackend("webGetHardwareBom");
+  }
+
+  static async upsertHardwareBomRow(data) {
+    return await callBackend("webUpsertHardwareBomRow", data);
+  }
+
+  static async deleteHardwareBomRow(id) {
+    return await callBackend("webDeleteHardwareBomRow", { id });
+  }
+
+  static async renameHardwareBomProduct(oldName, newName) {
+    return await callBackend("webRenameHardwareBomProduct", { oldName, newName });
+  }
+
+  static async getHardwareProductMap() {
+    return await callBackend("webGetHardwareProductMap");
+  }
+
+  static async upsertHardwareProductMapRow(data) {
+    return await callBackend("webUpsertHardwareProductMapRow", data);
+  }
+
+  static async deleteHardwareProductMapRow(id) {
+    return await callBackend("webDeleteHardwareProductMapRow", { id });
+  }
+
+  static async getHardwareConsumeHistory(limit = 300) {
+    return await callBackend("webGetHardwareConsumeHistory", { limit });
+  }
+
+  static async getHardwarePlanRequirement(scope, planKey) {
+    return await callBackend("webGetHardwarePlanRequirement", { scope, planKey });
+  }
+
+  static async getHardwareConsumeOptions(orderId) {
+    return await callBackend("webGetHardwareConsumeOptions", { orderId });
+  }
+
+  static async consumeHardwareByOrderId(orderId, lines) {
+    return await callBackend("webConsumeHardwareByOrderId", {
+      orderId,
+      lines: Array.isArray(lines) ? lines : [],
+    });
+  }
+
+  /**
+   * Загружает все данные для вкладки "Фурнитура".
+   */
+  static async loadHardwareDomainData() {
+    const [stock, productMap, consumeHistory] = await Promise.all([
+      this.getHardwareStock().catch(() => []),
+      this.getHardwareProductMap().catch(() => []),
+      this.getHardwareConsumeHistory().catch(() => []),
+    ]);
+    return { stock, productMap, consumeHistory };
+  }
+
   /**
    * Загружает все данные для вкладки "Склад".
    */

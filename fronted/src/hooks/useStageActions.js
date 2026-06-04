@@ -39,6 +39,7 @@ export function useStageActions({
   notifyFinalStageTelegram,
   openPilkaDoneConsumeDialog,
   openPilkaDoneConsumeDialogOnError,
+  openHardwareConsumeDialog,
   openPrasDoneStrapDialog,
   workshopStrapDeps,
   refreshStrapStock,
@@ -157,6 +158,11 @@ export function useStageActions({
         if (action === "webSetShippingDone" && meta.notifyOnFinalStage) {
           notifyFinalStageTelegram(buildNotifyPayload(orderId, meta));
         }
+        if (action === "webSetShippingDone" && typeof openHardwareConsumeDialog === "function") {
+          void load();
+          openHardwareConsumeDialog(orderId, meta);
+          return;
+        }
         if (action === "webSetPilkaDone") {
           openPilkaDoneConsumeDialog(orderId, meta);
           return;
@@ -211,6 +217,7 @@ export function useStageActions({
       notifyFinalStageTelegram,
       openPilkaDoneConsumeDialog,
       openPilkaDoneConsumeDialogOnError,
+      openHardwareConsumeDialog,
       openPrasDoneStrapDialog,
       workshopStrapDeps,
       refreshStrapStock,

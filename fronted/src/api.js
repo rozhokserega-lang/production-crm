@@ -434,6 +434,21 @@ const RPC_MAP = {
   webAddStrapStock: "web_add_strap_stock",
   webConsumeStrapStock: "web_consume_strap_stock",
   webSetStrapStock: "web_set_strap_stock",
+  webGetHardwareStock: "web_get_hardware_stock",
+  webSetHardwareStock: "web_set_hardware_stock",
+  webAddHardwareStock: "web_add_hardware_stock",
+  webUpsertHardwareItem: "web_upsert_hardware_item",
+  webGetHardwareBom: "web_get_hardware_bom",
+  webUpsertHardwareBomRow: "web_upsert_hardware_bom_row",
+  webDeleteHardwareBomRow: "web_delete_hardware_bom_row",
+  webRenameHardwareBomProduct: "web_rename_hardware_bom_product",
+  webGetHardwareProductMap: "web_get_hardware_product_map",
+  webUpsertHardwareProductMapRow: "web_upsert_hardware_product_map_row",
+  webDeleteHardwareProductMapRow: "web_delete_hardware_product_map_row",
+  webGetHardwareConsumeHistory: "web_get_hardware_consume_history",
+  webGetHardwarePlanRequirement: "web_get_hardware_plan_requirement",
+  webGetHardwareConsumeOptions: "web_get_hardware_consume_options",
+  webConsumeHardwareByOrderId: "web_consume_hardware_by_order_id",
   webReduceOrderQty: "web_reduce_order_qty",
   webFinalizeWorkshopOrder: "web_finalize_workshop_order",
   webFinalizeAssemblyOrder: "web_finalize_assembly_order",
@@ -815,6 +830,74 @@ function buildRpcPayload(action, payload = {}) {
       p_strap_type: String(payload.strapType || payload.p_strap_type || "").trim(),
       p_color: String(payload.color || payload.p_color || "").trim(),
       p_qty: Number(payload.qty || payload.p_qty || 0),
+    };
+  }
+  if (action === "webSetHardwareStock" || action === "webAddHardwareStock") {
+    const out = { p_item_id: Number(payload.itemId ?? payload.p_item_id ?? 0) };
+    if (action === "webSetHardwareStock") {
+      out.p_qty = Number(payload.qty ?? payload.p_qty ?? 0);
+    } else {
+      out.p_delta = Number(payload.delta ?? payload.p_delta ?? payload.qty ?? 0);
+    }
+    return out;
+  }
+  if (action === "webUpsertHardwareItem") {
+    return {
+      p_id: payload.id != null ? Number(payload.id) : null,
+      p_name: String(payload.name || payload.p_name || "").trim(),
+      p_size: String(payload.size ?? payload.p_size ?? "").trim(),
+      p_unit: String(payload.unit ?? payload.p_unit ?? "шт").trim() || "шт",
+      p_sort_order: Number(payload.sortOrder ?? payload.p_sort_order ?? 100),
+      p_photo_url: payload.photoUrl ?? payload.p_photo_url ?? null,
+      p_is_active: payload.isActive ?? payload.p_is_active ?? true,
+    };
+  }
+  if (action === "webUpsertHardwareBomRow") {
+    return {
+      p_id: payload.id != null && payload.id !== "" ? Number(payload.id) : null,
+      p_hardware_item_id: Number(payload.hardwareItemId ?? payload.p_hardware_item_id ?? 0),
+      p_bom_product: String(payload.bomProduct || payload.p_bom_product || "").trim(),
+      p_qty: Number(payload.qty ?? payload.p_qty ?? 0),
+    };
+  }
+  if (action === "webDeleteHardwareBomRow") {
+    return { p_id: Number(payload.id ?? payload.p_id ?? 0) };
+  }
+  if (action === "webRenameHardwareBomProduct") {
+    return {
+      p_old: String(payload.oldName ?? payload.p_old ?? "").trim(),
+      p_new: String(payload.newName ?? payload.p_new ?? "").trim(),
+    };
+  }
+  if (action === "webUpsertHardwareProductMapRow") {
+    return {
+      p_id: payload.id != null ? Number(payload.id) : null,
+      p_bom_product: String(payload.bomProduct || payload.p_bom_product || "").trim(),
+      p_section_name: payload.sectionName ?? payload.p_section_name ?? null,
+      p_item_name_pattern: payload.itemNamePattern ?? payload.p_item_name_pattern ?? null,
+      p_sort_order: Number(payload.sortOrder ?? payload.p_sort_order ?? 100),
+      p_is_active: payload.isActive ?? payload.p_is_active ?? true,
+    };
+  }
+  if (action === "webDeleteHardwareProductMapRow") {
+    return { p_id: Number(payload.id ?? payload.p_id ?? 0) };
+  }
+  if (action === "webGetHardwareConsumeHistory") {
+    return { p_limit: Number(payload.limit || payload.p_limit || 300) };
+  }
+  if (action === "webGetHardwarePlanRequirement") {
+    return {
+      p_scope: String(payload.scope || payload.p_scope || "shipment").trim(),
+      p_plan_key: String(payload.planKey ?? payload.p_plan_key ?? "").trim(),
+    };
+  }
+  if (action === "webGetHardwareConsumeOptions") {
+    return { p_order_id: String(payload.orderId || payload.p_order_id || "").trim() };
+  }
+  if (action === "webConsumeHardwareByOrderId") {
+    return {
+      p_order_id: String(payload.orderId || payload.p_order_id || "").trim(),
+      p_lines: payload.lines ?? payload.p_lines ?? [],
     };
   }
   if (action === "webReduceOrderQty") {
