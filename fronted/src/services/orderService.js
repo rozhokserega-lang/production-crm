@@ -142,6 +142,10 @@ export class OrderService {
     return await callBackend("webDeleteShipmentPlanCell", source);
   }
 
+  static async splitShipmentPlanCell(source) {
+    return await callBackend("webSplitShipmentPlanCell", source);
+  }
+
   static async getPlanCatalog() {
     return await callBackend("webGetPlanCatalog");
   }
@@ -573,8 +577,8 @@ export class OrderService {
     return await callBackend("webSetHardwareStock", { itemId, qty });
   }
 
-  static async addHardwareStock(itemId, delta) {
-    return await callBackend("webAddHardwareStock", { itemId, delta });
+  static async addHardwareStock(itemId, delta, note = "") {
+    return await callBackend("webAddHardwareStock", { itemId, delta, note: String(note || "").trim() || undefined });
   }
 
   static async upsertHardwareItem(data) {
@@ -615,6 +619,14 @@ export class OrderService {
 
   static async getHardwarePlanRequirement(scope, planKey) {
     return await callBackend("webGetHardwarePlanRequirement", { scope, planKey });
+  }
+
+  static async getHardwarePlanBoard(scope, planKey) {
+    return await callBackend("webGetHardwarePlanBoard", { scope, planKey });
+  }
+
+  static async getHardwareItemRequirement(sectionName, item, qty) {
+    return await callBackend("webGetHardwareItemRequirement", { sectionName, item, qty });
   }
 
   static async getHardwareConsumeOptions(orderId) {

@@ -2932,6 +2932,86 @@ button:disabled {
   line-height: 1.25;
 }
 
+/* Фурнитура → План: две колонки, без пустой правой панели отгрузки */
+.hardware-plan-layout {
+  display: grid;
+  grid-template-columns: minmax(220px, 260px) minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.hardware-plan-detail-pane {
+  position: sticky;
+  top: 116px;
+  align-self: start;
+  z-index: 10;
+  max-height: calc(100vh - 140px);
+  overflow: auto;
+}
+
+.hardware-plan-detail-pane .selection-summary {
+  max-height: calc(100vh - 160px);
+  overflow-y: auto;
+}
+
+.hardware-plan-main {
+  min-width: 0;
+}
+
+.hardware-plan-table-wrap {
+  overflow-x: auto;
+}
+
+.hardware-plan-table {
+  table-layout: fixed;
+  width: 100%;
+  min-width: 720px;
+}
+
+.hardware-plan-table .hw-col-item {
+  width: 38%;
+  max-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hardware-plan-table .hw-col-material {
+  width: 22%;
+  max-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hardware-plan-table .hw-col-narrow {
+  width: 52px;
+  text-align: center;
+  padding-left: 4px;
+  padding-right: 4px;
+}
+
+.hardware-plan-table .hw-col-order {
+  width: 72px;
+  max-width: 72px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  padding-left: 4px;
+  padding-right: 4px;
+}
+
+.hardware-plan-table .hw-col-status {
+  width: 72px;
+  text-align: center;
+  font-size: 14px;
+  padding-left: 4px;
+  padding-right: 4px;
+}
+
+.hardware-plan-table .shipment-plan-group-row td {
+  max-width: none;
+}
+
 .shipment-plan-group-toggle {
   width: 100%;
   border: 0;
@@ -3572,6 +3652,13 @@ button:disabled {
   }
   .shipment-layout {
     grid-template-columns: 1fr;
+  }
+  .hardware-plan-layout {
+    grid-template-columns: 1fr;
+  }
+  .hardware-plan-detail-pane {
+    position: static;
+    max-height: none;
   }
   .selection-summary-pane {
     position: static;

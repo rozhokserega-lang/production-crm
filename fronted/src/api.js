@@ -447,6 +447,8 @@ const RPC_MAP = {
   webDeleteHardwareProductMapRow: "web_delete_hardware_product_map_row",
   webGetHardwareConsumeHistory: "web_get_hardware_consume_history",
   webGetHardwarePlanRequirement: "web_get_hardware_plan_requirement",
+  webGetHardwarePlanBoard: "web_get_hardware_plan_board",
+  webGetHardwareItemRequirement: "web_get_hardware_item_requirement",
   webGetHardwareConsumeOptions: "web_get_hardware_consume_options",
   webConsumeHardwareByOrderId: "web_consume_hardware_by_order_id",
   webReduceOrderQty: "web_reduce_order_qty",
@@ -517,6 +519,7 @@ const RPC_MAP = {
   webPreviewPlansBatch: "web_preview_plans_batch",
   webCreateShipmentPlanCell: "web_create_shipment_plan_cell",
   webDeleteShipmentPlanCell: "web_delete_shipment_plan_cell_by_source",
+  webSplitShipmentPlanCell: "web_split_shipment_plan_cell",
   webDeleteOrderById: "web_delete_order_by_id",
   webSetOrderAdminComment: "web_set_order_admin_comment",
   webGetPlanCatalog: "web_get_plan_catalog",
@@ -635,6 +638,17 @@ function buildRpcPayload(action, payload = {}) {
     return {
       p_row: row != null ? String(row) : null,
       p_col: col != null ? String(col) : null,
+    };
+  }
+  if (action === "webSplitShipmentPlanCell") {
+    const row = payload.p_row ?? payload.row;
+    const col = payload.p_col ?? payload.col;
+    return {
+      p_row: row != null ? String(row) : null,
+      p_col: col != null ? String(col) : null,
+      p_qty_keep: Number(payload.qtyKeep ?? payload.p_qty_keep ?? 0),
+      p_target_week: String(payload.targetWeek ?? payload.p_target_week ?? "").trim(),
+      p_qty_move: Number(payload.qtyMove ?? payload.p_qty_move ?? 0),
     };
   }
   if (action === "webDeleteOrderById") {
@@ -838,6 +852,8 @@ function buildRpcPayload(action, payload = {}) {
       out.p_qty = Number(payload.qty ?? payload.p_qty ?? 0);
     } else {
       out.p_delta = Number(payload.delta ?? payload.p_delta ?? payload.qty ?? 0);
+      const note = String(payload.note ?? payload.p_note ?? "").trim();
+      if (note) out.p_note = note;
     }
     return out;
   }
@@ -889,6 +905,19 @@ function buildRpcPayload(action, payload = {}) {
     return {
       p_scope: String(payload.scope || payload.p_scope || "shipment").trim(),
       p_plan_key: String(payload.planKey ?? payload.p_plan_key ?? "").trim(),
+    };
+  }
+  if (action === "webGetHardwarePlanBoard") {
+    return {
+      p_scope: String(payload.scope || payload.p_scope || "shipment").trim(),
+      p_plan_key: String(payload.planKey ?? payload.p_plan_key ?? "").trim(),
+    };
+  }
+  if (action === "webGetHardwareItemRequirement") {
+    return {
+      p_section_name: String(payload.sectionName ?? payload.p_section_name ?? "").trim(),
+      p_item: String(payload.item ?? payload.p_item ?? "").trim(),
+      p_qty: Number(payload.qty ?? payload.p_qty ?? 0),
     };
   }
   if (action === "webGetHardwareConsumeOptions") {

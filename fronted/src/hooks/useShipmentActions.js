@@ -206,6 +206,55 @@ export function useShipmentActions({
     }
   }, [canManageOrders, setActionLoading, setError, setPlanPreviews, setSelectedShipments, load, denyActionByRole]);
 
+  const splitSelectedShipmentPlan = useCallback(
+    async (selection, { qtyKeep, targetWeek, qtyMove }) => {
+      if (!canManageOrders) {
+        denyActionByRole("Недостаточно прав для разделения позиции плана.");
+        return false;
+      }
+      if (!selection || !selection.canSendToWork) {
+        setError("Позиция недоступна для разделения.");
+        return false;
+      }
+      setActionLoading("shipment:split");
+      setError("");
+      try {
+        const attempts = buildShipmentCellAttempts(selection);
+        await runShipmentCellActionWithFallback({
+          actionFn: (params) =>
+            OrderService.splitShipmentPlanCell({
+              row: params.p_row,
+              col: params.p_col,
+              qtyKeep,
+              targetWeek,
+              qtyMove,
+            }),
+          attempts,
+          isMissingError: isShipmentCellMissingError,
+          requestBuilder: (p) => ({ p_row: p.row, p_col: p.col }),
+        });
+        setPlanPreviews([]);
+        setSelectedShipments([]);
+        await load();
+        return true;
+      } catch (e) {
+        setError(toUserError(e));
+        return false;
+      } finally {
+        setActionLoading("");
+      }
+    },
+    [
+      canManageOrders,
+      setActionLoading,
+      setError,
+      setPlanPreviews,
+      setSelectedShipments,
+      load,
+      denyActionByRole,
+    ],
+  );
+
   const toggleShipmentSelection = useCallback((payload) => {
     setSelectedShipments((prev) => {
       const exists = prev.some((s) => s.row === payload.row && s.col === payload.col);
@@ -437,6 +486,7 @@ export function useShipmentActions({
     importPlanFileRef,
     sendSelectedShipmentToWork,
     deleteSelectedShipmentPlan,
+    splitSelectedShipmentPlan,
     toggleShipmentSelection,
     previewSelectedShipmentPlan,
     exportSelectedShipmentToExcel,

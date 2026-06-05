@@ -1,4 +1,5 @@
-import { memo, useCallback, useEffect, useRef } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { ShipmentSplitDialog } from "../components/ShipmentSplitDialog";
 import { stripPlanItemMeta, getMaterialLabel } from "../app/orderHelpers";
 import { useShipment } from "../contexts/ShipmentContext";
 import { useCutting } from "../contexts/CuttingContext";
@@ -53,8 +54,12 @@ export const ShipmentView = memo(function ShipmentView() {
     previewSelectedShipmentPlan,
     sendSelectedShipmentToWork,
     deleteSelectedShipmentPlan,
+    splitSelectedShipmentPlan,
     setSelectedShipments,
+    weeks,
   } = useShipment();
+
+  const [splitDialogOpen, setSplitDialogOpen] = useState(false);
 
   const tableRows = shipmentTableRowsForView ?? shipmentTableRowsWithStockStatus;
   const tableSections = shipmentRenderSectionsForView ?? shipmentRenderSections;
@@ -738,6 +743,15 @@ export const ShipmentView = memo(function ShipmentView() {
               >
                 Удалить из плана
               </button>
+              {selectedShipments.length === 1 && !!selectedShipments[0]?.canSendToWork && (
+                <button
+                  className="mini accent"
+                  disabled={actionLoading === "shipment:split" || !canManageOrders}
+                  onClick={() => setSplitDialogOpen(true)}
+                >
+                  Разделить
+                </button>
+              )}
               {storageSelectedCount > 0 && (
                 <button
                   className="mini accent"
@@ -753,6 +767,21 @@ export const ShipmentView = memo(function ShipmentView() {
           </div>
         )}
       </aside>
+
+      <ShipmentSplitDialog
+        open={splitDialogOpen}
+        selection={selectedShipments.length === 1 ? selectedShipments[0] : null}
+        weeks={weeks}
+        loading={actionLoading === "shipment:split"}
+        onClose={() => {
+          if (actionLoading === "shipment:split") return;
+          setSplitDialogOpen(false);
+        }}
+        onConfirm={async (payload) => {
+          const ok = await splitSelectedShipmentPlan(selectedShipments[0], payload);
+          if (ok) setSplitDialogOpen(false);
+        }}
+      />
     </div>
   );
 });
