@@ -187,7 +187,9 @@ export function HardwareBomGraph({ canOperateWarehouse = false }) {
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const selectedRef = useRef(selected);
-  selectedRef.current = selected;
+  useEffect(() => {
+    selectedRef.current = selected;
+  }, [selected]);
 
   const loadAll = useCallback(async () => {
     const [bom, map, stock, sectionCatalog, secItems] = await Promise.all([

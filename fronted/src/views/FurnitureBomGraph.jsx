@@ -225,7 +225,9 @@ export function FurnitureBomGraph({
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const selectedRef = useRef(selected);
-  selectedRef.current = selected;
+  useEffect(() => {
+    selectedRef.current = selected;
+  }, [selected]);
 
   const loadCatalog = useCallback(async () => {
     const [secItems, admin] = await Promise.all([
@@ -316,7 +318,9 @@ export function FurnitureBomGraph({
     [selectedTemplate, selected],
   );
   const templateNameRef = useRef(templateName);
-  templateNameRef.current = templateName;
+  useEffect(() => {
+    templateNameRef.current = templateName;
+  }, [templateName]);
 
   const selectedDetails = useMemo(() => {
     const list = Array.isArray(selectedTemplate?.details) ? selectedTemplate.details : [];
