@@ -461,10 +461,7 @@ export function FurnitureView({
     <>
       {furnitureLoading && <div className="empty">Загружаю таблицу Мебель.xlsx...</div>}
       {!furnitureLoading && furnitureError && <div className="error">{furnitureError}</div>}
-      {!furnitureLoading && !furnitureError && furnitureSheetData.headers.length === 0 && (
-        <div className="empty">В файле нет данных для отображения.</div>
-      )}
-      {!furnitureLoading && !furnitureError && furnitureSheetData.headers.length > 0 && (
+      {!furnitureLoading && (
         <div style={{ display: "grid", gap: 12 }}>
           <div className="tabs tabs--overview-sub">
             <button
@@ -489,7 +486,10 @@ export function FurnitureView({
               Схема (блупринт)
             </button>
           </div>
-          {furnitureSubTab === "main" && (
+          {furnitureSubTab === "main" && furnitureSheetData.headers.length === 0 && (
+            <div className="empty">В файле Мебель.xlsx нет данных. Схема и система хранения доступны во вкладках выше.</div>
+          )}
+          {furnitureSubTab === "main" && furnitureSheetData.headers.length > 0 && (
             <div
               className="sheet-table-wrap"
               style={{
