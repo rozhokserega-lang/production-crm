@@ -368,6 +368,7 @@ const LONG_RUNNING_RPC_ACTIONS = new Set([
   "webGetOrdersPras",
   "webGetOrdersShipped",
   "webGetOrdersPostWorkshop",
+  "webGetWarehouseKitOrders",
   "webGetOrderStats",
   "webGetShipmentBoard",
   "webGetShipmentTable",
@@ -382,6 +383,9 @@ const LONG_RUNNING_RPC_ACTIONS = new Set([
   "webSetKromkaDone",
   "webSetPrasDone",
   "webSetAssemblyDone",
+  "webSetWarehouseKitReady",
+  "webSetWarehouseKitInWork",
+  "webSetWarehouseKitDone",
   "webSetShippingDone",
   "webSetPilkaPause",
   "webSetKromkaPause",
@@ -398,7 +402,9 @@ function getRpcCandidateTimeoutMs(action, isLastCandidate) {
 }
 
 function shouldRetryRpcOnNetworkError(action) {
-  return /^webSet(Pilka|Kromka|Pras|Assembly|Shipping)/.test(action)
+  return /^webSet(Pilka|Kromka|Pras|Assembly|WarehouseKit|Shipping)/.test(action)
+    || action === "webSetWarehouseKitInWork"
+    || action === "webSetWarehouseKitDone"
     || action.startsWith("webConsume")
     || action === "webGetConsumeOptions";
 }
@@ -412,6 +418,7 @@ const RPC_MAP = {
   webGetOrdersPras: "web_get_orders_pras",
   webGetOrdersShipped: "web_get_orders_shipped",
   webGetOrdersPostWorkshop: "web_get_orders_post_workshop",
+  webGetWarehouseKitOrders: "web_get_warehouse_kit_orders",
   webGetMaterialsStock: "web_get_materials_stock",
   webUpdateMaterialsStockSheetSize: "web_update_materials_stock_sheet_size",
   webGetConsumeHistory: "web_get_consume_history",
@@ -530,6 +537,9 @@ const RPC_MAP = {
   webSetKromkaDone: "web_set_stage_done",
   webSetPrasDone: "web_set_stage_done",
   webSetAssemblyDone: "web_set_stage_done",
+  webSetWarehouseKitReady: "web_set_stage_done",
+  webSetWarehouseKitInWork: "web_set_warehouse_kit_in_work",
+  webSetWarehouseKitDone: "web_set_warehouse_kit_done",
   webSetShippingDone: "web_set_stage_done",
   webSetPilkaPause: "web_set_stage_pause",
   webSetKromkaPause: "web_set_stage_pause",
@@ -548,12 +558,19 @@ function stageFromAction(action) {
   if (action.includes("Kromka")) return "kromka";
   if (action.includes("Pras")) return "pras";
   if (action.includes("Assembly")) return "assembly";
+  if (action.includes("WarehouseKit")) return "warehouse_kit";
   if (action.includes("Shipping")) return "shipping";
   return "";
 }
 
 function buildRpcPayload(action, payload = {}) {
-  if (/^webSet(Pilka|Kromka|Pras|Assembly|Shipping)(InWork|Done|Pause|Wait)?$/.test(action)) {
+  if (action === "webSetWarehouseKitInWork" || action === "webSetWarehouseKitDone") {
+    return { p_order_id: payload.orderId };
+  }
+  if (action === "webSetWarehouseKitReady") {
+    return { p_order_id: payload.orderId, p_stage: "warehouse_kit" };
+  }
+  if (/^webSet(Pilka|Kromka|Pras|Assembly|WarehouseKit|Shipping)(InWork|Done|Pause|Wait|Ready)?$/.test(action)) {
     const rpcPayload = {
       p_order_id: payload.orderId,
       p_stage: stageFromAction(action),

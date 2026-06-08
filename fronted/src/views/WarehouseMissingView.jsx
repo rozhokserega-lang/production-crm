@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { PRODUCTS_CATALOG } from "../constants/missingParts";
+import { WarehouseKitOrdersView } from "./WarehouseKitOrdersView";
 
 const OTHER_PRODUCT_KEY = "__OTHER__";
 const DONE_STATUS = "✅ Готово";
@@ -20,7 +21,15 @@ export const WarehouseMissingView = memo(function WarehouseMissingView({
   sectionArticleRows,
   materialsStockRows,
   formatProductName,
+  runAction,
+  openHardwareConsumeDialog,
+  getMaterialLabel,
+  canOperateWarehouse = false,
+  canOperateProduction = false,
+  isActionPending,
+  onDataChanged,
 }) {
+  const [mainTab, setMainTab] = useState("create");
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
   const [sendingId, setSendingId] = useState(null);
@@ -216,6 +225,36 @@ export const WarehouseMissingView = memo(function WarehouseMissingView({
 
   return (
     <div className="warehouse-view">
+      <div className="tabs" style={{ marginBottom: 16 }}>
+        <button
+          type="button"
+          className={mainTab === "create" ? "tab active" : "tab"}
+          onClick={() => setMainTab("create")}
+        >
+          Создать заказ
+        </button>
+        <button
+          type="button"
+          className={mainTab === "orders" ? "tab active" : "tab"}
+          onClick={() => setMainTab("orders")}
+        >
+          Заказы
+        </button>
+      </div>
+
+      {mainTab === "orders" ? (
+        <WarehouseKitOrdersView
+          callBackend={callBackend}
+          runAction={runAction}
+          openHardwareConsumeDialog={openHardwareConsumeDialog}
+          getMaterialLabel={getMaterialLabel}
+          canOperateWarehouse={canOperateWarehouse}
+          canOperateProduction={canOperateProduction}
+          isActionPending={isActionPending}
+          onDataChanged={onDataChanged}
+        />
+      ) : (
+        <>
       <div className="warehouse-header">
         <div>
           <h2 style={{ margin: 0, fontSize: 20 }}>Заказ замены детали</h2>
@@ -444,6 +483,8 @@ export const WarehouseMissingView = memo(function WarehouseMissingView({
             )}
           </div>
         </div>
+      )}
+        </>
       )}
     </div>
   );

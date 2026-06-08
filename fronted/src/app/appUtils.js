@@ -32,10 +32,28 @@ const ACTION_OPTIMISTIC_MAP = {
     value: "Собрано",
     pipelineStage: "assembled",
   },
+  webSetWarehouseKitReady: {
+    field: "overallStatus",
+    snakeField: "overall_status",
+    value: "📦 На комплектации",
+    pipelineStage: "warehouse_kit",
+  },
+  webSetWarehouseKitInWork: {
+    field: "overallStatus",
+    snakeField: "overall_status",
+    value: "🔨 В комплектации",
+    pipelineStage: "warehouse_kit",
+  },
+  webSetWarehouseKitDone: {
+    field: "overallStatus",
+    snakeField: "overall_status",
+    value: "✅ Комплектация готова",
+    pipelineStage: "warehouse_kit",
+  },
   webSetShippingDone: {
     field: "overallStatus",
     snakeField: "overall_status",
-    value: "Отгружено",
+    value: "📦 На упаковке",
     pipelineStage: "shipped",
   },
 };

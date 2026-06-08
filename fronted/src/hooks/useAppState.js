@@ -988,7 +988,6 @@ export function useAppState({ auth }) {
     notifyFinalStageTelegram,
     openPilkaDoneConsumeDialog,
     openPilkaDoneConsumeDialogOnError,
-    openHardwareConsumeDialog,
     openPrasDoneStrapDialog,
     workshopStrapDeps,
     refreshStrapStock,

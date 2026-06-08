@@ -11,6 +11,18 @@ export class OrderService {
     return await callBackend("webGetOrdersAll");
   }
 
+  static async getWarehouseKitOrders() {
+    return await callBackend("webGetWarehouseKitOrders");
+  }
+
+  static async setWarehouseKitInWork(orderId) {
+    return await callBackend("webSetWarehouseKitInWork", { orderId });
+  }
+
+  static async setWarehouseKitDone(orderId) {
+    return await callBackend("webSetWarehouseKitDone", { orderId });
+  }
+
   static async getOrdersByStage(stage) {
     const actions = {
       pilka: "webGetOrdersPilka",
@@ -18,6 +30,7 @@ export class OrderService {
       pras: "webGetOrdersPras",
       shipped: "webGetOrdersShipped",
       post_workshop: "webGetOrdersPostWorkshop",
+      warehouse_kit: "webGetWarehouseKitOrders",
     };
     const action = actions[stage] || "webGetOrdersAll";
     return await callBackend(action);
@@ -520,6 +533,7 @@ export class OrderService {
       kromka: "webSetKromkaDone",
       pras: "webSetPrasDone",
       assembly: "webSetAssemblyDone",
+      warehouse_kit: "webSetWarehouseKitReady",
       shipping: "webSetShippingDone",
     };
     const action = actionMap[stage] || "webSetPilkaDone";

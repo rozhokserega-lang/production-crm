@@ -206,6 +206,13 @@ function AppInner({ onAuthChangeRef }) {
             sectionArticleRows={shipment.sectionArticleRows}
             materialsStockRows={shipment.materialsStockRows}
             formatProductName={furnitureProductLabel}
+            runAction={workshop.runAction}
+            openHardwareConsumeDialog={actions.openHardwareConsumeDialog}
+            getMaterialLabel={getMaterialLabel}
+            canOperateWarehouse={auth.canOperateWarehouse}
+            canOperateProduction={auth.canOperateProduction}
+            isActionPending={workshop.isActionPending}
+            onDataChanged={shell.mutationLoad}
           />
         );
       case "strapStock":

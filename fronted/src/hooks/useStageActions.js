@@ -39,7 +39,6 @@ export function useStageActions({
   notifyFinalStageTelegram,
   openPilkaDoneConsumeDialog,
   openPilkaDoneConsumeDialogOnError,
-  openHardwareConsumeDialog,
   openPrasDoneStrapDialog,
   workshopStrapDeps,
   refreshStrapStock,
@@ -92,7 +91,7 @@ export function useStageActions({
       try {
         await OrderService.updateOrderStage(orderId, action, payload);
 
-        if (action === "webSetShippingDone") {
+        if (action === "webSetWarehouseKitReady" || action === "webSetShippingDone") {
           try {
             await OrderService.completeReplacementForWorkshopOrder(targetOrderId);
           } catch (_) {
@@ -155,13 +154,8 @@ export function useStageActions({
           openPrasDoneStrapDialog(orderId, { ...meta, mode: "pause" });
           return;
         }
-        if (action === "webSetShippingDone" && meta.notifyOnFinalStage) {
+        if (action === "webSetWarehouseKitReady" && meta.notifyOnFinalStage) {
           notifyFinalStageTelegram(buildNotifyPayload(orderId, meta));
-        }
-        if (action === "webSetShippingDone" && typeof openHardwareConsumeDialog === "function") {
-          void load();
-          openHardwareConsumeDialog(orderId, meta);
-          return;
         }
         if (action === "webSetPilkaDone") {
           openPilkaDoneConsumeDialog(orderId, meta);
@@ -217,7 +211,6 @@ export function useStageActions({
       notifyFinalStageTelegram,
       openPilkaDoneConsumeDialog,
       openPilkaDoneConsumeDialogOnError,
-      openHardwareConsumeDialog,
       openPrasDoneStrapDialog,
       workshopStrapDeps,
       refreshStrapStock,

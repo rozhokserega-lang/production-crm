@@ -18,6 +18,7 @@ const STAGE_PILL_CLASS = {
   pras:             "stage-pill stage-pill--pras",
   workshop_complete:"stage-pill stage-pill--complete",
   assembled:        "stage-pill stage-pill--assembled",
+  warehouse_kit:    "stage-pill stage-pill--ready",
   ready_to_ship:    "stage-pill stage-pill--ready",
   shipped:          "stage-pill stage-pill--shipped",
 };
@@ -28,6 +29,7 @@ const STAGE_ICON = {
   pras:             "⚙",
   workshop_complete:"✓",
   assembled:        "📦",
+  warehouse_kit:    "📦",
   ready_to_ship:    "🚚",
   shipped:          "✅",
 };
@@ -488,15 +490,23 @@ export const WorkshopView = memo(function WorkshopView({
                 {showDone && (
                   <button
                     className="mini ok"
-                    disabled={isPending(`webSetShippingDone:${orderId}`) || packagingDone || !canOperateProduction}
+                    disabled={isPending(`webSetWarehouseKitReady:${orderId}`) || packagingDone || !canOperateProduction}
                     onClick={() =>
-                      runAction("webSetShippingDone", orderId, {}, {
-                        notifyOnFinalStage: true,
-                        item: o.item,
-                        material: getMaterialLabel(o.item, o.material || o.colorName || ""),
+                      openFinalDoneDialog(orderId, {
+                        stage: "final",
+                        order: o,
+                        qty: orderQty,
                         week: o.week,
-                        qty: o.qty,
-                        executor: executorByOrder[orderId] || o.prasExecutor || "",
+                        item: o.item,
+                        itemLabel: rawItem,
+                        material: getMaterialLabel(o.item, o.material || o.colorName || ""),
+                        notifyMeta: {
+                          item: o.item,
+                          material: getMaterialLabel(o.item, o.material || o.colorName || ""),
+                          week: o.week,
+                          qty: o.qty,
+                          executor: executorByOrder[orderId] || o.prasExecutor || "",
+                        },
                       })
                     }
                   >

@@ -9,6 +9,9 @@ export const STAGE_SYNC_META = {
   webSetPrasDone: { code: "pras_done", label: "Присадка: готово" },
   webSetPrasPause: { code: "pras_pause", label: "Присадка: пауза" },
   webSetAssemblyDone: { code: "assembly_done", label: "Сборка: готово" },
+  webSetWarehouseKitReady: { code: "warehouse_kit", label: "Финал: на склад" },
+  webSetWarehouseKitInWork: { code: "warehouse_kit_in_work", label: "Склад: в работу" },
+  webSetWarehouseKitDone: { code: "warehouse_kit_done", label: "Склад: готово" },
   webSetShippingDone: { code: "shipping_done", label: "Отгрузка: готово" },
 };
 

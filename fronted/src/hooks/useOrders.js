@@ -105,7 +105,7 @@ export function useWorkshopRows({
       if (effectiveTab === "kromka") return lane === "kromka";
       if (effectiveTab === "pras") return lane === "pras";
       if (effectiveTab === "assembly") return pilkaDone && kromkaDone && prasDone && !assemblyDone && !shipped;
-      if (effectiveTab === "done") return assemblyDone && !onPackaging && !shipped;
+      if (effectiveTab === "done") return assemblyDone && !onPackaging && !shipped && lane !== "warehouse_kit";
       return true;
     });
     const list = strapStockPlanning ? arr.filter(orderCountsTowardStrapDemand) : arr;

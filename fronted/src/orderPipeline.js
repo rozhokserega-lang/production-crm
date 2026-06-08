@@ -13,6 +13,8 @@ export const PipelineStage = {
   WORKSHOP_COMPLETE: "workshop_complete",
   /** В assembly_status есть «собрано», но ещё не финальная отгрузка. */
   ASSEMBLED: "assembled",
+  /** На складе: комплектация фурнитурой после финала цеха. */
+  WAREHOUSE_KIT: "warehouse_kit",
   /** Готово к отправке клиенту (по overall). */
   READY_TO_SHIP: "ready_to_ship",
   /** Отгружено / упаковано (финал). */
@@ -67,6 +69,7 @@ export function inferPipelineStage(order) {
   const pras = lc(order?.prasStatus ?? order?.pras_status ?? order?.pras);
 
   if (isCustomerShippedOverall(overall)) return PipelineStage.SHIPPED;
+  if (overall.includes("комплектац")) return PipelineStage.WAREHOUSE_KIT;
   if (overall.includes("готово к отправке")) return PipelineStage.READY_TO_SHIP;
   if (assembly.includes("собрано")) return PipelineStage.ASSEMBLED;
 
@@ -87,6 +90,12 @@ export function getOrderStageDisplayLabel(order) {
   switch (ps) {
     case PipelineStage.SHIPPED:
       return "Отгружено";
+    case PipelineStage.WAREHOUSE_KIT: {
+      const overall = lc(order?.overallStatus ?? order?.overall_status ?? order?.overall);
+      if (overall.includes("комплектация готова")) return "Комплектация готова";
+      if (overall.includes("в комплектации")) return "В комплектации";
+      return "На комплектации";
+    }
     case PipelineStage.READY_TO_SHIP:
       return "Готово к отправке";
     case PipelineStage.ASSEMBLED:
@@ -128,6 +137,8 @@ export function getOverviewLaneId(order) {
       return OVERVIEW_LANE_WORKSHOP_COMPLETE;
     case PipelineStage.ASSEMBLED:
       return OVERVIEW_LANE_ASSEMBLED;
+    case PipelineStage.WAREHOUSE_KIT:
+      return "warehouse_kit";
     case PipelineStage.READY_TO_SHIP:
       return OVERVIEW_LANE_READY_TO_SHIP;
     case PipelineStage.SHIPPED:

@@ -230,7 +230,7 @@ export function useWorkshopFinalDone({
             void mutationLoad();
           }
         } else if (qtyReady >= orderQty) {
-          await runAction("webSetShippingDone", orderId, {}, {
+          await runAction("webSetWarehouseKitReady", orderId, {}, {
             notifyOnFinalStage: true,
             ...(meta?.notifyMeta || {}),
           });
