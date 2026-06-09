@@ -206,6 +206,28 @@ describe("getShipmentStageKey", () => {
     ).toBe("on_kromka_wait");
   });
 
+  it("maps warehouse_kit order to warehouse stage, not pilka", () => {
+    const maps = buildOrderMaps([
+      {
+        item: "Cremona. 1350x700. Дуб Вотан",
+        week: "78",
+        source_row_id: "manual:cremona",
+        pipeline_stage: "warehouse_kit",
+        overall_status: "На комплектации",
+        pilka_status: "готов",
+      },
+    ]);
+    expect(
+      getShipmentStageKey(
+        { ...inactiveCell, week: "78" },
+        "manual:cremona",
+        maps,
+        "Cremona. 1350x700. Дуб Вотан",
+        "дуб вотан",
+      ),
+    ).toBe("warehouse_kit_wait");
+  });
+
   it("keeps on pilka for active in_work cell without linked order", () => {
     expect(
       getShipmentStageKey(
@@ -232,6 +254,11 @@ describe("passesShipmentStageFilter", () => {
   it("hides plan_idle from awaiting filter", () => {
     expect(passesShipmentStageFilter("plan_idle", filters)).toBe(false);
     expect(passesShipmentStageFilter("awaiting", filters)).toBe(true);
+  });
+
+  it("hides warehouse_kit from pilka filter", () => {
+    expect(passesShipmentStageFilter("warehouse_kit_wait", { ...filters, showOnPilka: true })).toBe(false);
+    expect(passesShipmentStageFilter("on_pilka_wait", { ...filters, showOnPilka: true })).toBe(true);
   });
 
   it("hides plan_idle when all stage filters are off", () => {

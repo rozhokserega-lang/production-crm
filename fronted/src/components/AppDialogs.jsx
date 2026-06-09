@@ -13,6 +13,7 @@ export function AppDialogs({
   shell,
   admin,
   shipment,
+  labor,
   dialogs,
   packaging,
   actions,
@@ -125,6 +126,7 @@ export function AppDialogs({
         onAdminStageOverride={actions.overrideOrderStageFromDrawer}
         canViewOrderTimeline={admin.canAdminSettings || admin.canManageOrders}
         workSchedule={workSchedule}
+        laborOrdersRows={labor?.laborEstimateRows || labor?.laborOrdersRows || []}
       />
 
       <ConsumeDialog

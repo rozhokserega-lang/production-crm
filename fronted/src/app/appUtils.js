@@ -563,6 +563,13 @@ export function passesShipmentStageFilter(stageKey, filters) {
   if (stageKey === "ready_assembly") return filters.showReadyAssembly;
   if (stageKey === "assembled_wait_ship") return filters.showAwaitShipment;
   if (stageKey === "shipped") return filters.showShipped;
+  if (
+    stageKey === "warehouse_kit_wait"
+    || stageKey === "warehouse_kit_work"
+    || stageKey === "warehouse_kit_done"
+  ) {
+    return false;
+  }
   if (stageKey === "plan_idle") {
     return false;
   }

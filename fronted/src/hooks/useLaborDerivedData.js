@@ -1,9 +1,113 @@
 import { useMemo } from "react";
+import {
+  laborNormHasValues,
+  laborNormPerQty,
+  normalizeLaborNormRow,
+  resolveLaborGroup,
+  sortLaborGroups,
+} from "../app/laborGroupHelpers";
 
 const isImportedLaborRow = (row) =>
   Boolean(row?.importedLocal) || /^import-/i.test(String(row?.orderId || "").trim());
 
-export function useLaborDerivedData({ view, filtered, laborSort }) {
+function buildFactGroups(laborTableRows) {
+  const completed = laborTableRows.filter(
+    (x) => !isImportedLaborRow(x) && x.pilkaMin > 0 && x.kromkaMin > 0 && x.prasMin > 0,
+  );
+  const grouped = new Map();
+  completed.forEach((x) => {
+    const group = resolveLaborGroup(x.item);
+    if (!group) return;
+    if (!grouped.has(group)) {
+      grouped.set(group, {
+        group,
+        orders: 0,
+        qty: 0,
+        pilkaMin: 0,
+        kromkaMin: 0,
+        prasMin: 0,
+        assemblyMin: 0,
+        totalMin: 0,
+        lastDate: "",
+      });
+    }
+    const g = grouped.get(group);
+    g.orders += 1;
+    g.qty += Number(x.qty || 0);
+    g.pilkaMin += Number(x.pilkaMin || 0);
+    g.kromkaMin += Number(x.kromkaMin || 0);
+    g.prasMin += Number(x.prasMin || 0);
+    g.assemblyMin += Number(x.assemblyMin || 0);
+    g.totalMin += Number(x.totalMin || 0);
+    const d = String(x.dateFinished || "");
+    if (d && (!g.lastDate || d > g.lastDate)) g.lastDate = d;
+  });
+  return grouped;
+}
+
+function buildNormsMap(laborNormsRows) {
+  const map = new Map();
+  (Array.isArray(laborNormsRows) ? laborNormsRows : []).forEach((raw) => {
+    const norm = normalizeLaborNormRow(raw);
+    if (!norm.groupName) return;
+    map.set(norm.groupName, norm);
+  });
+  return map;
+}
+
+function finalizeLaborOrderRow({ group, fact, norm }) {
+  const hasNorm = laborNormHasValues(norm);
+  const hasFact = Boolean(fact && fact.orders > 0);
+  const normPerQty = hasNorm ? laborNormPerQty(norm) : null;
+  const factPerQty = hasFact && fact.qty > 0
+    ? {
+        pilka: fact.pilkaMin / fact.qty,
+        kromka: fact.kromkaMin / fact.qty,
+        pras: fact.prasMin / fact.qty,
+        assembly: fact.assemblyMin / fact.qty,
+        total: fact.totalMin / fact.qty,
+      }
+    : null;
+
+  const perQty = hasNorm ? normPerQty : factPerQty;
+  const source = hasNorm ? "norm" : hasFact ? "fact" : "empty";
+  const displayPilka = hasNorm ? Number(norm.pilkaMin || 0) : Number(fact?.pilkaMin || 0);
+  const displayKromka = hasNorm ? Number(norm.kromkaMin || 0) : Number(fact?.kromkaMin || 0);
+  const displayPras = hasNorm ? Number(norm.prasMin || 0) : Number(fact?.prasMin || 0);
+  const displayAssembly = hasNorm ? Number(norm.assemblyMin || 0) : Number(fact?.assemblyMin || 0);
+  const displayTotal = displayPilka + displayKromka + displayPras + displayAssembly;
+  const totalForShare = displayTotal > 0 ? displayTotal : 0;
+
+  return {
+    group,
+    source,
+    sourceLabel: source === "norm" ? "Норматив" : source === "fact" ? "Факт" : "—",
+    hasNorm,
+    hasFact,
+    normQtyUnit: hasNorm ? norm.qtyUnit : null,
+    orders: Number(fact?.orders || 0),
+    qty: Number(fact?.qty || 0),
+    pilkaMin: displayPilka,
+    kromkaMin: displayKromka,
+    prasMin: displayPras,
+    assemblyMin: displayAssembly,
+    totalMin: displayTotal,
+    lastDate: fact?.lastDate || "",
+    laborPerOrderHour: fact && fact.orders > 0 ? fact.totalMin / fact.orders / 60 : 0,
+    laborPerQtyMin: perQty ? perQty.total : 0,
+    laborPerQtyHour: perQty ? perQty.total / 60 : 0,
+    pilkaPerQtyMin: perQty ? perQty.pilka : 0,
+    kromkaPerQtyMin: perQty ? perQty.kromka : 0,
+    prasPerQtyMin: perQty ? perQty.pras : 0,
+    assemblyPerQtyMin: perQty ? perQty.assembly : 0,
+    factPerQtyMin: factPerQty ? factPerQty.total : null,
+    pilkaShare: totalForShare > 0 ? (displayPilka * 100) / totalForShare : 0,
+    kromkaShare: totalForShare > 0 ? (displayKromka * 100) / totalForShare : 0,
+    prasShare: totalForShare > 0 ? (displayPras * 100) / totalForShare : 0,
+  };
+}
+
+export function useLaborDerivedData({ view, filtered, laborSort, laborNormsRows = [] }) {
   const laborTableRows = useMemo(() => {
     if (view !== "labor") return [];
     const toNum = (v) => Number(v || 0);
@@ -32,99 +136,19 @@ export function useLaborDerivedData({ view, filtered, laborSort }) {
 
   const laborOrdersRows = useMemo(() => {
     if (view !== "labor") return [];
-    const completed = laborTableRows.filter(
-      (x) => !isImportedLaborRow(x) && x.pilkaMin > 0 && x.kromkaMin > 0 && x.prasMin > 0,
-    );
-    const extractSizeToken = (value) => {
-      const raw = String(value || "");
-      const m = raw.match(/(\d{2,4})\s*[_xх]\s*(\d{2,4})/i);
-      if (!m) return "";
-      return `${m[1]}_${m[2]}`;
-    };
-    const norm = (v) =>
-      String(v || "")
-        .toLowerCase()
-        .replace(/[ё]/g, "е")
-        .replace(/[^\p{L}\p{N}\s]/gu, " ")
-        .replace(/\s+/g, " ")
-        .trim();
-    const resolveGroup = (itemRaw) => {
-      const n = norm(itemRaw);
-      const sizeToken = extractSizeToken(itemRaw);
-      // "Обвязка (1000_80)" and "1000_80" should be one group for labor aggregation.
-      // IMPORTANT: do not treat any "1350x650" sized product as a strap.
-      // Only explicit "обвязка" items are grouped as straps.
-      if (n.includes("обвязка")) {
-        return sizeToken ? `Обвязка ${sizeToken}` : "Обвязка";
-      }
-      if (n.includes("1153") && n.includes("320")) return "";
-      if (n.includes("avella lite") || n.includes("авелла лайт") || n.includes("авела лайт")) return "Avella lite";
-      if (n.includes("avella") || n.includes("авелла") || n.includes("авела")) return "Avella";
-      if (n.includes("cremona") || n.includes("кремона")) return "Cremona";
-      if (n.includes("stabile") || n.includes("стабиле")) return "Stabile";
-      if (n.includes("donini grande")) return "Donini Grande";
-      if (n.includes("donini r")) return "Donini r";
-      if (n.includes("donini")) return "Donini";
-      if (n.includes("solito2")) return "Solito2";
-      if (n.includes("solito") || n.includes("солито")) return "Solito";
-      if (n.includes("премьер") || n.includes("premier")) return "Премьер";
-      if (n.includes("тв лофт") || n.includes("tv loft") || n.includes("тумба под тв")) return "ТВ Лофт";
-      if (n.includes("классико") || n.includes("classico")) return "Классико";
-      if (n.includes("siena")) return "Siena";
-      const first = String(itemRaw || "").split(".")[0].trim();
-      return first || "Прочее";
-    };
-    const grouped = new Map();
-    completed.forEach((x) => {
-      const group = resolveGroup(x.item);
-      if (!group) return;
-      if (!grouped.has(group)) {
-        grouped.set(group, {
-          group,
-          orders: 0,
-          qty: 0,
-          pilkaMin: 0,
-          kromkaMin: 0,
-          prasMin: 0,
-          totalMin: 0,
-          lastDate: "",
-        });
-      }
-      const g = grouped.get(group);
-      g.orders += 1;
-      g.qty += Number(x.qty || 0);
-      g.pilkaMin += Number(x.pilkaMin || 0);
-      g.kromkaMin += Number(x.kromkaMin || 0);
-      g.prasMin += Number(x.prasMin || 0);
-      g.totalMin += Number(x.totalMin || 0);
-      const d = String(x.dateFinished || "");
-      if (d && (!g.lastDate || d > g.lastDate)) g.lastDate = d;
-    });
-    const ORDER = ["Avella", "Avella lite", "Cremona", "Donini", "Donini Grande", "Donini r", "Solito", "Solito2", "Stabile", "Премьер", "ТВ Лофт"];
-    const rank = new Map(ORDER.map((x, i) => [x, i]));
-    return [...grouped.values()]
-      .map((g) => {
-        const total = Number(g.totalMin || 0);
-        const pilkaShare = total > 0 ? (g.pilkaMin * 100) / total : 0;
-        const kromkaShare = total > 0 ? (g.kromkaMin * 100) / total : 0;
-        const prasShare = total > 0 ? (g.prasMin * 100) / total : 0;
-        return {
-          ...g,
-          laborPerOrderHour: g.orders > 0 ? total / g.orders / 60 : 0,
-          laborPerQtyMin: g.qty > 0 ? total / g.qty : 0,
-          laborPerQtyHour: g.qty > 0 ? total / g.qty / 60 : 0,
-          pilkaShare,
-          kromkaShare,
-          prasShare,
-        };
-      })
-      .sort((a, b) => {
-        const ra = rank.has(a.group) ? rank.get(a.group) : 9999;
-        const rb = rank.has(b.group) ? rank.get(b.group) : 9999;
-        if (ra !== rb) return ra - rb;
-        return a.group.localeCompare(b.group, "ru");
-      });
-  }, [laborTableRows, view]);
+    const factGroups = buildFactGroups(laborTableRows);
+    const normsMap = buildNormsMap(laborNormsRows);
+    const allGroups = new Set([...factGroups.keys(), ...normsMap.keys()]);
+
+    return [...allGroups]
+      .map((group) => finalizeLaborOrderRow({
+        group,
+        fact: factGroups.get(group),
+        norm: normsMap.get(group),
+      }))
+      .filter((row) => row.source !== "empty")
+      .sort((a, b) => sortLaborGroups(a.group, b.group));
+  }, [laborTableRows, laborNormsRows, view]);
 
   return { laborTableRows, laborOrdersRows };
 }

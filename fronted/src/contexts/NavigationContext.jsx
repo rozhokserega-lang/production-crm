@@ -6,6 +6,7 @@ export function NavigationProvider({ children }) {
   const [view, setView] = useState("shipment");
   const [overviewSubView, setOverviewSubView] = useState("kanban");
   const [warehouseSubView, setWarehouseSubView] = useState("sheets");
+  const [warehouseMissingMainTab, setWarehouseMissingMainTab] = useState("create");
   const [statsSort, setStatsSort] = useState("stage");
   const [orderDrawerId, setOrderDrawerId] = useState("");
 
@@ -21,6 +22,8 @@ export function NavigationProvider({ children }) {
       setOverviewSubView,
       warehouseSubView,
       setWarehouseSubView,
+      warehouseMissingMainTab,
+      setWarehouseMissingMainTab,
       statsSort,
       setStatsSort,
       orderDrawerId,
@@ -31,6 +34,7 @@ export function NavigationProvider({ children }) {
       view,
       overviewSubView,
       warehouseSubView,
+      warehouseMissingMainTab,
       statsSort,
       orderDrawerId,
       navigateTo,

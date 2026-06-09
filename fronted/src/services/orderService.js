@@ -335,6 +335,11 @@ export class OrderService {
     return await callBackend("webGetLaborKits");
   }
 
+  static async getLaborNorms() {
+    const rows = await callBackend("webGetLaborNorms");
+    return Array.isArray(rows) ? rows : [];
+  }
+
   static async upsertLaborFact(data) {
     return await callBackend("webUpsertLaborFact", data);
   }
@@ -345,6 +350,14 @@ export class OrderService {
 
   static async deleteLaborKit(id) {
     return await callBackend("webDeleteLaborKit", { id });
+  }
+
+  static async upsertLaborNorm(data) {
+    return await callBackend("webUpsertLaborNorm", data);
+  }
+
+  static async deleteLaborNorm(id) {
+    return await callBackend("webDeleteLaborNorm", { id });
   }
 
   // ==================== Статистика ====================

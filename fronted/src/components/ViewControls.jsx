@@ -538,6 +538,20 @@ export function ViewControls({
           </button>
           <button
             type="button"
+            className={laborSubView === "norms" ? "tab active" : "tab"}
+            onClick={() => setLaborSubView("norms")}
+          >
+            Нормативы
+          </button>
+          <button
+            type="button"
+            className={laborSubView === "calculator" ? "tab active" : "tab"}
+            onClick={() => setLaborSubView("calculator")}
+          >
+            Калькулятор
+          </button>
+          <button
+            type="button"
             className={laborSubView === "planner" ? "tab active" : "tab"}
             onClick={() => setLaborSubView("planner")}
           >
@@ -692,7 +706,7 @@ export function ViewControls({
           </div>
         </div>
       )}
-      {view !== "shipment" && (
+      {view !== "shipment" && view !== "floorMap" && (
       <div className="filters">
         {view !== "furniture" && view !== "metalProcess" && view !== "db" && (
           <input

@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { extractPlanItemArticle, stripPlanItemMeta } from "../app/orderHelpers";
+import { buildLaborOrdersRows, estimateLaborForLines } from "../app/laborNormCalculator";
 import { buildLiveStageClock } from "../app/stageTime";
 import { buildOrderTimeline } from "../app/orderTimelineHelpers";
 import { OrderService } from "../services/orderService";
@@ -72,8 +73,10 @@ export function OrderDrawer({
   onAdminStageOverride,
   canViewOrderTimeline,
   workSchedule,
+  laborOrdersRows = [],
 }) {
   const [commentDraft, setCommentDraft] = useState("");
+  const [laborRates, setLaborRates] = useState([]);
   const [overrideStage, setOverrideStage] = useState("kromka");
   const [overrideStatus, setOverrideStatus] = useState("wait");
   const [overrideSaving, setOverrideSaving] = useState(false);
@@ -131,6 +134,43 @@ export function OrderDrawer({
       cancelled = true;
     };
   }, [open, orderId, canViewOrderTimeline, lines]);
+
+  useEffect(() => {
+    if (!open) {
+      setLaborRates([]);
+      return undefined;
+    }
+    if (laborOrdersRows.length > 0) {
+      setLaborRates(laborOrdersRows);
+      return undefined;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const [norms, table] = await Promise.all([
+          OrderService.getLaborNorms(),
+          OrderService.getLaborTable(),
+        ]);
+        if (!cancelled) setLaborRates(buildLaborOrdersRows(table, norms));
+      } catch {
+        if (!cancelled) setLaborRates([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, laborOrdersRows]);
+
+  const laborEstimate = useMemo(() => {
+    if (!open || !orderId || !lines.length || !laborRates.length) return null;
+    return estimateLaborForLines(
+      lines.map((row) => ({
+        item: readTitle(row) || row.item || row.itemName || "",
+        qty: row.qty,
+      })),
+      laborRates,
+    );
+  }, [open, orderId, lines, laborRates]);
 
   if (!open || !orderId) return null;
 
@@ -255,6 +295,27 @@ export function OrderDrawer({
             </ul>
           )}
         </div>
+
+        {laborEstimate && laborEstimate.totals.totalMin > 0 ? (
+          <div className="order-drawer__section">
+            <h3 className="order-drawer__h3">Оценка трудоёмкости</h3>
+            <p style={{ margin: "0 0 8px", fontSize: 13, color: "#64748b" }}>
+              По нормативам или среднему факту на единицу
+            </p>
+            <ul className="order-drawer__meta">
+              <li><span>Пила</span> <strong>{Math.round(laborEstimate.totals.pilkaMin)} мин</strong></li>
+              <li><span>Кромка</span> <strong>{Math.round(laborEstimate.totals.kromkaMin)} мин</strong></li>
+              <li><span>Присадка</span> <strong>{Math.round(laborEstimate.totals.prasMin)} мин</strong></li>
+              <li><span>Сборка</span> <strong>{Math.round(laborEstimate.totals.assemblyMin)} мин</strong></li>
+              <li><span>Итого</span> <strong>{laborEstimate.totals.hhmm} ({Math.round(laborEstimate.totals.totalMin)} мин)</strong></li>
+            </ul>
+            {laborEstimate.totals.missingCount > 0 ? (
+              <p style={{ margin: "8px 0 0", fontSize: 12, color: "#9a3412" }}>
+                Для {laborEstimate.totals.missingCount} позиций нет норматива
+              </p>
+            ) : null}
+          </div>
+        ) : null}
 
         <div className="order-drawer__section">
           <h3 className="order-drawer__h3">Производство</h3>

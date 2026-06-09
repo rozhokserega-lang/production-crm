@@ -9,6 +9,7 @@ export function useLaborState(view) {
   const [laborSaveSelected, setLaborSaveSelected] = useState({});
   const [laborSavingByKey, setLaborSavingByKey] = useState({});
   const [laborSavedByKey, setLaborSavedByKey] = useState({});
+  const [laborNormsRows, setLaborNormsRows] = useState([]);
 
   useEffect(() => {
     if (view !== "labor") setLaborSubView("total");
@@ -31,5 +32,7 @@ export function useLaborState(view) {
     setLaborSavingByKey,
     laborSavedByKey,
     setLaborSavedByKey,
+    laborNormsRows,
+    setLaborNormsRows,
   };
 }

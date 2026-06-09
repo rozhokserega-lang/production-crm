@@ -61,6 +61,7 @@ import { useFurnitureDerivedData } from "./useFurnitureDerivedData";
 import { useDashboardDerivedData } from "./useDashboardDerivedData";
 import { useWarehouseTableData } from "./useWarehouseTableData";
 import { useLaborDerivedData } from "./useLaborDerivedData";
+import { buildLaborOrdersRows } from "../app/laborNormCalculator";
 import { useLaborStageAnalytics } from "./useLaborStageAnalytics";
 import { useShipmentPlanningDerivedData } from "./useShipmentPlanningDerivedData";
 import { useShipmentOrderIndexes } from "./useShipmentOrderIndexes";
@@ -140,6 +141,8 @@ export function useAppState({ auth }) {
     setOverviewSubView,
     warehouseSubView,
     setWarehouseSubView,
+    warehouseMissingMainTab,
+    setWarehouseMissingMainTab,
     statsSort,
     setStatsSort,
     orderDrawerId,
@@ -342,6 +345,8 @@ export function useAppState({ auth }) {
     setLaborSavingByKey,
     laborSavedByKey,
     setLaborSavedByKey,
+    laborNormsRows,
+    setLaborNormsRows,
   } = useLaborState(view);
   const [stageAuditRows, setStageAuditRows] = useState([]);
   const [activeOrderIds, setActiveOrderIds] = useState([]);
@@ -1269,7 +1274,12 @@ export function useAppState({ auth }) {
     view,
     filtered,
     laborSort,
+    laborNormsRows,
   });
+  const laborEstimateRows = useMemo(
+    () => buildLaborOrdersRows(laborFiltered, laborNormsRows),
+    [laborFiltered, laborNormsRows],
+  );
   const { laborStageTimelineRows, laborPlannerRows, laborKpi } = useLaborStageAnalytics({
     view,
     laborSubView,
@@ -1435,6 +1445,8 @@ export function useAppState({ auth }) {
       setOverviewSubView,
       warehouseSubView,
       setWarehouseSubView,
+      warehouseMissingMainTab,
+      setWarehouseMissingMainTab,
       laborSubView,
       setLaborSubView,
       statsSort,
@@ -1652,8 +1664,11 @@ export function useAppState({ auth }) {
       setLaborSavingByKey,
       laborSavedByKey,
       setLaborSavedByKey,
+      laborNormsRows,
+      setLaborNormsRows,
       laborTableRows,
       laborOrdersRows,
+      laborEstimateRows,
       laborStageTimelineRows,
       laborPlannerRows,
       laborKpi,

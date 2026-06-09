@@ -34,6 +34,9 @@ export function stageLabel(stageKey) {
   if (stageKey === "ready_assembly") return "Готово к сборке";
   if (stageKey === "assembled_wait_ship") return "Собран, ждет отправку";
   if (stageKey === "shipped") return "Отправлен";
+  if (stageKey === "warehouse_kit_wait") return "На складе (ожидает)";
+  if (stageKey === "warehouse_kit_work") return "На складе (в комплектации)";
+  if (stageKey === "warehouse_kit_done") return "Комплектация готова";
   if (stageKey === "plan_idle") return "Не в очереди";
   return "Статус неизвестен";
 }
@@ -49,6 +52,9 @@ export function stageBg(stageKey, rawBg = "#ffffff") {
   if (stageKey === "ready_assembly") return "#f59e0b";
   if (stageKey === "assembled_wait_ship") return "#22c55e";
   if (stageKey === "shipped") return "#d31d1d";
+  if (stageKey === "warehouse_kit_wait") return "#e0e7ff";
+  if (stageKey === "warehouse_kit_work") return "#c7d2fe";
+  if (stageKey === "warehouse_kit_done") return "#a5b4fc";
   return rawBg || "#ffffff";
 }
 

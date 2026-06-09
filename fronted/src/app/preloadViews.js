@@ -4,6 +4,7 @@
 
 const VIEW_LOADERS = {
   shipment: () => import("../views/ShipmentView"),
+  floorMap: () => import("../views/WorkshopMapView"),
   overview: () => import("../views/OverviewView"),
   workshop: () => import("../views/WorkshopView"),
   warehouse: () => import("../views/WarehouseView"),
@@ -36,6 +37,7 @@ export function preloadView(viewId) {
 
 /** Фоновая предзагрузка частых вкладок после первого рендера. */
 export function preloadCriticalViews() {
+  setTimeout(() => preloadView("floorMap"), 400);
   setTimeout(() => preloadView("overview"), 500);
   setTimeout(() => preloadView("workshop"), 1000);
   setTimeout(() => preloadView("warehouse"), 1500);

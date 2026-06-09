@@ -15,6 +15,7 @@ import { CuttingProvider } from "./contexts/CuttingContext";
 const AdminView = lazy(() => import("./views/AdminView").then((m) => ({ default: m.AdminView })));
 const DatabaseCatalogView = lazy(() => import("./views/DatabaseCatalogView").then((m) => ({ default: m.DatabaseCatalogView })));
 const WorkshopView = lazy(() => import("./views/WorkshopView").then((m) => ({ default: m.WorkshopView })));
+const WorkshopMapView = lazy(() => import("./views/WorkshopMapView").then((m) => ({ default: m.WorkshopMapView })));
 const ShipmentView = lazy(() => import("./views/ShipmentView").then((m) => ({ default: m.ShipmentView })));
 const OverviewView = lazy(() => import("./views/OverviewView").then((m) => ({ default: m.OverviewView })));
 const LaborView = lazy(() => import("./views/LaborView").then((m) => ({ default: m.LaborView })));
@@ -25,7 +26,6 @@ const StatsView = lazy(() => import("./views/StatsView").then((m) => ({ default:
 const SheetMirrorView = lazy(() => import("./views/SheetMirrorView").then((m) => ({ default: m.SheetMirrorView })));
 const FurnitureView = lazy(() => import("./views/FurnitureView").then((m) => ({ default: m.FurnitureView })));
 const MetalView = lazy(() => import("./views/MetalView").then((m) => ({ default: m.MetalView })));
-const HardwareView = lazy(() => import("./views/HardwareView").then((m) => ({ default: m.HardwareView })));
 const MetalProcessView = lazy(() => import("./views/MetalProcessView").then((m) => ({ default: m.MetalProcessView })));
 const CuttingView = lazy(() => import("./views/CuttingView").then((m) => ({ default: m.CuttingView })));
 import {
@@ -141,6 +141,23 @@ function AppInner({ onAuthChangeRef }) {
     switch (shell.view) {
       case "shipment":
         return <ShipmentView />;
+      case "floorMap":
+        return (
+          <WorkshopMapView
+            workshop={{
+              ...workshop,
+              furnitureCustomTemplates: furniture.furnitureCustomTemplates,
+              furnitureDetailArticleRows: furniture.furnitureDetailArticleRows,
+              furnitureTemplates: furniture.furnitureTemplates,
+            }}
+            helpers={{ isDone, isInWork }}
+            onGoWarehouse={() => shell.setView("warehouse")}
+            onGoWarehouseKit={() => {
+              shell.setWarehouseMissingMainTab("orders");
+              shell.setView("warehouseMissing");
+            }}
+          />
+        );
       case "overview":
         return (
           <OverviewView
@@ -197,6 +214,7 @@ function AppInner({ onAuthChangeRef }) {
             }}
           />
         );
+      case "hardware":
       case "warehouseMissing":
         return (
           <WarehouseMissingView
@@ -213,6 +231,9 @@ function AppInner({ onAuthChangeRef }) {
             canOperateProduction={auth.canOperateProduction}
             isActionPending={workshop.isActionPending}
             onDataChanged={shell.mutationLoad}
+            mainTab={shell.view === "hardware" ? "hardware" : shell.warehouseMissingMainTab}
+            setMainTab={shell.setWarehouseMissingMainTab}
+            planWeeks={shipment.weeks}
           />
         );
       case "strapStock":
@@ -243,13 +264,6 @@ function AppInner({ onAuthChangeRef }) {
             canOperateProduction={auth.canOperateProduction}
             savingKey={metal.metalSavingArticle}
             onAdjustStock={metal.adjustMetalStock}
-          />
-        );
-      case "hardware":
-        return (
-          <HardwareView
-            canOperateWarehouse={auth.canOperateWarehouse}
-            planWeeks={shipment.weeks}
           />
         );
       case "cutting":
@@ -452,6 +466,7 @@ function AppInner({ onAuthChangeRef }) {
         shell={shell}
         admin={{ ...admin, canAdminSettings: auth.canAdminSettings, canManageOrders: auth.canManageOrders }}
         shipment={shipment}
+        labor={labor}
         dialogs={dialogs}
         packaging={packaging}
         actions={actions}

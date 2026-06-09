@@ -3,6 +3,7 @@ import { preloadView } from "../app/preloadViews";
 
 const VIEW_ICONS = {
   shipment:   "🚚",
+  floorMap:   "🗺",
   overview:   "⊞",
   workshop:   "⚙",
   warehouse:  "🏠",

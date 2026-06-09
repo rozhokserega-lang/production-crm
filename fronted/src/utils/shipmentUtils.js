@@ -105,10 +105,17 @@ export function mapPipelineStageToShipmentKey(order) {
     case PipelineStage.KROMKA:
       if (kromka.includes("в работе") || kromka.includes("пауза")) return "on_kromka_work";
       return "on_kromka_wait";
+    case PipelineStage.WAREHOUSE_KIT: {
+      const overall = String(order?.overallStatus || order?.overall_status || order?.overall || "").toLowerCase();
+      if (overall.includes("комплектация готова")) return "warehouse_kit_done";
+      if (overall.includes("в комплектации")) return "warehouse_kit_work";
+      return "warehouse_kit_wait";
+    }
     case PipelineStage.PILKA:
-    default:
       if (pilka.includes("в работе") || pilka.includes("пауза")) return "on_pilka_work";
       return "on_pilka_wait";
+    default:
+      return "plan_idle";
   }
 }
 

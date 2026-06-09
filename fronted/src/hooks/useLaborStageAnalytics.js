@@ -152,9 +152,10 @@ export function useLaborStageAnalytics({
         return {
           group: r.group,
           laborPerQtyMin: Number(r.laborPerQtyMin || 0),
-          pilkaPerQtyMin: Number(r.qty || 0) > 0 ? Number(r.pilkaMin || 0) / Number(r.qty || 0) : 0,
-          kromkaPerQtyMin: Number(r.qty || 0) > 0 ? Number(r.kromkaMin || 0) / Number(r.qty || 0) : 0,
-          prasPerQtyMin: Number(r.qty || 0) > 0 ? Number(r.prasMin || 0) / Number(r.qty || 0) : 0,
+          pilkaPerQtyMin: Number(r.pilkaPerQtyMin || 0),
+          kromkaPerQtyMin: Number(r.kromkaPerQtyMin || 0),
+          prasPerQtyMin: Number(r.prasPerQtyMin || 0),
+          assemblyPerQtyMin: Number(r.assemblyPerQtyMin || 0),
           kits,
           totalMin,
           hhmm,

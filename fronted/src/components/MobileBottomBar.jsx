@@ -1,5 +1,6 @@
 const BOTTOM_NAV = [
   { id: "shipment",  label: "Отгрузка",    icon: "🚚" },
+  { id: "floorMap",  label: "Карта",       icon: "🗺" },
   { id: "workshop",  label: "Произв.",     icon: "⚙️" },
   { id: "overview",  label: "Обзор",       icon: "📋" },
   { id: "warehouse", label: "Склад",       icon: "🏪" },

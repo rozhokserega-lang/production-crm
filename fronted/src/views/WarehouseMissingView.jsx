@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { PRODUCTS_CATALOG } from "../constants/missingParts";
+import { HardwareView } from "./HardwareView";
 import { WarehouseKitOrdersView } from "./WarehouseKitOrdersView";
 
 const OTHER_PRODUCT_KEY = "__OTHER__";
@@ -28,8 +29,18 @@ export const WarehouseMissingView = memo(function WarehouseMissingView({
   canOperateProduction = false,
   isActionPending,
   onDataChanged,
+  mainTab: mainTabProp = "create",
+  setMainTab: setMainTabProp,
+  planWeeks = [],
 }) {
-  const [mainTab, setMainTab] = useState("create");
+  const [mainTabLocal, setMainTabLocal] = useState(mainTabProp);
+  const mainTab = setMainTabProp ? mainTabProp : mainTabLocal;
+  const setMainTab = setMainTabProp || setMainTabLocal;
+
+  useEffect(() => {
+    if (setMainTabProp) return;
+    setMainTabLocal(mainTabProp);
+  }, [mainTabProp, setMainTabProp]);
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
   const [sendingId, setSendingId] = useState(null);
@@ -240,6 +251,13 @@ export const WarehouseMissingView = memo(function WarehouseMissingView({
         >
           Заказы
         </button>
+        <button
+          type="button"
+          className={mainTab === "hardware" ? "tab active" : "tab"}
+          onClick={() => setMainTab("hardware")}
+        >
+          Фурнитура
+        </button>
       </div>
 
       {mainTab === "orders" ? (
@@ -252,6 +270,11 @@ export const WarehouseMissingView = memo(function WarehouseMissingView({
           canOperateProduction={canOperateProduction}
           isActionPending={isActionPending}
           onDataChanged={onDataChanged}
+        />
+      ) : mainTab === "hardware" ? (
+        <HardwareView
+          canOperateWarehouse={canOperateWarehouse}
+          planWeeks={planWeeks}
         />
       ) : (
         <>

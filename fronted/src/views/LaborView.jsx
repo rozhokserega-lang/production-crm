@@ -1,8 +1,17 @@
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { buildLaborFactPayload } from "../app/laborImportHelpers";
 import { buildProductionLoadForecast } from "../app/laborForecastHelpers";
+import {
+  LABOR_GROUP_ORDER,
+  normalizeLaborNormRow,
+  sortLaborGroups,
+} from "../app/laborGroupHelpers";
 import { STRAP_OPTIONS } from "../app/appConstants";
 import { OrderService } from "../services/orderService";
+import { LaborOrderCalculator } from "../components/LaborOrderCalculator";
+import { LaborKitBuilder } from "../components/LaborKitBuilder";
+import { calcGroupPlanLabor, normalizeKitItem } from "../app/laborKitPlanner";
+import { LaborPlanSummary } from "../components/LaborPlanSummary";
 
 function formatHhMm(totalMin) {
   const safe = Math.max(0, Number(totalMin || 0));
@@ -89,6 +98,8 @@ export const LaborView = memo(function LaborView({
     saveImportedLaborRowToDb,
     manualLaborOpenNonce = 0,
     workSchedule,
+    laborNormsRows,
+    setLaborNormsRows,
   } = labor;
   const {
     setError,
@@ -99,15 +110,23 @@ export const LaborView = memo(function LaborView({
 
   const [plannerMode, setPlannerMode] = useState("groups");
   const [kitQtyByKey, setKitQtyByKey] = useState({});
-  const [kitNameDraft, setKitNameDraft] = useState("");
-  const [kitItemDraft, setKitItemDraft] = useState("");
-  const [kitItemQtyDraft, setKitItemQtyDraft] = useState("1");
-  const [kitBuilderItems, setKitBuilderItems] = useState([]);
   const [savedKits, setSavedKits] = useState([]);
   const [kitSavingId, setKitSavingId] = useState("");
   const [kitDeletingId, setKitDeletingId] = useState("");
   const [kromkaPosts, setKromkaPosts] = useState(2);
   const [prasPosts, setPrasPosts] = useState(2);
+  const [normDraft, setNormDraft] = useState({
+    id: null,
+    groupName: "",
+    pilkaMin: "",
+    kromkaMin: "",
+    prasMin: "",
+    assemblyMin: "",
+    qtyUnit: "1",
+    note: "",
+  });
+  const [normSaving, setNormSaving] = useState(false);
+  const [normDeletingId, setNormDeletingId] = useState(null);
   const laborTotalRows = useMemo(
     () => laborTableRows.filter((r) => !isImportedLaborRow(r)),
     [laborTableRows],
@@ -260,6 +279,27 @@ export const LaborView = memo(function LaborView({
     }
   }, [kromkaPosts, prasPosts]);
 
+  const reloadLaborNorms = useCallback(async () => {
+    const rows = await OrderService.getLaborNorms();
+    const normalized = (Array.isArray(rows) ? rows : []).map((row) => normalizeLaborNormRow(row));
+    setLaborNormsRows(normalized);
+    return normalized;
+  }, [setLaborNormsRows]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        await reloadLaborNorms();
+      } catch (e) {
+        if (!cancelled && setError) setError(String(e?.message || e || "Не удалось загрузить нормативы"));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [reloadLaborNorms, setError]);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -277,14 +317,11 @@ export const LaborView = memo(function LaborView({
                   .map((x) => {
                     if (typeof x === "string") {
                       const group = String(x || "").trim();
-                      return group ? { group, qty: 1 } : null;
+                      return group ? normalizeKitItem({ group, qty: 1 }) : null;
                     }
-                    const group = String(x?.group || "").trim();
-                    const qtyRaw = Number(x?.qty);
-                    const qty = Number.isFinite(qtyRaw) && qtyRaw > 0 ? qtyRaw : 1;
-                    return group ? { group, qty } : null;
+                    return normalizeKitItem(x);
                   })
-                  .filter(Boolean)
+                  .filter((item) => item?.group)
               : [],
           }))
           .filter((k) => k.dbId > 0 && k.name && k.items.length > 0);
@@ -298,91 +335,80 @@ export const LaborView = memo(function LaborView({
     };
   }, [setError]);
 
-  const plannerGroups = useMemo(
-    () => laborPlannerRows.map((r) => String(r.group || "").trim()).filter(Boolean),
-    [laborPlannerRows],
-  );
-  const laborByGroup = useMemo(() => {
-    const map = new Map();
-    laborPlannerRows.forEach((r) => {
-      const key = String(r.group || "").trim();
-      if (!key) return;
-      map.set(key, {
-        total: Number(r.laborPerQtyMin || 0),
-        pilka: Number(r.pilkaPerQtyMin || 0),
-        kromka: Number(r.kromkaPerQtyMin || 0),
-        pras: Number(r.prasPerQtyMin || 0),
-      });
+  const normGroupOptions = useMemo(() => {
+    const set = new Set(LABOR_GROUP_ORDER);
+    laborOrdersRows.forEach((row) => {
+      if (row?.group) set.add(row.group);
     });
-    return map;
-  }, [laborPlannerRows]);
-  const plannerKitRows = useMemo(
-    () =>
-      savedKits.map((kit) => {
-        const plannedQtyRaw = kitQtyByKey[kit.id];
-        const kits = Math.max(0, Number(String(plannedQtyRaw ?? "").replace(",", ".")) || 0);
-        const stagePerKit = kit.items.reduce(
-          (sum, item) => {
-            const row = laborByGroup.get(item.group) || { total: 0, pilka: 0, kromka: 0, pras: 0 };
-            const q = Number(item.qty || 1);
-            return {
-              total: sum.total + Number(row.total || 0) * q,
-              pilka: sum.pilka + Number(row.pilka || 0) * q,
-              kromka: sum.kromka + Number(row.kromka || 0) * q,
-              pras: sum.pras + Number(row.pras || 0) * q,
-            };
-          },
-          { total: 0, pilka: 0, kromka: 0, pras: 0 },
-        );
-        const laborPerKitMin = stagePerKit.total;
-        const laborPerKitMinParallel =
-          stagePerKit.pilka +
-          stagePerKit.kromka / Math.max(1, Number(kromkaPosts || 1)) +
-          stagePerKit.pras / Math.max(1, Number(prasPosts || 1));
-        const totalMin = kits * laborPerKitMin;
-        const totalMinParallel = kits * laborPerKitMinParallel;
-        const missingItems = kit.items.filter((item) => !laborByGroup.has(item.group)).map((item) => item.group);
-        return {
-          ...kit,
-          kits,
-          laborPerKitMin,
-          laborPerKitMinParallel,
-          totalMin,
-          totalMinParallel,
-          hhmm: formatHhMm(totalMin),
-          hhmmParallel: formatHhMm(totalMinParallel),
-          missingItems,
-        };
-      }),
-    [savedKits, kitQtyByKey, laborByGroup, kromkaPosts, prasPosts],
-  );
-
-  const addBuilderItem = () => {
-    const next = String(kitItemDraft || "").trim();
-    const qtyRaw = Number(String(kitItemQtyDraft || "").replace(",", "."));
-    const qty = Number.isFinite(qtyRaw) && qtyRaw > 0 ? qtyRaw : 1;
-    if (!next) return;
-    setKitBuilderItems((prev) => [...prev, { group: next, qty }]);
-    setKitItemDraft("");
-    setKitItemQtyDraft("1");
-  };
-
-  const removeBuilderItem = (idx) => {
-    setKitBuilderItems((prev) => prev.filter((_, i) => i !== idx));
-  };
-
-  const saveKitFromBuilder = () => {
-    const name = String(kitNameDraft || "").trim();
-    if (!name || kitBuilderItems.length === 0) return;
-    const id = `kit-${Date.now()}`;
-    const nextKit = { id, dbId: null, dbSaved: false, name, items: kitBuilderItems };
-    setSavedKits((prev) => [nextKit, ...prev]);
-    setKitNameDraft("");
-    setKitBuilderItems([]);
-    setKitItemDraft("");
-    setKitItemQtyDraft("1");
-  };
-
+    (laborNormsRows || []).forEach((row) => {
+      if (row?.groupName) set.add(row.groupName);
+    });
+    return [...set].sort(sortLaborGroups);
+  }, [laborOrdersRows, laborNormsRows]);
+  const resetNormDraft = useCallback(() => {
+    setNormDraft({
+      id: null,
+      groupName: "",
+      pilkaMin: "",
+      kromkaMin: "",
+      prasMin: "",
+      assemblyMin: "",
+      qtyUnit: "1",
+      note: "",
+    });
+  }, []);
+  const editNormRow = useCallback((row) => {
+    setNormDraft({
+      id: row?.id || null,
+      groupName: String(row?.groupName || ""),
+      pilkaMin: String(row?.pilkaMin ?? ""),
+      kromkaMin: String(row?.kromkaMin ?? ""),
+      prasMin: String(row?.prasMin ?? ""),
+      assemblyMin: String(row?.assemblyMin ?? ""),
+      qtyUnit: String(row?.qtyUnit ?? 1),
+      note: String(row?.note || ""),
+    });
+  }, []);
+  const saveNormDraft = useCallback(async () => {
+    const groupName = String(normDraft.groupName || "").trim();
+    if (!groupName) {
+      setError?.("Укажите группу изделия");
+      return;
+    }
+    setNormSaving(true);
+    try {
+      await OrderService.upsertLaborNorm({
+        id: normDraft.id,
+        groupName,
+        pilkaMin: parseMinInput(normDraft.pilkaMin),
+        kromkaMin: parseMinInput(normDraft.kromkaMin),
+        prasMin: parseMinInput(normDraft.prasMin),
+        assemblyMin: parseMinInput(normDraft.assemblyMin),
+        qtyUnit: Math.max(1, parseMinInput(normDraft.qtyUnit) || 1),
+        note: normDraft.note,
+      });
+      await reloadLaborNorms();
+      resetNormDraft();
+    } catch (e) {
+      setError?.(String(e?.message || e || "Не удалось сохранить норматив"));
+    } finally {
+      setNormSaving(false);
+    }
+  }, [normDraft, reloadLaborNorms, resetNormDraft, setError]);
+  const deleteNormRow = useCallback(async (id) => {
+    const normId = Number(id || 0);
+    if (!normId) return;
+    setNormDeletingId(normId);
+    try {
+      await OrderService.deleteLaborNorm(normId);
+      await reloadLaborNorms();
+      if (Number(normDraft.id || 0) === normId) resetNormDraft();
+    } catch (e) {
+      setError?.(String(e?.message || e || "Не удалось удалить норматив"));
+    } finally {
+      setNormDeletingId(null);
+    }
+  }, [normDraft.id, reloadLaborNorms, resetNormDraft, setError]);
   const saveKitToDb = async (kit) => {
     setKitSavingId(kit.id);
     try {
@@ -678,6 +704,7 @@ export const LaborView = memo(function LaborView({
             <thead>
               <tr>
                 <th>Группа изделия</th>
+                <th>Источник</th>
                 <th>Заказов</th>
                 <th>Кол-во (шт)</th>
                 <th>Пилка (мин)</th>
@@ -697,7 +724,14 @@ export const LaborView = memo(function LaborView({
               {laborOrdersRows.map((r) => (
                 <tr key={r.group}>
                   <td className="labor-group-cell">
-                    <span className="labor-group-name">{r.group}</span>
+                    <span className="labor-group-name">
+                      {r.group}
+                      {r.hasNorm && r.normQtyUnit > 1 ? (
+                        <span style={{ color: "#6b7280", fontSize: 11, marginLeft: 6 }}>
+                          / {r.normQtyUnit} шт
+                        </span>
+                      ) : null}
+                    </span>
                     <div className="labor-share-tooltip">
                       <div className="labor-share-tooltip__title">Распределение этапов</div>
                       <div className="labor-share-tooltip__bar">
@@ -727,6 +761,9 @@ export const LaborView = memo(function LaborView({
                       </div>
                     </div>
                   </td>
+                  <td>
+                    <span className={`badge ${r.source === "norm" ? "" : ""}`}>{r.sourceLabel}</span>
+                  </td>
                   <td>{r.orders}</td>
                   <td>{r.qty}</td>
                   <td>{Math.round(r.pilkaMin)}</td>
@@ -745,6 +782,137 @@ export const LaborView = memo(function LaborView({
             </tbody>
           </table>
         </div>
+      )}
+      {laborSubView === "norms" && (
+        <div className="labor-norms">
+          <p style={{ margin: "0 0 12px", color: "#6b7280", fontSize: 14 }}>
+            Фиксированные нормативы по группам изделий. Используются в «По заказам» и планировщике вместо среднего факта.
+          </p>
+          <div className="sheet-table-wrap" style={{ marginBottom: 16 }}>
+            <table className="sheet-table">
+              <thead>
+                <tr>
+                  <th>Группа</th>
+                  <th>Пила</th>
+                  <th>Кромка</th>
+                  <th>Присадка</th>
+                  <th>Сборка</th>
+                  <th>На кол-во</th>
+                  <th>Итого</th>
+                  <th>Примечание</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {(Array.isArray(laborNormsRows) ? laborNormsRows : []).length === 0 ? (
+                  <tr>
+                    <td colSpan={9} style={{ color: "#6b7280" }}>Нормативы не заданы — добавьте первую группу ниже</td>
+                  </tr>
+                ) : (
+                  laborNormsRows.map((row) => {
+                    const total = Number(row.pilkaMin || 0) + Number(row.kromkaMin || 0)
+                      + Number(row.prasMin || 0) + Number(row.assemblyMin || 0);
+                    return (
+                      <tr key={row.id || row.groupName}>
+                        <td><strong>{row.groupName}</strong></td>
+                        <td>{Math.round(row.pilkaMin)}</td>
+                        <td>{Math.round(row.kromkaMin)}</td>
+                        <td>{Math.round(row.prasMin)}</td>
+                        <td>{Math.round(row.assemblyMin)}</td>
+                        <td>{row.qtyUnit} шт</td>
+                        <td><b>{Math.round(total)}</b></td>
+                        <td>{row.note || "—"}</td>
+                        <td>
+                          <div className="actions" style={{ margin: 0 }}>
+                            <button type="button" className="mini" onClick={() => editNormRow(row)}>Изменить</button>
+                            <button
+                              type="button"
+                              className="mini warn"
+                              disabled={normDeletingId === row.id}
+                              onClick={() => void deleteNormRow(row.id)}
+                            >
+                              {normDeletingId === row.id ? "..." : "Удалить"}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="card" style={{ padding: 14 }}>
+            <h3 style={{ margin: "0 0 10px", fontSize: 16 }}>
+              {normDraft.id ? "Редактировать норматив" : "Добавить норматив"}
+            </h3>
+            <div className="strap-grid">
+              <div className="strap-row" style={{ gridTemplateColumns: "170px 1fr" }}>
+                <label>Группа изделия</label>
+                <div>
+                  <input
+                    list="labor-norm-groups"
+                    value={normDraft.groupName}
+                    onChange={(e) => setNormDraft((prev) => ({ ...prev, groupName: e.target.value }))}
+                    placeholder="Например: Stabile"
+                  />
+                  <datalist id="labor-norm-groups">
+                    {normGroupOptions.map((group) => (
+                      <option key={group} value={group} />
+                    ))}
+                  </datalist>
+                </div>
+              </div>
+              <div className="strap-row" style={{ gridTemplateColumns: "170px 1fr" }}>
+                <label>На кол-во (шт)</label>
+                <input
+                  inputMode="numeric"
+                  value={normDraft.qtyUnit}
+                  onChange={(e) => setNormDraft((prev) => ({ ...prev, qtyUnit: e.target.value }))}
+                  placeholder="1"
+                />
+              </div>
+              <div className="strap-row" style={{ gridTemplateColumns: "170px 1fr" }}>
+                <label>Пила (мин)</label>
+                <input inputMode="numeric" value={normDraft.pilkaMin} onChange={(e) => setNormDraft((p) => ({ ...p, pilkaMin: e.target.value }))} />
+              </div>
+              <div className="strap-row" style={{ gridTemplateColumns: "170px 1fr" }}>
+                <label>Кромка (мин)</label>
+                <input inputMode="numeric" value={normDraft.kromkaMin} onChange={(e) => setNormDraft((p) => ({ ...p, kromkaMin: e.target.value }))} />
+              </div>
+              <div className="strap-row" style={{ gridTemplateColumns: "170px 1fr" }}>
+                <label>Присадка (мин)</label>
+                <input inputMode="numeric" value={normDraft.prasMin} onChange={(e) => setNormDraft((p) => ({ ...p, prasMin: e.target.value }))} />
+              </div>
+              <div className="strap-row" style={{ gridTemplateColumns: "170px 1fr" }}>
+                <label>Сборка (мин)</label>
+                <input inputMode="numeric" value={normDraft.assemblyMin} onChange={(e) => setNormDraft((p) => ({ ...p, assemblyMin: e.target.value }))} />
+              </div>
+              <div className="strap-row" style={{ gridTemplateColumns: "170px 1fr" }}>
+                <label>Примечание</label>
+                <input value={normDraft.note} onChange={(e) => setNormDraft((p) => ({ ...p, note: e.target.value }))} placeholder="Необязательно" />
+              </div>
+            </div>
+            <div className="actions" style={{ marginTop: 12 }}>
+              <button type="button" className="mini ok" disabled={normSaving} onClick={() => void saveNormDraft()}>
+                {normSaving ? "Сохраняю..." : normDraft.id ? "Сохранить" : "Добавить"}
+              </button>
+              {normDraft.id ? (
+                <button type="button" className="mini" disabled={normSaving} onClick={resetNormDraft}>
+                  Отмена
+                </button>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      )}
+      {laborSubView === "calculator" && (
+        <LaborOrderCalculator
+          laborTableRows={laborTableRows}
+          laborNormsRows={laborNormsRows}
+          laborOrdersRows={laborOrdersRows}
+        />
       )}
       {laborSubView === "planner" && !laborPlannerRows.length && !loading && (
         <div className="empty">Нет данных для планировщика</div>
@@ -768,27 +936,31 @@ export const LaborView = memo(function LaborView({
             </button>
           </div>
           {plannerMode === "groups" ? (
-            <div className="sheet-table-wrap">
-              <table className="sheet-table">
+            <div className="sheet-table-wrap labor-planner-groups">
+              <table className="sheet-table labor-planner-groups__table">
                 <thead>
                   <tr>
-                    <th>Группа изделия</th>
-                    <th>Норма (мин/комплект)</th>
-                    <th>План (комплектов)</th>
-                    <th>Время (мин)</th>
-                    <th>Время (ч:мм)</th>
+                    <th>Группа</th>
+                    <th>Норма</th>
+                    <th>План</th>
+                    <th>seq</th>
+                    <th>2+2</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {laborPlannerRows.map((r) => (
+                  {laborPlannerRows.map((r) => {
+                    const plannedQty = Number(String(laborPlannerQtyByGroup[r.group] ?? "").replace(",", ".")) || 0;
+                    const batch = calcGroupPlanLabor(r, plannedQty);
+                    return (
                     <tr key={`planner-${r.group}`}>
                       <td>{r.group}</td>
-                      <td>{r.laborPerQtyMin.toFixed(2)}</td>
+                      <td className="num">{Math.round(r.laborPerQtyMin)}</td>
                       <td>
                         <input
                           type="number"
                           min="0"
                           step="1"
+                          className="labor-planner-groups__plan-input"
                           value={laborPlannerQtyByGroup[r.group] ?? ""}
                           onChange={(e) =>
                             setLaborPlannerQtyByGroup((prev) => ({
@@ -796,185 +968,37 @@ export const LaborView = memo(function LaborView({
                               [r.group]: e.target.value,
                             }))
                           }
-                          style={{ width: 120 }}
                           placeholder="0"
                         />
                       </td>
-                      <td>{Math.round(r.totalMin)}</td>
-                      <td><b>{r.hhmm}</b></td>
+                      <td className="num"><b>{batch.hhmmSeq}</b></td>
+                      <td className="num"><b>{batch.hhmmParallel}</b></td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
           ) : (
-            <div>
-              <div style={{ margin: "6px 0 12px" }}>
-                <div style={{ fontWeight: 600, marginBottom: 6 }}>Конструктор комплекта</div>
-                <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 8, flexWrap: "wrap" }}>
-                  <label style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
-                    <span>Кромочников</span>
-                    <input
-                      type="number"
-                      min="1"
-                      step="1"
-                      value={kromkaPosts}
-                      onChange={(e) => setKromkaPosts(Math.max(1, Number(e.target.value || 1)))}
-                      style={{ width: 72 }}
-                    />
-                  </label>
-                  <label style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
-                    <span>Присадчиков</span>
-                    <input
-                      type="number"
-                      min="1"
-                      step="1"
-                      value={prasPosts}
-                      onChange={(e) => setPrasPosts(Math.max(1, Number(e.target.value || 1)))}
-                      style={{ width: 72 }}
-                    />
-                  </label>
-                  <span style={{ color: "#64748b" }}>
-                    Формула: Пила + Кромка/{Math.max(1, Number(kromkaPosts || 1))} + Присадка/{Math.max(1, Number(prasPosts || 1))}
-                  </span>
-                </div>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 8 }}>
-                  <input
-                    type="text"
-                    value={kitNameDraft}
-                    onChange={(e) => setKitNameDraft(e.target.value)}
-                    placeholder="Имя комплекта (например: Стол + обвязка 1000_80)"
-                    style={{ minWidth: 320 }}
-                  />
-                  <select value={kitItemDraft} onChange={(e) => setKitItemDraft(e.target.value)}>
-                    <option value="">Выберите изделие…</option>
-                    {plannerGroups.map((group) => (
-                      <option key={`kit-option-${group}`} value={group}>
-                        {group}
-                      </option>
-                    ))}
-                  </select>
-                  <input
-                    type="number"
-                    min="0.01"
-                    step="0.01"
-                    value={kitItemQtyDraft}
-                    onChange={(e) => setKitItemQtyDraft(e.target.value)}
-                    placeholder="Кол-во"
-                    style={{ width: 96 }}
-                    title="Количество позиции в комплекте"
-                  />
-                  <button type="button" className="mini" onClick={addBuilderItem} disabled={!kitItemDraft}>
-                    Добавить в комплект
-                  </button>
-                  <button
-                    type="button"
-                    className="mini ok"
-                    onClick={saveKitFromBuilder}
-                    disabled={!kitNameDraft.trim() || kitBuilderItems.length === 0}
-                  >
-                    Сохранить комплект
-                  </button>
-                </div>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                  {kitBuilderItems.length === 0 ? (
-                    <span style={{ color: "#64748b" }}>Состав пуст. Добавьте изделия по очереди.</span>
-                  ) : (
-                    kitBuilderItems.map((item, idx) => (
-                      <button
-                        key={`builder-item-${item.group}-${idx}`}
-                        type="button"
-                        className="mini"
-                        onClick={() => removeBuilderItem(idx)}
-                        title="Удалить из комплекта"
-                      >
-                        {idx + 1}. {item.group} x {item.qty}
-                      </button>
-                    ))
-                  )}
-                </div>
-              </div>
-              {plannerKitRows.length > 0 ? (
-                <div className="sheet-table-wrap">
-              <table className="sheet-table">
-                <thead>
-                  <tr>
-                    <th>Имя комплекта</th>
-                    <th>Состав изделий</th>
-                    <th>Норма (мин/комплект)</th>
-                    <th>План (комплектов)</th>
-                    <th>Время seq (мин)</th>
-                    <th>Время seq (ч:мм)</th>
-                    <th>Время 2+2 (мин)</th>
-                    <th>Время 2+2 (ч:мм)</th>
-                    <th>Действие</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {plannerKitRows.map((r) => (
-                    <tr key={`planner-kit-${r.id}`}>
-                      <td>{r.name}</td>
-                      <td>{r.items.map((x) => `${x.group} x ${x.qty}`).join(" + ")}</td>
-                      <td>{r.laborPerKitMin.toFixed(2)}</td>
-                      <td>
-                        <input
-                          type="number"
-                          min="0"
-                          step="1"
-                          value={kitQtyByKey[r.id] ?? ""}
-                          onChange={(e) =>
-                            setKitQtyByKey((prev) => ({
-                              ...prev,
-                              [r.id]: e.target.value,
-                            }))
-                          }
-                          style={{ width: 120 }}
-                          placeholder="0"
-                        />
-                      </td>
-                      <td>{Math.round(r.totalMin)}</td>
-                      <td>
-                        <b>{r.hhmm}</b>
-                        {r.missingItems.length > 0 ? (
-                          <div style={{ color: "#9a3412", marginTop: 4 }}>
-                            Нет нормы: {r.missingItems.join(", ")}
-                          </div>
-                        ) : null}
-                      </td>
-                      <td>{Math.round(r.totalMinParallel)}</td>
-                      <td>
-                        <b>{r.hhmmParallel}</b>
-                      </td>
-                      <td>
-                        <div style={{ display: "flex", gap: 6 }}>
-                          <button
-                            type="button"
-                            className="mini ok"
-                            onClick={() => void saveKitToDb(r)}
-                            disabled={kitSavingId === r.id}
-                          >
-                            {kitSavingId === r.id ? "Сохраняю..." : r.dbSaved ? "Обновить в БД" : "Сохранить в БД"}
-                          </button>
-                          <button
-                            type="button"
-                            className="mini warn"
-                            onClick={() => void removeSavedKit(r)}
-                            disabled={kitDeletingId === r.id}
-                          >
-                            {kitDeletingId === r.id ? "Удаляю..." : "Удалить"}
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-                </div>
-              ) : (
-                <div className="empty">Сохраненных комплектов пока нет. Соберите состав и нажмите "Сохранить комплект".</div>
-              )}
-            </div>
+            <LaborKitBuilder
+              laborPlannerRows={laborPlannerRows}
+              savedKits={savedKits}
+              setSavedKits={setSavedKits}
+              kitQtyByKey={kitQtyByKey}
+              setKitQtyByKey={setKitQtyByKey}
+              saveKitToDb={saveKitToDb}
+              removeSavedKit={removeSavedKit}
+              kitSavingId={kitSavingId}
+              kitDeletingId={kitDeletingId}
+            />
           )}
+          <LaborPlanSummary
+            laborPlannerRows={laborPlannerRows}
+            laborPlannerQtyByGroup={laborPlannerQtyByGroup}
+            savedKits={savedKits}
+            kitQtyByKey={kitQtyByKey}
+            workSchedule={workSchedule}
+          />
         </div>
       )}
       {laborSubView === "stages" && !laborStageTimelineRows.length && !loading && (

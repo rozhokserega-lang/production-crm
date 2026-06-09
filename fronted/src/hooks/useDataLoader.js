@@ -50,7 +50,7 @@ function clearViewState(view, setters) {
     setPilkaDoneHistoryRows,
     setLaborRows,
   } = setters;
-  if (view === "workshop") setRows([]);
+  if (view === "workshop" || view === "floorMap") setRows([]);
   if (view === "shipment") setShipmentBoard({ sections: [] });
   if (view === "warehouse") {
     setWarehouseRows([]);
@@ -135,11 +135,11 @@ function applyViewSnapshot(view, snapshot, setters) {
     if (Array.isArray(snapshot.shipmentOrders)) {
       setShipmentOrders(snapshot.shipmentOrders);
     }
-    if (view === "workshop" || view === "overview") {
+    if (view === "workshop" || view === "floorMap" || view === "overview") {
       if (snapshot.shipmentBoard) {
         setShipmentBoard(snapshot.shipmentBoard);
       }
-      if (view === "workshop") {
+      if (view === "workshop" || view === "floorMap") {
         if (typeof setFurnitureCustomTemplates === "function" && Array.isArray(snapshot.furnitureCustomTemplates)) {
           setFurnitureCustomTemplates(snapshot.furnitureCustomTemplates);
         }
@@ -207,14 +207,14 @@ function buildViewSnapshot({
   if (Array.isArray(normalizedRows)) {
     const snap = {
       rows: normalizedRows,
-      shipmentOrders: view === "workshop" || view === "overview" || view === "stats" ? normalizedRows : null,
+      shipmentOrders: view === "workshop" || view === "floorMap" || view === "overview" || view === "stats" ? normalizedRows : null,
       shipmentBoard: workshopBoard || null,
       furnitureCustomTemplates: workshopTemplates || [],
     };
     if (view === "overview" && overviewBoard) {
       snap.shipmentBoard = overviewBoard;
     }
-    if (view === "workshop") {
+    if (view === "workshop" || view === "floorMap") {
       snap.furnitureDetailArticleRows = Array.isArray(workshopDetailArticles) ? workshopDetailArticles : [];
     }
     return snap;
@@ -435,12 +435,12 @@ export function useDataLoader({
       } else if (isOrdersDomainView(view)) {
         normalizedRows = Array.isArray(data) ? data.map(normalizeOrder) : [];
         setRows(normalizedRows);
-        if (view === "workshop" || view === "overview" || view === "stats") {
+        if (view === "workshop" || view === "floorMap" || view === "overview" || view === "stats") {
           setShipmentOrders(normalizedRows);
         }
-        if (view === "workshop" || view === "strapStock") {
+        if (view === "workshop" || view === "floorMap" || view === "strapStock") {
           const [boardResult, templatesResult, detailArticlesResult] = await Promise.all([
-            view === "workshop" ? OrderService.getShipmentBoard().catch(() => null) : Promise.resolve(null),
+            view === "workshop" || view === "floorMap" ? OrderService.getShipmentBoard().catch(() => null) : Promise.resolve(null),
             typeof setFurnitureCustomTemplates === "function"
               ? OrderService.getFurnitureCustomTemplates().catch(() => null)
               : Promise.resolve(null),
@@ -448,7 +448,7 @@ export function useDataLoader({
           ]);
           if (seq !== loadSeqRef.current) return;
 
-          if (view === "workshop" && boardResult != null) {
+          if ((view === "workshop" || view === "floorMap") && boardResult != null) {
             try {
               workshopBoard = normalizeShipmentBoard(boardResult);
               setShipmentBoard(workshopBoard);

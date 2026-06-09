@@ -86,8 +86,9 @@ export function useWorkshopRows({
   return useMemo(() => {
     /** На «Склад обвязки» нужен тот же набор заказов, что в цеху при вкладке «Все» — для колонки нехватки. */
     const strapStockPlanning = view === "strapStock";
-    if ((view !== "workshop" && !strapStockPlanning) || tab === "stats" || tab === "debt") return [];
-    const effectiveTab = strapStockPlanning ? "all" : tab;
+    const floorMapView = view === "floorMap";
+    if ((view !== "workshop" && !strapStockPlanning && !floorMapView) || tab === "stats" || tab === "debt") return [];
+    const effectiveTab = strapStockPlanning || floorMapView ? "all" : tab;
     const arr = [...filtered].filter((o) => {
       const pilkaStatus = String(o.pilkaStatus || o.pilka || "");
       const kromkaStatus = String(o.kromkaStatus || o.kromka || "");
@@ -179,7 +180,7 @@ export function useBaseOrderFilter({
       const sectionName = String(x.section_name || x.sectionName || "").trim();
       const sourceRowId = String(x.source_row_id || x.sourceRowId || "").trim();
       const storageLike = isStorageLikeName(x.item);
-      const allowInWorkshop = view === "workshop" && storageLike;
+      const allowInWorkshop = (view === "workshop" || view === "floorMap") && storageLike;
       const allowInStats = view === "stats" && storageLike;
       const laneId = String(getOverviewLaneId(x) || "");
       const inWorkStage =
@@ -210,7 +211,7 @@ export function useBaseOrderFilter({
             String(x.item || "").toLowerCase().includes(q) ||
             String(x.orderId || x.order_id || "").toLowerCase().includes(q);
       if (!byWeek || !byQuery) return false;
-      if (view === "stats" || view === "overview") return true;
+      if (view === "stats" || view === "overview" || view === "floorMap") return true;
       // Производство: те же «дорожки», что и в «Обзор заказов» (pipeline), иначе вкладки и канбан расходятся.
       if (tab === "pilka") return getOverviewLaneId(x) === "pilka";
       if (tab === "kromka") return getOverviewLaneId(x) === "kromka";
@@ -284,14 +285,15 @@ function mergeOrdersById(chunks) {
 }
 
 export async function fetchOrdersStagedFallback() {
-  const [pilka, kromka, pras, shipped, postWorkshop] = await Promise.all([
+  const [pilka, kromka, pras, shipped, postWorkshop, warehouseKit] = await Promise.all([
     OrderService.getOrdersByStage("pilka").catch(() => []),
     OrderService.getOrdersByStage("kromka").catch(() => []),
     OrderService.getOrdersByStage("pras").catch(() => []),
     OrderService.getOrdersByStage("shipped").catch(() => []),
     OrderService.getOrdersByStage("post_workshop").catch(() => []),
+    OrderService.getOrdersByStage("warehouse_kit").catch(() => []),
   ]);
-  const merged = mergeOrdersById([pilka, kromka, pras, shipped, postWorkshop]);
+  const merged = mergeOrdersById([pilka, kromka, pras, shipped, postWorkshop, warehouseKit]);
   if (merged.length) return merged;
   throw new Error("Не удалось загрузить заказы по этапам");
 }
@@ -388,7 +390,7 @@ export async function loadShipmentBoardPayload({
 }
 
 export async function loadShipmentOrdersPayload({ normalizeOrder }) {
-  const shipmentOrdersDataResult = await fetchAllOrdersWithRetry(2).catch(() => null);
+  const shipmentOrdersDataResult = await fetchAllOrdersWithRetry({ maxAttempts: 2 }).catch(() => null);
   return Array.isArray(shipmentOrdersDataResult)
     ? shipmentOrdersDataResult.map(normalizeOrder)
     : [];

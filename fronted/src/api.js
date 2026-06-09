@@ -503,9 +503,12 @@ const RPC_MAP = {
   webGetLeftoversHistory: "web_get_leftovers_history",
   webGetLaborTable: "web_get_labor_table",
   webGetLaborKits: "web_get_labor_kits",
+  webGetLaborNorms: "web_get_labor_norms",
   webUpsertLaborFact: "web_upsert_labor_fact",
   webUpsertLaborKit: "web_upsert_labor_kit",
+  webUpsertLaborNorm: "web_upsert_labor_norm",
   webDeleteLaborKit: "web_delete_labor_kit",
+  webDeleteLaborNorm: "web_delete_labor_norm",
   webGetOrderStats: "web_get_order_stats",
   webGetMyRole: "web_effective_crm_role",
   webGetCrmAuthStrict: "web_is_crm_auth_strict",
@@ -799,8 +802,25 @@ function buildRpcPayload(action, payload = {}) {
       p_date_finished: String(payload.dateFinished || payload.p_date_finished || "").trim() || null,
     };
   }
-  if (action === "webGetLaborKits") {
+  if (action === "webGetLaborKits" || action === "webGetLaborNorms") {
     return {};
+  }
+  if (action === "webUpsertLaborNorm") {
+    return {
+      p_id: payload.id == null || payload.id === "" ? null : Number(payload.id),
+      p_group_name: String(payload.groupName || payload.group_name || "").trim(),
+      p_pilka_min: Number(payload.pilkaMin ?? payload.pilka_min ?? 0),
+      p_kromka_min: Number(payload.kromkaMin ?? payload.kromka_min ?? 0),
+      p_pras_min: Number(payload.prasMin ?? payload.pras_min ?? 0),
+      p_assembly_min: Number(payload.assemblyMin ?? payload.assembly_min ?? 0),
+      p_qty_unit: Number(payload.qtyUnit ?? payload.qty_unit ?? 1),
+      p_note: String(payload.note || payload.p_note || "").trim() || null,
+    };
+  }
+  if (action === "webDeleteLaborNorm") {
+    return {
+      p_id: Number(payload.id || payload.p_id || 0),
+    };
   }
   if (action === "webUpsertLaborKit") {
     return {

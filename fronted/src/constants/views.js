@@ -1,11 +1,11 @@
 export const VIEWS = [
   { id: "shipment", label: "Отгрузка" },
+  { id: "floorMap", label: "Карта" },
   { id: "overview", label: "Обзор заказов" },
   { id: "workshop", label: "Производство" },
   { id: "warehouse", label: "Склад" },
   { id: "strapStock", label: "Обвязка" },
   { id: "metal", label: "Металл" },
-  { id: "hardware", label: "Фурнитура" },
   { id: "cutting", label: "Раскрой" },
   { id: "labor", label: "Трудоемкость" },
   { id: "stats", label: "Статистика" },
