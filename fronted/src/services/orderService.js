@@ -335,6 +335,15 @@ export class OrderService {
     return await callBackend("webGetLaborKits");
   }
 
+  static async getLaborKitPlanQty() {
+    const rows = await callBackend("webGetLaborKitPlanQty");
+    return Array.isArray(rows) ? rows : [];
+  }
+
+  static async upsertLaborKitPlanQty({ kitId, qty }) {
+    return await callBackend("webUpsertLaborKitPlanQty", { kitId, qty });
+  }
+
   static async getLaborNorms() {
     const rows = await callBackend("webGetLaborNorms");
     return Array.isArray(rows) ? rows : [];

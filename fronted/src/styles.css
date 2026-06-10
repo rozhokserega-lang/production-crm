@@ -8315,6 +8315,49 @@ button.mini.accent:hover:not(:disabled) {
   margin-bottom: 8px;
 }
 
+.labor-kit-builder__edit-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 8px 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  font-size: 12px;
+  color: #1e3a8a;
+}
+
+.labor-kit-builder__plan-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin: 10px 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+}
+
+.labor-kit-builder__plan-hint {
+  flex: 1 1 200px;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.labor-kit-builder__plan-readonly {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.labor-kit-builder__plan-notice {
+  font-size: 12px;
+  color: #166534;
+  font-weight: 600;
+}
+
 .labor-kit-builder__save-row {
   display: flex;
   gap: 8px;
@@ -8339,11 +8382,16 @@ button.mini.accent:hover:not(:disabled) {
 
 .labor-kit-list {
   display: grid;
-  gap: 8px;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  align-items: stretch;
 }
 
 .labor-kit-card {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 220px;
   border: 1px solid #e2e8f0;
   border-radius: 10px;
   background: #fff;
@@ -8357,6 +8405,7 @@ button.mini.accent:hover:not(:disabled) {
   align-items: center;
   gap: 8px;
   margin-bottom: 6px;
+  flex-shrink: 0;
 }
 
 .labor-kit-card__name {
@@ -8385,6 +8434,8 @@ button.mini.accent:hover:not(:disabled) {
   list-style: none;
   margin: 0 0 8px;
   padding: 0;
+  flex: 1 1 auto;
+  min-height: 56px;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -8410,9 +8461,10 @@ button.mini.accent:hover:not(:disabled) {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
-  margin-bottom: 8px;
+  margin-bottom: 0;
   padding-top: 6px;
   border-top: 1px solid #f1f5f9;
+  flex-shrink: 0;
 }
 
 .labor-kit-card__metrics > div {
@@ -8431,12 +8483,23 @@ button.mini.accent:hover:not(:disabled) {
 .labor-kit-card__warn {
   color: #9a3412;
   font-size: 11px;
-  margin-bottom: 6px;
+  margin: 6px 0 0;
+  flex-shrink: 0;
 }
 
 .labor-kit-card__actions {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
+  margin-top: auto;
+  padding-top: 10px;
+}
+
+.labor-kit-card__actions .mini {
+  width: 100%;
+  min-width: 0;
+  padding-inline: 6px;
+  font-size: 11px;
 }
 
 .labor-planner-groups__table {
@@ -8458,6 +8521,11 @@ button.mini.accent:hover:not(:disabled) {
   width: 64px;
   padding: 3px 5px;
   font-size: 12px;
+}
+
+.labor-planner .labor-plan-summary {
+  margin-top: 0;
+  margin-bottom: 12px;
 }
 
 .labor-plan-summary {

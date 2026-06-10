@@ -10,13 +10,55 @@ import {
   defaultMonthWorkingDays,
 } from "../app/laborMonthlyPlanHelpers";
 
-const MONTH_DAYS_STORAGE_KEY = "labor_planner_month_days_v1";
+const CAPACITY_STORAGE_KEY = "labor_planner_capacity_v2";
 
 const LOAD_STATUS_LABELS = {
   ok: "Норма",
   warn: "Высокая",
   over: "Перегруз",
 };
+
+function positiveInt(value, fallback = 1, max = 99) {
+  const n = Math.round(Number(value));
+  if (!Number.isFinite(n) || n < 1) return fallback;
+  return Math.min(max, Math.max(1, n));
+}
+
+function positiveHours(value, fallback = 8) {
+  const n = Number(String(value ?? "").replace(",", "."));
+  if (!Number.isFinite(n) || n <= 0) return fallback;
+  return Math.min(24, Math.max(1, Math.round(n * 2) / 2));
+}
+
+function defaultCapacitySettings(workSchedule) {
+  const hours = Number(workSchedule?.hoursPerDay ?? workSchedule?.hours_per_day);
+  return {
+    monthWorkingDays: defaultMonthWorkingDays(workSchedule),
+    hoursPerDay: Number.isFinite(hours) && hours > 0 ? hours : 8,
+    pilkaStations: 1,
+    kromkaStations: SHOP_KROMKA_POOL,
+    prasStations: SHOP_PRAS_POOL,
+  };
+}
+
+function readCapacitySettings(workSchedule) {
+  const defaults = defaultCapacitySettings(workSchedule);
+  if (typeof window === "undefined") return defaults;
+  try {
+    const raw = window.localStorage.getItem(CAPACITY_STORAGE_KEY);
+    if (!raw) return defaults;
+    const parsed = JSON.parse(raw);
+    return {
+      monthWorkingDays: positiveInt(parsed?.monthWorkingDays, defaults.monthWorkingDays, 31),
+      hoursPerDay: positiveHours(parsed?.hoursPerDay, defaults.hoursPerDay),
+      pilkaStations: positiveInt(parsed?.pilkaStations, defaults.pilkaStations, 8),
+      kromkaStations: positiveInt(parsed?.kromkaStations, defaults.kromkaStations, 8),
+      prasStations: positiveInt(parsed?.prasStations, defaults.prasStations, 8),
+    };
+  } catch (_) {
+    return defaults;
+  }
+}
 
 export const LaborPlanSummary = memo(function LaborPlanSummary({
   laborPlannerRows = [],
@@ -25,31 +67,28 @@ export const LaborPlanSummary = memo(function LaborPlanSummary({
   kitQtyByKey = {},
   workSchedule = null,
 }) {
-  const [monthWorkingDays, setMonthWorkingDays] = useState(() => defaultMonthWorkingDays(workSchedule));
+  const [capacitySettings, setCapacitySettings] = useState(() => readCapacitySettings(workSchedule));
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    try {
-      const raw = window.localStorage.getItem(MONTH_DAYS_STORAGE_KEY);
-      const stored = Number(raw);
-      if (Number.isFinite(stored) && stored > 0) {
-        setMonthWorkingDays(stored);
-        return;
-      }
-    } catch (_) {
-      // ignore
-    }
-    setMonthWorkingDays(defaultMonthWorkingDays(workSchedule));
+    setCapacitySettings((prev) => ({
+      ...prev,
+      monthWorkingDays: prev.monthWorkingDays || defaultMonthWorkingDays(workSchedule),
+      hoursPerDay: prev.hoursPerDay || defaultCapacitySettings(workSchedule).hoursPerDay,
+    }));
   }, [workSchedule]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
-      window.localStorage.setItem(MONTH_DAYS_STORAGE_KEY, String(Math.max(1, Number(monthWorkingDays || 1))));
+      window.localStorage.setItem(CAPACITY_STORAGE_KEY, JSON.stringify(capacitySettings));
     } catch (_) {
       // ignore
     }
-  }, [monthWorkingDays]);
+  }, [capacitySettings]);
+
+  const patchCapacity = (patch) => {
+    setCapacitySettings((prev) => ({ ...prev, ...patch }));
+  };
 
   const ratesByGroup = useMemo(() => buildRatesByGroup(laborPlannerRows), [laborPlannerRows]);
 
@@ -79,8 +118,14 @@ export const LaborPlanSummary = memo(function LaborPlanSummary({
   }, [laborPlannerRows, laborPlannerQtyByGroup, savedKits, kitQtyByKey, ratesByGroup]);
 
   const monthlyLoad = useMemo(
-    () => calcMonthlyPlanLoad(plan, workSchedule, { workingDaysPerMonth: monthWorkingDays }),
-    [plan, workSchedule, monthWorkingDays],
+    () => calcMonthlyPlanLoad(plan, workSchedule, {
+      workingDaysPerMonth: capacitySettings.monthWorkingDays,
+      hoursPerDay: capacitySettings.hoursPerDay,
+      pilkaStations: capacitySettings.pilkaStations,
+      kromkaStations: capacitySettings.kromkaStations,
+      prasStations: capacitySettings.prasStations,
+    }),
+    [plan, workSchedule, capacitySettings],
   );
 
   if (!plan.hasPlan) return null;
@@ -95,14 +140,61 @@ export const LaborPlanSummary = memo(function LaborPlanSummary({
             <input
               type="number"
               min="1"
+              max="31"
               step="1"
-              value={monthWorkingDays}
-              onChange={(e) => setMonthWorkingDays(Math.max(1, Number(e.target.value || 1)))}
+              value={capacitySettings.monthWorkingDays}
+              onChange={(e) => patchCapacity({ monthWorkingDays: positiveInt(e.target.value, 1, 31) })}
             />
           </label>
-          <span className="labor-plan-summary__fund">
-            {monthlyLoad.formulaText} · ×1 / ×{SHOP_KROMKA_POOL} / ×{SHOP_PRAS_POOL}
-          </span>
+          <label className="labor-plan-summary__days">
+            <span>Часов/день</span>
+            <input
+              type="number"
+              min="1"
+              max="24"
+              step="0.5"
+              value={capacitySettings.hoursPerDay}
+              onChange={(e) => patchCapacity({ hoursPerDay: positiveHours(e.target.value, 8) })}
+            />
+          </label>
+          <label className="labor-plan-summary__days">
+            <span>Пила ×</span>
+            <input
+              type="number"
+              min="1"
+              max="8"
+              step="1"
+              value={capacitySettings.pilkaStations}
+              onChange={(e) => patchCapacity({ pilkaStations: positiveInt(e.target.value, 1, 8) })}
+            />
+          </label>
+          <label className="labor-plan-summary__days">
+            <span>Кромка ×</span>
+            <input
+              type="number"
+              min="1"
+              max="8"
+              step="1"
+              value={capacitySettings.kromkaStations}
+              onChange={(e) => patchCapacity({ kromkaStations: positiveInt(e.target.value, 2, 8) })}
+            />
+          </label>
+          <label className="labor-plan-summary__days">
+            <span>Присадка ×</span>
+            <input
+              type="number"
+              min="1"
+              max="8"
+              step="1"
+              value={capacitySettings.prasStations}
+              onChange={(e) => patchCapacity({ prasStations: positiveInt(e.target.value, 2, 8) })}
+            />
+          </label>
+        </div>
+        <div className="labor-plan-summary__fund">
+          {monthlyLoad.formulaText}
+          {" · "}
+          ×{capacitySettings.pilkaStations} / ×{capacitySettings.kromkaStations} / ×{capacitySettings.prasStations}
         </div>
         <div className="labor-plan-summary__stages">
           {monthlyLoad.stages.map((stage) => (

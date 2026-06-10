@@ -1,8 +1,13 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+
+const LABOR_SUB_VIEWS = new Set(["total", "orders", "planner"]);
 
 export function useLaborState(view) {
   const [laborSort, setLaborSort] = useState("total_desc");
-  const [laborSubView, setLaborSubView] = useState("total");
+  const [laborSubView, setLaborSubViewRaw] = useState("planner");
+  const setLaborSubView = useCallback((next) => {
+    setLaborSubViewRaw(LABOR_SUB_VIEWS.has(next) ? next : "planner");
+  }, []);
   const [laborPlannerQtyByGroup, setLaborPlannerQtyByGroup] = useState({});
   const [laborRows, setLaborRows] = useState([]);
   const [laborImportedRows, setLaborImportedRows] = useState([]);
@@ -12,8 +17,14 @@ export function useLaborState(view) {
   const [laborNormsRows, setLaborNormsRows] = useState([]);
 
   useEffect(() => {
-    if (view !== "labor") setLaborSubView("total");
-  }, [view]);
+    if (view !== "labor") setLaborSubView("planner");
+  }, [view, setLaborSubView]);
+
+  useEffect(() => {
+    if (view === "labor" && !LABOR_SUB_VIEWS.has(laborSubView)) {
+      setLaborSubView("planner");
+    }
+  }, [view, laborSubView, setLaborSubView]);
 
   return {
     laborSort,

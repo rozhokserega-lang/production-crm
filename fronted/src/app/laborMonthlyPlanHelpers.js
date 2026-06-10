@@ -33,22 +33,26 @@ export function calcMonthlyStationCapacity(
   workSchedule,
   {
     workingDaysPerMonth = null,
+    hoursPerDay = null,
     pilkaStations = 1,
     kromkaStations = SHOP_KROMKA_POOL,
     prasStations = SHOP_PRAS_POOL,
   } = {},
 ) {
-  const hoursPerDay = positiveNumber(workSchedule?.hoursPerDay ?? workSchedule?.hours_per_day, 8);
+  const hoursPerDayResolved = positiveNumber(
+    hoursPerDay ?? workSchedule?.hoursPerDay ?? workSchedule?.hours_per_day,
+    8,
+  );
   const workingDays = Array.isArray(workSchedule?.workingDays ?? workSchedule?.working_days)
     ? workSchedule.workingDays ?? workSchedule.working_days
     : [];
   const daysPerWeek = workingDays.length > 0 ? workingDays.length : 5;
   const monthDays = Math.max(1, Math.round(positiveNumber(workingDaysPerMonth, defaultMonthWorkingDays(workSchedule))));
-  const baseFund = monthDays * hoursPerDay * 60;
+  const baseFund = monthDays * hoursPerDayResolved * 60;
 
   return {
     monthDays,
-    hoursPerDay,
+    hoursPerDay: hoursPerDayResolved,
     daysPerWeek,
     baseFund,
     pilka: Math.round(baseFund * pilkaStations),
@@ -67,9 +71,21 @@ export function calcMonthlyStationCapacity(
 export function calcMonthlyPlanLoad(
   planTotals = {},
   workSchedule,
-  { workingDaysPerMonth = null } = {},
+  {
+    workingDaysPerMonth = null,
+    hoursPerDay = null,
+    pilkaStations = null,
+    kromkaStations = null,
+    prasStations = null,
+  } = {},
 ) {
-  const capacity = calcMonthlyStationCapacity(workSchedule, { workingDaysPerMonth });
+  const capacity = calcMonthlyStationCapacity(workSchedule, {
+    workingDaysPerMonth,
+    hoursPerDay,
+    pilkaStations: pilkaStations ?? 1,
+    kromkaStations: kromkaStations ?? SHOP_KROMKA_POOL,
+    prasStations: prasStations ?? SHOP_PRAS_POOL,
+  });
   const pilkaUsed = Math.round(Number(planTotals.pilkaTotal || 0));
   const kromkaUsed = Math.round(Number(planTotals.kromkaSeq || planTotals.kromkaTotal || 0));
   const prasUsed = Math.round(Number(planTotals.prasSeq || planTotals.prasTotal || 0));

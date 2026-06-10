@@ -188,7 +188,10 @@ function AppInner({ onAuthChangeRef }) {
               manualLaborOpenNonce,
               workSchedule: admin.workSchedule,
             }}
-            permissions={{ canAdminSettings: auth.canAdminSettings }}
+            permissions={{
+              canAdminSettings: auth.canAdminSettings,
+              canOperateProduction: auth.canOperateProduction,
+            }}
             shell={{
               setError: shell.setError,
               loading: shell.loading,

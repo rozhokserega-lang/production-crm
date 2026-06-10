@@ -12,6 +12,7 @@ export const LABOR_GROUP_ORDER = [
   "ТВ Лофт",
   "Классико",
   "Siena",
+  "Система хранения",
 ];
 
 function normItemText(value) {
@@ -51,6 +52,9 @@ export function resolveLaborGroup(itemRaw) {
   if (n.includes("тв лофт") || n.includes("tv loft") || n.includes("тумба под тв")) return "ТВ Лофт";
   if (n.includes("классико") || n.includes("classico")) return "Классико";
   if (n.includes("siena")) return "Siena";
+  if (n.includes("система хранения") || n.includes("gxss") || n.includes("полка системы")) {
+    return "Система хранения";
+  }
   const first = String(itemRaw || "").split(".")[0].trim();
   return first || "Прочее";
 }

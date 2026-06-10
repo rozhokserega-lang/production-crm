@@ -524,6 +524,13 @@ export function ViewControls({
         <div className="tabs tabs--overview-sub">
           <button
             type="button"
+            className={laborSubView === "planner" ? "tab active" : "tab"}
+            onClick={() => setLaborSubView("planner")}
+          >
+            Планировщик
+          </button>
+          <button
+            type="button"
             className={laborSubView === "total" ? "tab active" : "tab"}
             onClick={() => setLaborSubView("total")}
           >
@@ -535,41 +542,6 @@ export function ViewControls({
             onClick={() => setLaborSubView("orders")}
           >
             По заказам
-          </button>
-          <button
-            type="button"
-            className={laborSubView === "norms" ? "tab active" : "tab"}
-            onClick={() => setLaborSubView("norms")}
-          >
-            Нормативы
-          </button>
-          <button
-            type="button"
-            className={laborSubView === "calculator" ? "tab active" : "tab"}
-            onClick={() => setLaborSubView("calculator")}
-          >
-            Калькулятор
-          </button>
-          <button
-            type="button"
-            className={laborSubView === "planner" ? "tab active" : "tab"}
-            onClick={() => setLaborSubView("planner")}
-          >
-            Планировщик
-          </button>
-          <button
-            type="button"
-            className={laborSubView === "forecast" ? "tab active" : "tab"}
-            onClick={() => setLaborSubView("forecast")}
-          >
-            Прогноз
-          </button>
-          <button
-            type="button"
-            className={laborSubView === "stages" ? "tab active" : "tab"}
-            onClick={() => setLaborSubView("stages")}
-          >
-            Этапы
           </button>
         </div>
       )}
@@ -730,7 +702,7 @@ export function ViewControls({
             onKeyDown={handleWorkshopQrSearchKeyDown}
           />
         )}
-        {view !== "warehouse" && view !== "furniture" && view !== "metal" && view !== "metalProcess" && view !== "shipment" && view !== "db" && !(view === "labor" && laborSubView === "stages") && (
+        {view !== "warehouse" && view !== "furniture" && view !== "metal" && view !== "metalProcess" && view !== "shipment" && view !== "db" && (
           <>
           <WeekFilterDropdown value={weekFilter} onChange={setWeekFilter} weeks={weeks} />
           {showWorkshopQr && (

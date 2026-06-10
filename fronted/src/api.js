@@ -503,9 +503,11 @@ const RPC_MAP = {
   webGetLeftoversHistory: "web_get_leftovers_history",
   webGetLaborTable: "web_get_labor_table",
   webGetLaborKits: "web_get_labor_kits",
+  webGetLaborKitPlanQty: "web_get_labor_kit_plan_qty",
   webGetLaborNorms: "web_get_labor_norms",
   webUpsertLaborFact: "web_upsert_labor_fact",
   webUpsertLaborKit: "web_upsert_labor_kit",
+  webUpsertLaborKitPlanQty: "web_upsert_labor_kit_plan_qty",
   webUpsertLaborNorm: "web_upsert_labor_norm",
   webDeleteLaborKit: "web_delete_labor_kit",
   webDeleteLaborNorm: "web_delete_labor_norm",
@@ -802,7 +804,7 @@ function buildRpcPayload(action, payload = {}) {
       p_date_finished: String(payload.dateFinished || payload.p_date_finished || "").trim() || null,
     };
   }
-  if (action === "webGetLaborKits" || action === "webGetLaborNorms") {
+  if (action === "webGetLaborKits" || action === "webGetLaborKitPlanQty" || action === "webGetLaborNorms") {
     return {};
   }
   if (action === "webUpsertLaborNorm") {
@@ -827,6 +829,12 @@ function buildRpcPayload(action, payload = {}) {
       p_id: payload.id == null || payload.id === "" ? null : Number(payload.id),
       p_kit_name: String(payload.name || payload.p_kit_name || "").trim(),
       p_items: Array.isArray(payload.items) ? payload.items : [],
+    };
+  }
+  if (action === "webUpsertLaborKitPlanQty") {
+    return {
+      p_kit_id: Number(payload.kitId ?? payload.kit_id ?? payload.p_kit_id ?? 0),
+      p_qty: Number(payload.qty ?? payload.plannedQty ?? payload.p_qty ?? 0),
     };
   }
   if (action === "webDeleteLaborKit") {

@@ -85,13 +85,46 @@ export const LaborKitBuilder = memo(function LaborKitBuilder({
   kitQtyByKey = {},
   setKitQtyByKey,
   saveKitToDb,
+  saveKitPlanQty,
+  saveAllKitPlanQty,
   removeSavedKit,
   kitSavingId = "",
   kitDeletingId = "",
+  kitPlanSavingId = "",
+  kitPlanBulkSaving = false,
+  kitPlanSaveNotice = "",
+  canSaveKitPlanQty = false,
 }) {
   const [kitNameDraft, setKitNameDraft] = useState("");
   const [kitBuilderItems, setKitBuilderItems] = useState([]);
   const [sectionDraft, setSectionDraft] = useState(emptySectionDraft);
+  const [editingKitId, setEditingKitId] = useState(null);
+
+  const editingKit = useMemo(
+    () => (editingKitId ? savedKits.find((k) => k.id === editingKitId) || null : null),
+    [editingKitId, savedKits],
+  );
+
+  const resetBuilderDraft = () => {
+    setKitNameDraft("");
+    setKitBuilderItems([]);
+    setSectionDraft(emptySectionDraft());
+    setEditingKitId(null);
+  };
+
+  const startEditKit = (kit) => {
+    const items = (Array.isArray(kit?.items) ? kit.items : [])
+      .map((item) => normalizeKitItem(item, ratesByGroup));
+    setKitNameDraft(String(kit?.name || "").trim());
+    setKitBuilderItems(items);
+    setSectionDraft(emptySectionDraft());
+    setEditingKitId(kit.id);
+    if (typeof window !== "undefined") {
+      window.requestAnimationFrame(() => {
+        document.querySelector(".labor-kit-builder__save-row")?.scrollIntoView({ behavior: "smooth", block: "center" });
+      });
+    }
+  };
 
   const ratesByGroup = useMemo(() => buildRatesByGroup(laborPlannerRows), [laborPlannerRows]);
   const productSections = useMemo(() => [...LABOR_GROUP_ORDER], []);
@@ -185,20 +218,34 @@ export const LaborKitBuilder = memo(function LaborKitBuilder({
     setKitBuilderItems((prev) => prev.filter((_, i) => i !== idx));
   };
 
-  const saveKitFromBuilder = () => {
+  const saveKitFromBuilder = async () => {
     const name = String(kitNameDraft || "").trim();
     if (!name || kitBuilderItems.length === 0) return;
+    const items = kitBuilderItems.map((item) => ({ ...item }));
+
+    if (editingKitId) {
+      let savedKit = null;
+      setSavedKits((prev) => prev.map((kit) => {
+        if (kit.id !== editingKitId) return kit;
+        savedKit = { ...kit, name, items };
+        return savedKit;
+      }));
+      resetBuilderDraft();
+      if (savedKit?.dbSaved && typeof saveKitToDb === "function") {
+        await saveKitToDb(savedKit);
+      }
+      return;
+    }
+
     const id = `kit-${Date.now()}`;
     setSavedKits((prev) => [{
       id,
       dbId: null,
       dbSaved: false,
       name,
-      items: kitBuilderItems.map((item) => ({ ...item })),
+      items,
     }, ...prev]);
-    setKitNameDraft("");
-    setKitBuilderItems([]);
-    setSectionDraft(emptySectionDraft());
+    resetBuilderDraft();
   };
 
   const plannerKitRows = useMemo(
@@ -423,6 +470,15 @@ export const LaborKitBuilder = memo(function LaborKitBuilder({
         </button>
       </details>
 
+      {editingKit ? (
+        <div className="labor-kit-builder__edit-banner">
+          <span>Редактирование: <b>{editingKit.name}</b></span>
+          <button type="button" className="mini" onClick={resetBuilderDraft}>
+            Отмена
+          </button>
+        </div>
+      ) : null}
+
       <div className="labor-kit-builder__save-row">
         <input
           type="text"
@@ -434,10 +490,10 @@ export const LaborKitBuilder = memo(function LaborKitBuilder({
         <button
           type="button"
           className="mini ok"
-          onClick={saveKitFromBuilder}
+          onClick={() => void saveKitFromBuilder()}
           disabled={!kitNameDraft.trim() || kitBuilderItems.length === 0}
         >
-          Сохранить
+          {editingKitId ? "Сохранить изменения" : "Сохранить"}
         </button>
       </div>
 
@@ -449,31 +505,69 @@ export const LaborKitBuilder = memo(function LaborKitBuilder({
               type="button"
               className="mini"
               onClick={() => removeBuilderItem(idx)}
-              title={formatKitItemLabel(item)}
+              title={`${formatKitItemLabel(item)} — нажмите, чтобы убрать`}
             >
               {formatKitItemShort(item)}
             </button>
           ))}
         </div>
       ) : (
-        <p className="labor-kit-builder__hint">Состав пуст — добавьте секции.</p>
+        <p className="labor-kit-builder__hint">
+          {editingKitId ? "Состав пуст — добавьте секции или отмените редактирование." : "Состав пуст — добавьте секции."}
+        </p>
       )}
 
       {plannerKitRows.length > 0 ? (
+        <>
+        <div className="labor-kit-builder__plan-toolbar">
+          <span className="labor-kit-builder__plan-hint">
+            План на карточках виден всем после сохранения в БД.
+          </span>
+          {canSaveKitPlanQty ? (
+            <button
+              type="button"
+              className="mini ok"
+              disabled={kitPlanBulkSaving || !savedKits.some((kit) => kit.dbSaved)}
+              onClick={() => {
+                if (typeof saveAllKitPlanQty === "function") void saveAllKitPlanQty();
+              }}
+            >
+              {kitPlanBulkSaving ? "Сохраняю…" : "Сохранить количество комплектов"}
+            </button>
+          ) : (
+            <span className="labor-kit-builder__plan-readonly">Только просмотр</span>
+          )}
+          {kitPlanSaveNotice ? (
+            <span className="labor-kit-builder__plan-notice">{kitPlanSaveNotice}</span>
+          ) : null}
+        </div>
         <div className="labor-kit-list">
           {plannerKitRows.map((r) => (
             <article key={`planner-kit-${r.id}`} className="labor-kit-card">
               <div className="labor-kit-card__head">
                 <strong className="labor-kit-card__name">{r.name}</strong>
                 <label className="labor-kit-card__plan">
-                  <span>План</span>
+                  <span>План{kitPlanSavingId === r.id ? " …" : ""}</span>
                   <input
                     type="number"
                     min="0"
                     step="1"
                     value={kitQtyByKey[r.id] ?? ""}
                     onChange={(e) => setKitQtyByKey((prev) => ({ ...prev, [r.id]: e.target.value }))}
+                    onBlur={(e) => {
+                      if (canSaveKitPlanQty && typeof saveKitPlanQty === "function") {
+                        void saveKitPlanQty(r, e.target.value);
+                      }
+                    }}
                     placeholder="0"
+                    readOnly={!canSaveKitPlanQty}
+                    title={
+                      !canSaveKitPlanQty
+                        ? "Только просмотр"
+                        : r.dbSaved
+                          ? "Сохраняется в БД при выходе из поля или кнопкой ниже"
+                          : "Сначала сохраните комплект в БД"
+                    }
                   />
                 </label>
               </div>
@@ -501,6 +595,14 @@ export const LaborKitBuilder = memo(function LaborKitBuilder({
                 <div className="labor-kit-card__warn">Нет нормы: {r.missingItems.join(", ")}</div>
               ) : null}
               <div className="labor-kit-card__actions">
+                <button
+                  type="button"
+                  className="mini"
+                  onClick={() => startEditKit(r)}
+                  disabled={editingKitId === r.id}
+                >
+                  {editingKitId === r.id ? "Редактируется" : "Редактировать"}
+                </button>
                 <button type="button" className="mini ok" onClick={() => void saveKitToDb(r)} disabled={kitSavingId === r.id}>
                   {kitSavingId === r.id ? "…" : r.dbSaved ? "Обновить" : "В БД"}
                 </button>
@@ -511,6 +613,7 @@ export const LaborKitBuilder = memo(function LaborKitBuilder({
             </article>
           ))}
         </div>
+        </>
       ) : (
         <div className="empty">Сохранённых комплектов пока нет.</div>
       )}
