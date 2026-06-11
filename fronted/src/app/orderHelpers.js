@@ -109,6 +109,23 @@ export function extractStrapTargetProduct(itemName) {
   return m?.[1] ? String(m[1]).trim() : "";
 }
 
+/** Подпись изделия на печатном листе обвязки. */
+export function formatStrapPlanTargetCaption(strapTargetProduct, planWeek) {
+  const target = String(strapTargetProduct || "").trim();
+  if (!target) return "";
+  const week = String(planWeek || "").trim().toLowerCase();
+  const targetNorm = target.toLowerCase().replace(/[ё]/g, "е");
+  if (week === "обвязка" && targetNorm === "авелла") return "Фасады для Сиена";
+  return `Обвязка для изделия: ${target}`;
+}
+
+export function resolveStrapTargetProductFromShipmentRow(shipmentRow = {}) {
+  const fromField = String(shipmentRow?.strapProduct || "").trim();
+  if (fromField) return fromField;
+  const rawItem = String(shipmentRow?.sourceItem || shipmentRow?.item || "").trim();
+  return extractStrapTargetProduct(rawItem);
+}
+
 export function stripPlanItemMeta(itemName) {
   return stripStrapTargetMeta(
     String(itemName || "")

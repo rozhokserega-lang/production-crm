@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { ShipmentSplitDialog } from "../components/ShipmentSplitDialog";
-import { stripPlanItemMeta, getMaterialLabel } from "../app/orderHelpers";
+import { formatStrapPlanTargetCaption, stripPlanItemMeta, getMaterialLabel } from "../app/orderHelpers";
 import { useShipment } from "../contexts/ShipmentContext";
 import { useCutting } from "../contexts/CuttingContext";
 import { useNavigation } from "../contexts/NavigationContext";
@@ -324,15 +324,10 @@ export const ShipmentView = memo(function ShipmentView() {
                         <div className="color">{planPreview.colorName || "-"}</div>
                         {!!String(planPreview.strapTargetProduct || "").trim() && (
                           <div className="strap-target">
-                            {(() => {
-                              const planWeek = String(planPreview.planNumber || planPreview.week || "").trim().toLowerCase();
-                              const target = String(planPreview.strapTargetProduct || "").trim();
-                              const targetNorm = target.toLowerCase().replace(/[ё]/g, "е");
-                              // Special case: for the Siena facades workflow we reuse the "обвязка" plan week,
-                              // but the print caption should mention facades + Siena instead of strap + Avella.
-                              if (planWeek === "обвязка" && targetNorm === "авелла") return "Фасады для Сиена";
-                              return `Обвязка для изделия: ${target}`;
-                            })()}
+                            {formatStrapPlanTargetCaption(
+                              planPreview.strapTargetProduct,
+                              planPreview.planNumber || planPreview.week,
+                            )}
                           </div>
                         )}
                       </div>

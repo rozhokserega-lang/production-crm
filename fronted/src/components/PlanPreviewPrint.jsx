@@ -1,5 +1,9 @@
 import { resolvePlanPreviewArticleByName } from "../app/planPreviewHelpers";
-import { getPlanPreviewArticleCode, stripPlanItemMeta } from "../app/orderHelpers";
+import {
+  formatStrapPlanTargetCaption,
+  getPlanPreviewArticleCode,
+  stripPlanItemMeta,
+} from "../app/orderHelpers";
 import { PlanQrImage } from "./PlanQrImage";
 
 function stripMaterialSuffix(name, material) {
@@ -27,6 +31,10 @@ export function PlanPreviewPrint({ planPreview, articleLookupByItemKey = null })
 
   const fallbackArticle = resolvePlanPreviewArticleByName(planPreview, articleLookupByItemKey);
   const articleCode = getPlanPreviewArticleCode(planPreview) || fallbackArticle;
+  const strapCaption = formatStrapPlanTargetCaption(
+    planPreview.strapTargetProduct || (Array.isArray(planPreview.products) ? planPreview.products[0] : ""),
+    planPreview.planNumber || planPreview.week,
+  );
 
   return (
     <div className="plan-preview print-plan-page">
@@ -40,6 +48,7 @@ export function PlanPreviewPrint({ planPreview, articleLookupByItemKey = null })
             {stripMaterialSuffix(planPreview.firstName || planPreview.detailedName || "-", planPreview.colorName)}
           </div>
           <div className="color">{planPreview.colorName || "-"}</div>
+          {!!strapCaption && <div className="strap-target">{strapCaption}</div>}
         </div>
         <div className="plan-right-meta">
           <div className="plan-number-box">

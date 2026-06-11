@@ -86,8 +86,11 @@ export function enrichPreviewWithStrapProduct(preview, shipmentRow, deps = {}) {
   const normalizeProductKey = deps.normalizeStrapProductKey;
   const extractSizeToken = deps.extractDetailSizeToken;
   const extractStrapFromItem = deps.extractStrapTargetProduct;
+  const itemForStrapMeta = String(
+    shipmentRow?.sourceItem || shipmentRow?.item || preview?.firstName || "",
+  ).trim();
   const strapFromItem = typeof extractStrapFromItem === "function"
-    ? extractStrapFromItem(shipmentRow?.item || shipmentRow?.sourceItem || preview?.firstName || "")
+    ? extractStrapFromItem(itemForStrapMeta)
     : "";
   const shipmentHint = typeof canonicalName === "function"
     ? canonicalName(String(shipmentRow?.strapProduct || strapFromItem || "").trim())
@@ -120,7 +123,7 @@ export function enrichPreviewWithStrapProduct(preview, shipmentRow, deps = {}) {
     }
     return "";
   })();
-  const token = (typeof extractSizeToken === "function" && extractSizeToken(shipmentRow?.item || "")) ||
+  const token = (typeof extractSizeToken === "function" && extractSizeToken(itemForStrapMeta)) ||
     (typeof extractSizeToken === "function" && extractSizeToken(preview?.firstName || "")) ||
     (typeof extractSizeToken === "function" && extractSizeToken(preview?.detailedName || "")) ||
     "";

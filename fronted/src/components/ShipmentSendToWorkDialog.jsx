@@ -3,12 +3,15 @@ import { createPortal } from "react-dom";
 import { PlanPreviewPrint } from "./PlanPreviewPrint";
 import { buildShipmentPrintPlansForSentOrders, getSentOrderId, loadShipmentTableBySourceMap } from "../app/shipmentPreviewHelpers";
 import { printWithPartialBodyClass, waitForImages } from "../app/printHelpers";
-import { stripPlanItemMeta } from "../app/orderHelpers";
+import { resolveStrapTargetProductFromShipmentRow, stripPlanItemMeta } from "../app/orderHelpers";
 import { OrderService } from "../services/orderService";
 import { normalizeOrder } from "../app/rowHelpers";
 
 function itemLabel(selection) {
-  return stripPlanItemMeta(String(selection?.item || selection?.sourceItem || "")).trim() || "—";
+  const base = stripPlanItemMeta(String(selection?.sourceItem || selection?.item || "")).trim() || "—";
+  const product = resolveStrapTargetProductFromShipmentRow(selection);
+  if (!product) return base;
+  return `${base} · для ${product}`;
 }
 
 export function ShipmentSendToWorkDialog({
