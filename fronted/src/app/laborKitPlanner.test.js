@@ -3,8 +3,10 @@ import {
   calcGroupPlanLabor,
   calcKitLabor,
   calcTotalProductionPlan,
+  kitItemsToSectionDrafts,
   scheduleStageMakespan,
   resolveKitGroupName,
+  sectionDraftsToKitItems,
 } from "./laborKitPlanner";
 
 describe("laborKitPlanner", () => {
@@ -72,5 +74,27 @@ describe("laborKitPlanner", () => {
     ], { kitCount: 1, ratesByGroup: rates });
 
     expect(result.seqPerKit).toBe(10 + (20 + 10) * 2 + (15 + 5));
+  });
+
+  it("roundtrips saved kit items through editable section drafts", () => {
+    const rates = new Map([
+      ["Donini", { pilka: 10, kromka: 20, pras: 5, assembly: 0 }],
+      ["Обвязка 1000_80", { pilka: 0, kromka: 4, pras: 2, assembly: 0 }],
+    ]);
+    const source = [
+      { group: "Donini", qty: 1, kromkaMachines: 2, prasMachines: 1 },
+      { group: "1000_80", qty: 2, kind: "strap", useCustomTimes: true, kromkaMin: 11, prasMin: 3 },
+    ];
+    const drafts = kitItemsToSectionDrafts(source, rates);
+    expect(drafts).toHaveLength(1);
+    expect(drafts[0].group).toBe("Donini");
+    expect(drafts[0].kromkaMachines).toBe("2");
+    expect(drafts[0].straps).toHaveLength(1);
+    expect(drafts[0].straps[0].useCustomTimes).toBe(true);
+    expect(drafts[0].straps[0].kromkaMin).toBe("11");
+    const rebuilt = sectionDraftsToKitItems(drafts, rates);
+    expect(rebuilt[1].useCustomTimes).toBe(true);
+    expect(rebuilt[1].kromkaMin).toBe(11);
+    expect(rebuilt[1].prasMin).toBe(3);
   });
 });

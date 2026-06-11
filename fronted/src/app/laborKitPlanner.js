@@ -334,3 +334,133 @@ export function formatKitItemShort(item = {}) {
   const group = String(item.group || "").replace(/^Обвязка /, "");
   return `${prefix}${group}×${item.qty}`;
 }
+
+function inferUseCustomTimes(rawItem = {}, ratesByGroup = new Map()) {
+  if (Boolean(rawItem.useCustomTimes || rawItem.use_custom_times)) return true;
+  const group = resolveKitGroupName(rawItem.group || rawItem.groupName || "");
+  const rate = ratesByGroup.get(group);
+  if (!rate) return false;
+  const near = (left, right) => Math.abs(toPositiveNumber(left) - toPositiveNumber(right)) <= 0.01;
+  const pilka = rawItem.pilkaMin ?? rawItem.pilka_min;
+  const kromka = rawItem.kromkaMin ?? rawItem.kromka_min;
+  const pras = rawItem.prasMin ?? rawItem.pras_min;
+  const assembly = rawItem.assemblyMin ?? rawItem.assembly_min;
+  const hasStored = [pilka, kromka, pras, assembly].some((v) => toPositiveNumber(v) > 0);
+  if (!hasStored) return false;
+  return !near(pilka, rate.pilka)
+    || !near(kromka, rate.kromka)
+    || !near(pras, rate.pras)
+    || !near(assembly, rate.assembly);
+}
+
+function itemToTimeFormFields(rawItem = {}, ratesByGroup = new Map()) {
+  const normalized = normalizeKitItem(
+    {
+      ...rawItem,
+      useCustomTimes: inferUseCustomTimes(rawItem, ratesByGroup),
+    },
+    ratesByGroup,
+  );
+  const fmt = (value) => (Number(value) > 0 ? String(Math.round(Number(value))) : "");
+  if (!normalized.useCustomTimes) {
+    return {
+      useCustomTimes: false,
+      pilkaMin: "",
+      kromkaMin: "",
+      prasMin: "",
+      assemblyMin: "",
+    };
+  }
+  return {
+    useCustomTimes: true,
+    pilkaMin: fmt(normalized.pilkaMin),
+    kromkaMin: fmt(normalized.kromkaMin),
+    prasMin: fmt(normalized.prasMin),
+    assemblyMin: fmt(normalized.assemblyMin),
+  };
+}
+
+export function kitItemToStrapDraft(rawItem = {}, ratesByGroup = new Map(), id = "") {
+  const item = normalizeKitItem(rawItem, ratesByGroup);
+  return {
+    id: id || `strap-${item.group}-${Math.random().toString(36).slice(2, 7)}`,
+    group: item.group,
+    qty: String(item.qty),
+    ...itemToTimeFormFields(rawItem, ratesByGroup),
+    kromkaMachines: String(item.kromkaMachines),
+    prasMachines: String(item.prasMachines),
+  };
+}
+
+export function kitItemsToSectionDrafts(items = [], ratesByGroup = new Map()) {
+  const normalized = (Array.isArray(items) ? items : []).map((raw) => normalizeKitItem(raw, ratesByGroup));
+  const sections = [];
+  for (let i = 0; i < normalized.length; i += 1) {
+    const item = normalized[i];
+    if (item.kind === "strap") continue;
+    const rawItem = Array.isArray(items) ? items[i] : item;
+    const straps = [];
+    let j = i + 1;
+    while (j < normalized.length && normalized[j].kind === "strap") {
+      straps.push(kitItemToStrapDraft(items[j], ratesByGroup));
+      j += 1;
+    }
+    sections.push({
+      id: `sec-${sections.length}-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+      group: item.group,
+      qty: String(item.qty),
+      ...itemToTimeFormFields(rawItem, ratesByGroup),
+      kromkaMachines: String(item.kromkaMachines),
+      prasMachines: String(item.prasMachines),
+      straps,
+    });
+    i = j - 1;
+  }
+  return sections;
+}
+
+export function sectionDraftToKitItems(sectionDraft = {}, ratesByGroup = new Map()) {
+  const group = resolveKitGroupName(sectionDraft.group);
+  const qty = Math.max(0.01, toPositiveNumber(sectionDraft.qty) || 1);
+  if (!group) return [];
+
+  const useCustomTimes = Boolean(sectionDraft.useCustomTimes);
+  const productItem = normalizeKitItem({
+    group,
+    kind: "product",
+    qty,
+    useCustomTimes,
+    pilkaMin: useCustomTimes ? toPositiveNumber(sectionDraft.pilkaMin) : 0,
+    kromkaMin: useCustomTimes ? toPositiveNumber(sectionDraft.kromkaMin) : 0,
+    prasMin: useCustomTimes ? toPositiveNumber(sectionDraft.prasMin) : 0,
+    assemblyMin: useCustomTimes ? toPositiveNumber(sectionDraft.assemblyMin) : 0,
+    kromkaMachines: sectionDraft.kromkaMachines,
+    prasMachines: sectionDraft.prasMachines,
+  }, ratesByGroup);
+
+  const items = [productItem];
+  (Array.isArray(sectionDraft.straps) ? sectionDraft.straps : []).forEach((strap) => {
+    if (!strap?.group) return;
+    const strapGroup = resolveKitGroupName(strap.group);
+    const strapQty = Math.max(0.01, toPositiveNumber(strap.qty) || 1);
+    const strapCustom = Boolean(strap.useCustomTimes);
+    items.push(normalizeKitItem({
+      group: strapGroup,
+      kind: "strap",
+      qty: strapQty,
+      parentGroup: group,
+      useCustomTimes: strapCustom,
+      pilkaMin: strapCustom ? toPositiveNumber(strap.pilkaMin) : 0,
+      kromkaMin: strapCustom ? toPositiveNumber(strap.kromkaMin) : 0,
+      prasMin: strapCustom ? toPositiveNumber(strap.prasMin) : 0,
+      assemblyMin: strapCustom ? toPositiveNumber(strap.assemblyMin) : 0,
+      kromkaMachines: strap.kromkaMachines,
+      prasMachines: strap.prasMachines,
+    }, ratesByGroup));
+  });
+  return items;
+}
+
+export function sectionDraftsToKitItems(sections = [], ratesByGroup = new Map()) {
+  return (Array.isArray(sections) ? sections : []).flatMap((section) => sectionDraftToKitItems(section, ratesByGroup));
+}

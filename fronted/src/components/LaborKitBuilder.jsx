@@ -7,8 +7,10 @@ import {
   calcKitLabor,
   formatKitItemLabel,
   formatKitItemShort,
-  normalizeKitItem,
+  kitItemsToSectionDrafts,
   resolveKitGroupName,
+  sectionDraftToKitItems,
+  sectionDraftsToKitItems,
 } from "../app/laborKitPlanner";
 import { STRAP_OPTIONS } from "../constants/views";
 
@@ -22,11 +24,6 @@ function formatHhMm(totalMin) {
 function parseQty(value) {
   const n = Number(String(value ?? "").replace(",", ".").trim());
   return Number.isFinite(n) && n > 0 ? n : 0;
-}
-
-function parseMin(value) {
-  const n = Number(String(value ?? "").replace(",", ".").trim());
-  return Number.isFinite(n) && n >= 0 ? n : 0;
 }
 
 function newStrapDraftId() {
@@ -99,6 +96,10 @@ export const LaborKitBuilder = memo(function LaborKitBuilder({
   const [kitBuilderItems, setKitBuilderItems] = useState([]);
   const [sectionDraft, setSectionDraft] = useState(emptySectionDraft);
   const [editingKitId, setEditingKitId] = useState(null);
+  const [editSections, setEditSections] = useState([]);
+  const [editingPlanQty, setEditingPlanQty] = useState("");
+
+  const ratesByGroup = useMemo(() => buildRatesByGroup(laborPlannerRows), [laborPlannerRows]);
 
   const editingKit = useMemo(
     () => (editingKitId ? savedKits.find((k) => k.id === editingKitId) || null : null),
@@ -109,14 +110,17 @@ export const LaborKitBuilder = memo(function LaborKitBuilder({
     setKitNameDraft("");
     setKitBuilderItems([]);
     setSectionDraft(emptySectionDraft());
+    setEditSections([]);
+    setEditingPlanQty("");
     setEditingKitId(null);
   };
 
   const startEditKit = (kit) => {
-    const items = (Array.isArray(kit?.items) ? kit.items : [])
-      .map((item) => normalizeKitItem(item, ratesByGroup));
+    const items = Array.isArray(kit?.items) ? kit.items : [];
     setKitNameDraft(String(kit?.name || "").trim());
-    setKitBuilderItems(items);
+    setKitBuilderItems([]);
+    setEditSections(kitItemsToSectionDrafts(items, ratesByGroup));
+    setEditingPlanQty(String(kitQtyByKey[kit.id] ?? "").trim());
     setSectionDraft(emptySectionDraft());
     setEditingKitId(kit.id);
     if (typeof window !== "undefined") {
@@ -125,8 +129,6 @@ export const LaborKitBuilder = memo(function LaborKitBuilder({
       });
     }
   };
-
-  const ratesByGroup = useMemo(() => buildRatesByGroup(laborPlannerRows), [laborPlannerRows]);
   const productSections = useMemo(() => [...LABOR_GROUP_ORDER], []);
   const strapOptions = useMemo(
     () => (Array.isArray(STRAP_OPTIONS) ? STRAP_OPTIONS : []).map((opt) => ({
@@ -165,53 +167,70 @@ export const LaborKitBuilder = memo(function LaborKitBuilder({
     }));
   };
 
-  const buildItemsFromDraft = () => {
-    const group = resolveKitGroupName(sectionDraft.group);
-    const qty = parseQty(sectionDraft.qty) || 1;
-    if (!group) return [];
+  const buildItemsFromDraft = () => sectionDraftToKitItems(sectionDraft, ratesByGroup);
 
-    const productItem = normalizeKitItem({
-      group,
-      kind: "product",
-      qty,
-      useCustomTimes: sectionDraft.useCustomTimes,
-      pilkaMin: parseMin(sectionDraft.pilkaMin),
-      kromkaMin: parseMin(sectionDraft.kromkaMin),
-      prasMin: parseMin(sectionDraft.prasMin),
-      assemblyMin: parseMin(sectionDraft.assemblyMin),
-      kromkaMachines: sectionDraft.kromkaMachines,
-      prasMachines: sectionDraft.prasMachines,
-    }, ratesByGroup);
-
-    const items = [productItem];
-
-    (sectionDraft.straps || []).forEach((strap) => {
-      if (!strap.group) return;
-      const strapGroup = resolveKitGroupName(strap.group);
-      const strapQty = parseQty(strap.qty) || 1;
-      items.push(normalizeKitItem({
-        group: strapGroup,
-        kind: "strap",
-        qty: strapQty,
-        parentGroup: group,
-        useCustomTimes: strap.useCustomTimes,
-        pilkaMin: parseMin(strap.pilkaMin),
-        kromkaMin: parseMin(strap.kromkaMin),
-        prasMin: parseMin(strap.prasMin),
-        assemblyMin: parseMin(strap.assemblyMin),
-        kromkaMachines: strap.kromkaMachines,
-        prasMachines: strap.prasMachines,
-      }, ratesByGroup));
-    });
-
-    return items;
-  };
-
-  const addSectionToKit = () => {
+  const appendDraftSection = () => {
     const items = buildItemsFromDraft();
     if (!items.length || !items[0].group) return;
-    setKitBuilderItems((prev) => [...prev, ...items]);
+    if (editingKitId) {
+      setEditSections((prev) => [
+        ...prev,
+        {
+          id: `sec-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+          group: sectionDraft.group,
+          qty: sectionDraft.qty,
+          useCustomTimes: sectionDraft.useCustomTimes,
+          pilkaMin: sectionDraft.pilkaMin,
+          kromkaMin: sectionDraft.kromkaMin,
+          prasMin: sectionDraft.prasMin,
+          assemblyMin: sectionDraft.assemblyMin,
+          kromkaMachines: sectionDraft.kromkaMachines,
+          prasMachines: sectionDraft.prasMachines,
+          straps: (sectionDraft.straps || []).map((strap) => ({ ...strap })),
+        },
+      ]);
+    } else {
+      setKitBuilderItems((prev) => [...prev, ...items]);
+    }
     setSectionDraft(emptySectionDraft());
+  };
+
+  const patchEditSection = (sectionId, patch) => {
+    setEditSections((prev) => prev.map((section) => (
+      section.id === sectionId ? { ...section, ...patch } : section
+    )));
+  };
+
+  const patchEditStrap = (sectionId, strapId, patch) => {
+    setEditSections((prev) => prev.map((section) => {
+      if (section.id !== sectionId) return section;
+      return {
+        ...section,
+        straps: (section.straps || []).map((strap) => (
+          strap.id === strapId ? { ...strap, ...patch } : strap
+        )),
+      };
+    }));
+  };
+
+  const removeEditSection = (sectionId) => {
+    setEditSections((prev) => prev.filter((section) => section.id !== sectionId));
+  };
+
+  const addEditStrapRow = (sectionId) => {
+    setEditSections((prev) => prev.map((section) => (
+      section.id === sectionId
+        ? { ...section, straps: [...(section.straps || []), emptyStrapDraft()] }
+        : section
+    )));
+  };
+
+  const removeEditStrapRow = (sectionId, strapId) => {
+    setEditSections((prev) => prev.map((section) => (
+      section.id === sectionId
+        ? { ...section, straps: (section.straps || []).filter((strap) => strap.id !== strapId) }
+        : section
+    )));
   };
 
   const removeBuilderItem = (idx) => {
@@ -220,17 +239,24 @@ export const LaborKitBuilder = memo(function LaborKitBuilder({
 
   const saveKitFromBuilder = async () => {
     const name = String(kitNameDraft || "").trim();
-    if (!name || kitBuilderItems.length === 0) return;
-    const items = kitBuilderItems.map((item) => ({ ...item }));
+    const items = editingKitId
+      ? sectionDraftsToKitItems(editSections, ratesByGroup)
+      : kitBuilderItems.map((item) => ({ ...item }));
+    if (!name || items.length === 0) return;
 
     if (editingKitId) {
       let savedKit = null;
+      const planQty = editingPlanQty;
       setSavedKits((prev) => prev.map((kit) => {
         if (kit.id !== editingKitId) return kit;
         savedKit = { ...kit, name, items };
         return savedKit;
       }));
+      setKitQtyByKey((prev) => ({ ...prev, [editingKitId]: planQty }));
       resetBuilderDraft();
+      if (savedKit?.dbSaved && typeof saveKitPlanQty === "function") {
+        await saveKitPlanQty(savedKit, planQty);
+      }
       if (savedKit?.dbSaved && typeof saveKitToDb === "function") {
         await saveKitToDb(savedKit);
       }
@@ -465,17 +491,168 @@ export const LaborKitBuilder = memo(function LaborKitBuilder({
           </div>
         ) : null}
 
-        <button type="button" className="mini ok" onClick={addSectionToKit} disabled={!sectionDraft.group}>
-          Добавить в комплект
+        <button type="button" className="mini ok" onClick={appendDraftSection} disabled={!sectionDraft.group}>
+          {editingKitId ? "Добавить секцию в комплект" : "Добавить в комплект"}
         </button>
       </details>
 
       {editingKit ? (
         <div className="labor-kit-builder__edit-banner">
           <span>Редактирование: <b>{editingKit.name}</b></span>
+          <label className="labor-kit-field labor-kit-field--xs">
+            <span>План (компл.)</span>
+            <input
+              type="number"
+              min="0"
+              step="1"
+              value={editingPlanQty}
+              onChange={(e) => setEditingPlanQty(e.target.value)}
+              placeholder="0"
+            />
+          </label>
           <button type="button" className="mini" onClick={resetBuilderDraft}>
             Отмена
           </button>
+        </div>
+      ) : null}
+
+      {editingKitId && editSections.length > 0 ? (
+        <div className="labor-kit-builder__edit-sections">
+          {editSections.map((section, sectionIdx) => (
+            <details key={section.id} className="labor-kit-builder__panel" open>
+              <summary className="labor-kit-builder__summary">
+                Секция {sectionIdx + 1}: {section.group || "—"}
+              </summary>
+              <div className="labor-kit-builder__form-grid">
+                <label className="labor-kit-field">
+                  <span>Секция</span>
+                  <select
+                    value={section.group}
+                    onChange={(e) => patchEditSection(section.id, {
+                      group: e.target.value,
+                      ...(section.useCustomTimes ? {} : normTimesForGroup(e.target.value, ratesByGroup)),
+                    })}
+                  >
+                    <option value="">Выберите…</option>
+                    {productSections.map((group) => (
+                      <option key={`edit-section-${section.id}-${group}`} value={group}>{group}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="labor-kit-field labor-kit-field--xs">
+                  <span>Кол-во</span>
+                  <input
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    value={section.qty}
+                    onChange={(e) => patchEditSection(section.id, { qty: e.target.value })}
+                  />
+                </label>
+                <label className="labor-kit-field labor-kit-field--xs">
+                  <span>Кромка</span>
+                  <select
+                    value={section.kromkaMachines}
+                    onChange={(e) => patchEditSection(section.id, { kromkaMachines: e.target.value })}
+                  >
+                    <option value="1">×1</option>
+                    <option value="2">×2</option>
+                  </select>
+                </label>
+                <label className="labor-kit-field labor-kit-field--xs">
+                  <span>Присадка</span>
+                  <select
+                    value={section.prasMachines}
+                    onChange={(e) => patchEditSection(section.id, { prasMachines: e.target.value })}
+                  >
+                    <option value="1">×1</option>
+                    <option value="2">×2</option>
+                  </select>
+                </label>
+              </div>
+              {section.group
+                ? renderTimeFields(section, section.group, (patch) => patchEditSection(section.id, patch))
+                : null}
+              {(section.straps || []).length > 0 ? (
+                <div className="labor-kit-builder__straps">
+                  <div className="labor-kit-builder__straps-head">
+                    <span className="labor-kit-builder__straps-title">Обвязки</span>
+                    <button type="button" className="mini" onClick={() => addEditStrapRow(section.id)}>
+                      + ещё обвязка
+                    </button>
+                  </div>
+                  {(section.straps || []).map((strap, idx) => (
+                    <div key={strap.id} className="labor-kit-builder__strap">
+                      {idx > 0 ? <hr className="labor-kit-builder__strap-divider" /> : null}
+                      <div className="labor-kit-builder__strap-head">
+                        <span className="labor-kit-builder__strap-index">#{idx + 1}</span>
+                        {(section.straps || []).length > 1 ? (
+                          <button type="button" className="mini warn" onClick={() => removeEditStrapRow(section.id, strap.id)}>
+                            Убрать
+                          </button>
+                        ) : null}
+                      </div>
+                      <div className="labor-kit-builder__form-grid">
+                        <label className="labor-kit-field">
+                          <span>Обвязка</span>
+                          <select
+                            value={strap.group}
+                            onChange={(e) => patchEditStrap(section.id, strap.id, {
+                              group: e.target.value,
+                              ...(strap.useCustomTimes ? {} : normTimesForGroup(e.target.value, ratesByGroup)),
+                            })}
+                          >
+                            <option value="">Выберите…</option>
+                            {strapOptions.map((opt) => (
+                              <option key={`edit-strap-${section.id}-${strap.id}-${opt.label}`} value={opt.group}>{opt.label}</option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="labor-kit-field labor-kit-field--xs">
+                          <span>Кол-во</span>
+                          <input
+                            type="number"
+                            min="0.01"
+                            step="0.01"
+                            value={strap.qty}
+                            onChange={(e) => patchEditStrap(section.id, strap.id, { qty: e.target.value })}
+                          />
+                        </label>
+                        <label className="labor-kit-field labor-kit-field--xs">
+                          <span>Кромка</span>
+                          <select
+                            value={strap.kromkaMachines}
+                            onChange={(e) => patchEditStrap(section.id, strap.id, { kromkaMachines: e.target.value })}
+                          >
+                            <option value="1">×1</option>
+                            <option value="2">×2</option>
+                          </select>
+                        </label>
+                        <label className="labor-kit-field labor-kit-field--xs">
+                          <span>Присадка</span>
+                          <select
+                            value={strap.prasMachines}
+                            onChange={(e) => patchEditStrap(section.id, strap.id, { prasMachines: e.target.value })}
+                          >
+                            <option value="1">×1</option>
+                            <option value="2">×2</option>
+                          </select>
+                        </label>
+                      </div>
+                      {strap.group
+                        ? renderTimeFields(strap, strap.group, (patch) => patchEditStrap(section.id, strap.id, patch))
+                        : null}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+              <div className="labor-kit-builder__edit-section-actions">
+                <button type="button" className="mini warn" onClick={() => removeEditSection(section.id)}>
+                  Удалить секцию
+                </button>
+              </div>
+            </details>
+          ))}
         </div>
       ) : null}
 
@@ -491,13 +668,16 @@ export const LaborKitBuilder = memo(function LaborKitBuilder({
           type="button"
           className="mini ok"
           onClick={() => void saveKitFromBuilder()}
-          disabled={!kitNameDraft.trim() || kitBuilderItems.length === 0}
+          disabled={
+            !kitNameDraft.trim()
+            || (editingKitId ? editSections.length === 0 : kitBuilderItems.length === 0)
+          }
         >
           {editingKitId ? "Сохранить изменения" : "Сохранить"}
         </button>
       </div>
 
-      {kitBuilderItems.length > 0 ? (
+      {!editingKitId && kitBuilderItems.length > 0 ? (
         <div className="labor-kit-builder__draft">
           {kitBuilderItems.map((item, idx) => (
             <button
@@ -511,11 +691,13 @@ export const LaborKitBuilder = memo(function LaborKitBuilder({
             </button>
           ))}
         </div>
-      ) : (
-        <p className="labor-kit-builder__hint">
-          {editingKitId ? "Состав пуст — добавьте секции или отмените редактирование." : "Состав пуст — добавьте секции."}
-        </p>
-      )}
+      ) : null}
+      {!editingKitId && kitBuilderItems.length === 0 ? (
+        <p className="labor-kit-builder__hint">Состав пуст — добавьте секции.</p>
+      ) : null}
+      {editingKitId && editSections.length === 0 ? (
+        <p className="labor-kit-builder__hint">Состав пуст — добавьте секции или отмените редактирование.</p>
+      ) : null}
 
       {plannerKitRows.length > 0 ? (
         <>
