@@ -1,6 +1,6 @@
 import { STRAP_OPTIONS } from "../constants/views";
 import { PipelineStage, resolvePipelineStage } from "../orderPipeline";
-import { stripPlanItemMeta } from "./orderHelpers";
+import { stripPlanItemMeta, stripStrapTargetMeta } from "./orderHelpers";
 import {
   canonicalStrapProductName,
   detailPatternToStrapName,
@@ -108,7 +108,7 @@ export function formatStrapProductGroups(products) {
 
 /** Заказ только планок (размер в названии / «Планки обвязки») — без расхода «мебельной» обвязки. */
 export function isWorkshopStrapOrderItem(item) {
-  const s = String(item || "").trim();
+  const s = stripStrapTargetMeta(stripPlanItemMeta(String(item || "").trim()));
   return s.includes("Планки обвязки") || /^\d{3,5}[_x]\d{2,5}(?:[.,]\d+)?$/.test(s);
 }
 

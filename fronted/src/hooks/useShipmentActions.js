@@ -49,6 +49,7 @@ import {
   buildCuttingPlanFromSelection,
 } from "../app/cuttingPlanAlgorithm";
 import { isStorageLikeName } from "../utils/shipmentUtils";
+import { extractStrapTargetProduct } from "../app/orderHelpers";
 
 /**
  * Действия с выбранными ячейками отгрузки:
@@ -312,6 +313,7 @@ export function useShipmentActions({
         extractDetailSizeToken,
         strapProductBySizeToken,
         strapTargetProduct,
+        extractStrapTargetProduct,
       });
       if (shipmentSelections.length === 0) {
         setPlanPreviews(strapPreviews);

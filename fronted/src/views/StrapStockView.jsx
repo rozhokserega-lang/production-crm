@@ -14,6 +14,7 @@ import {
   strapWarehouseShortage,
 } from "../app/workshopStrapNeeds";
 import { StrapLaunchDialog } from "../components/StrapLaunchDialog";
+import { embedStrapTargetProduct } from "../app/orderHelpers";
 import { OrderService } from "../services/orderService";
 
 /**
@@ -130,6 +131,7 @@ export function StrapStockView({
   const [launchDialog, setLaunchDialog] = useState(null);
   const [launchQty, setLaunchQty] = useState("");
   const [launchMaterial, setLaunchMaterial] = useState("");
+  const [launchProduct, setLaunchProduct] = useState("");
   const [launchError, setLaunchError] = useState("");
   const [launchSaving, setLaunchSaving] = useState(false);
 
@@ -216,16 +218,19 @@ export function StrapStockView({
     setLaunchDialog(null);
     setLaunchQty("");
     setLaunchMaterial("");
+    setLaunchProduct("");
     setLaunchError("");
   };
 
   const openLaunchDialog = ({ strapType, color, label, qtyOnHand }) => {
     const shortage = strapWarehouseShortage(demandByKey, strapType, color, qtyOnHand);
-    setLaunchDialog({ strapType, color, label });
+    const products = productsByCode.get(normalizeStrapInventoryCode(strapType)) || [];
+    setLaunchDialog({ strapType, color, label, products });
     setLaunchQty(shortage > 0 ? String(shortage) : "");
     setLaunchMaterial(
       strapRequiresLaunchColorChoice(strapType) ? STRAP_FACADE_LAUNCH_COLORS[0] : String(color || ""),
     );
+    setLaunchProduct(products.length === 1 ? products[0] : "");
     setLaunchError("");
   };
 
@@ -244,13 +249,19 @@ export function StrapStockView({
       setLaunchError("Выберите цвет");
       return;
     }
+    const products = Array.isArray(launchDialog?.products) ? launchDialog.products : [];
+    const productName = String(launchProduct || "").trim();
+    if (products.length > 1 && !productName) {
+      setLaunchError("Выберите изделие для этой обвязки");
+      return;
+    }
 
     setLaunchSaving(true);
     setLaunchError("");
     try {
       await OrderService.createShipmentPlanCell({
         sectionName: "Обвязка",
-        item: launchDialog.strapType,
+        item: embedStrapTargetProduct(launchDialog.strapType, productName || products[0] || ""),
         material,
         week: STRAP_LAUNCH_PLAN_WEEK,
         qty,
@@ -449,6 +460,9 @@ export function StrapStockView({
         setQtyInput={setLaunchQty}
         materialInput={launchMaterial}
         setMaterialInput={setLaunchMaterial}
+        productInput={launchProduct}
+        setProductInput={setLaunchProduct}
+        productOptions={Array.isArray(launchDialog?.products) ? launchDialog.products : []}
         materialOptions={
           launchDialog && strapRequiresLaunchColorChoice(launchDialog.strapType)
             ? STRAP_FACADE_LAUNCH_COLORS

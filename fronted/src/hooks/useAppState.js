@@ -552,11 +552,13 @@ export function useAppState({ auth }) {
       await callBackend("webAddStrapStock", { strapType, color, qty });
       if (orderId) {
         if (mode === "done") {
-          // Strap orders stop at присадка — skip remaining stages so the order leaves the workshop view.
-          await Promise.allSettled([
-            callBackend("webSetAssemblyDone", { orderId }),
-            callBackend("webSetShippingDone", { orderId }),
-          ]);
+          // Планки обвязки после присадки — на склад (комплектация), без сборки и отгрузки в цехе.
+          await callBackend("webSetWarehouseKitReady", { orderId });
+          try {
+            await OrderService.completeReplacementForWorkshopOrder(orderId);
+          } catch (_) {
+            /* триггер в БД дублирует */
+          }
         } else if (mode === "pause") {
           // Subtract completed qty from the paused order.
           await callBackend("webReduceOrderQty", { orderId, qtyDone: qty });

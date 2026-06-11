@@ -1298,6 +1298,247 @@ button:disabled {
   flex-shrink: 0;
 }
 
+/* Metal route blueprint editor */
+.mbp-root {
+  display: grid;
+  gap: 10px;
+}
+
+.mbp-root--fullscreen {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  gap: 0;
+}
+
+.mbp-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 14px;
+  border-bottom: 1px solid #1f2937;
+  background: #0f172a;
+  flex-shrink: 0;
+}
+
+.mbp-toolbar__label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #94a3b8;
+  margin-right: 4px;
+}
+
+.mbp-palette-btn {
+  border: 1px solid #334155;
+  background: #0f172a;
+  color: #e2e8f0;
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.mbp-palette-btn:hover:not(:disabled) {
+  border-color: #64748b;
+}
+
+.mbp-palette-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.mbp-wrap {
+  position: relative;
+  height: 420px;
+  min-height: 320px;
+  border: 1px solid #1f2937;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #0b1220;
+}
+
+.mbp-root--fullscreen .mbp-wrap {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+  border: none;
+  border-radius: 0;
+}
+
+.mbp-wrap .react-flow__attribution {
+  display: none;
+}
+
+.mbp-node {
+  position: relative;
+  min-width: 130px;
+  max-width: 180px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 2px solid #475569;
+  background: #111827;
+  color: #e5e7eb;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+  font-size: 12px;
+}
+
+.mbp-node--start {
+  border-color: #eab308;
+  background: #1c1606;
+  min-width: 120px;
+}
+
+.mbp-node__title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.75;
+  margin-bottom: 2px;
+}
+
+.mbp-node__name {
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mbp-node__icon {
+  font-size: 14px;
+}
+
+.mbp-node__del {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  width: 18px;
+  height: 18px;
+  line-height: 16px;
+  text-align: center;
+  border-radius: 50%;
+  border: 1px solid #7f1d1d;
+  background: #b91c1c;
+  color: #fff;
+  cursor: pointer;
+  padding: 0;
+  font-size: 13px;
+}
+
+.mbp-hint {
+  font-size: 12px;
+  color: var(--text-soft, #64748b);
+  line-height: 1.4;
+}
+
+.mbp-errors {
+  font-size: 12px;
+  color: #b91c1c;
+  display: grid;
+  gap: 4px;
+}
+
+.metal-catalog-fs {
+  position: fixed;
+  inset: 0;
+  z-index: 12000;
+  display: flex;
+  flex-direction: column;
+  background: #0b1220;
+  color: #e2e8f0;
+}
+
+.metal-catalog-fs__head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 16px;
+  border-bottom: 1px solid #1e293b;
+  background: #0f172a;
+  flex-shrink: 0;
+}
+
+.metal-catalog-fs__title {
+  font-weight: 800;
+  font-size: 15px;
+  white-space: nowrap;
+}
+
+.metal-catalog-fs__fields {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.metal-catalog-fs__field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.metal-catalog-fs__field-label {
+  font-size: 12px;
+  color: #94a3b8;
+  flex-shrink: 0;
+}
+
+.metal-catalog-fs__field input {
+  min-width: 0;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid #334155;
+  background: #0b1220;
+  color: #f1f5f9;
+  font-size: 13px;
+}
+
+.metal-catalog-fs__field--article input {
+  width: 160px;
+}
+
+.metal-catalog-fs__field--name {
+  flex: 1;
+  min-width: 200px;
+}
+
+.metal-catalog-fs__field--name input {
+  width: 100%;
+}
+
+.metal-catalog-fs__actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.metal-catalog-fs__body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.metal-catalog-fs__foot {
+  flex-shrink: 0;
+  padding: 8px 16px 12px;
+  border-top: 1px solid #1e293b;
+  background: #0f172a;
+  font-size: 12px;
+  color: #94a3b8;
+  line-height: 1.4;
+}
+
+.metal-catalog-fs__foot .mbp-errors {
+  margin-top: 6px;
+}
+
 /* Route editor */
 .route-editor {
   display: flex;

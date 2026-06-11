@@ -5,6 +5,9 @@ export function StrapLaunchDialog({
   setQtyInput,
   materialInput = "",
   setMaterialInput,
+  productInput = "",
+  setProductInput,
+  productOptions = [],
   materialOptions = [],
   error,
   saving,
@@ -14,6 +17,8 @@ export function StrapLaunchDialog({
   if (!open || !meta) return null;
 
   const showColorSelect = materialOptions.length > 0;
+  const showProductSelect = productOptions.length > 1;
+  const singleProduct = productOptions.length === 1 ? productOptions[0] : "";
 
   return (
     <div className="dialog-backdrop">
@@ -26,6 +31,29 @@ export function StrapLaunchDialog({
         <p style={{ margin: "0 0 16px", color: "#475569", fontSize: 13 }}>
           План: <strong>обвязка</strong>. Позиция появится на вкладке «Отгрузка» в статусе <strong>«Ожидаю заказ»</strong>.
         </p>
+        {singleProduct ? (
+          <p style={{ margin: "0 0 16px", color: "#475569", fontSize: 13 }}>
+            Изделие: <strong>{singleProduct}</strong>
+          </p>
+        ) : null}
+        {showProductSelect ? (
+          <label className="strap-launch-field">
+            Изделие
+            <select
+              className="strap-qty-dialog-input"
+              value={productInput}
+              onChange={(e) => setProductInput(e.target.value)}
+              autoFocus
+            >
+              <option value="">Выберите изделие</option>
+              {productOptions.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
         {showColorSelect ? (
           <label className="strap-launch-field">
             Цвет

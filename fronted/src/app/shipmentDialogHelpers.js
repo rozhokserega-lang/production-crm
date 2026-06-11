@@ -64,8 +64,12 @@ export function buildStrapPlanRows({
 export function buildStrapPlanCellPayload(row, week, deps = {}) {
   const resolveMaterial = deps.resolveStrapMaterialByProduct;
   const toOrderItem = deps.strapNameToOrderItem;
+  const embedStrapProduct = deps.embedStrapTargetProduct;
   const material = typeof resolveMaterial === "function" ? resolveMaterial(row?.productName || "") : "";
-  const item = typeof toOrderItem === "function" ? toOrderItem(row?.name) : String(row?.name || "");
+  const baseItem = typeof toOrderItem === "function" ? toOrderItem(row?.name) : String(row?.name || "");
+  const item = typeof embedStrapProduct === "function"
+    ? embedStrapProduct(baseItem, row?.productName || "")
+    : baseItem;
   return {
     sectionName: "Обвязка",
     item,

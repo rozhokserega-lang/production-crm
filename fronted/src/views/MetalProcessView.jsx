@@ -1,6 +1,19 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { readMetalUiPrefs, writeMetalUiPrefs } from "../app/metalProcessUiPrefs";
+import {
+  DEFAULT_PROCESS_GRAPH,
+  deriveStageRouteFromGraph,
+  extractForkPlan,
+  filterMetalDoneRows,
+  filterMetalPlanRows,
+  filterMetalStatsRows,
+  getGraphStartStages,
+  processGraphFromCatalogRow,
+  validateProcessGraph,
+} from "../app/metalProcessGraph";
 import { OrderService } from "../services/orderService";
+import { MetalRouteBlueprint, MetalRouteGraphSummary } from "./MetalRouteBlueprint";
 
 const STAGE_LABELS = {
   laser: "Лазер",
@@ -30,15 +43,42 @@ const DEFAULT_METAL_ROUTE = ["laser", "bending", "welding", "painting"];
 
 /** Catalog-aware route for row (fallback if article missing from catalog). */
 function resolveMetalRoute(row, catalogRows) {
+  if (Array.isArray(row?.stageRoute) && row.stageRoute.length > 0) {
+    return row.stageRoute;
+  }
   const article = String(row?.article || "").trim().toUpperCase();
   const list = Array.isArray(catalogRows) ? catalogRows : [];
   const match = list.find((c) => String(c?.article || "").trim().toUpperCase() === article);
+  if (match?.processGraph) {
+    return deriveStageRouteFromGraph(match.processGraph);
+  }
   if (match && Array.isArray(match.stageRoute) && match.stageRoute.length > 0) {
     return match.stageRoute;
   }
   const stage = String(row?.currentStage || "").toLowerCase();
   if (stage === "saw") return ["saw", "welding", "painting"];
   return [...DEFAULT_METAL_ROUTE];
+}
+
+function resolveCatalogProcessGraph(catalogItem) {
+  if (!catalogItem) return DEFAULT_PROCESS_GRAPH;
+  if (catalogItem.processGraph) {
+    return processGraphFromCatalogRow(catalogItem);
+  }
+  return processGraphFromCatalogRow({ stageRoute: catalogItem.stageRoute });
+}
+
+/** Prefer process_graph snapshot on the work item, then catalog blueprint. */
+function resolveWorkItemProcessGraph(row, catalogItem) {
+  if (row?.processGraph) {
+    return processGraphFromCatalogRow(row);
+  }
+  return resolveCatalogProcessGraph(catalogItem);
+}
+
+function resolvePlanStartStages(catalogItem) {
+  const graph = resolveCatalogProcessGraph(catalogItem);
+  return getGraphStartStages(graph);
 }
 
 /** Human-readable remaining stages after current (including immediate next). */
@@ -101,6 +141,9 @@ function getPlanStageLabel(row) {
 function formatPlanStatus(row) {
   const status = String(row?.status || "").toLowerCase();
   const stageStatus = String(row?.stageStatus || "").toLowerCase();
+  if (status === "split") return "Ветки в производстве";
+  if (row?.forkRole === "branch") return "Ветка";
+  if (row?.forkRole === "merge") return "Сборка после веток";
   if (status === "planned" && stageStatus === "queued") return "Ожидает старта";
   if (status === "active" && stageStatus === "queued") return "Ожидает на этапе";
   if (status === "active" && stageStatus === "in_progress") return "В работе";
@@ -173,7 +216,25 @@ function matchesCatalogQuery(item, rawQuery) {
   );
 }
 
-const ALL_STAGES_ORDERED = ["laser", "saw", "bending", "welding", "painting"];
+function matchesMetalRowQuery(row, rawQuery) {
+  const q = normalizeSearchText(rawQuery);
+  if (!q) return true;
+  const stageKey = String(row?.currentStage || "").toLowerCase();
+  const parts = [
+    row?.article,
+    row?.name,
+    row?.week,
+    row?.status,
+    row?.stageStatus,
+    formatPlanStatus(row),
+    getPlanStageLabel(row),
+    STAGE_LABELS[stageKey],
+    stageKey,
+  ].map(normalizeSearchText).filter(Boolean);
+  const hay = parts.join(" ");
+  if (hay.includes(q)) return true;
+  return parts.some((part) => part.includes(q) || isOneEditAway(part, q));
+}
 
 const STAGE_COLORS = {
   laser:    { bg: "#1a3a5c", border: "#3b82f6", text: "#93c5fd", icon: "⚡" },
@@ -199,109 +260,12 @@ function StageBadge({ stage, size = "md" }) {
   );
 }
 
-function RouteEditor({ value, onChange, disabled }) {
-  const route = Array.isArray(value) && value.length > 0 ? value : ["laser", "bending", "welding", "painting"];
-  const [dragSourceIdx, setDragSourceIdx] = useState(null);
-  const [dragOverIdx, setDragOverIdx] = useState(null);
-
-  const addStage = (stage) => {
-    if (disabled) return;
-    const next = [...route, stage];
-    onChange(next);
-  };
-
-  const removeAt = (idx) => {
-    if (disabled) return;
-    if (!(idx >= 0 && idx < route.length)) return;
-    if (route.length <= 1) return;
-    const next = [...route];
-    next.splice(idx, 1);
-    onChange(next);
-  };
-
-  const handleDragStart = (idx) => {
-    setDragSourceIdx(idx);
-  };
-
-  const handleDragOver = (e, idx) => {
-    e.preventDefault();
-    setDragOverIdx(idx);
-  };
-
-  const handleDrop = (e, toIdx) => {
-    e.preventDefault();
-    setDragOverIdx(null);
-    const fromIdx = dragSourceIdx;
-    setDragSourceIdx(null);
-    if (!(fromIdx >= 0)) return;
-    if (fromIdx === toIdx) return;
-    const next = [...route];
-    const [moved] = next.splice(fromIdx, 1);
-    next.splice(toIdx, 0, moved);
-    onChange(next);
-  };
-
-  const handleDragEnd = () => {
-    setDragSourceIdx(null);
-    setDragOverIdx(null);
-  };
-
-  return (
-    <div className="route-editor">
-      <div className="route-editor__active-label">
-        Активные этапы — перетащите для изменения порядка:
-      </div>
-      <div className="route-editor__chain">
-        {route.map((stage, idx) => {
-          const c = STAGE_COLORS[stage] || { border: "#555" };
-          const isDragOver = dragOverIdx === idx && dragSourceIdx !== idx;
-          return (
-            <div key={`${stage}-${idx}`} className="route-editor__chain-step">
-              {idx > 0 && <span className="route-editor__chain-arrow">→</span>}
-              <div
-                className={`route-editor__item${isDragOver ? " route-editor__item--drop-target" : ""}`}
-                style={{ borderColor: c.border, cursor: disabled ? "default" : "grab" }}
-                draggable={!disabled}
-                onDragStart={() => handleDragStart(idx)}
-                onDragOver={(e) => handleDragOver(e, idx)}
-                onDrop={(e) => handleDrop(e, idx)}
-                onDragEnd={handleDragEnd}
-              >
-                <span className="route-editor__drag-handle" title="Перетащите для изменения порядка">⠿</span>
-                <span className="route-editor__step-num">{idx + 1}</span>
-                <StageBadge stage={stage} size="sm" />
-                <button
-                  type="button"
-                  className="route-editor__btn route-editor__btn--remove"
-                  title="Убрать из маршрута"
-                  disabled={disabled || route.length <= 1}
-                  onClick={() => removeAt(idx)}
-                >✕</button>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-      <div className="route-editor__unused">
-        <span className="route-editor__unused-label">Добавить этап:</span>
-        {ALL_STAGES_ORDERED.map((stage) => (
-          <button
-            key={`add-${stage}`}
-            type="button"
-            className="route-editor__btn route-editor__btn--add"
-            disabled={disabled}
-            onClick={() => addStage(stage)}
-            style={{ borderColor: STAGE_COLORS[stage]?.border, color: STAGE_COLORS[stage]?.text }}
-          >
-            {STAGE_COLORS[stage]?.icon} {STAGE_LABELS[stage]}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-const EMPTY_CATALOG_FORM = { article: "", name: "", stageRoute: ["laser", "bending", "welding", "painting"] };
+const EMPTY_CATALOG_FORM = {
+  article: "",
+  name: "",
+  processGraph: DEFAULT_PROCESS_GRAPH,
+  stageRoute: deriveStageRouteFromGraph(DEFAULT_PROCESS_GRAPH),
+};
 
 export function MetalProcessView({
   loading,
@@ -320,20 +284,66 @@ export function MetalProcessView({
   deleteMetalCatalogItem,
   metalProcessActionKey,
 }) {
-  const [subView, setSubView] = useState("plan");
-  const [productionTab, setProductionTab] = useState("laser");
+  const initialMetalUi = readMetalUiPrefs();
+  const [subView, setSubViewRaw] = useState(initialMetalUi.subView);
+  const [productionTab, setProductionTabRaw] = useState(initialMetalUi.productionTab);
+  const [planListSearch, setPlanListSearch] = useState("");
+  const [productionListSearch, setProductionListSearch] = useState("");
   const [catalogSearchText, setCatalogSearchText] = useState("");
   const [commentDraftById, setCommentDraftById] = useState({});
   const [kanbanDrawerId, setKanbanDrawerId] = useState("");
   const [planPreviewRow, setPlanPreviewRow] = useState(null);
   const [catalogForm, setCatalogForm] = useState(EMPTY_CATALOG_FORM);
+  const [catalogGraphErrors, setCatalogGraphErrors] = useState([]);
   const [catalogEditArticle, setCatalogEditArticle] = useState(null);
   const [catalogTableSearch, setCatalogTableSearch] = useState("");
   const [doneDialog, setDoneDialog] = useState({ open: false, row: null, edit: false, doneQty: "", note: "" });
   const [weldingDialog, setWeldingDialog] = useState({ open: false, row: null, executor: "" });
   const [eventsDialog, setEventsDialog] = useState({ open: false, row: null, loading: false, error: "", events: [] });
-  const catalogEditorRef = useRef(null);
   const catalogArticleInputRef = useRef(null);
+
+  useEffect(() => {
+    if (!catalogEditArticle) return undefined;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (e) => {
+      if (e.key !== "Escape") return;
+      if (metalProcessActionKey.startsWith("catalog:")) return;
+      setCatalogEditArticle(null);
+      setCatalogGraphErrors([]);
+      setCatalogForm(EMPTY_CATALOG_FORM);
+    };
+    window.addEventListener("keydown", onKey);
+    const focusTimer = requestAnimationFrame(() => {
+      try {
+        catalogArticleInputRef.current?.focus();
+      } catch (_) {
+        /* ignore */
+      }
+    });
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener("keydown", onKey);
+      cancelAnimationFrame(focusTimer);
+    };
+  }, [catalogEditArticle, metalProcessActionKey]);
+
+  const setSubView = useCallback((next) => {
+    setSubViewRaw(next);
+    writeMetalUiPrefs({ subView: next });
+  }, []);
+
+  const setProductionTab = useCallback((next) => {
+    setProductionTabRaw(next);
+    writeMetalUiPrefs({ productionTab: next });
+  }, []);
+
+  useEffect(() => {
+    if (subView === "catalog" && !canManageOrders) {
+      setSubView("plan");
+    }
+  }, [canManageOrders, subView, setSubView]);
+
   const options = useMemo(
     () => (Array.isArray(metalProcessCatalogRows) ? metalProcessCatalogRows : []),
     [metalProcessCatalogRows],
@@ -390,34 +400,23 @@ export function MetalProcessView({
     () => activeRows.filter((row) => String(row.status || "").toLowerCase() !== "done"),
     [activeRows],
   );
-  const doneRows = useMemo(
-    () => rows.filter((row) => String(row.status || "").toLowerCase() === "done"),
-    [rows],
-  );
-  const planRows = useMemo(
-    () => rows.filter((row) => String(row?.status || "").toLowerCase() !== "cancelled"),
-    [rows],
-  );
+  const doneRows = useMemo(() => filterMetalDoneRows(rows), [rows]);
+  const planRows = useMemo(() => filterMetalPlanRows(rows), [rows]);
   const productionRows = useMemo(() => {
     if (productionTab === "done") return doneRows;
     return operatorRows.filter((row) => row.currentStage === productionTab);
   }, [doneRows, operatorRows, productionTab]);
-  const statsRows = useMemo(() => {
-    return [...rows]
-      .filter((row) => String(row?.status || "").toLowerCase() !== "cancelled")
-      .map((row) => {
-        const laser = Number(row.laserSeconds || 0);
-        const saw = Number(row.sawSeconds || 0);
-        const bending = Number(row.bendingSeconds || 0);
-        const welding = Number(row.weldingSeconds || 0);
-        const painting = Number(row.paintingSeconds || 0);
-        return {
-          ...row,
-          totalSeconds: laser + saw + bending + welding + painting,
-        };
-      })
-      .sort((a, b) => b.totalSeconds - a.totalSeconds);
-  }, [rows]);
+  const filteredPlanRows = useMemo(() => {
+    const q = normalizeSearchText(planListSearch);
+    if (!q) return planRows;
+    return planRows.filter((row) => matchesMetalRowQuery(row, q));
+  }, [planRows, planListSearch]);
+  const filteredProductionRows = useMemo(() => {
+    const q = normalizeSearchText(productionListSearch);
+    if (!q) return productionRows;
+    return productionRows.filter((row) => matchesMetalRowQuery(row, q));
+  }, [productionRows, productionListSearch]);
+  const statsRows = useMemo(() => filterMetalStatsRows(rows), [rows]);
   const statsTotals = useMemo(() => {
     return statsRows.reduce(
       (acc, row) => {
@@ -870,6 +869,12 @@ export function MetalProcessView({
               onChange={(e) => setMetalProcessDraft((prev) => ({ ...prev, name: e.target.value }))}
             />
             <input
+              className="metal-process-field metal-process-field--week"
+              placeholder="Неделя / план"
+              value={metalProcessDraft.week ?? ""}
+              onChange={(e) => setMetalProcessDraft((prev) => ({ ...prev, week: e.target.value }))}
+            />
+            <input
               className="metal-process-field metal-process-field--qty"
               placeholder="Кол-во"
               value={metalProcessDraft.qty}
@@ -886,12 +891,28 @@ export function MetalProcessView({
               {metalProcessActionKey === "create" ? "Создаю..." : "Добавить в план"}
             </button>
           </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 14, marginBottom: 8, flexWrap: "wrap" }}>
+            <span style={{ fontWeight: 800 }}>План</span>
+            <input
+              className="metal-process-field"
+              style={{ flex: 1, minWidth: 180, maxWidth: 360 }}
+              placeholder="Поиск: артикул, название, план, статус…"
+              value={planListSearch}
+              onChange={(e) => setPlanListSearch(e.target.value)}
+            />
+            {planListSearch.trim() && (
+              <span style={{ fontSize: 12, color: "var(--text-soft)" }}>
+                {filteredPlanRows.length} из {planRows.length}
+              </span>
+            )}
+          </div>
           <div className="sheet-table-wrap" style={{ marginTop: 10 }}>
             <table className="sheet-table">
               <thead>
                 <tr>
                   <th>Артикул</th>
                   <th>Название</th>
+                  <th>План</th>
                   <th>Кол-во</th>
                   <th>Текущий этап</th>
                   <th>Статус</th>
@@ -901,35 +922,58 @@ export function MetalProcessView({
               <tbody>
                 {!loading && planRows.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="empty">План металла пока пуст.</td>
+                    <td colSpan={7} className="empty">План металла пока пуст.</td>
                   </tr>
                 )}
-                {planRows.map((row) => {
+                {!loading && planRows.length > 0 && filteredPlanRows.length === 0 && (
+                  <tr>
+                    <td colSpan={7} className="empty">Ничего не найдено по фильтру.</td>
+                  </tr>
+                )}
+                {filteredPlanRows.map((row) => {
                   const rowKey = String(row.id);
                   const busy = metalProcessActionKey.startsWith(`row:${rowKey}:`);
                   const catalogItem = options.find((c) => c.article === row.article);
-                  const firstStage = Array.isArray(catalogItem?.stageRoute) && catalogItem.stageRoute.length > 0
-                    ? catalogItem.stageRoute[0]
-                    : "laser";
+                  const workGraph = resolveWorkItemProcessGraph(row, catalogItem);
+                  const forkPlan = extractForkPlan(workGraph);
+                  const isParallelPlan = forkPlan.mode === "parallel";
+                  const planStartStages = isParallelPlan ? [] : resolvePlanStartStages(catalogItem);
                   return (
                     <tr key={`plan-${row.id}`}>
                       <td>{row.article || "-"}</td>
                       <td>{row.name || "-"}</td>
+                      <td>{row.week || "-"}</td>
                       <td>{row.qty}</td>
                       <td>{getPlanStageLabel(row)}</td>
                       <td>{formatPlanStatus(row)}</td>
                       <td>
                         {String(row.status || "").toLowerCase() === "planned" ? (
                           <>
-                            <button
-                              type="button"
-                              className="mini ok"
-                              disabled={!canOperateProduction || busy}
-                              onClick={() => void startFromPlan(row.id, firstStage)}
-                              title={`Первый этап: ${STAGE_LABELS[firstStage] || firstStage}`}
-                            >
-                              {busy ? "Запуск..." : `В работу → ${STAGE_LABELS[firstStage] || firstStage}`}
-                            </button>
+                            {isParallelPlan ? (
+                              <button
+                                type="button"
+                                className="mini ok"
+                                disabled={!canOperateProduction || busy}
+                                onClick={() => void startFromPlan(row.id, null)}
+                                title={`Параллельные ветки: ${forkPlan.branches.map((b) => STAGE_LABELS[b.branchKey] || b.branchKey).join(" + ")} → ${STAGE_LABELS[forkPlan.mergeStage] || forkPlan.mergeStage}`}
+                              >
+                                {busy ? "Запуск..." : `В работу (${forkPlan.branches.map((b) => STAGE_LABELS[b.branchKey] || b.branchKey).join(" + ")})`}
+                              </button>
+                            ) : (
+                              planStartStages.map((startStage) => (
+                                <button
+                                  key={`start-${row.id}-${startStage}`}
+                                  type="button"
+                                  className="mini ok"
+                                  disabled={!canOperateProduction || busy}
+                                  onClick={() => void startFromPlan(row.id, startStage)}
+                                  title={`Первый этап: ${STAGE_LABELS[startStage] || startStage}`}
+                                  style={planStartStages.length > 1 ? { marginRight: 8, marginBottom: 4 } : undefined}
+                                >
+                                  {busy ? "Запуск..." : `В работу → ${STAGE_LABELS[startStage] || startStage}`}
+                                </button>
+                              ))
+                            )}
                             <button
                               type="button"
                               className="mini"
@@ -1009,7 +1053,15 @@ export function MetalProcessView({
                       }
                     }}
                   >
-                    <div className="metal-process-card__id">#{row.article || `MP-${row.id}`}</div>
+                    <div className="metal-process-card__id">
+                      #{row.article || `MP-${row.id}`}
+                      {row.forkRole === "branch" && (
+                        <span className="badge meta-inline" style={{ marginLeft: 6 }} title="Параллельная ветка">Ветка</span>
+                      )}
+                      {row.forkRole === "merge" && (
+                        <span className="badge meta-inline" style={{ marginLeft: 6 }} title="Слияние веток">Сборка</span>
+                      )}
+                    </div>
                     <div className="metal-process-card__item">{row.name || "-"}</div>
                     <div className="metal-process-card__sub">Артикул: {row.article || "-"}</div>
                     <div className="metal-process-card__meta">
@@ -1082,13 +1134,30 @@ export function MetalProcessView({
               Готовые
             </button>
           </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10, marginBottom: 8, flexWrap: "wrap" }}>
+            <input
+              className="metal-process-field"
+              style={{ flex: 1, minWidth: 180, maxWidth: 360 }}
+              placeholder="Поиск: артикул, название, план, статус…"
+              value={productionListSearch}
+              onChange={(e) => setProductionListSearch(e.target.value)}
+            />
+            {productionListSearch.trim() && (
+              <span style={{ fontSize: 12, color: "var(--text-soft)" }}>
+                {filteredProductionRows.length} из {productionRows.length}
+              </span>
+            )}
+          </div>
           {!loading && productionRows.length === 0 && (
             <div className="empty">
               {productionTab === "done" ? "Нет готовых позиций" : "Нет позиций на выбранном этапе"}
             </div>
           )}
+          {!loading && productionRows.length > 0 && filteredProductionRows.length === 0 && (
+            <div className="empty">Ничего не найдено по фильтру.</div>
+          )}
           <div className="metal-process-production-list">
-            {productionRows.map((row) => {
+            {filteredProductionRows.map((row) => {
               const rowKey = String(row.id);
               const busy = metalProcessActionKey.startsWith(`row:${rowKey}:`);
               const stageKey = String(row.currentStage || "");
@@ -1102,6 +1171,12 @@ export function MetalProcessView({
                       <div className="line1">
                         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                           <strong>{row.article} - {row.name}</strong>
+                          {row.forkRole === "branch" && (
+                            <span className="badge meta-inline" title="Параллельная ветка">Ветка</span>
+                          )}
+                          {row.forkRole === "merge" && (
+                            <span className="badge meta-inline" title="Слияние веток">Сборка</span>
+                          )}
                           <span className="badge meta-inline">План: {row.week || "-"}</span>
                           <span className="badge meta-inline">Кол-во: {row.qty || 0}</span>
                           <span className="badge meta-inline">{STAGE_LABELS[stageKey] || stageKey}</span>
@@ -1271,36 +1346,48 @@ export function MetalProcessView({
         const isEditing = catalogEditArticle !== null;
         const isSaving = catalogLoading || metalProcessActionKey.startsWith("catalog:");
         const startEdit = (row) => {
+          const processGraph = processGraphFromCatalogRow(row);
           setCatalogEditArticle(row.article);
+          setCatalogGraphErrors([]);
           setCatalogForm({
             article: row.article,
             name: row.name,
-            stageRoute: Array.isArray(row.stageRoute) && row.stageRoute.length > 0
-              ? row.stageRoute
-              : ["laser", "bending", "welding", "painting"],
-          });
-          requestAnimationFrame(() => {
-            try {
-              catalogEditorRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-            } catch (_) {
-              /* ignore */
-            }
-            try {
-              catalogArticleInputRef.current?.focus();
-            } catch (_) {
-              /* ignore */
-            }
+            processGraph,
+            stageRoute: deriveStageRouteFromGraph(processGraph),
           });
         };
         const cancelEdit = () => {
           setCatalogEditArticle(null);
+          setCatalogGraphErrors([]);
           setCatalogForm(EMPTY_CATALOG_FORM);
+        };
+        const handleCatalogGraphChange = (nextGraph) => {
+          const validation = validateProcessGraph(nextGraph);
+          setCatalogGraphErrors(validation.errors);
+          setCatalogForm((prev) => ({
+            ...prev,
+            processGraph: validation.graph,
+            stageRoute: deriveStageRouteFromGraph(validation.graph),
+          }));
         };
         const handleSave = async () => {
           const article = String(catalogForm.article || "").trim().toUpperCase();
           const name = String(catalogForm.name || "").trim();
-          if (!article || !name || !catalogForm.stageRoute.length) return;
-          await upsertMetalCatalogItem(article, name, catalogForm.stageRoute, true);
+          const validation = validateProcessGraph(catalogForm.processGraph);
+          if (!article || !name) return;
+          if (!validation.ok) {
+            setCatalogGraphErrors(validation.errors);
+            return;
+          }
+          await upsertMetalCatalogItem(
+            article,
+            name,
+            {
+              processGraph: validation.graph,
+              stageRoute: deriveStageRouteFromGraph(validation.graph),
+            },
+            true,
+          );
           cancelEdit();
         };
         const handleDelete = async (row) => {
@@ -1326,6 +1413,7 @@ export function MetalProcessView({
                 disabled={isSaving || isEditing}
                 onClick={() => {
                   setCatalogEditArticle("__new__");
+                  setCatalogGraphErrors([]);
                   setCatalogForm(EMPTY_CATALOG_FORM);
                 }}
               >
@@ -1333,60 +1421,74 @@ export function MetalProcessView({
               </button>
             </div>
 
-            {isEditing && (
-              <div className="catalog-edit-card" ref={catalogEditorRef}>
-                <div style={{ fontWeight: 700, marginBottom: 8 }}>
-                  {isNewMode ? "Новое изделие" : `Редактирование: ${catalogEditArticle}`}
-                </div>
-                <div className="catalog-edit-row">
-                  <label className="catalog-edit-label">Артикул</label>
-                  <input
-                    ref={catalogArticleInputRef}
-                    className="metal-process-field"
-                    placeholder="Артикул (заглавными)"
-                    value={catalogForm.article}
-                    disabled={!isNewMode}
-                    onChange={(e) => setCatalogForm((p) => ({ ...p, article: e.target.value }))}
-                    style={{ maxWidth: 220 }}
-                  />
-                </div>
-                <div className="catalog-edit-row">
-                  <label className="catalog-edit-label">Название</label>
-                  <input
-                    className="metal-process-field"
-                    placeholder="Название изделия"
-                    value={catalogForm.name}
-                    onChange={(e) => setCatalogForm((p) => ({ ...p, name: e.target.value }))}
-                    style={{ flex: 1 }}
-                  />
-                </div>
-                <div className="catalog-edit-row" style={{ alignItems: "flex-start" }}>
-                  <label className="catalog-edit-label" style={{ paddingTop: 4 }}>Маршрут</label>
-                  <RouteEditor
-                    value={catalogForm.stageRoute}
-                    onChange={(r) => setCatalogForm((p) => ({ ...p, stageRoute: r }))}
+            {isEditing && createPortal(
+              <div className="metal-catalog-fs" role="dialog" aria-modal="true" aria-label="Редактор маршрута">
+                <header className="metal-catalog-fs__head">
+                  <div className="metal-catalog-fs__title">
+                    {isNewMode ? "Новое изделие" : `Маршрут: ${catalogEditArticle}`}
+                  </div>
+                  <div className="metal-catalog-fs__fields">
+                    <label className="metal-catalog-fs__field metal-catalog-fs__field--article">
+                      <span className="metal-catalog-fs__field-label">Артикул</span>
+                      <input
+                        ref={catalogArticleInputRef}
+                        placeholder="Артикул"
+                        value={catalogForm.article}
+                        disabled={!isNewMode || isSaving}
+                        onChange={(e) => setCatalogForm((p) => ({ ...p, article: e.target.value }))}
+                      />
+                    </label>
+                    <label className="metal-catalog-fs__field metal-catalog-fs__field--name">
+                      <span className="metal-catalog-fs__field-label">Название</span>
+                      <input
+                        placeholder="Название изделия"
+                        value={catalogForm.name}
+                        disabled={isSaving}
+                        onChange={(e) => setCatalogForm((p) => ({ ...p, name: e.target.value }))}
+                      />
+                    </label>
+                  </div>
+                  <div className="metal-catalog-fs__actions">
+                    <button
+                      type="button"
+                      className="mini ok"
+                      disabled={
+                        isSaving ||
+                        !String(catalogForm.article || "").trim() ||
+                        !String(catalogForm.name || "").trim() ||
+                        catalogGraphErrors.length > 0
+                      }
+                      onClick={() => void handleSave()}
+                    >
+                      {isSaving ? "Сохранение…" : "Сохранить"}
+                    </button>
+                    <button type="button" className="mini" disabled={isSaving} onClick={cancelEdit}>
+                      Отмена
+                    </button>
+                  </div>
+                </header>
+                <div className="metal-catalog-fs__body">
+                  <MetalRouteBlueprint
+                    value={catalogForm.processGraph}
+                    onChange={handleCatalogGraphChange}
                     disabled={isSaving}
+                    validationErrors={catalogGraphErrors}
+                    fullScreen
                   />
                 </div>
-                <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-                  <button
-                    type="button"
-                    className="mini ok"
-                    disabled={
-                      isSaving ||
-                      !String(catalogForm.article || "").trim() ||
-                      !String(catalogForm.name || "").trim() ||
-                      !catalogForm.stageRoute.length
-                    }
-                    onClick={() => void handleSave()}
-                  >
-                    {isSaving ? "Сохранение…" : "Сохранить"}
-                  </button>
-                  <button type="button" className="mini" disabled={isSaving} onClick={cancelEdit}>
-                    Отмена
-                  </button>
-                </div>
-              </div>
+                <footer className="metal-catalog-fs__foot">
+                  Тяните стрелку от правого кружка к левому. Две стрелки из одного этапа — параллельная работа;
+                  две стрелки в один этап — слияние (лазер + пила → сварка). Delete — удалить стрелку. Esc — закрыть.
+                  {catalogGraphErrors.length > 0 && (
+                    <div className="mbp-errors">
+                      {catalogGraphErrors.map((msg) => (
+                        <div key={msg}>{msg}</div>
+                      ))}
+                    </div>
+                  )}
+                </footer>
+              </div>,
+              document.body,
             )}
 
             {filteredCatalogRows.length === 0 ? (
@@ -1405,9 +1507,6 @@ export function MetalProcessView({
                 </thead>
                 <tbody>
                   {filteredCatalogRows.map((row, rowIdx) => {
-                    const route = Array.isArray(row.stageRoute) && row.stageRoute.length > 0
-                      ? row.stageRoute
-                      : ["laser", "bending", "welding", "painting"];
                     const busyRow = metalProcessActionKey === `catalog:delete:${row.article}`;
                     return (
                       <tr key={row.article} className={catalogEditArticle === row.article ? "row--editing" : ""}>
@@ -1423,14 +1522,10 @@ export function MetalProcessView({
                         </td>
                         <td style={{ fontWeight: 500 }}>{row.name}</td>
                         <td>
-                          <div className="route-badge-row">
-                            {route.map((stage, idx) => (
-                              <span key={`${row.article}-${idx}-${stage}`} className="route-badge">
-                                {idx > 0 && <span className="route-badge__arrow">→</span>}
-                                <StageBadge stage={stage} size="sm" />
-                              </span>
-                            ))}
-                          </div>
+                          <MetalRouteGraphSummary
+                            processGraph={row.processGraph}
+                            stageRoute={row.stageRoute}
+                          />
                         </td>
                         <td>
                           <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>

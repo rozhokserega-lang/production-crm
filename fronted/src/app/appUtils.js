@@ -1,5 +1,6 @@
 import { normalizeFurnitureKey } from "../utils/furnitureUtils";
 import { findFurnitureTemplate, resolveKitsPerSheetFromTemplate } from "./furnitureMaterialYield";
+import { extractStrapTargetProduct } from "./orderHelpers";
 
 const ACTION_OPTIMISTIC_MAP = {
   webSetPilkaInWork: {
@@ -187,8 +188,24 @@ export function resolveExpectedConsumeSheets(order, opts = {}) {
   return sheetsFromTemplateKits(kitsPerSheet, qty);
 }
 
+function enrichBoardStrapProducts(board) {
+  if (!board || !Array.isArray(board.sections)) return board;
+  return {
+    ...board,
+    sections: board.sections.map((section) => ({
+      ...section,
+      items: (section.items || []).map((it) => ({
+        ...it,
+        strapProduct: String(it?.strapProduct || extractStrapTargetProduct(it?.item || "") || "").trim(),
+      })),
+    })),
+  };
+}
+
 export function normalizeShipmentBoard(data) {
-  if (data && Array.isArray(data.sections)) return applyStorageAutoCutToBoard(data);
+  if (data && Array.isArray(data.sections)) {
+    return applyStorageAutoCutToBoard(enrichBoardStrapProducts(data));
+  }
   // Some RPC/proxy combinations return board as [{ sections: [...] }].
   // Support this payload shape to avoid rendering an empty shipment board.
   if (
@@ -198,7 +215,7 @@ export function normalizeShipmentBoard(data) {
     typeof data[0] === "object" &&
     Array.isArray(data[0].sections)
   ) {
-    return applyStorageAutoCutToBoard(data[0]);
+    return applyStorageAutoCutToBoard(enrichBoardStrapProducts(data[0]));
   }
   if (!Array.isArray(data)) return { sections: [] };
   const sectionMap = new Map();
@@ -227,6 +244,7 @@ export function normalizeShipmentBoard(data) {
     sectionTitles.set(sectionKey, sectionName);
     const itemName = String(row?.item || "").trim();
     if (!itemName) return;
+    const strapProductFromItem = extractStrapTargetProduct(itemName);
     if (!sectionMap.has(sectionKey)) sectionMap.set(sectionKey, new Map());
     const itemMap = sectionMap.get(sectionKey);
     const rowKey = String(row?.row_ref || row?.rowRef || row?.source_row_id || `${sectionKey}:${itemName}`);
@@ -239,6 +257,7 @@ export function normalizeShipmentBoard(data) {
         sourceRowId: String(row?.source_row_id || row?.sourceRowId || rowKey),
         item: itemName,
         productArticle,
+        strapProduct: strapProductFromItem,
         material: row?.material || "",
         cells: [],
       });
@@ -275,7 +294,7 @@ export function normalizeShipmentBoard(data) {
     name: sectionTitles.get(key) || String(key),
     items: [...items.values()],
   }));
-  return applyStorageAutoCutToBoard({ sections });
+  return applyStorageAutoCutToBoard(enrichBoardStrapProducts({ sections }));
 }
 
 export function mergeShipmentBoardWithTable(board, tableRows) {

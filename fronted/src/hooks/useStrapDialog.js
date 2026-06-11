@@ -7,6 +7,7 @@ import {
   buildStrapPlanRows,
 } from "../app/shipmentDialogHelpers";
 import { toUserError } from "../app/errorCatalogHelpers";
+import { embedStrapTargetProduct } from "../app/orderHelpers";
 
 /**
  * Encapsulates strap dialog logic: open and save.
@@ -121,6 +122,7 @@ export function useStrapDialog({
         const payload = buildStrapPlanCellPayload(row, week, {
           resolveStrapMaterialByProduct,
           strapNameToOrderItem,
+          embedStrapTargetProduct,
         });
         await OrderService.createShipmentPlanCell(payload);
         void syncPlanCellToGoogleSheet(payload);

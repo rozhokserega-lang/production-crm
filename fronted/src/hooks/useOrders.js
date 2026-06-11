@@ -1,7 +1,7 @@
 import { useMemo, useState, useCallback, useEffect } from "react";
 import { OrderService } from "../services/orderService";
 import { matchesWeekFilter } from "../app/weekFilterUtils";
-import { orderCountsTowardStrapDemand } from "../app/workshopStrapNeeds";
+import { orderCountsTowardStrapDemand, isWorkshopStrapOrderItem } from "../app/workshopStrapNeeds";
 import { orderMatchesWorkshopQrScan } from "../app/workshopQrSearchHelpers";
 
 export function useOrders({
@@ -102,11 +102,22 @@ export function useWorkshopRows({
       const shipped = isOrderCustomerShipped(o);
       const onPackaging = /упаков/i.test(overallStatus);
       const lane = getOverviewLaneId(o);
+      const strapPlankOrder = isWorkshopStrapOrderItem(o.item);
+
+      if (lane === "warehouse_kit") return false;
+      if (strapPlankOrder && (lane === "ready_to_ship" || lane === "shipped")) return false;
+
       if (effectiveTab === "pilka") return lane === "pilka";
       if (effectiveTab === "kromka") return lane === "kromka";
       if (effectiveTab === "pras") return lane === "pras";
-      if (effectiveTab === "assembly") return pilkaDone && kromkaDone && prasDone && !assemblyDone && !shipped;
-      if (effectiveTab === "done") return assemblyDone && !onPackaging && !shipped && lane !== "warehouse_kit";
+      if (effectiveTab === "assembly") {
+        if (strapPlankOrder) return false;
+        return pilkaDone && kromkaDone && prasDone && !assemblyDone && !shipped;
+      }
+      if (effectiveTab === "done") {
+        if (strapPlankOrder) return false;
+        return assemblyDone && !onPackaging && !shipped && lane !== "warehouse_kit";
+      }
       return true;
     });
     const list = strapStockPlanning ? arr.filter(orderCountsTowardStrapDemand) : arr;

@@ -85,9 +85,13 @@ export function enrichPreviewWithStrapProduct(preview, shipmentRow, deps = {}) {
   const resolveFallbackArticle = deps.resolvePlanPreviewArticleByName;
   const normalizeProductKey = deps.normalizeStrapProductKey;
   const extractSizeToken = deps.extractDetailSizeToken;
+  const extractStrapFromItem = deps.extractStrapTargetProduct;
+  const strapFromItem = typeof extractStrapFromItem === "function"
+    ? extractStrapFromItem(shipmentRow?.item || shipmentRow?.sourceItem || preview?.firstName || "")
+    : "";
   const shipmentHint = typeof canonicalName === "function"
-    ? canonicalName(String(shipmentRow?.strapProduct || "").trim())
-    : String(shipmentRow?.strapProduct || "").trim();
+    ? canonicalName(String(shipmentRow?.strapProduct || strapFromItem || "").trim())
+    : String(shipmentRow?.strapProduct || strapFromItem || "").trim();
   const sectionKey = typeof normalizeText === "function"
     ? normalizeText(shipmentRow?.section || "")
     : String(shipmentRow?.section || "").toLowerCase();

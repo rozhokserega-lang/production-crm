@@ -1,25 +1,29 @@
 import { useCallback, useEffect, useState } from "react";
 import { OrderService } from "../services/orderService";
+import {
+  createLinearProcessGraph,
+  DEFAULT_PROCESS_GRAPH,
+  deriveStageRouteFromGraph,
+  processGraphFromCatalogRow,
+} from "../app/metalProcessGraph";
+
+const DEFAULT_ROUTE = ["laser", "bending", "welding", "painting"];
+const VALID_STAGES = ["laser", "saw", "bending", "welding", "painting"];
 
 function parseQty(value) {
   const n = Number(String(value || "").replace(",", "."));
   return Number.isFinite(n) ? n : 0;
 }
 
-const DEFAULT_ROUTE = ["laser", "bending", "welding", "painting"];
-const VALID_STAGES = ["laser", "saw", "bending", "welding", "painting"];
-
 function mapCatalogRow(row) {
-  const rawRoute = row?.stage_route ?? row?.stageRoute;
-  const stageRoute =
-    Array.isArray(rawRoute) && rawRoute.length > 0
-      ? rawRoute.filter((s) => VALID_STAGES.includes(s))
-      : DEFAULT_ROUTE;
+  const processGraph = processGraphFromCatalogRow(row);
+  const stageRoute = deriveStageRouteFromGraph(processGraph);
   return {
     article: String(row?.article || row?.metal_article || "").trim(),
     name: String(row?.name || row?.metal_name || "").trim(),
     isActive: Boolean(row?.is_active ?? row?.isActive ?? true),
-    stageRoute: stageRoute.length > 0 ? stageRoute : DEFAULT_ROUTE,
+    stageRoute,
+    processGraph,
   };
 }
 
@@ -33,7 +37,13 @@ function buildCatalogFromMetalStock(rows) {
     const key = `${article}|||${name}`.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
-    result.push({ article, name, isActive: true, stageRoute: DEFAULT_ROUTE });
+    result.push({
+      article,
+      name,
+      isActive: true,
+      stageRoute: DEFAULT_ROUTE,
+      processGraph: DEFAULT_PROCESS_GRAPH,
+    });
   }
   result.sort((a, b) => String(a.article).localeCompare(String(b.article), "ru"));
   return result;
@@ -56,6 +66,9 @@ function mergeCatalogRows(primaryRows, fallbackRows) {
       stageRoute: Array.isArray(row?.stageRoute) && row.stageRoute.length > 0
         ? row.stageRoute
         : DEFAULT_ROUTE,
+      processGraph: row?.processGraph || createLinearProcessGraph(
+        Array.isArray(row?.stageRoute) && row.stageRoute.length > 0 ? row.stageRoute : DEFAULT_ROUTE,
+      ),
     });
   };
   for (const row of Array.isArray(primaryRows) ? primaryRows : []) pushUnique(row);
@@ -83,6 +96,11 @@ function mapProcessRow(row) {
     stageRoute: stageRoute.length > 0 ? stageRoute : DEFAULT_ROUTE,
     routeIdx: Number(row?.route_idx ?? row?.routeIdx ?? 0) || 0,
     stageDoneQty: Number(row?.stage_done_qty ?? row?.stageDoneQty ?? 0) || 0,
+    processGraph: row?.process_graph ?? row?.processGraph ?? null,
+    forkGroupId: row?.fork_group_id ?? row?.forkGroupId ?? null,
+    forkRole: String(row?.fork_role ?? row?.forkRole ?? "").trim() || null,
+    parentId: Number(row?.parent_id ?? row?.parentId ?? 0) || null,
+    forkMeta: row?.fork_meta ?? row?.forkMeta ?? null,
     shortfallQty: Number(row?.shortfall_qty ?? row?.shortfallQty ?? 0) || 0,
     lastEventStage: String(row?.last_event_stage ?? row?.lastEventStage ?? ""),
     lastEventAction: String(row?.last_event_action ?? row?.lastEventAction ?? ""),
@@ -118,6 +136,7 @@ export function useMetalProcessState({
   const [metalProcessDraft, setMetalProcessDraft] = useState({
     article: "",
     name: "",
+    week: "",
     qty: "1",
   });
 
@@ -166,6 +185,7 @@ export function useMetalProcessState({
     if (!canOperateProduction) return;
     const article = String(metalProcessDraft.article || "").trim().toUpperCase();
     const name = String(metalProcessDraft.name || "").trim();
+    const week = String(metalProcessDraft.week || "").trim();
     const qty = parseQty(metalProcessDraft.qty);
     if (!article || !name || !(qty > 0)) {
       setError("Заполните артикул, название и количество > 0.");
@@ -178,7 +198,7 @@ export function useMetalProcessState({
       await OrderService.createMetalProcessItem({
         article,
         name,
-        week: null,
+        week: week || null,
         qty,
       });
       setMetalProcessDraft((prev) => ({ ...prev, article: "", name: "", qty: "1" }));
@@ -238,14 +258,23 @@ export function useMetalProcessState({
     }
   }, [canManageOrders, explainRpcMissing, loadMetalProcessData, setError]);
 
-  const upsertMetalCatalogItem = useCallback(async (article, name, stageRoute, isActive = true) => {
+  const upsertMetalCatalogItem = useCallback(async (article, name, routePayload, isActive = true) => {
     if (!canManageOrders) return;
     const key = `catalog:upsert:${article}`;
     setMetalProcessActionKey(key);
     setMetalProcessCatalogLoading(true);
     setError("");
     try {
-      await OrderService.upsertMetalProcessCatalogItem(article, name, isActive, stageRoute);
+      let processGraph;
+      let stageRoute;
+      if (Array.isArray(routePayload)) {
+        stageRoute = routePayload;
+        processGraph = createLinearProcessGraph(stageRoute);
+      } else {
+        processGraph = routePayload?.processGraph || DEFAULT_PROCESS_GRAPH;
+        stageRoute = routePayload?.stageRoute || deriveStageRouteFromGraph(processGraph);
+      }
+      await OrderService.upsertMetalProcessCatalogItem(article, name, isActive, stageRoute, processGraph);
       await loadMetalProcessData();
     } catch (e) {
       setError(explainRpcMissing(e));
@@ -270,7 +299,13 @@ export function useMetalProcessState({
         const fallbackName = String(name || "").trim();
         if (fallbackArticle && fallbackName) {
           try {
-            await OrderService.upsertMetalProcessCatalogItem(fallbackArticle, fallbackName, false, DEFAULT_ROUTE);
+            await OrderService.upsertMetalProcessCatalogItem(
+              fallbackArticle,
+              fallbackName,
+              false,
+              DEFAULT_ROUTE,
+              DEFAULT_PROCESS_GRAPH,
+            );
             await loadMetalProcessData();
             return;
           } catch (e2) {

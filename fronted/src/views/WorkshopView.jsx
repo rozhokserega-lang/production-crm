@@ -239,8 +239,9 @@ export const WorkshopView = memo(function WorkshopView({
         const showPilka = tab === "all" || tab === "pilka";
         const showKromka = tab === "all" || tab === "kromka";
         const showPras = tab === "all" || tab === "pras";
-        const showAssembly = tab === "all" || tab === "assembly";
-        const showDone = tab === "all" || tab === "done";
+        const strapPlankOrder = isWorkshopStrapOrderItem(o.item);
+        const showAssembly = (tab === "all" || tab === "assembly") && !strapPlankOrder;
+        const showDone = (tab === "all" || tab === "done") && !strapPlankOrder;
         const assemblyDone = isDone(o.assemblyStatus);
         const packagingDone = isOrderCustomerShipped(o);
         const pauseLabels = [];

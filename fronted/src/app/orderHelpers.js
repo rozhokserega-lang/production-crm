@@ -74,6 +74,7 @@ const ITEM_ARTICLE_META_RE = /\{\{ART:([A-Za-z0-9._-]+)\}\}/i;
 const ITEM_ARTICLE_PREFIX_RE = /^\s*([A-Za-z0-9][A-Za-z0-9._-]{2,})\s*::\s*/i;
 const ITEM_QR_QTY_META_RE = /\{\{QRQTY:([0-9]+(?:[.,][0-9]+)?)\}\}/i;
 const ITEM_QR_QTY_PREFIX_RE = /(?:^|\s)QTY\s*=\s*([0-9]+(?:[.,][0-9]+)?)\s*::/i;
+const ITEM_STRAP_FOR_META_RE = /\{\{STRAP_FOR:([^}]+)\}\}/i;
 
 export function embedPlanItemArticle(itemName, articleCode, qrQty) {
   const item = String(itemName || "").trim();
@@ -89,14 +90,35 @@ export function embedPlanItemArticle(itemName, articleCode, qrQty) {
   return `${article} :: ${qtyPrefix}${item} {{ART:${article}}}${qtyMeta}`;
 }
 
-export function stripPlanItemMeta(itemName) {
+export function stripStrapTargetMeta(itemName) {
   return String(itemName || "")
-    .replace(ITEM_ARTICLE_META_RE, "")
-    .replace(ITEM_ARTICLE_PREFIX_RE, "")
-    .replace(ITEM_QR_QTY_META_RE, "")
-    .replace(ITEM_QR_QTY_PREFIX_RE, "")
+    .replace(ITEM_STRAP_FOR_META_RE, "")
     .replace(/\s{2,}/g, " ")
     .trim();
+}
+
+export function embedStrapTargetProduct(itemName, productName) {
+  const item = stripStrapTargetMeta(stripPlanItemMeta(itemName));
+  const product = String(productName || "").trim();
+  if (!item || !product) return item;
+  return `${item} {{STRAP_FOR:${product}}}`;
+}
+
+export function extractStrapTargetProduct(itemName) {
+  const m = String(itemName || "").match(ITEM_STRAP_FOR_META_RE);
+  return m?.[1] ? String(m[1]).trim() : "";
+}
+
+export function stripPlanItemMeta(itemName) {
+  return stripStrapTargetMeta(
+    String(itemName || "")
+      .replace(ITEM_ARTICLE_META_RE, "")
+      .replace(ITEM_ARTICLE_PREFIX_RE, "")
+      .replace(ITEM_QR_QTY_META_RE, "")
+      .replace(ITEM_QR_QTY_PREFIX_RE, "")
+      .replace(/\s{2,}/g, " ")
+      .trim(),
+  );
 }
 
 export function extractPlanItemArticle(itemName) {

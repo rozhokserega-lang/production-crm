@@ -737,6 +737,7 @@ function buildRpcPayload(action, payload = {}) {
       p_name: String(payload.name || payload.p_name || "").trim(),
       p_is_active: payload.isActive == null ? true : Boolean(payload.isActive),
       p_stage_route: Array.isArray(payload.stageRoute) ? payload.stageRoute : null,
+      p_process_graph: payload.processGraph ?? payload.p_process_graph ?? null,
     };
   }
   if (action === "webDeleteMetalCatalogItem") {
