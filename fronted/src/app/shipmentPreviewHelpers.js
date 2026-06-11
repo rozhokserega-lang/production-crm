@@ -139,7 +139,19 @@ export function enrichPreviewWithStrapProduct(preview, shipmentRow, deps = {}) {
   const productFromDialog = typeof canonicalName === "function"
     ? canonicalName(String(deps.strapTargetProduct || "").trim())
     : String(deps.strapTargetProduct || "").trim();
-  const productName = productFromArticle || shipmentHint || productFromSize || productFromDialog;
+  const productFromAvellaLiteCode = (() => {
+    const code = String(token || "").trim().replace(/x/gi, "_").replace(/,/g, ".");
+    if (code !== "1158_56" && code !== "600_56") return "";
+    return typeof canonicalName === "function"
+      ? canonicalName("Авелла Лайт")
+      : "Авелла Лайт";
+  })();
+  const productName =
+    shipmentHint ||
+    productFromSize ||
+    productFromAvellaLiteCode ||
+    productFromArticle ||
+    productFromDialog;
   if (!productName) return preview;
   return {
     ...preview,

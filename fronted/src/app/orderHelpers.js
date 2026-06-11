@@ -109,13 +109,31 @@ export function extractStrapTargetProduct(itemName) {
   return m?.[1] ? String(m[1]).trim() : "";
 }
 
+/** Нормализованный код планки обвязки (1158_56 и т.п.). */
+export function normalizeStrapItemCode(raw) {
+  return stripPlanItemMeta(String(raw || ""))
+    .trim()
+    .replace(/x/gi, "_")
+    .replace(/,/g, ".");
+}
+
+const FACADE_STRAP_ITEM_CODES = new Set(["396_305", "153_320"]);
+
+export function isFacadeStrapItemCode(raw) {
+  const code = normalizeStrapItemCode(raw);
+  if (FACADE_STRAP_ITEM_CODES.has(code)) return true;
+  return /^фасад/i.test(code);
+}
+
 /** Подпись изделия на печатном листе обвязки. */
-export function formatStrapPlanTargetCaption(strapTargetProduct, planWeek) {
+export function formatStrapPlanTargetCaption(strapTargetProduct, planWeek, strapItemCode = "") {
   const target = String(strapTargetProduct || "").trim();
   if (!target) return "";
   const week = String(planWeek || "").trim().toLowerCase();
   const targetNorm = target.toLowerCase().replace(/[ё]/g, "е");
-  if (week === "обвязка" && targetNorm === "авелла") return "Фасады для Сиена";
+  if (week === "обвязка" && targetNorm === "авелла" && isFacadeStrapItemCode(strapItemCode)) {
+    return "Фасады для Сиена";
+  }
   return `Обвязка для изделия: ${target}`;
 }
 

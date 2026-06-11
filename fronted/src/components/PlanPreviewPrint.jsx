@@ -34,6 +34,7 @@ export function PlanPreviewPrint({ planPreview, articleLookupByItemKey = null })
   const strapCaption = formatStrapPlanTargetCaption(
     planPreview.strapTargetProduct || (Array.isArray(planPreview.products) ? planPreview.products[0] : ""),
     planPreview.planNumber || planPreview.week,
+    planPreview.firstName || planPreview.detailedName,
   );
 
   return (

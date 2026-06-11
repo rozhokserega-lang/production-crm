@@ -27,6 +27,12 @@ describe("strap target product meta", () => {
 
   it("formats strap caption for print sheets", () => {
     expect(formatStrapPlanTargetCaption("Донини", "обвязка")).toBe("Обвязка для изделия: Донини");
-    expect(formatStrapPlanTargetCaption("Авелла", "обвязка")).toBe("Фасады для Сиена");
+    expect(formatStrapPlanTargetCaption("Авелла Лайт", "обвязка", "1158_56")).toBe(
+      "Обвязка для изделия: Авелла Лайт",
+    );
+    expect(formatStrapPlanTargetCaption("Авелла", "обвязка", "1158_56")).toBe(
+      "Обвязка для изделия: Авелла",
+    );
+    expect(formatStrapPlanTargetCaption("Авелла", "обвязка", "153_320")).toBe("Фасады для Сиена");
   });
 });

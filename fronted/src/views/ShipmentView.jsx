@@ -327,6 +327,7 @@ export const ShipmentView = memo(function ShipmentView() {
                             {formatStrapPlanTargetCaption(
                               planPreview.strapTargetProduct,
                               planPreview.planNumber || planPreview.week,
+                              planPreview.firstName || planPreview.detailedName,
                             )}
                           </div>
                         )}
