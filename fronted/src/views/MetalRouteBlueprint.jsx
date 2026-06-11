@@ -156,6 +156,14 @@ export function MetalRouteBlueprint({ value, onChange, disabled = false, validat
     [disabled, onChange],
   );
 
+  const initial = useMemo(
+    () => graphToFlow(value, disabled, null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+  const [nodes, setNodes, onNodesChange] = useNodesState(initial.nodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(initial.edges);
+
   const deleteStage = useCallback(
     (nodeId) => {
       setNodes((prev) => {
@@ -168,16 +176,8 @@ export function MetalRouteBlueprint({ value, onChange, disabled = false, validat
         return nextNodes;
       });
     },
-    [emitGraph],
+    [emitGraph, setEdges, setNodes],
   );
-
-  const initial = useMemo(
-    () => graphToFlow(value, disabled, deleteStage),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
-  );
-  const [nodes, setNodes, onNodesChange] = useNodesState(initial.nodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initial.edges);
   const nodesRef = useRef(nodes);
   const edgesRef = useRef(edges);
 
@@ -188,7 +188,7 @@ export function MetalRouteBlueprint({ value, onChange, disabled = false, validat
 
   useEffect(() => {
     if (syncingRef.current) return;
-    const next = graphToFlow(value, disabled, deleteStage);
+    const next = graphToFlow(value, disabled, null);
     setNodes(next.nodes);
     setEdges(next.edges);
   }, [value, disabled, deleteStage, setNodes, setEdges]);
@@ -259,7 +259,7 @@ export function MetalRouteBlueprint({ value, onChange, disabled = false, validat
         return next;
       });
     },
-    [disabled, emitGraph, nodes, setEdges, setNodes],
+    [disabled, emitGraph, nodes, setEdges],
   );
 
   const addStage = useCallback(
@@ -287,7 +287,7 @@ export function MetalRouteBlueprint({ value, onChange, disabled = false, validat
         return next;
       });
     },
-    [deleteStage, disabled, emitGraph, nodes, setEdges, setNodes],
+    [deleteStage, disabled, emitGraph, nodes, setNodes],
   );
 
   const rootClass = fullScreen ? "mbp-root mbp-root--fullscreen" : "mbp-root";
