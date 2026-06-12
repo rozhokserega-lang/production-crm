@@ -7,6 +7,7 @@ import {
   calcKitLabor,
   formatKitItemLabel,
   formatKitItemShort,
+  formatMinutesForForm,
   kitItemsToSectionDrafts,
   resolveKitGroupName,
   sectionDraftToKitItems,
@@ -68,10 +69,10 @@ function normTimesForGroup(group, ratesByGroup) {
   const rate = ratesByGroup.get(resolveKitGroupName(group));
   if (!rate) return {};
   return {
-    pilkaMin: rate.pilka > 0 ? String(rate.pilka) : "",
-    kromkaMin: rate.kromka > 0 ? String(rate.kromka) : "",
-    prasMin: rate.pras > 0 ? String(rate.pras) : "",
-    assemblyMin: rate.assembly > 0 ? String(rate.assembly) : "",
+    pilkaMin: formatMinutesForForm(rate.pilka),
+    kromkaMin: formatMinutesForForm(rate.kromka),
+    prasMin: formatMinutesForForm(rate.pras),
+    assemblyMin: formatMinutesForForm(rate.assembly),
   };
 }
 
@@ -329,7 +330,7 @@ export const LaborKitBuilder = memo(function LaborKitBuilder({
         </label>
         {!useCustom && normRate ? (
           <span className="labor-kit-builder__norm-hint">
-            норма {Math.round(normRate.pilka)}/{Math.round(normRate.kromka)}/{Math.round(normRate.pras)} мин
+            норма {formatMinutesForForm(normRate.pilka) || "0"}/{formatMinutesForForm(normRate.kromka) || "0"}/{formatMinutesForForm(normRate.pras) || "0"} мин
           </span>
         ) : null}
         <div className="labor-kit-builder__times-grid">
@@ -339,9 +340,10 @@ export const LaborKitBuilder = memo(function LaborKitBuilder({
               <input
                 type="number"
                 min="0"
-                step="1"
+                step="0.01"
                 value={values[key] ?? ""}
-                disabled={!useCustom}
+                readOnly={!useCustom}
+                className={useCustom ? "" : "labor-kit-field__readonly"}
                 onChange={(e) => onPatch({ [key]: e.target.value })}
               />
             </label>
@@ -573,6 +575,21 @@ export const LaborKitBuilder = memo(function LaborKitBuilder({
               {section.group
                 ? renderTimeFields(section, section.group, (patch) => patchEditSection(section.id, patch))
                 : null}
+
+              <label className="labor-kit-check">
+                <input
+                  type="checkbox"
+                  checked={(section.straps || []).length > 0}
+                  onChange={(e) => {
+                    patchEditSection(section.id, {
+                      straps: e.target.checked ? [emptyStrapDraft()] : [],
+                    });
+                  }}
+                  disabled={!section.group}
+                />
+                <span>+ обвязка</span>
+              </label>
+
               {(section.straps || []).length > 0 ? (
                 <div className="labor-kit-builder__straps">
                   <div className="labor-kit-builder__straps-head">

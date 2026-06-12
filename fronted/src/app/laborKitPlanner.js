@@ -14,6 +14,13 @@ function toPositiveNumber(value) {
   return Number.isFinite(n) && n >= 0 ? n : 0;
 }
 
+/** Минуты в поле формы: сохраняем доли (0.4), без округления до целых. */
+export function formatMinutesForForm(value) {
+  const n = toPositiveNumber(value);
+  if (n <= 0) return "";
+  return String(parseFloat(n.toFixed(2)));
+}
+
 /** Приводит короткие коды обвязки (1000_80) к группе нормативов. */
 export function resolveKitGroupName(groupRaw = "") {
   const group = String(groupRaw || "").trim();
@@ -341,42 +348,28 @@ function inferUseCustomTimes(rawItem = {}, ratesByGroup = new Map()) {
   const rate = ratesByGroup.get(group);
   if (!rate) return false;
   const near = (left, right) => Math.abs(toPositiveNumber(left) - toPositiveNumber(right)) <= 0.01;
-  const pilka = rawItem.pilkaMin ?? rawItem.pilka_min;
-  const kromka = rawItem.kromkaMin ?? rawItem.kromka_min;
-  const pras = rawItem.prasMin ?? rawItem.pras_min;
-  const assembly = rawItem.assemblyMin ?? rawItem.assembly_min;
-  const hasStored = [pilka, kromka, pras, assembly].some((v) => toPositiveNumber(v) > 0);
-  if (!hasStored) return false;
-  return !near(pilka, rate.pilka)
-    || !near(kromka, rate.kromka)
-    || !near(pras, rate.pras)
-    || !near(assembly, rate.assembly);
+  const fields = [
+    ["pilkaMin", "pilka_min", "pilka"],
+    ["kromkaMin", "kromka_min", "kromka"],
+    ["prasMin", "pras_min", "pras"],
+    ["assemblyMin", "assembly_min", "assembly"],
+  ];
+  return fields.some(([minKey, snakeKey, rateKey]) => {
+    const stored = toPositiveNumber(rawItem[minKey] ?? rawItem[snakeKey]);
+    if (stored <= 0) return false;
+    return !near(stored, rate[rateKey]);
+  });
 }
 
 function itemToTimeFormFields(rawItem = {}, ratesByGroup = new Map()) {
-  const normalized = normalizeKitItem(
-    {
-      ...rawItem,
-      useCustomTimes: inferUseCustomTimes(rawItem, ratesByGroup),
-    },
-    ratesByGroup,
-  );
-  const fmt = (value) => (Number(value) > 0 ? String(Math.round(Number(value))) : "");
-  if (!normalized.useCustomTimes) {
-    return {
-      useCustomTimes: false,
-      pilkaMin: "",
-      kromkaMin: "",
-      prasMin: "",
-      assemblyMin: "",
-    };
-  }
+  const useCustomTimes = inferUseCustomTimes(rawItem, ratesByGroup);
+  const normalized = normalizeKitItem({ ...rawItem, useCustomTimes }, ratesByGroup);
   return {
-    useCustomTimes: true,
-    pilkaMin: fmt(normalized.pilkaMin),
-    kromkaMin: fmt(normalized.kromkaMin),
-    prasMin: fmt(normalized.prasMin),
-    assemblyMin: fmt(normalized.assemblyMin),
+    useCustomTimes,
+    pilkaMin: formatMinutesForForm(normalized.pilkaMin),
+    kromkaMin: formatMinutesForForm(normalized.kromkaMin),
+    prasMin: formatMinutesForForm(normalized.prasMin),
+    assemblyMin: formatMinutesForForm(normalized.assemblyMin),
   };
 }
 

@@ -8489,6 +8489,12 @@ button.mini.accent:hover:not(:disabled) {
   padding: 4px 6px;
 }
 
+.labor-kit-field input.labor-kit-field__readonly {
+  background: #f1f5f9;
+  color: #475569;
+  cursor: default;
+}
+
 .labor-kit-check {
   display: inline-flex;
   gap: 6px;

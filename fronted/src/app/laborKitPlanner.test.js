@@ -3,6 +3,7 @@ import {
   calcGroupPlanLabor,
   calcKitLabor,
   calcTotalProductionPlan,
+  formatMinutesForForm,
   kitItemsToSectionDrafts,
   scheduleStageMakespan,
   resolveKitGroupName,
@@ -89,6 +90,8 @@ describe("laborKitPlanner", () => {
     expect(drafts).toHaveLength(1);
     expect(drafts[0].group).toBe("Donini");
     expect(drafts[0].kromkaMachines).toBe("2");
+    expect(drafts[0].pilkaMin).toBe("10");
+    expect(drafts[0].useCustomTimes).toBe(false);
     expect(drafts[0].straps).toHaveLength(1);
     expect(drafts[0].straps[0].useCustomTimes).toBe(true);
     expect(drafts[0].straps[0].kromkaMin).toBe("11");
@@ -96,5 +99,19 @@ describe("laborKitPlanner", () => {
     expect(rebuilt[1].useCustomTimes).toBe(true);
     expect(rebuilt[1].kromkaMin).toBe(11);
     expect(rebuilt[1].prasMin).toBe(3);
+  });
+
+  it("preserves fractional norm minutes in edit form", () => {
+    const rates = new Map([
+      ["Avella lite", { pilka: 1, kromka: 2, pras: 1, assembly: 0 }],
+      ["Обвязка 1158_56", { pilka: 0.4, kromka: 0.6, pras: 1, assembly: 0 }],
+    ]);
+    const drafts = kitItemsToSectionDrafts([
+      { group: "Avella lite", qty: 1 },
+      { group: "1158_56", qty: 2, kind: "strap" },
+    ], rates);
+    expect(drafts[0].straps[0].pilkaMin).toBe("0.4");
+    expect(drafts[0].straps[0].kromkaMin).toBe("0.6");
+    expect(drafts[0].straps[0].useCustomTimes).toBe(false);
   });
 });
