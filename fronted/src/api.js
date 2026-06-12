@@ -65,6 +65,11 @@ let supabaseRealtimeClient = null;
 /** Перечитать сессию из localStorage (другая вкладка / внешняя очистка). */
 export function syncSupabaseSessionFromStorage() {
   supabaseAuthSession = readStoredSupabaseSession();
+  if (supabaseAuthSession?.refresh_token) {
+    scheduleSessionRefresh(supabaseAuthSession);
+  } else {
+    clearSessionRefreshTimer();
+  }
   if (supabaseRealtimeClient && supabaseAuthSession?.access_token) {
     supabaseRealtimeClient.realtime.setAuth(supabaseAuthSession.access_token);
   }
@@ -79,6 +84,78 @@ function dispatchSessionInvalidated(detail) {
   }
 }
 
+const SESSION_REFRESH_LEEWAY_SEC = 120;
+const SESSION_REFRESH_AHEAD_MS = 5 * 60 * 1000;
+
+function getSessionExpiresAtMs(session) {
+  if (!session || typeof session !== "object") return 0;
+  const expiresAt = Number(session.expires_at);
+  if (Number.isFinite(expiresAt) && expiresAt > 0) return expiresAt * 1000;
+  return 0;
+}
+
+function isAccessTokenNearExpiry(session, leewaySec = SESSION_REFRESH_LEEWAY_SEC) {
+  const expiresAtMs = getSessionExpiresAtMs(session);
+  if (!expiresAtMs) return false;
+  return Date.now() >= expiresAtMs - leewaySec * 1000;
+}
+
+let refreshSessionInFlight = null;
+let sessionRefreshTimer = null;
+
+function clearSessionRefreshTimer() {
+  if (sessionRefreshTimer) {
+    clearTimeout(sessionRefreshTimer);
+    sessionRefreshTimer = null;
+  }
+}
+
+function scheduleSessionRefresh(session) {
+  clearSessionRefreshTimer();
+  if (typeof window === "undefined") return;
+  if (!session?.refresh_token) return;
+  const expiresAtMs = getSessionExpiresAtMs(session);
+  if (!expiresAtMs) return;
+  const delay = Math.max(expiresAtMs - SESSION_REFRESH_AHEAD_MS - Date.now(), 30_000);
+  sessionRefreshTimer = setTimeout(() => {
+    void refreshSupabaseSession();
+  }, delay);
+}
+
+if (typeof window !== "undefined" && supabaseAuthSession?.refresh_token) {
+  scheduleSessionRefresh(supabaseAuthSession);
+}
+
+async function refreshSupabaseSession() {
+  const refreshToken = String(supabaseAuthSession?.refresh_token || "").trim();
+  if (!refreshToken) return null;
+  if (refreshSessionInFlight) return refreshSessionInFlight;
+  refreshSessionInFlight = (async () => {
+    try {
+      const payload = await supabaseAuthFetch("token?grant_type=refresh_token", {
+        refresh_token: refreshToken,
+      });
+      persistSupabaseSession(payload);
+      return payload;
+    } catch (_) {
+      return null;
+    } finally {
+      refreshSessionInFlight = null;
+    }
+  })();
+  return refreshSessionInFlight;
+}
+
+/** Обновить access_token, если он скоро истечёт или уже истёк. */
+export async function ensureSupabaseAccessToken() {
+  if (!supabaseAuthSession?.access_token) return "";
+  if (!isAccessTokenNearExpiry(supabaseAuthSession)) {
+    return getSupabaseAccessToken();
+  }
+  const refreshed = await refreshSupabaseSession();
+  return String(refreshed?.access_token || getSupabaseAccessToken()).trim();
+}
+
 function persistSupabaseSession(session) {
   supabaseAuthSession = session && session.access_token ? session : null;
   if (supabaseRealtimeClient && supabaseAuthSession?.access_token) {
@@ -88,8 +165,10 @@ function persistSupabaseSession(session) {
   try {
     if (supabaseAuthSession) {
       window.localStorage.setItem(SUPABASE_AUTH_STORAGE_KEY, JSON.stringify(supabaseAuthSession));
+      scheduleSessionRefresh(supabaseAuthSession);
     } else {
       window.localStorage.removeItem(SUPABASE_AUTH_STORAGE_KEY);
+      clearSessionRefreshTimer();
     }
   } catch (_) {
     // Ignore storage failures (private mode, quotas).
@@ -1112,7 +1191,10 @@ async function supabaseCallImpl(action, payload = {}) {
     }
   };
 
-  const currentToken = getSupabaseAccessToken();
+  let currentToken = getSupabaseAccessToken();
+  if (currentToken && isAccessTokenNearExpiry(supabaseAuthSession)) {
+    currentToken = await ensureSupabaseAccessToken();
+  }
   let res;
   let json;
   const rpcBases = getSupabaseRpcBaseUrls();
@@ -1127,10 +1209,18 @@ async function supabaseCallImpl(action, payload = {}) {
       try {
         ({ res, json } = await callWithToken(rpcBase, currentToken, candidateTimeout));
         if (!res.ok && currentToken && shouldRetryRpcWithoutExpiredJwt(json)) {
-          // Сессия протухла: убираем токен и синхронизируем UI — иначе бейдж роли расходится с фактическими RPC.
-          persistSupabaseSession(null);
-          dispatchSessionInvalidated({ reason: "jwt-expired-or-invalid" });
-          ({ res, json } = await callWithToken(rpcBase, ""));
+          const refreshed = await refreshSupabaseSession();
+          if (refreshed?.access_token) {
+            currentToken = refreshed.access_token;
+            ({ res, json } = await callWithToken(rpcBase, currentToken, candidateTimeout));
+          }
+          if (!res.ok && shouldRetryRpcWithoutExpiredJwt(json)) {
+            // Refresh не помог — только тогда сбрасываем сессию и синхронизируем UI.
+            persistSupabaseSession(null);
+            dispatchSessionInvalidated({ reason: "jwt-expired-or-invalid" });
+            currentToken = "";
+            ({ res, json } = await callWithToken(rpcBase, ""));
+          }
         }
         if (!res.ok) {
           // Some deployments expose a same-origin proxy base that might be missing (404),

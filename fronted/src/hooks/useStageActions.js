@@ -16,6 +16,7 @@ import {
   strapConsumeColorForOrder,
 } from "../app/workshopStrapNeeds";
 import { resolveSectionNameForOrder } from "../app/appUtils";
+import { resolveWorkshopStageForAction } from "../app/crmRoles";
 import { toUserError } from "../app/errorCatalogHelpers";
 import { OrderService } from "../services/orderService";
 
@@ -26,6 +27,7 @@ import { OrderService } from "../services/orderService";
  */
 export function useStageActions({
   canOperateProduction,
+  canOperateWorkshopStage,
   denyActionByRole,
   setError,
   setRows,
@@ -47,7 +49,17 @@ export function useStageActions({
 
   const runAction = useCallback(
     async (action, orderId, payload = {}, meta = {}) => {
-      if (!canOperateProduction) {
+      const workshopStage = resolveWorkshopStageForAction(action);
+      if (workshopStage) {
+        const canStage =
+          typeof canOperateWorkshopStage === "function"
+            ? canOperateWorkshopStage(workshopStage)
+            : canOperateProduction;
+        if (!canStage) {
+          denyActionByRole("Недостаточно прав для этого этапа производства.");
+          return;
+        }
+      } else if (!canOperateProduction) {
         denyActionByRole("Недостаточно прав для изменения этапов производства.");
         return;
       }
@@ -198,6 +210,7 @@ export function useStageActions({
     },
     [
       canOperateProduction,
+      canOperateWorkshopStage,
       denyActionByRole,
       setError,
       setRows,

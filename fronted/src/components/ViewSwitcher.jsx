@@ -17,18 +17,26 @@ const VIEW_ICONS = {
   admin:      "👤",
 };
 
-export function ViewSwitcher({ view, setView, setTab, canAdminSettings }) {
+export function ViewSwitcher({
+  view,
+  setView,
+  setTab,
+  canAdminSettings,
+  canAccessView,
+  defaultWorkshopTab = "pilka",
+}) {
   return (
     <section className="view-switch">
       {VIEWS.map((v) => {
         if ((v.id === "admin" || v.id === "db") && !canAdminSettings) return null;
+        if (typeof canAccessView === "function" && !canAccessView(v.id)) return null;
         return (
           <button
             key={v.id}
             className={view === v.id ? "tab active" : "tab"}
             onClick={() => {
               setView(v.id);
-              if (v.id === "workshop") setTab("pilka");
+              if (v.id === "workshop") setTab(defaultWorkshopTab);
             }}
             onMouseEnter={() => preloadView(v.id)}
           >

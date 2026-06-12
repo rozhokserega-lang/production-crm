@@ -10,7 +10,23 @@ import {
   orderCountsTowardStrapDemand,
 } from "../app/workshopStrapNeeds";
 import { resolvePipelineStage, getOrderStageDisplayLabel } from "../orderPipeline";
+import {
+  readActiveKromkaExecutor,
+  readActivePrasExecutor,
+  readKromkaExecutor,
+  readPrasExecutor,
+} from "../app/workshopFloorMapHelpers";
 import { WorkshopPlanPrintSheetIcon } from "../components/WorkshopPlanPrintDialog";
+
+function WorkshopExecutorBadge({ name, stageLabel: stage }) {
+  if (!name) return null;
+  return (
+    <span className="workshop-executor-badge" title={stage ? `Оператор: ${stage}` : "Оператор"}>
+      <span className="workshop-executor-badge__label">{stage ? `${stage}:` : "Оператор"}</span>
+      <span className="workshop-executor-badge__name">{name}</span>
+    </span>
+  );
+}
 
 const STAGE_PILL_CLASS = {
   pilka:            "stage-pill stage-pill--pilka",
@@ -61,7 +77,22 @@ export const WorkshopView = memo(function WorkshopView({
     openFinalDoneDialog,
     openPlanPrint,
   } = workshop;
-  const { canOperateProduction } = permissions;
+  const { canOperateProduction, canOperateWorkshopStage } = permissions;
+  const canPilka = typeof canOperateWorkshopStage === "function"
+    ? canOperateWorkshopStage("pilka")
+    : canOperateProduction;
+  const canKromka = typeof canOperateWorkshopStage === "function"
+    ? canOperateWorkshopStage("kromka")
+    : canOperateProduction;
+  const canPras = typeof canOperateWorkshopStage === "function"
+    ? canOperateWorkshopStage("pras")
+    : canOperateProduction;
+  const canAssembly = typeof canOperateWorkshopStage === "function"
+    ? canOperateWorkshopStage("assembly")
+    : canOperateProduction;
+  const canFinal = typeof canOperateWorkshopStage === "function"
+    ? canOperateWorkshopStage("final")
+    : canOperateProduction;
   const {
     statusClass,
     resolveDefaultConsumeSheets,
@@ -220,22 +251,14 @@ export const WorkshopView = memo(function WorkshopView({
         const kromkaInWork = isInWork(o.kromkaStatus);
         const prasDone = isDone(o.prasStatus);
         const prasInWork = isInWork(o.prasStatus);
-        const currentKromkaExec =
-          String(o.kromkaStatus || "").includes("Сережа")
-            ? "Сережа"
-            : String(o.kromkaStatus || "").includes("Слава")
-              ? "Слава"
-              : "";
-        const currentPrasExec =
-          String(o.prasStatus || "").includes("Виталик")
-            ? "Виталик"
-            : String(o.prasStatus || "").includes("Леха") || String(o.prasStatus || "").includes("Лёха")
-              ? "Леха"
-              : "";
-        const kromkaExecValue =
-          executorByOrder[orderId] || currentKromkaExec || kromkaOptions[0] || "";
-        const prasExecValue =
-          executorByOrder[`${orderId}:pras`] || currentPrasExec || prasOptions[0] || "";
+        const activeKromkaExecutor = readActiveKromkaExecutor(o, executorByOrder);
+        const activePrasExecutor = readActivePrasExecutor(o, executorByOrder);
+        const kromkaExecValue = readKromkaExecutor(o, executorByOrder, kromkaOptions);
+        const prasExecValue = readPrasExecutor(o, executorByOrder, prasOptions);
+        const kromkaPaused = isPaused(o.kromkaStatus);
+        const prasPaused = isPaused(o.prasStatus);
+        const showKromkaExecutor = Boolean(activeKromkaExecutor) && (kromkaInWork || kromkaPaused);
+        const showPrasExecutor = Boolean(activePrasExecutor) && (prasInWork || prasPaused);
         const showPilka = tab === "all" || tab === "pilka";
         const showKromka = tab === "all" || tab === "kromka";
         const showPras = tab === "all" || tab === "pras";
@@ -283,6 +306,22 @@ export const WorkshopView = memo(function WorkshopView({
                         title={`На паузе: ${pauseLabels.join(", ")}`}
                       >
                         ПАУЗА: {pauseLabels.join(", ")}
+                      </span>
+                    )}
+                    {showKromka && showKromkaExecutor && (
+                      <span
+                        className="badge meta-inline workshop-executor-badge--header"
+                        title="Оператор на кромке"
+                      >
+                        Кромка: {activeKromkaExecutor}
+                      </span>
+                    )}
+                    {showPras && showPrasExecutor && (
+                      <span
+                        className="badge meta-inline workshop-executor-badge--header"
+                        title="Оператор на присадке"
+                      >
+                        Присадка: {activePrasExecutor}
                       </span>
                     )}
                   </div>
@@ -340,14 +379,14 @@ export const WorkshopView = memo(function WorkshopView({
                     <button
                       type="button"
                       className={pilkaInWork ? "mini" : "mini ghost"}
-                      disabled={isPending(`webSetPilkaInWork:${orderId}`) || pilkaDone || pilkaInWork || !canOperateProduction}
+                      disabled={isPending(`webSetPilkaInWork:${orderId}`) || pilkaDone || pilkaInWork || !canPilka}
                       onClick={() => runAction("webSetPilkaInWork", orderId, {})}
                     >
                       ▶ {tab === "pilka" ? "Начать" : "Пила: Начать"}
                     </button>
                     <button
                       className="mini ok"
-                      disabled={isPending(`webSetPilkaDone:${orderId}`) || pilkaDone || !pilkaInWork || !canOperateProduction}
+                      disabled={isPending(`webSetPilkaDone:${orderId}`) || pilkaDone || !pilkaInWork || !canPilka}
                       onClick={() =>
                         runAction("webSetPilkaDone", orderId, {}, {
                           defaultSheets: displaySheetsNeeded,
@@ -361,7 +400,7 @@ export const WorkshopView = memo(function WorkshopView({
                     </button>
                     <button
                       className="mini warn"
-                      disabled={isPending(`webSetPilkaPause:${orderId}`) || pilkaDone || !pilkaInWork || !canOperateProduction}
+                      disabled={isPending(`webSetPilkaPause:${orderId}`) || pilkaDone || !pilkaInWork || !canPilka}
                       onClick={() => runAction("webSetPilkaPause", orderId)}
                     >
                       ⏸ {tab === "pilka" ? "Пауза" : "Пила: Пауза"}
@@ -371,21 +410,23 @@ export const WorkshopView = memo(function WorkshopView({
 
                 {showKromka && (
                   <>
-                    {!kromkaInWork && (
+                    {!kromkaInWork ? (
                       <select
                         value={kromkaExecValue}
-                        disabled={!canOperateProduction}
+                        disabled={!canKromka}
                         onChange={(e) => setExecutorByOrder((prev) => ({ ...prev, [orderId]: e.target.value }))}
                       >
                         {kromkaOptions.map((name) => (
                           <option key={name} value={name}>{name}</option>
                         ))}
                       </select>
+                    ) : (
+                      <WorkshopExecutorBadge name={activeKromkaExecutor} stageLabel="Кромка" />
                     )}
                     <button
                       type="button"
                       className={kromkaInWork ? "mini" : "mini ghost"}
-                      disabled={isPending(`webSetKromkaInWork:${orderId}`) || kromkaDone || kromkaInWork || !canOperateProduction}
+                      disabled={isPending(`webSetKromkaInWork:${orderId}`) || kromkaDone || kromkaInWork || !canKromka}
                       onClick={() =>
                         runAction("webSetKromkaInWork", orderId, {
                           executor: kromkaExecValue,
@@ -396,14 +437,14 @@ export const WorkshopView = memo(function WorkshopView({
                     </button>
                     <button
                       className="mini ok"
-                      disabled={isPending(`webSetKromkaDone:${orderId}`) || kromkaDone || !kromkaInWork || !canOperateProduction}
+                      disabled={isPending(`webSetKromkaDone:${orderId}`) || kromkaDone || !kromkaInWork || !canKromka}
                       onClick={() => runAction("webSetKromkaDone", orderId)}
                     >
                       ✓ {tab === "kromka" ? "Готово" : "Кромка: Готово"}
                     </button>
                     <button
                       className="mini warn"
-                      disabled={isPending(`webSetKromkaPause:${orderId}`) || kromkaDone || !kromkaInWork || !canOperateProduction}
+                      disabled={isPending(`webSetKromkaPause:${orderId}`) || kromkaDone || !kromkaInWork || !canKromka}
                       onClick={() => runAction("webSetKromkaPause", orderId)}
                     >
                       ⏸ {tab === "kromka" ? "Пауза" : "Кромка: Пауза"}
@@ -413,21 +454,23 @@ export const WorkshopView = memo(function WorkshopView({
 
                 {showPras && (
                   <>
-                    {!prasInWork && (
+                    {!prasInWork ? (
                       <select
                         value={prasExecValue}
-                        disabled={!canOperateProduction}
+                        disabled={!canPras}
                         onChange={(e) => setExecutorByOrder((prev) => ({ ...prev, [`${orderId}:pras`]: e.target.value }))}
                       >
                         {prasOptions.map((name) => (
                           <option key={name} value={name}>{name}</option>
                         ))}
                       </select>
+                    ) : (
+                      <WorkshopExecutorBadge name={activePrasExecutor} stageLabel="Присадка" />
                     )}
                     <button
                       type="button"
                       className={prasInWork ? "mini" : "mini ghost"}
-                      disabled={isPending(`webSetPrasInWork:${orderId}`) || prasDone || prasInWork || !canOperateProduction}
+                      disabled={isPending(`webSetPrasInWork:${orderId}`) || prasDone || prasInWork || !canPras}
                       onClick={() =>
                         runAction("webSetPrasInWork", orderId, {
                           executor: prasExecValue,
@@ -438,7 +481,7 @@ export const WorkshopView = memo(function WorkshopView({
                     </button>
                     <button
                       className="mini ok"
-                      disabled={isPending(`webSetPrasDone:${orderId}`) || prasDone || !prasInWork || !canOperateProduction}
+                      disabled={isPending(`webSetPrasDone:${orderId}`) || prasDone || !prasInWork || !canPras}
                       onClick={() =>
                         runAction("webSetPrasDone", orderId, {}, {
                           notifyOnAssembly: pilkaDone && kromkaDone && !assemblyDone,
@@ -455,7 +498,7 @@ export const WorkshopView = memo(function WorkshopView({
                     </button>
                     <button
                       className="mini warn"
-                      disabled={isPending(`webSetPrasPause:${orderId}`) || prasDone || !prasInWork || !canOperateProduction}
+                      disabled={isPending(`webSetPrasPause:${orderId}`) || prasDone || !prasInWork || !canPras}
                       onClick={() =>
                         runAction("webSetPrasPause", orderId, {}, {
                           item: o.item,
@@ -472,7 +515,7 @@ export const WorkshopView = memo(function WorkshopView({
                 {showAssembly && (
                   <button
                     className="mini ok"
-                    disabled={isPending(`webSetAssemblyDone:${orderId}`) || assemblyDone || !canOperateProduction}
+                    disabled={isPending(`webSetAssemblyDone:${orderId}`) || assemblyDone || !canAssembly}
                     onClick={() =>
                       openFinalDoneDialog(orderId, {
                         stage: "assembly",
@@ -491,7 +534,7 @@ export const WorkshopView = memo(function WorkshopView({
                 {showDone && (
                   <button
                     className="mini ok"
-                    disabled={isPending(`webSetWarehouseKitReady:${orderId}`) || packagingDone || !canOperateProduction}
+                    disabled={isPending(`webSetWarehouseKitReady:${orderId}`) || packagingDone || !canFinal}
                     onClick={() =>
                       openFinalDoneDialog(orderId, {
                         stage: "final",

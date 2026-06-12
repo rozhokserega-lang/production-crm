@@ -41,6 +41,7 @@ vi.mock("../app/errorCatalogHelpers", () => ({
 function makeProps(overrides = {}) {
   return {
     canOperateProduction: true,
+    canOperateWorkshopStage: () => true,
     denyActionByRole: vi.fn(),
     setError: vi.fn(),
     setRows: vi.fn(),
@@ -62,8 +63,8 @@ function makeProps(overrides = {}) {
 }
 
 describe("useStageActions – runAction", () => {
-  it("denies action when not canOperateProduction", async () => {
-    const props = makeProps({ canOperateProduction: false });
+  it("denies workshop action when stage is not allowed", async () => {
+    const props = makeProps({ canOperateWorkshopStage: () => false });
     const { result } = renderHook(() => useStageActions(props));
 
     await act(async () => {
@@ -71,7 +72,7 @@ describe("useStageActions – runAction", () => {
     });
 
     expect(props.denyActionByRole).toHaveBeenCalledWith(
-      "Недостаточно прав для изменения этапов производства."
+      "Недостаточно прав для этого этапа производства.",
     );
   });
 

@@ -4,6 +4,7 @@ import { DomainDrawer } from "./DomainDrawer";
 import { ViewSwitcher } from "./ViewSwitcher";
 import { ViewControls } from "./ViewControls";
 import { MobileBottomBar } from "./MobileBottomBar";
+import { AdminRolePreviewBar } from "./AdminRolePreviewBar";
 
 export function AppChrome({
   shell,
@@ -47,17 +48,29 @@ export function AppChrome({
         onClick={() => setDomainDrawerOpen(true)}
         aria-label="Открыть панель режима работы: мебель, металл, склад"
         title="Режим работы"
+        hidden={auth.isRestrictedWorkshopOperator}
       >
         <span className="domain-drawer-mobile-trigger__icon" aria-hidden>
           ☰
         </span>
         <span className="domain-drawer-mobile-trigger__text">Режим</span>
       </button>
-      <DomainDrawer
-        open={domainDrawerOpen}
-        setOpen={setDomainDrawerOpen}
-        view={shell.view}
-        setView={shell.setView}
+      {!auth.isRestrictedWorkshopOperator && (
+        <DomainDrawer
+          open={domainDrawerOpen}
+          setOpen={setDomainDrawerOpen}
+          view={shell.view}
+          setView={shell.setView}
+        />
+      )}
+
+      <AdminRolePreviewBar
+        canAdminSettings={auth.canAdminSettings}
+        crmRolePreview={auth.crmRolePreview}
+        crmRolePreviewActive={auth.crmRolePreviewActive}
+        setCrmRolePreview={auth.setCrmRolePreview}
+        clearCrmRolePreview={auth.clearCrmRolePreview}
+        actualCrmRoleLabel={auth.actualCrmRoleLabel}
       />
 
       {showMainTopPanels && (
@@ -66,6 +79,8 @@ export function AppChrome({
           setView={shell.setView}
           setTab={shell.setTab}
           canAdminSettings={auth.canAdminSettings}
+          canAccessView={auth.canAccessView}
+          defaultWorkshopTab={auth.defaultWorkshopTabForRole}
         />
       )}
 
@@ -142,6 +157,7 @@ export function AppChrome({
           showPackagingOnly={packaging.showPackagingOnly}
           setShowPackagingOnly={packaging.setShowPackagingOnly}
           canOperateWarehouse={auth.canOperateWarehouse}
+          canAccessWorkshopTab={auth.canAccessWorkshopTab}
         />
       )}
 
@@ -170,7 +186,13 @@ export function AppChrome({
         </div>
       )}
 
-      <MobileBottomBar view={shell.view} setView={shell.setView} setTab={shell.setTab} />
+      <MobileBottomBar
+        view={shell.view}
+        setView={shell.setView}
+        setTab={shell.setTab}
+        canAccessView={auth.canAccessView}
+        defaultWorkshopTab={auth.defaultWorkshopTabForRole}
+      />
     </div>
   );
 }

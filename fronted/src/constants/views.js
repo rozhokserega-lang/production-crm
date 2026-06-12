@@ -23,14 +23,7 @@ export const TABS = [
   { id: "debt", label: "Долг" },
 ];
 
-export const CRM_ROLES = ["viewer", "warehouse", "operator", "manager", "admin"];
-export const CRM_ROLE_LABELS = {
-  viewer: "Наблюдатель",
-  warehouse: "Склад",
-  operator: "Оператор",
-  manager: "Менеджер",
-  admin: "Админ",
-};
+export { CRM_ROLES, CRM_ROLE_LABELS } from "../app/crmRoles";
 
 export const DEFAULT_SHIPMENT_PREFS = {
   weekFilter: "all",

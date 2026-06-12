@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   CRM_SUPABASE_AUTH_STORAGE_KEY,
+  ensureSupabaseAccessToken,
   getSupabaseAuthSession,
   getSupabaseAuthUser,
   supabaseSignInWithPassword,
@@ -35,16 +36,30 @@ export function useAuth({
   // Текущий пользователь Supabase (persisted-сессия)
   const [authUser, setAuthUser] = useState(() => getSupabaseAuthUser());
 
-  // Проверка существующей сессии при монтировании
+  // Проверка существующей сессии при монтировании (+ refresh, если JWT уже истёк)
   useEffect(() => {
-    const session = getSupabaseAuthSession();
-    const currentUser = getSupabaseAuthUser();
-
-    if (session && currentUser) {
-      setUser(currentUser);
-      setAuthUser(currentUser);
-    }
-    setLoading(false);
+    let cancelled = false;
+    (async () => {
+      const session = getSupabaseAuthSession();
+      if (session?.access_token) {
+        try {
+          await ensureSupabaseAccessToken();
+        } catch (_) {
+          /* ignore */
+        }
+      }
+      if (cancelled) return;
+      const nextSession = getSupabaseAuthSession();
+      const currentUser = nextSession ? getSupabaseAuthUser() : null;
+      if (nextSession && currentUser) {
+        setUser(currentUser);
+        setAuthUser(currentUser);
+      }
+      setLoading(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   /** RPC при истёкшем JWT чистит токен в api.js — синхронизируем форму входа и пользователя; иначе «Роль: админ» расходится с реальными правами. */

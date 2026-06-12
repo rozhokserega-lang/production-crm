@@ -10,6 +10,7 @@ import { extractErrorMessage } from "../app/errorCatalogHelpers";
  */
 export function useConsumeDialog({
   canOperateProduction,
+  canConsumePilkaSheets = false,
   canOperateWarehouse = false,
   setError: _setError,
   consumeDialogData,
@@ -67,7 +68,9 @@ export function useConsumeDialog({
 
   const submitConsume = useCallback(
     async (materialRaw, qtyRaw) => {
-      if (!canOperateProduction && !canOperateWarehouse) {
+      const canConsume =
+        canConsumePilkaSheets || canOperateProduction || canOperateWarehouse;
+      if (!canConsume) {
         setConsumeError("Недостаточно прав для списания листов.");
         return;
       }
@@ -132,6 +135,7 @@ export function useConsumeDialog({
     },
     [
       canOperateProduction,
+      canConsumePilkaSheets,
       canOperateWarehouse,
       consumeDialogData,
       setConsumeError,

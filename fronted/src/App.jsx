@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { CRM_SUPABASE_PROXY_PREF_EVENT } from "./app/supabaseProxyPreference";
 import { useAppState } from "./hooks/useAppState";
 import { useAppShellEffects } from "./hooks/useAppShellEffects";
+import { useCrmNavigationGuard } from "./hooks/useCrmNavigationGuard";
 import { usePackagingInbox } from "./hooks/usePackagingInbox";
 import { preloadCriticalViews } from "./app/preloadViews";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
@@ -28,6 +29,7 @@ const FurnitureView = lazy(() => import("./views/FurnitureView").then((m) => ({ 
 const MetalView = lazy(() => import("./views/MetalView").then((m) => ({ default: m.MetalView })));
 const MetalProcessView = lazy(() => import("./views/MetalProcessView").then((m) => ({ default: m.MetalProcessView })));
 const CuttingView = lazy(() => import("./views/CuttingView").then((m) => ({ default: m.CuttingView })));
+const OperatorPilkaView = lazy(() => import("./views/OperatorPilkaView").then((m) => ({ default: m.OperatorPilkaView })));
 import {
   CRM_ROLES,
   CRM_ROLE_LABELS,
@@ -64,6 +66,7 @@ import {
 function AppInner({ onAuthChangeRef }) {
   const [manualLaborOpenNonce, setManualLaborOpenNonce] = useState(0);
   const openManualLaborDialog = () => setManualLaborOpenNonce((x) => x + 1);
+  const [operatorMode, setOperatorMode] = useState(false);
 
   const auth = useAuth();
   const {
@@ -79,6 +82,31 @@ function AppInner({ onAuthChangeRef }) {
     actions,
     services,
   } = useAppState({ auth });
+
+  const toggleOperatorMode = () => {
+    setOperatorMode((prev) => {
+      const next = !prev;
+      if (next) {
+        shell.setTab(auth.defaultWorkshopTabForRole || "pilka");
+      }
+      return next;
+    });
+  };
+
+  useCrmNavigationGuard({
+    crmRole: auth.crmRole,
+    canAdminSettings: auth.canAdminSettings,
+    view: shell.view,
+    tab: shell.tab,
+    setView: shell.setView,
+    setTab: shell.setTab,
+  });
+
+  useEffect(() => {
+    if (shell.view !== "workshop" && operatorMode) {
+      setOperatorMode(false);
+    }
+  }, [shell.view, operatorMode]);
 
   useEffect(() => {
     const reloadAfterProxyChange = () => {
@@ -384,7 +412,30 @@ function AppInner({ onAuthChangeRef }) {
           />
         );
       case "workshop":
-        return (
+        return operatorMode ? (
+          <OperatorPilkaView
+            workshop={{
+              ...workshop,
+              workshopRows: workshop.pilkaWorkshopRows,
+              loading: shell.loading,
+              shipmentOrders: shipment.shipmentOrders,
+              shipmentBoard: shipment.shipmentBoard,
+              furnitureCustomTemplates: furniture.furnitureCustomTemplates,
+              normalizeFurnitureKey,
+            }}
+            permissions={{
+              canOperateProduction: auth.canOperateProduction,
+              canOperateWorkshopStage: auth.canOperateWorkshopStage,
+            }}
+            helpers={{
+              statusClass,
+              isDone,
+              isInWork,
+              resolveDefaultConsumeSheets,
+              resolveDefaultConsumeSheetsFromBoard,
+            }}
+          />
+        ) : (
           <WorkshopView
             workshop={{
               ...workshop,
@@ -397,7 +448,10 @@ function AppInner({ onAuthChangeRef }) {
               furnitureTemplates: furniture.furnitureTemplates,
               normalizeFurnitureKey,
             }}
-            permissions={{ canOperateProduction: auth.canOperateProduction }}
+            permissions={{
+              canOperateProduction: auth.canOperateProduction,
+              canOperateWorkshopStage: auth.canOperateWorkshopStage,
+            }}
             helpers={{
               statusClass,
               resolveDefaultConsumeSheets,
@@ -481,6 +535,18 @@ function AppInner({ onAuthChangeRef }) {
           getMaterialLabel,
         }}
       />
+
+      {shell.view === "workshop" && auth.canUseOperatorPilkaMode && (
+        <div className="operator-mode-toggle">
+          <button
+            type="button"
+            className={`operator-mode-toggle__btn ${operatorMode ? "operator-mode-toggle__btn--active" : ""}`}
+            onClick={toggleOperatorMode}
+          >
+            {operatorMode ? "✕ Выйти из режима" : "🪚 Режим оператора"}
+          </button>
+        </div>
+      )}
     </ShipmentProvider>
     </CuttingProvider>
   );

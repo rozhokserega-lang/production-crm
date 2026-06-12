@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   buildWorkshopFloorMap,
   classifyWorkshopFloorZone,
+  extractExecutorFromWorkStatus,
+  readActiveKromkaExecutor,
   FLOOR_ZONES,
 } from "./workshopFloorMapHelpers";
 
@@ -34,6 +36,12 @@ describe("workshopFloorMapHelpers", () => {
       kromkaStatus: "ожидает",
       prasStatus: "",
     }, opts)).toBe(FLOOR_ZONES.wait_kromka);
+  });
+
+  it("extracts executor from status string", () => {
+    expect(extractExecutorFromWorkStatus("В работе (Слава)")).toBe("Слава");
+    expect(extractExecutorFromWorkStatus("в работе Сережа")).toBe("");
+    expect(readActiveKromkaExecutor({ kromkaStatus: "В работе (Сережа)" }, {})).toBe("Сережа");
   });
 
   it("splits kromka by executor", () => {

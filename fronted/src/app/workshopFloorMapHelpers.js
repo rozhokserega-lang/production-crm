@@ -31,7 +31,16 @@ function lc(value) {
   return String(value || "").toLowerCase();
 }
 
+/** Имя из «В работе (Слава)» и похожих статусов. */
+export function extractExecutorFromWorkStatus(status) {
+  const text = String(status || "").trim();
+  const match = text.match(/в\s*работе\s*\(([^)]+)\)/i);
+  return match ? String(match[1]).trim() : "";
+}
+
 function readExecutorFromStatus(status, patterns) {
+  const fromParen = extractExecutorFromWorkStatus(status);
+  if (fromParen) return fromParen;
   const text = lc(status);
   for (const { re, name } of patterns) {
     if (re.test(text)) return name;
@@ -39,26 +48,39 @@ function readExecutorFromStatus(status, patterns) {
   return "";
 }
 
-export function readKromkaExecutor(order, executorByOrder = {}, kromkaExecutors = []) {
+const KROMKA_EXECUTOR_PATTERNS = [
+  { re: /сереж/, name: "Сережа" },
+  { re: /слава/, name: "Слава" },
+];
+
+const PRAS_EXECUTOR_PATTERNS = [
+  { re: /лех|лёх|алекс/, name: "Леха" },
+  { re: /виталик/, name: "Виталик" },
+];
+
+/** Оператор, назначенный на этап (без подстановки «первого из списка»). */
+export function readActiveKromkaExecutor(order, executorByOrder = {}) {
   const orderId = String(order?.orderId || order?.order_id || "").trim();
   const fromPicker = String(executorByOrder[orderId] || "").trim();
   if (fromPicker) return fromPicker;
-  const fromStatus = readExecutorFromStatus(order?.kromkaStatus || order?.kromka, [
-    { re: /сереж/, name: "Сережа" },
-    { re: /слава/, name: "Слава" },
-  ]);
+  return readExecutorFromStatus(order?.kromkaStatus || order?.kromka, KROMKA_EXECUTOR_PATTERNS);
+}
+
+export function readActivePrasExecutor(order, executorByOrder = {}) {
+  const orderId = String(order?.orderId || order?.order_id || "").trim();
+  const fromPicker = String(executorByOrder[`${orderId}:pras`] || "").trim();
+  if (fromPicker) return fromPicker;
+  return readExecutorFromStatus(order?.prasStatus || order?.pras, PRAS_EXECUTOR_PATTERNS);
+}
+
+export function readKromkaExecutor(order, executorByOrder = {}, kromkaExecutors = []) {
+  const fromStatus = readActiveKromkaExecutor(order, executorByOrder);
   if (fromStatus) return fromStatus;
   return String(kromkaExecutors[0] || "").trim();
 }
 
 export function readPrasExecutor(order, executorByOrder = {}, prasExecutors = []) {
-  const orderId = String(order?.orderId || order?.order_id || "").trim();
-  const fromPicker = String(executorByOrder[`${orderId}:pras`] || "").trim();
-  if (fromPicker) return fromPicker;
-  const fromStatus = readExecutorFromStatus(order?.prasStatus || order?.pras, [
-    { re: /лех|лёх|алекс/, name: "Леха" },
-    { re: /виталик/, name: "Виталик" },
-  ]);
+  const fromStatus = readActivePrasExecutor(order, executorByOrder);
   if (fromStatus) return fromStatus;
   return String(prasExecutors[0] || "").trim();
 }

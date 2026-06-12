@@ -13,6 +13,18 @@ import { useCrmRole } from "../hooks/useCrmRole";
 import { useSupabaseProxyPreference } from "../hooks/useSupabaseProxyPreference";
 import { SUPABASE_ANON_KEY, SUPABASE_URL } from "../config";
 import { CRM_ROLE_LABELS } from "../app/appConstants";
+import {
+  canOperateProductionForRole,
+  canOperateWorkshopStageForRole,
+  canUseOperatorPilkaModeForRole,
+  canConsumePilkaSheetsForRole,
+  canAccessViewForRole,
+  canAccessWorkshopTabForRole,
+  getDefaultViewForRole,
+  getDefaultWorkshopTabForRole,
+  isRestrictedWorkshopOperatorRole,
+} from "../app/crmRoles";
+import { useCrmRolePreview } from "../hooks/useCrmRolePreview";
 import { toUserError as toUserErrorFn } from "../app/errorCatalogHelpers";
 
 const AuthContext = createContext(null);
@@ -79,26 +91,60 @@ export function AuthProvider({ children, view, onAuthChange, setError }) {
     authUser,
   });
 
+  const actualCrmRole = crmRole;
+  const {
+    crmRolePreview,
+    crmRolePreviewActive,
+    setCrmRolePreview,
+    clearCrmRolePreview,
+  } = useCrmRolePreview({ canAdminSettings });
+
+  const effectiveCrmRole = crmRolePreviewActive ? crmRolePreview : crmRole;
+
   const {
     supabaseProxyEnabled,
     setSupabaseProxyEnabled,
     toggleSupabaseProxy,
   } = useSupabaseProxyPreference();
 
-  const crmRoleLabel = useMemo(
-    () => CRM_ROLE_LABELS[crmRole] || CRM_ROLE_LABELS.viewer,
-    [crmRole],
+  const crmRoleLabel = useMemo(() => {
+    const label = CRM_ROLE_LABELS[effectiveCrmRole] || CRM_ROLE_LABELS.viewer;
+    if (crmRolePreviewActive) return `${label} (проверка)`;
+    return label;
+  }, [effectiveCrmRole, crmRolePreviewActive]);
+
+  const actualCrmRoleLabel = useMemo(
+    () => CRM_ROLE_LABELS[actualCrmRole] || CRM_ROLE_LABELS.viewer,
+    [actualCrmRole],
   );
 
-  const canOperateProduction =
-    crmRole === "operator" || crmRole === "manager" || crmRole === "admin";
+  const canOperateProduction = canOperateProductionForRole(effectiveCrmRole);
+  const canOperateWorkshopStage = useCallback(
+    (stage) => canOperateWorkshopStageForRole(effectiveCrmRole, stage),
+    [effectiveCrmRole],
+  );
+  const canUseOperatorPilkaMode = canUseOperatorPilkaModeForRole(effectiveCrmRole);
+  const canConsumePilkaSheets = canConsumePilkaSheetsForRole(effectiveCrmRole);
+  const isRestrictedWorkshopOperator = isRestrictedWorkshopOperatorRole(effectiveCrmRole);
+  const defaultViewForRole = useMemo(() => getDefaultViewForRole(effectiveCrmRole), [effectiveCrmRole]);
+  const defaultWorkshopTabForRole = useMemo(() => getDefaultWorkshopTabForRole(effectiveCrmRole), [effectiveCrmRole]);
+  const canAccessView = useCallback(
+    (viewId) => canAccessViewForRole(effectiveCrmRole, viewId, {
+      canAdminSettings: canAdminSettings && !crmRolePreviewActive,
+    }),
+    [effectiveCrmRole, canAdminSettings, crmRolePreviewActive],
+  );
+  const canAccessWorkshopTab = useCallback(
+    (tabId) => canAccessWorkshopTabForRole(effectiveCrmRole, tabId),
+    [effectiveCrmRole],
+  );
   const hasAuthSession =
     Boolean(String(authUser?.id || authUser?.email || "").trim()) ||
     Boolean(String(getSupabaseAuthUserId() || "").trim()) ||
     Boolean(String(getSupabaseAuthSession()?.access_token || "").trim());
   const canOperateWarehouse =
-    hasAuthSession && (crmRole === "warehouse" || crmRole === "admin");
-  const canManageOrders = crmRole === "manager" || crmRole === "admin";
+    hasAuthSession && (effectiveCrmRole === "warehouse" || effectiveCrmRole === "admin");
+  const canManageOrders = effectiveCrmRole === "manager" || effectiveCrmRole === "admin";
 
   const denyActionByRole = useCallback(
     (message) => {
@@ -120,12 +166,26 @@ export function AuthProvider({ children, view, onAuthChange, setError }) {
       authUserLabel,
       signInWithSupabase,
       signOutSupabaseUser,
-      crmRole,
+      crmRole: effectiveCrmRole,
+      actualCrmRole,
       crmRoleLabel,
+      actualCrmRoleLabel,
+      crmRolePreview,
+      crmRolePreviewActive,
+      setCrmRolePreview,
+      clearCrmRolePreview,
       crmAuthStrict,
       crmAuthStrictSaving,
       canAdminSettings,
       canOperateProduction,
+      canOperateWorkshopStage,
+      canUseOperatorPilkaMode,
+      canConsumePilkaSheets,
+      isRestrictedWorkshopOperator,
+      defaultViewForRole,
+      defaultWorkshopTabForRole,
+      canAccessView,
+      canAccessWorkshopTab,
       canOperateWarehouse,
       canManageOrders,
       toggleCrmAuthStrict,
@@ -166,12 +226,26 @@ export function AuthProvider({ children, view, onAuthChange, setError }) {
       authUserLabel,
       signInWithSupabase,
       signOutSupabaseUser,
-      crmRole,
+      effectiveCrmRole,
+      actualCrmRole,
       crmRoleLabel,
+      actualCrmRoleLabel,
+      crmRolePreview,
+      crmRolePreviewActive,
+      setCrmRolePreview,
+      clearCrmRolePreview,
       crmAuthStrict,
       crmAuthStrictSaving,
       canAdminSettings,
       canOperateProduction,
+      canOperateWorkshopStage,
+      canUseOperatorPilkaMode,
+      canConsumePilkaSheets,
+      isRestrictedWorkshopOperator,
+      defaultViewForRole,
+      defaultWorkshopTabForRole,
+      canAccessView,
+      canAccessWorkshopTab,
       canOperateWarehouse,
       canManageOrders,
       toggleCrmAuthStrict,

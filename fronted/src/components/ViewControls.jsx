@@ -376,6 +376,7 @@ export function ViewControls({
   showPackagingOnly,
   setShowPackagingOnly,
   canOperateWarehouse,
+  canAccessWorkshopTab,
 }) {
   const workshopQrSearchInputRef = useRef(null);
   const {
@@ -443,7 +444,9 @@ export function ViewControls({
       )}
       {view === "workshop" && (
         <div className="tabs">
-          {TABS.map((t) => (
+          {TABS.filter((t) => (
+            typeof canAccessWorkshopTab !== "function" || canAccessWorkshopTab(t.id)
+          )).map((t) => (
             <button
               key={t.id}
               className={tab === t.id ? "tab active" : "tab"}

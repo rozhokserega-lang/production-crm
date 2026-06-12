@@ -176,6 +176,9 @@ export function useAppState({ auth }) {
     crmAuthStrictSaving,
     canAdminSettings,
     canOperateProduction,
+    canConsumePilkaSheets,
+    canOperateWorkshopStage,
+    canUseOperatorPilkaMode,
     canOperateWarehouse,
     canManageOrders,
     toggleCrmAuthStrict,
@@ -497,6 +500,7 @@ export function useAppState({ auth }) {
     openPilkaDoneConsumeDialogOnError,
   } = useConsumeDialog({
     canOperateProduction,
+    canConsumePilkaSheets,
     canOperateWarehouse,
     setError,
     consumeDialogData,
@@ -982,6 +986,7 @@ export function useAppState({ auth }) {
 
   const { runAction } = useStageActions({
     canOperateProduction,
+    canOperateWorkshopStage,
     denyActionByRole,
     setError,
     setRows,
@@ -1220,6 +1225,16 @@ export function useAppState({ auth }) {
     filtered,
     view,
     tab,
+    isDone,
+    isInWork,
+    getOverviewLaneId,
+    isOrderCustomerShipped,
+  });
+  /** Всегда очередь пилы — для режима оператора независимо от вкладки цеха. */
+  const pilkaWorkshopRows = useWorkshopRows({
+    filtered,
+    view,
+    tab: "pilka",
     isDone,
     isInWork,
     getOverviewLaneId,
@@ -1620,6 +1635,7 @@ export function useAppState({ auth }) {
     },
     workshop: {
       workshopRows,
+      pilkaWorkshopRows,
       runAction,
       isActionPending,
       executorByOrder,

@@ -1,12 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { OrderService } from "../services/orderService";
-
-const CRM_ROLES = ["viewer", "warehouse", "operator", "manager", "admin"];
-
-function normalizeCrmRole(rawRole) {
-  const role = String(rawRole || "").trim().toLowerCase();
-  return CRM_ROLES.includes(role) ? role : "viewer";
-}
+import { CRM_ROLES, normalizeCrmRole } from "../app/crmRoles";
 
 function parseCrmRoleResponse(payload) {
   if (typeof payload === "string") return payload;
