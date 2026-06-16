@@ -55,6 +55,7 @@ export const ShipmentView = memo(function ShipmentView() {
     sendSelectedShipmentToWork,
     deleteSelectedShipmentPlan,
     splitSelectedShipmentPlan,
+    openEditPlanDialog,
     setSelectedShipments,
     weeks,
   } = useShipment();
@@ -235,8 +236,15 @@ export const ShipmentView = memo(function ShipmentView() {
                 Нет мебельного артикула для: {selectedShipmentMetal.missingItems.join(", ")}
               </div>
             )}
-            <div style={{ marginTop: 10 }}>Обработано ячеек: {selectedShipmentSummary.selectedCount}</div>
-            <div>Всего листов: {selectedShipmentSummary.totalSheets}</div>
+            <div className="selection-summary-stats">
+              <div>Обработано ячеек: {selectedShipmentSummary.selectedCount}</div>
+              <div>Всего листов: {selectedShipmentSummary.totalSheets}</div>
+              {selectedShipmentSummary.selectedCount > 0 ? (
+                <div className="selection-summary-total-qty">
+                  Сумма изделий: <b>{selectedShipmentSummary.totalQty}</b> шт.
+                </div>
+              ) : null}
+            </div>
             {strapItems.length > 0 && (
               <>
                 <div className="selection-summary-title" style={{ marginTop: 10 }}>Добавленная обвязка:</div>
@@ -283,9 +291,9 @@ export const ShipmentView = memo(function ShipmentView() {
                 {planPreview.isStrapPlan ? (
                   <>
                     <div className="strap-print-title">ЗАДАНИЕ В РАБОТУ: ПЛАНКИ ОБВЯЗКИ</div>
-                    <div className="strap-print-meta">Дата: {planPreview.generatedAt}</div>
+                    <div className="strap-print-meta no-print">Дата: {planPreview.generatedAt}</div>
                     {Array.isArray(planPreview.products) && planPreview.products.length > 0 && (
-                      <div className="strap-print-meta">
+                      <div className="strap-print-meta no-print">
                         Для изделия: {planPreview.products.join(", ")}
                       </div>
                     )}
@@ -312,7 +320,7 @@ export const ShipmentView = memo(function ShipmentView() {
                   </>
                 ) : (
                   <>
-                    <div className="plan-top-meta">
+                    <div className="plan-top-meta no-print">
                       <span>{planPreview.generatedAt || ""}</span>
                       <span>Отгрузки CRM</span>
                     </div>
@@ -739,6 +747,15 @@ export const ShipmentView = memo(function ShipmentView() {
               >
                 Удалить из плана
               </button>
+              {selectedShipments.length === 1 && !!selectedShipments[0]?.canSendToWork && (
+                <button
+                  className="mini"
+                  disabled={!!actionLoading || !canOperateProduction}
+                  onClick={() => void openEditPlanDialog(selectedShipments[0])}
+                >
+                  Редактировать
+                </button>
+              )}
               {selectedShipments.length === 1 && !!selectedShipments[0]?.canSendToWork && (
                 <button
                   className="mini accent"

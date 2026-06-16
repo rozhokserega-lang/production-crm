@@ -5,10 +5,13 @@ import { buildPreviewRowsFromFurnitureTemplate } from "../app/appUtils";
 import { resolveFurnitureTemplateForPreview } from "../utils/furnitureUtils";
 import {
   buildCreatePlanDialogInit,
+  buildEditPlanDialogInit,
   matchPlanCatalogRowSelectKey,
   planCatalogRowSelectKey,
 } from "../app/shipmentDialogHelpers";
 import { catalogSectionMatchesPlanSection } from "../utils/shipmentUtils";
+import { buildShipmentCellAttempts, runShipmentCellActionWithFallback } from "../app/shipmentActionHelpers";
+import { isShipmentCellMissingError } from "../app/rowHelpers";
 import { toUserError } from "../app/errorCatalogHelpers";
 
 /**
@@ -40,6 +43,9 @@ import { toUserError } from "../app/errorCatalogHelpers";
  * @param {Array} params.furnitureTemplates
  * @param {Function} params.syncPlanCellToGoogleSheet
  * @param {Function} params.load
+ * @param {object|null} params.planEditSource
+ * @param {Function} params.setPlanEditSource
+ * @param {Function} params.setSelectedShipments
  */
 export function usePlanDialog({
   canOperateProduction,
@@ -67,6 +73,9 @@ export function usePlanDialog({
   furnitureTemplates,
   syncPlanCellToGoogleSheet,
   load,
+  planEditSource,
+  setPlanEditSource,
+  setSelectedShipments,
 }) {
   const handlePlanSectionChange = useCallback(
     (nextSection) => {
@@ -101,6 +110,7 @@ export function usePlanDialog({
       denyActionByRole("Недостаточно прав для добавления плана.");
       return;
     }
+    setPlanEditSource(null);
     const init = buildCreatePlanDialogInit({
       sectionOptions,
       weeks,
@@ -125,12 +135,58 @@ export function usePlanDialog({
     setPlanWeek,
     setPlanQty,
     setPlanDialogOpen,
+    setPlanEditSource,
   ]);
+
+  const openEditPlanDialog = useCallback(
+    (selection) => {
+      if (!canOperateProduction) {
+        denyActionByRole("Недостаточно прав для редактирования плана.");
+        return;
+      }
+      if (!selection?.canSendToWork) {
+        setError("Позиция недоступна для редактирования (уже в работе или закрыта).");
+        return;
+      }
+      const init = buildEditPlanDialogInit({
+        selection,
+        sectionOptions,
+        sectionArticleRows,
+        resolvePlanMaterial,
+      });
+      if (!init.editSource?.row || !init.editSource?.col) {
+        setError("Не удалось определить ячейку плана для редактирования.");
+        return;
+      }
+      setPlanEditSource(init.editSource);
+      setPlanSection(init.section);
+      setPlanArticle(init.article);
+      setPlanMaterial(init.material);
+      setPlanWeek(init.week);
+      setPlanQty(init.qty);
+      setPlanDialogOpen(true);
+    },
+    [
+      canOperateProduction,
+      denyActionByRole,
+      setError,
+      sectionOptions,
+      sectionArticleRows,
+      setPlanEditSource,
+      setPlanSection,
+      setPlanArticle,
+      setPlanMaterial,
+      setPlanWeek,
+      setPlanQty,
+      setPlanDialogOpen,
+    ],
+  );
 
   const closeCreatePlanDialog = useCallback(() => {
     if (planSaving) return;
+    setPlanEditSource(null);
     setPlanDialogOpen(false);
-  }, [planSaving, setPlanDialogOpen]);
+  }, [planSaving, setPlanDialogOpen, setPlanEditSource]);
 
   /** Сохранить и остаться в диалоге — сбрасывает артикул и количество, секция и неделя остаются.
    *  Возвращает объект { ok, resolvedItem, catalogArticle, material, week, qty } или false при ошибке.
@@ -222,6 +278,7 @@ export function usePlanDialog({
         qty,
       });
       void syncPlanCellToGoogleSheet({ sectionName: planSection, item, material, week, qty });
+      setPlanEditSource(null);
       setPlanDialogOpen(false);
       await load();
     } catch (e) {
@@ -240,6 +297,85 @@ export function usePlanDialog({
     setError,
     setPlanSaving,
     setPlanDialogOpen,
+    setPlanEditSource,
+    syncPlanCellToGoogleSheet,
+    load,
+  ]);
+
+  const saveEditPlanDialog = useCallback(async () => {
+    if (!canOperateProduction) {
+      denyActionByRole("Недостаточно прав для изменения плана.");
+      return;
+    }
+    if (!planEditSource?.row || !planEditSource?.col) {
+      setError("Не удалось определить ячейку плана для сохранения.");
+      return;
+    }
+    const item = String(resolvedPlanItem || "").trim();
+    const material = String(planMaterial || "").trim();
+    const week = String(planWeek || "").trim();
+    const qty = Number(String(planQty || "").replace(",", "."));
+    if (!item) {
+      setError("Выберите изделие в списке «Артикул» (не удалось определить название по выбранной строке).");
+      return;
+    }
+    if (!material) {
+      setError("Укажите материал (он подставляется из артикула или выбирается в списке).");
+      return;
+    }
+    if (!week) {
+      setError("Укажите неделю плана.");
+      return;
+    }
+    if (!Number.isFinite(qty) || qty <= 0) {
+      setError("Количество должно быть больше 0.");
+      return;
+    }
+    setPlanSaving(true);
+    setError("");
+    try {
+      const attempts = buildShipmentCellAttempts(planEditSource);
+      await runShipmentCellActionWithFallback({
+        actionFn: (params) =>
+          OrderService.updateShipmentPlanCell({
+            row: params.p_row,
+            col: params.p_col,
+            sectionName: planSection,
+            item,
+            material,
+            week,
+            qty,
+          }),
+        attempts,
+        isMissingError: isShipmentCellMissingError,
+        requestBuilder: (p) => ({ p_row: p.row, p_col: p.col }),
+      });
+      void syncPlanCellToGoogleSheet({ sectionName: planSection, item, material, week, qty });
+      setPlanEditSource(null);
+      setPlanDialogOpen(false);
+      if (typeof setSelectedShipments === "function") {
+        setSelectedShipments([]);
+      }
+      await load();
+    } catch (e) {
+      setError(toUserError(e));
+    } finally {
+      setPlanSaving(false);
+    }
+  }, [
+    canOperateProduction,
+    denyActionByRole,
+    planEditSource,
+    resolvedPlanItem,
+    planMaterial,
+    planWeek,
+    planQty,
+    planSection,
+    setError,
+    setPlanSaving,
+    setPlanEditSource,
+    setPlanDialogOpen,
+    setSelectedShipments,
     syncPlanCellToGoogleSheet,
     load,
   ]);
@@ -354,8 +490,10 @@ export function usePlanDialog({
     handlePlanSectionChange,
     handlePlanArticleChange,
     openCreatePlanDialog,
+    openEditPlanDialog,
     closeCreatePlanDialog,
     saveCreatePlanDialog,
+    saveEditPlanDialog,
     saveAllPlanDialogItems,
     previewCreatePlanDialog,
     previewMultiplePlanDialogItems,

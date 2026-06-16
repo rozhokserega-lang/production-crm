@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { OrderService } from "../services/orderService";
 import { formatDateTimeRu } from "../app/rowHelpers";
+import { HardwareRequirementDialog } from "../components/HardwareRequirementDialog";
 
 const KIT_BUCKET = {
   NEW: "new",
@@ -35,6 +36,64 @@ export const WarehouseKitOrdersView = memo(function WarehouseKitOrdersView({
   const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState("");
   const [listView, setListView] = useState(KIT_BUCKET.NEW);
+  const [hwReqDialog, setHwReqDialog] = useState({
+    open: false,
+    loading: false,
+    orderId: "",
+    item: "",
+    qty: "",
+    lines: [],
+    error: "",
+  });
+
+  const closeHwReqDialog = useCallback(() => {
+    setHwReqDialog({
+      open: false,
+      loading: false,
+      orderId: "",
+      item: "",
+      qty: "",
+      lines: [],
+      error: "",
+    });
+  }, []);
+
+  const openHwReqDialog = useCallback((o) => {
+    const orderId = String(o.orderId || o.order_id || "").trim();
+    if (!orderId) return;
+    setHwReqDialog({
+      open: true,
+      loading: true,
+      orderId,
+      item: String(o.item || "").trim(),
+      qty: o.qty,
+      lines: [],
+      error: "",
+    });
+    OrderService.getHardwareConsumeOptions(orderId)
+      .then((rows) => {
+        const list = Array.isArray(rows) ? rows : [];
+        setHwReqDialog((prev) => ({
+          ...prev,
+          loading: false,
+          lines: list.map((r) => ({
+            hardwareItemId: Number(r.hardware_item_id),
+            name: String(r.name || "").trim(),
+            size: String(r.size || "").trim(),
+            unit: String(r.unit || "шт").trim(),
+            required: Number(r.suggested_qty || 0),
+            available: Number(r.available || 0),
+          })),
+        }));
+      })
+      .catch((e) => {
+        setHwReqDialog((prev) => ({
+          ...prev,
+          loading: false,
+          error: String(e?.message || e || "Не удалось загрузить потребность"),
+        }));
+      });
+  }, []);
 
   const loadOrders = useCallback(async () => {
     setLoading(true);
@@ -218,7 +277,7 @@ export const WarehouseKitOrdersView = memo(function WarehouseKitOrdersView({
                 <span>ID: {orderId}</span>
                 {updatedAt && <span>Обновлено: {formatDateTimeRu(updatedAt)}</span>}
               </div>
-              <div className="actions">
+              <div className="actions warehouse-kit-card__actions">
                 {bucket === KIT_BUCKET.NEW && (
                   <button
                     type="button"
@@ -229,6 +288,13 @@ export const WarehouseKitOrdersView = memo(function WarehouseKitOrdersView({
                     {isPending(`webSetWarehouseKitInWork:${orderId}`) ? "Беру..." : "▶ В работу"}
                   </button>
                 )}
+                <button
+                  type="button"
+                  className="mini hw-req-open-btn"
+                  onClick={() => openHwReqDialog(o)}
+                >
+                  🔩 Фурнитура
+                </button>
                 {bucket === KIT_BUCKET.IN_WORK && (
                   <>
                     <button
@@ -264,6 +330,17 @@ export const WarehouseKitOrdersView = memo(function WarehouseKitOrdersView({
           );
         })
       )}
+
+      <HardwareRequirementDialog
+        open={hwReqDialog.open}
+        orderId={hwReqDialog.orderId}
+        item={hwReqDialog.item}
+        qty={hwReqDialog.qty}
+        lines={hwReqDialog.lines}
+        loading={hwReqDialog.loading}
+        error={hwReqDialog.error}
+        onClose={closeHwReqDialog}
+      />
     </div>
   );
 });

@@ -1,4 +1,5 @@
 import { Component } from "react";
+import { reportUiError } from "../services/errorReporter";
 
 export class ErrorBoundary extends Component {
   constructor(props) {
@@ -14,6 +15,14 @@ export class ErrorBoundary extends Component {
     try {
       console.error("[CRM] UI crashed", error, info);
     } catch (_) {}
+    // Дублируем в crm_audit_log, чтобы админ видел падения интерфейса
+    // в «Журнале действий» (action: ui_error). Репортёр сам глушит дубли/спам.
+    reportUiError({
+      type: "react_boundary",
+      message: error?.message || String(error),
+      stack: error?.stack,
+      componentStack: info?.componentStack,
+    });
   }
 
   render() {

@@ -187,6 +187,7 @@ export function AppDialogs({
 
       <PlanDialog
         isOpen={plan.open}
+        mode={plan.editSource ? "edit" : "create"}
         planSection={plan.section}
         sectionOptions={sectionOptions}
         planArticle={plan.article}
@@ -203,7 +204,7 @@ export function AppDialogs({
         onMaterialChange={plan.setMaterial}
         onPlanWeekChange={(value) => plan.setWeek(value.replace(/[^\d-]/g, ""))}
         onPlanQtyChange={(value) => plan.setQty(value.replace(/[^0-9.,]/g, ""))}
-        onSave={actions.saveCreatePlanDialog}
+        onSave={plan.editSource ? actions.saveEditPlanDialog : actions.saveCreatePlanDialog}
         onSaveAll={actions.saveAllPlanDialogItems}
         onPreviewItems={actions.previewMultiplePlanDialogItems}
         onPreview={actions.previewCreatePlanDialog}

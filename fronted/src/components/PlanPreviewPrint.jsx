@@ -39,7 +39,7 @@ export function PlanPreviewPrint({ planPreview, articleLookupByItemKey = null })
 
   return (
     <div className="plan-preview print-plan-page">
-      <div className="plan-top-meta">
+      <div className="plan-top-meta no-print">
         <span>{planPreview.generatedAt || ""}</span>
         <span>Отгрузки CRM</span>
       </div>

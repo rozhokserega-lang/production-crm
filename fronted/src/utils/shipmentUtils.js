@@ -138,12 +138,6 @@ function lookupItemWeekOrder(orderMaps, itemName, week, material = "") {
   return null;
 }
 
-function isShipmentOrderTerminal(order) {
-  if (!order) return false;
-  if (resolvePipelineStage(order) === PipelineStage.SHIPPED) return true;
-  if (order.shipped === true || String(order.shipped || "").toLowerCase() === "true") return true;
-  return false;
-}
 
 function resolveCellFallbackStageKey(c) {
   if (!c) return "plan_idle";
@@ -162,6 +156,11 @@ function resolveCellFallbackStageKey(c) {
 
 export function getShipmentStageKey(c, sourceRow, orderMaps, itemName, materialName = "") {
   if (!c) return "awaiting";
+  // Ячейка готова к пуску — показываем «Ожидаю заказ», даже если по item+week
+  // в БД ещё висит предыдущий заказ (типично для повторной обвязки со склада).
+  if (c.canSendToWork && !c.inWork) {
+    return resolveCellFallbackStageKey(c);
+  }
   const material = String(materialName || (c?.material ?? c?.material_name ?? "")).trim();
   const rowKey = shipmentOrderKey(sourceRow, c.week);
   let order = orderMaps?.byRowWeek?.get(rowKey);
@@ -169,11 +168,6 @@ export function getShipmentStageKey(c, sourceRow, orderMaps, itemName, materialN
     order = lookupItemWeekOrder(orderMaps, itemName, c.week, material);
   }
   if (order) {
-    // Повторный пуск с «Склад обвязки»: ячейка снова «Ожидаю заказ», но по row+week
-    // остаётся старый отгруженный заказ — не скрываем новую позицию.
-    if (c.canSendToWork && !c.inWork && isShipmentOrderTerminal(order)) {
-      return resolveCellFallbackStageKey(c);
-    }
     return mapPipelineStageToShipmentKey(order);
   }
   return resolveCellFallbackStageKey(c);

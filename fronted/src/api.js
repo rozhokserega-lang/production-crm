@@ -604,6 +604,7 @@ const RPC_MAP = {
   webRemoveCrmUserRole: "web_remove_crm_user_role",
   webGetAuditLog: "web_get_audit_log",
   webLogConsumeSheetsFailed: "web_audit_log_event",
+  webLogUiError: "web_audit_log_event",
   webUpsertItemColorMap: "web_upsert_item_color_map",
   webGetConsumeOptions: "web_get_consume_options",
   webPreviewPlanFromShipment: "web_preview_plan_from_shipment",
@@ -611,6 +612,7 @@ const RPC_MAP = {
   webCreateShipmentPlanCell: "web_create_shipment_plan_cell",
   webDeleteShipmentPlanCell: "web_delete_shipment_plan_cell_by_source",
   webSplitShipmentPlanCell: "web_split_shipment_plan_cell",
+  webUpdateShipmentPlanCell: "web_update_shipment_plan_cell_by_source",
   webDeleteOrderById: "web_delete_order_by_id",
   webSetOrderAdminComment: "web_set_order_admin_comment",
   webGetPlanCatalog: "web_get_plan_catalog",
@@ -752,6 +754,19 @@ function buildRpcPayload(action, payload = {}) {
       p_qty_move: Number(payload.qtyMove ?? payload.p_qty_move ?? 0),
     };
   }
+  if (action === "webUpdateShipmentPlanCell") {
+    const row = payload.p_row ?? payload.row;
+    const col = payload.p_col ?? payload.col;
+    return {
+      p_row: row != null ? String(row) : null,
+      p_col: col != null ? String(col) : null,
+      p_section_name: String(payload.sectionName || payload.p_section_name || "").trim() || null,
+      p_item: String(payload.item || payload.p_item || "").trim(),
+      p_material: String(payload.material || payload.p_material || "").trim() || null,
+      p_week: String(payload.week || payload.p_week || "").trim(),
+      p_qty: Number(payload.qty ?? payload.p_qty ?? 0),
+    };
+  }
   if (action === "webDeleteOrderById") {
     return {
       p_order_id: String(payload.orderId || payload.p_order_id || "").trim(),
@@ -774,6 +789,14 @@ function buildRpcPayload(action, payload = {}) {
         error: String(payload.error || "").trim() || "unknown",
         source: "consume_dialog",
       },
+    };
+  }
+  if (action === "webLogUiError") {
+    return {
+      p_action: "ui_error",
+      p_entity: "frontend",
+      p_entity_id: null,
+      p_details: payload.details || {},
     };
   }
   if (action === "webSetMetalStock") {

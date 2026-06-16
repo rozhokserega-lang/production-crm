@@ -222,7 +222,8 @@ export function useBaseOrderFilter({
             String(x.item || "").toLowerCase().includes(q) ||
             String(x.orderId || x.order_id || "").toLowerCase().includes(q);
       if (!byWeek || !byQuery) return false;
-      if (view === "stats" || view === "overview" || view === "floorMap") return true;
+      // Склад обвязки и карта цеха считают потребность по всем активным этапам, не по вкладке «Пила/Кромка».
+      if (view === "stats" || view === "overview" || view === "floorMap" || view === "strapStock") return true;
       // Производство: те же «дорожки», что и в «Обзор заказов» (pipeline), иначе вкладки и канбан расходятся.
       if (tab === "pilka") return getOverviewLaneId(x) === "pilka";
       if (tab === "kromka") return getOverviewLaneId(x) === "kromka";

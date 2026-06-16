@@ -326,7 +326,7 @@ export function HardwareView({ canOperateWarehouse = false, planWeeks = [] }) {
   );
 
   const planToolbar = (
-    <div className="actions" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+    <div className="hardware-stock-toolbar__controls actions">
       <select
         value={planScope}
         onChange={(e) => {
@@ -355,8 +355,8 @@ export function HardwareView({ canOperateWarehouse = false, planWeeks = [] }) {
   );
 
   return (
-    <div style={{ display: "grid", gap: 12 }}>
-      <div className="tabs" style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+    <div className="hardware-view">
+      <div className="hardware-view__tabs tabs">
         {SUB_VIEWS.map((t) => (
           <button
             key={t.id}
@@ -368,18 +368,18 @@ export function HardwareView({ canOperateWarehouse = false, planWeeks = [] }) {
         ))}
         {subView === "stock" && (
           <input
+            className="hardware-view__search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Поиск фурнитуры..."
-            style={{ marginLeft: "auto", minWidth: 200 }}
           />
         )}
         {subView === "history" && (
           <input
+            className="hardware-view__search"
             value={historyQuery}
             onChange={(e) => setHistoryQuery(e.target.value)}
             placeholder="Поиск: фурнитура, заказ, примечание..."
-            style={{ marginLeft: "auto", minWidth: 240 }}
           />
         )}
       </div>
@@ -387,24 +387,23 @@ export function HardwareView({ canOperateWarehouse = false, planWeeks = [] }) {
       {error && <div className="error">{error}</div>}
 
       {subView === "stock" && (
-        <div style={{ display: "grid", gap: 10 }}>
-          {planToolbar}
-          <div className="sheet-table-wrap">
+        <div className="hardware-stock-panel">
+          <div className="hardware-stock-toolbar">{planToolbar}</div>
+          <div className="hardware-stock-wrap sheet-table-wrap">
             {!loading && filteredStock.length === 0 ? (
               <div className="empty">Нет позиций фурнитуры</div>
             ) : (
-              <table className="sheet-table">
+              <table className="hardware-stock-table">
                 <thead>
                   <tr>
-                    <th>Фурнитура</th>
-                    <th>Размер</th>
-                    <th style={{ textAlign: "center" }}>В наличии</th>
-                    {planKey && <th style={{ textAlign: "center" }}>Нужно на план</th>}
-                    {planKey && <th style={{ textAlign: "center" }}>Не хватает</th>}
-                    <th style={{ textAlign: "center" }}>Ед.</th>
-                    {canOperateWarehouse && <th>± Приход/расход</th>}
-                    {canOperateWarehouse && <th>Примечание</th>}
-                    {canOperateWarehouse && <th>Действие</th>}
+                    <th className="hw-stock-col-name">Фурнитура</th>
+                    <th className="hw-stock-col-size">Размер</th>
+                    <th className="hw-stock-col-num">В наличии</th>
+                    {planKey && <th className="hw-stock-col-num">На план</th>}
+                    {planKey && <th className="hw-stock-col-num">Не хватает</th>}
+                    <th className="hw-stock-col-unit">Ед.</th>
+                    {canOperateWarehouse && <th className="hw-stock-col-edit">± / прим.</th>}
+                    {canOperateWarehouse && <th className="hw-stock-col-actions"> </th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -416,104 +415,112 @@ export function HardwareView({ canOperateWarehouse = false, planWeeks = [] }) {
                     const invVal = invDraft[id] ?? "";
                     const invOpen = invOpenId === id;
                     const deficit = r.planDeficit;
-                    const rowStyle =
+                    const rowClass =
                       deficit != null && deficit > 0
-                        ? { background: "#fff5f5" }
+                        ? "hw-stock-row--deficit"
                         : deficit != null && deficit === 0 && r.planRequired > 0
-                          ? { background: "#f5fff5" }
-                          : undefined;
+                          ? "hw-stock-row--ok"
+                          : "";
+                    const stockColSpan = 4 + (planKey ? 2 : 0) + 1 + (canOperateWarehouse ? 2 : 0);
                     return (
                       <Fragment key={id}>
-                        <tr style={rowStyle}>
-                          <td>{r.name || "-"}</td>
-                          <td>{r.size || "-"}</td>
-                          <td style={{ textAlign: "center" }}>
-                            <b style={{ color: Number(r.qty) <= 0 ? "#9ca3af" : undefined }}>{r.qty}</b>
+                        <tr className={rowClass}>
+                          <td className="hw-stock-col-name" title={r.name || ""}>
+                            {r.name || "-"}
+                          </td>
+                          <td className="hw-stock-col-size">{r.size || "-"}</td>
+                          <td className="hw-stock-col-num">
+                            <b className={Number(r.qty) <= 0 ? "hw-stock-qty--zero" : undefined}>{r.qty}</b>
                           </td>
                           {planKey && (
-                            <td style={{ textAlign: "center" }}>
+                            <td className="hw-stock-col-num">
                               {r.planRequired != null ? r.planRequired : "—"}
                             </td>
                           )}
                           {planKey && (
-                            <td style={{ textAlign: "center" }}>
+                            <td className="hw-stock-col-num">
                               {r.planDeficit != null ? (
                                 r.planDeficit > 0 ? (
-                                  <b style={{ color: "#be123c" }}>-{r.planDeficit}</b>
+                                  <b className="hw-stock-deficit">−{r.planDeficit}</b>
                                 ) : (
-                                  <span style={{ color: "#2e7d32" }}>ок</span>
+                                  <span className="hw-stock-ok">ок</span>
                                 )
                               ) : (
                                 "—"
                               )}
                             </td>
                           )}
-                          <td style={{ textAlign: "center", color: "#9ca3af" }}>{r.unit || "шт"}</td>
+                          <td className="hw-stock-col-unit">{r.unit || "шт"}</td>
                           {canOperateWarehouse && (
-                            <td style={{ minWidth: 110 }}>
-                              <input
-                                value={deltaVal}
-                                inputMode="decimal"
-                                placeholder="+10 / -5"
-                                disabled={busy}
-                                title="Приход (+) или расход (−) от текущего остатка"
-                                onChange={(e) =>
-                                  setDeltaDraft((prev) => ({
-                                    ...prev,
-                                    [id]: e.target.value.replace(/[^0-9+.,-]/g, ""),
-                                  }))
-                                }
-                                onKeyDown={(e) => {
-                                  if (e.key === "Enter") applyDelta(id);
-                                }}
-                              />
+                            <td className="hw-stock-col-edit">
+                              <div className="hw-stock-edit">
+                                <input
+                                  className="hw-stock-input hw-stock-input--delta"
+                                  value={deltaVal}
+                                  inputMode="decimal"
+                                  placeholder="±"
+                                  disabled={busy}
+                                  title="Приход (+) или расход (−)"
+                                  onChange={(e) =>
+                                    setDeltaDraft((prev) => ({
+                                      ...prev,
+                                      [id]: e.target.value.replace(/[^0-9+.,-]/g, ""),
+                                    }))
+                                  }
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") applyDelta(id);
+                                  }}
+                                />
+                                <input
+                                  className="hw-stock-input hw-stock-input--note"
+                                  value={noteVal}
+                                  placeholder="прим."
+                                  disabled={busy}
+                                  title="Примечание к движению"
+                                  onChange={(e) =>
+                                    setNoteDraft((prev) => ({ ...prev, [id]: e.target.value }))
+                                  }
+                                />
+                              </div>
                             </td>
                           )}
                           {canOperateWarehouse && (
-                            <td style={{ minWidth: 120 }}>
-                              <input
-                                value={noteVal}
-                                placeholder="примечание"
-                                disabled={busy}
-                                onChange={(e) =>
-                                  setNoteDraft((prev) => ({ ...prev, [id]: e.target.value }))
-                                }
-                              />
-                            </td>
-                          )}
-                          {canOperateWarehouse && (
-                            <td style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-                              <button
-                                className="mini ok"
-                                disabled={busy || parseDeltaInput(deltaVal) == null}
-                                onClick={() => applyDelta(id)}
-                              >
-                                {busy ? "…" : "Применить"}
-                              </button>
-                              <button
-                                className="mini"
-                                disabled={busy}
-                                onClick={() => {
-                                  setInvOpenId(invOpen ? 0 : id);
-                                  if (!invOpen) setInvDraft((prev) => ({ ...prev, [id]: String(r.qty) }));
-                                }}
-                              >
-                                {invOpen ? "Скрыть" : "Инвент."}
-                              </button>
+                            <td className="hw-stock-col-actions">
+                              <div className="hw-stock-actions">
+                                <button
+                                  type="button"
+                                  className="hw-stock-btn hw-stock-btn--ok"
+                                  disabled={busy || parseDeltaInput(deltaVal) == null}
+                                  onClick={() => applyDelta(id)}
+                                  title="Применить приход/расход"
+                                >
+                                  {busy ? "…" : "✓"}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="hw-stock-btn hw-stock-btn--ghost"
+                                  disabled={busy}
+                                  title="Инвентаризация — установить точный остаток"
+                                  onClick={() => {
+                                    setInvOpenId(invOpen ? 0 : id);
+                                    if (!invOpen) setInvDraft((prev) => ({ ...prev, [id]: String(r.qty) }));
+                                  }}
+                                >
+                                  {invOpen ? "×" : "≡"}
+                                </button>
+                              </div>
                             </td>
                           )}
                         </tr>
                         {canOperateWarehouse && invOpen && (
-                          <tr style={{ background: "#f8fafc" }}>
-                            <td colSpan={planKey ? 9 : 7}>
-                              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                                <span style={{ fontSize: 12, color: "#64748b" }}>
-                                  Инвентаризация — установить точный остаток:
-                                </span>
+                          <tr className="hw-stock-inv-row">
+                            <td colSpan={stockColSpan}>
+                              <div className="hw-stock-inv">
+                                <span className="hw-stock-inv__label">Инвент.:</span>
                                 <input
+                                  className="hw-stock-input hw-stock-input--inv"
                                   value={invVal}
                                   inputMode="decimal"
-                                  style={{ width: 100 }}
                                   disabled={busy}
                                   onChange={(e) =>
                                     setInvDraft((prev) => ({
@@ -523,11 +530,12 @@ export function HardwareView({ canOperateWarehouse = false, planWeeks = [] }) {
                                   }
                                 />
                                 <button
-                                  className="mini warn"
+                                  type="button"
+                                  className="hw-stock-btn hw-stock-btn--warn"
                                   disabled={busy || invVal === ""}
                                   onClick={() => applyInventory(id)}
                                 >
-                                  Установить остаток
+                                  OK
                                 </button>
                               </div>
                             </td>
@@ -541,9 +549,8 @@ export function HardwareView({ canOperateWarehouse = false, planWeeks = [] }) {
             )}
           </div>
           {canOperateWarehouse && (
-            <div className="empty" style={{ fontSize: 12, color: "#64748b" }}>
-              Обычная работа: вводите <b>±кол-во</b> («+10», «-5») и жмите «Применить» — остаток меняется
-              относительно текущего. <b>Инвент.</b> — только для полной переустановки остатка.
+            <div className="hardware-stock-hint empty">
+              ±кол-во («+10», «-5») → <b>✓</b>. <b>≡</b> — инвентаризация (точный остаток).
             </div>
           )}
         </div>

@@ -106,6 +106,40 @@ export function formatStrapProductGroups(products) {
   return list.join(", ");
 }
 
+/** Уникальные изделия из каталога деталей (для фильтра на складе обвязки). */
+export function collectStrapCatalogProductNames(productsByCode) {
+  const names = new Set();
+  (productsByCode instanceof Map ? productsByCode : new Map()).forEach((products) => {
+    (Array.isArray(products) ? products : []).forEach((name) => {
+      const label = String(name || "").trim();
+      if (label) names.add(label);
+    });
+  });
+  return [...names].sort((a, b) => a.localeCompare(b, "ru"));
+}
+
+/** Обвязка с кодом `code` привязана к выбранному изделию в каталоге. */
+export function strapCodeServesProduct(code, productsByCode, productName) {
+  const target = normalizeStrapProductKey(productName);
+  if (!target) return false;
+  const key = normalizeStrapInventoryCode(code);
+  const products = (productsByCode instanceof Map ? productsByCode : new Map()).get(key) || [];
+  return products.some((p) => normalizeStrapProductKey(p) === target);
+}
+
+/** Сначала обвязка для выбранного изделия, остальные — ниже без скрытия. */
+export function sortStrapCodesByProductFilter(codes, productsByCode, productName) {
+  const list = Array.isArray(codes) ? [...codes] : [];
+  if (!String(productName || "").trim()) return list;
+  const matched = [];
+  const rest = [];
+  list.forEach((code) => {
+    if (strapCodeServesProduct(code, productsByCode, productName)) matched.push(code);
+    else rest.push(code);
+  });
+  return [...matched, ...rest];
+}
+
 /** Заказ только планок (размер в названии / «Планки обвязки») — без расхода «мебельной» обвязки. */
 export function isWorkshopStrapOrderItem(item) {
   const s = stripStrapTargetMeta(stripPlanItemMeta(String(item || "").trim()));

@@ -52,11 +52,13 @@ export function useShipmentSelectionStats({
     const materials = Object.keys(byMaterial)
       .sort((a, b) => a.localeCompare(b, "ru"))
       .map((m) => ({ material: m, sheets: byMaterial[m] }));
+    const totalQty = items.reduce((sum, x) => sum + (Number(x.qty) || 0), 0);
     return {
       items,
       materials,
       selectedCount: items.length,
       totalSheets,
+      totalQty,
     };
   }, [selectedShipments, furnitureCustomTemplates, normalizeFurnitureKey]);
 

@@ -83,6 +83,7 @@ import { useShipmentData } from "../contexts/ShipmentDataContext";
 import { useWarehouseData } from "../contexts/WarehouseDataContext";
 import { useFurnitureData } from "../contexts/FurnitureDataContext";
 import { useNavigation } from "../contexts/NavigationContext";
+import { setUiContext } from "../services/errorReporter";
 import { useUiState } from "../contexts/UiStateContext";
 import { OrderService } from "../services/orderService";
 import {
@@ -218,6 +219,11 @@ export function useAppState({ auth }) {
     workshopQrScan,
     setWorkshopQrScan,
   } = useOrders({ autoLoad: false });
+
+  useEffect(() => {
+    setUiContext({ view, tab });
+  }, [view, tab]);
+
   const {
     shipmentBoard,
     setShipmentBoard,
@@ -319,6 +325,8 @@ export function useAppState({ auth }) {
     setPlanQty,
     planSaving,
     setPlanSaving,
+    planEditSource,
+    setPlanEditSource,
   } = useShipmentDialogsState(STRAP_OPTIONS);
 
   // Global strap stock (for workshop availability check)
@@ -650,8 +658,10 @@ export function useAppState({ auth }) {
     handlePlanSectionChange,
     handlePlanArticleChange,
     openCreatePlanDialog: _openCreatePlanDialog,
+    openEditPlanDialog: _openEditPlanDialog,
     closeCreatePlanDialog,
     saveCreatePlanDialog,
+    saveEditPlanDialog,
     saveAllPlanDialogItems,
     previewCreatePlanDialog,
     previewMultiplePlanDialogItems,
@@ -681,6 +691,9 @@ export function useAppState({ auth }) {
     furnitureTemplates,
     syncPlanCellToGoogleSheet,
     load: mutationLoad,
+    planEditSource,
+    setPlanEditSource,
+    setSelectedShipments,
   });
 
   const openCreatePlanDialog = useCallback(async () => {
@@ -688,6 +701,11 @@ export function useAppState({ auth }) {
     await refreshPlanCatalogs();
     _openCreatePlanDialog();
   }, [_openCreatePlanDialog, refreshPlanCatalogs]);
+
+  const openEditPlanDialog = useCallback(async (selection) => {
+    await refreshPlanCatalogs();
+    _openEditPlanDialog(selection);
+  }, [_openEditPlanDialog, refreshPlanCatalogs]);
 
   const {
     strapOptionsByProduct,
@@ -1629,6 +1647,7 @@ export function useAppState({ auth }) {
       sendSelectedShipmentToWork,
       deleteSelectedShipmentPlan,
       splitSelectedShipmentPlan,
+      openEditPlanDialog,
       cuttingPlan,
       setCuttingPlan,
       generateCuttingPlan,
@@ -1790,6 +1809,7 @@ export function useAppState({ auth }) {
         setQty: setPlanQty,
         saving: planSaving,
         setSaving: setPlanSaving,
+        editSource: planEditSource,
       },
       strapDone: {
         open: strapDoneDialogOpen,
@@ -1828,8 +1848,10 @@ export function useAppState({ auth }) {
     handlePlanSectionChange,
       handlePlanArticleChange,
       openCreatePlanDialog,
+      openEditPlanDialog,
       closeCreatePlanDialog,
       saveCreatePlanDialog,
+      saveEditPlanDialog,
       saveAllPlanDialogItems,
       previewCreatePlanDialog,
       previewMultiplePlanDialogItems,

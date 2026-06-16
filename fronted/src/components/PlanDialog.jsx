@@ -16,6 +16,7 @@ function adjustQtyValue(current, delta) {
 
 export function PlanDialog({
   isOpen,
+  mode = "create",
   planSection,
   sectionOptions,
   planArticle,
@@ -99,11 +100,15 @@ export function PlanDialog({
 
   if (!isOpen) return null;
 
+  const isEditMode = mode === "edit";
+
   return (
     <div className="dialog-backdrop" onKeyDown={handleKeyDown}>
       <div className="dialog-card plan-dialog-card">
         <div className="plan-dialog__header">
-          <h3 className="plan-dialog__title">Новый план отгрузки</h3>
+          <h3 className="plan-dialog__title">
+            {isEditMode ? "Редактирование плана" : "Новый план отгрузки"}
+          </h3>
           <button type="button" className="plan-dialog__close" onClick={onClose} disabled={planSaving} aria-label="Закрыть">✕</button>
         </div>
 
@@ -217,7 +222,7 @@ export function PlanDialog({
         </div>
 
         {/* Строка-превью с чекбоксом */}
-        {summaryReady && (
+        {!isEditMode && summaryReady && (
           <div className="plan-dialog__summary">
             <span className="plan-dialog__summary-label">Создаётся:</span>
             <span>{planSection}</span>
@@ -239,7 +244,7 @@ export function PlanDialog({
         )}
 
         {/* Накопленный список позиций */}
-        {pendingItems.length > 0 && (
+        {!isEditMode && pendingItems.length > 0 && (
           <div className="plan-dialog__added-list">
             <div className="plan-dialog__added-list-header">
               <span className="plan-dialog__added-list-title">В план</span>
@@ -283,7 +288,7 @@ export function PlanDialog({
           <button
             type="button"
             className="plan-dialog__btn plan-dialog__btn--secondary"
-            disabled={!canPreview}
+            disabled={!canPreview || isEditMode}
             onClick={() => {
               if (pendingItems.length > 0 && typeof onPreviewItems === "function") {
                 const allItems = [...pendingItems];

@@ -159,6 +159,10 @@ export class OrderService {
     return await callBackend("webSplitShipmentPlanCell", source);
   }
 
+  static async updateShipmentPlanCell(source) {
+    return await callBackend("webUpdateShipmentPlanCell", source);
+  }
+
   static async getPlanCatalog() {
     return await callBackend("webGetPlanCatalog");
   }

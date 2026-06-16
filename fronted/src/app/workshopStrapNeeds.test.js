@@ -2,12 +2,15 @@ import { describe, expect, it } from "vitest";
 import {
   buildStrapProductGroupsByCode,
   calcStrapNeedsFromDetailArticles,
+  collectStrapCatalogProductNames,
   computeWorkshopStrapDemandByInventoryKey,
   formatStrapProductGroups,
   getResolvedWorkshopStrapNeeds,
   inventoryCodeFromStrapStockType,
   orderCountsTowardStrapDemand,
   orderKeysForStrapCatalogMatch,
+  sortStrapCodesByProductFilter,
+  strapCodeServesProduct,
   strapRequiresLaunchColorChoice,
   strapWarehouseDemandQty,
   strapWarehouseShortage,
@@ -172,6 +175,26 @@ describe("inventoryCodeFromStrapStockType / strapWarehouseShortage", () => {
     expect(map.get("558_80|Черный")).toBe(96);
   });
 
+  it("aggregates Donini Grande demand across kromka and workshop_complete orders", () => {
+    const rows = [
+      { product_name: "Донини Гранде", detail_name_pattern: "%обвязка%750_80%", is_active: true },
+      { product_name: "Донини Гранде", detail_name_pattern: "%обвязка%618_80%", is_active: true },
+      { product_name: "Донини Гранде", detail_name_pattern: "%обвязка%600_80%", is_active: true },
+      { product_name: "Донини Гранде", detail_name_pattern: "%обвязка%586_80%", is_active: true },
+    ];
+    const deps = { ...emptyDeps, furnitureDetailArticleRows: rows };
+    const workshopRows = [
+      { item: "Donini Grande 750 мм. Дуб Сонома", qty: 18, pipeline_stage: "kromka" },
+      { item: "Donini Grande 806 мм. Дуб Сонома", qty: 18, pipeline_stage: "kromka" },
+      { item: "Donini Grande 750 мм. Дуб Коми", qty: 18, pipeline_stage: "workshop_complete" },
+    ];
+    const map = computeWorkshopStrapDemandByInventoryKey(workshopRows, deps);
+    expect(map.get("750_80|Черный")).toBe(108);
+    expect(map.get("600_80|Черный")).toBe(216);
+    expect(map.get("618_80|Черный")).toBe(108);
+    expect(map.get("586_80|Черный")).toBe(108);
+  });
+
   it("ignores assembled / final orders in demand map", () => {
     const rows = [
       {
@@ -214,5 +237,40 @@ describe("buildStrapProductGroupsByCode", () => {
     expect(strapRequiresLaunchColorChoice("396_305")).toBe(true);
     expect(strapRequiresLaunchColorChoice("153x320")).toBe(true);
     expect(strapRequiresLaunchColorChoice("1000_80")).toBe(false);
+  });
+});
+
+describe("strap product filter on stock view", () => {
+  const map = buildStrapProductGroupsByCode([
+    { product_name: "Донини", detail_name_pattern: "Обвязка", is_active: true },
+    { product_name: "ТВ Лофт", detail_name_pattern: "Бока (316_167)", is_active: true },
+    { product_name: "Avella lite", detail_name_pattern: "Обвязка (1158_56)", is_active: true },
+  ]);
+
+  it("collects sorted product names", () => {
+    expect(collectStrapCatalogProductNames(map)).toEqual(["Авелла Лайт", "Донини", "ТВ Лофт"]);
+  });
+
+  it("detects strap code for product", () => {
+    expect(strapCodeServesProduct("316_167", map, "ТВ Лофт")).toBe(true);
+    expect(strapCodeServesProduct("1000_80", map, "Донини")).toBe(true);
+    expect(strapCodeServesProduct("316_167", map, "Донини")).toBe(false);
+  });
+
+  it("sorts matching strap codes to the top", () => {
+    const codes = ["1158_56", "316_167", "1000_80", "558_80"];
+    expect(sortStrapCodesByProductFilter(codes, map, "ТВ Лофт")).toEqual([
+      "316_167",
+      "1158_56",
+      "1000_80",
+      "558_80",
+    ]);
+    expect(sortStrapCodesByProductFilter(codes, map, "Донини")).toEqual([
+      "1000_80",
+      "558_80",
+      "1158_56",
+      "316_167",
+    ]);
+    expect(sortStrapCodesByProductFilter(codes, map, "")).toEqual(codes);
   });
 });

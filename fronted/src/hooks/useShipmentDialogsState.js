@@ -25,6 +25,7 @@ export function useShipmentDialogsState(defaultStrapOptions) {
   const [planWeek, setPlanWeek] = useState("");
   const [planQty, setPlanQty] = useState("");
   const [planSaving, setPlanSaving] = useState(false);
+  const [planEditSource, setPlanEditSource] = useState(null);
 
   return {
     consumeDialogOpen,
@@ -67,5 +68,7 @@ export function useShipmentDialogsState(defaultStrapOptions) {
     setPlanQty,
     planSaving,
     setPlanSaving,
+    planEditSource,
+    setPlanEditSource,
   };
 }

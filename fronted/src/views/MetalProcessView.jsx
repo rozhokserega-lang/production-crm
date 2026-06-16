@@ -297,6 +297,7 @@ export function MetalProcessView({
   const [catalogGraphErrors, setCatalogGraphErrors] = useState([]);
   const [catalogEditArticle, setCatalogEditArticle] = useState(null);
   const [catalogTableSearch, setCatalogTableSearch] = useState("");
+  const [catalogSelectedArticles, setCatalogSelectedArticles] = useState([]);
   const [doneDialog, setDoneDialog] = useState({ open: false, row: null, edit: false, doneQty: "", note: "" });
   const [weldingDialog, setWeldingDialog] = useState({ open: false, row: null, executor: "" });
   const [eventsDialog, setEventsDialog] = useState({ open: false, row: null, loading: false, error: "", events: [] });
@@ -327,6 +328,16 @@ export function MetalProcessView({
       cancelAnimationFrame(focusTimer);
     };
   }, [catalogEditArticle, metalProcessActionKey]);
+
+  useEffect(() => {
+    const active = new Set(
+      (Array.isArray(metalProcessCatalogRows) ? metalProcessCatalogRows : [])
+        .filter((x) => x?.isActive !== false)
+        .map((x) => String(x.article || "").trim())
+        .filter(Boolean),
+    );
+    setCatalogSelectedArticles((prev) => prev.filter((a) => active.has(a)));
+  }, [metalProcessCatalogRows]);
 
   const setSubView = useCallback((next) => {
     setSubViewRaw(next);
@@ -622,7 +633,7 @@ export function MetalProcessView({
       {subView === "plan" && planPreviewRow && (
         <div className="print-area metal-plan-print" style={{ marginBottom: 12 }}>
           <div className="print-plan-page">
-            <div className="plan-top-meta">
+            <div className="plan-top-meta no-print">
               <span>{new Date().toLocaleString("ru-RU")}</span>
               <span>Отгрузки CRM</span>
             </div>
@@ -1394,6 +1405,35 @@ export function MetalProcessView({
           const ok = window.confirm(`Удалить артикул "${row.article} — ${row.name}"?\n\nЕсли по нему уже есть история производства, он будет скрыт из каталога.\nНельзя удалить, если есть активные задания в производстве.`);
           if (!ok) return;
           await deleteMetalCatalogItem(row.article, row.name);
+          setCatalogSelectedArticles((prev) => prev.filter((a) => a !== row.article));
+        };
+        const visibleArticles = filteredCatalogRows.map((r) => r.article);
+        const selectedVisibleCount = visibleArticles.filter((a) => catalogSelectedArticles.includes(a)).length;
+        const allVisibleSelected =
+          visibleArticles.length > 0 && selectedVisibleCount === visibleArticles.length;
+        const someVisibleSelected = selectedVisibleCount > 0 && !allVisibleSelected;
+        const toggleCatalogRow = (article) => {
+          setCatalogSelectedArticles((prev) =>
+            prev.includes(article) ? prev.filter((a) => a !== article) : [...prev, article],
+          );
+        };
+        const toggleSelectAllVisible = () => {
+          if (allVisibleSelected) {
+            setCatalogSelectedArticles((prev) => prev.filter((a) => !visibleArticles.includes(a)));
+          } else {
+            setCatalogSelectedArticles((prev) => [...new Set([...prev, ...visibleArticles])]);
+          }
+        };
+        const handleBulkDelete = async () => {
+          const selectedRows = filteredCatalogRows.filter((r) => catalogSelectedArticles.includes(r.article));
+          if (!selectedRows.length) return;
+          const ok = window.confirm(
+            `Удалить ${selectedRows.length} поз. из каталога?\n\nЕсли по артикулу есть история производства, позиция будет скрыта.\nНельзя удалить, если есть активные задания в производстве.`,
+          );
+          if (!ok) return;
+          for (const row of selectedRows) {
+            await deleteMetalCatalogItem(row.article, row.name);
+          }
         };
         const isNewMode = isEditing && catalogEditArticle === "__new__";
         return (
@@ -1419,6 +1459,16 @@ export function MetalProcessView({
               >
                 + Добавить изделие
               </button>
+              {catalogSelectedArticles.length > 0 ? (
+                <button
+                  type="button"
+                  className="mini warn"
+                  disabled={isSaving || isEditing}
+                  onClick={() => void handleBulkDelete()}
+                >
+                  {isSaving ? "Удаление…" : `Удалить выбранные (${catalogSelectedArticles.length})`}
+                </button>
+              ) : null}
             </div>
 
             {isEditing && createPortal(
@@ -1499,6 +1549,19 @@ export function MetalProcessView({
               <table className="catalog-table" style={{ marginTop: 12 }}>
                 <thead>
                   <tr>
+                    <th className="catalog-table__check">
+                      <input
+                        type="checkbox"
+                        className="catalog-table__checkbox"
+                        checked={allVisibleSelected}
+                        ref={(el) => {
+                          if (el) el.indeterminate = someVisibleSelected;
+                        }}
+                        disabled={isSaving || isEditing || visibleArticles.length === 0}
+                        title="Выделить все на экране"
+                        onChange={toggleSelectAllVisible}
+                      />
+                    </th>
                     <th>Артикул</th>
                     <th>Название</th>
                     <th>Маршрут производства</th>
@@ -1508,8 +1571,26 @@ export function MetalProcessView({
                 <tbody>
                   {filteredCatalogRows.map((row, rowIdx) => {
                     const busyRow = metalProcessActionKey === `catalog:delete:${row.article}`;
+                    const isSelected = catalogSelectedArticles.includes(row.article);
                     return (
-                      <tr key={row.article} className={catalogEditArticle === row.article ? "row--editing" : ""}>
+                      <tr
+                        key={row.article}
+                        className={[
+                          catalogEditArticle === row.article ? "row--editing" : "",
+                          isSelected ? "row--selected" : "",
+                        ]
+                          .filter(Boolean)
+                          .join(" ")}
+                      >
+                        <td className="catalog-table__check">
+                          <input
+                            type="checkbox"
+                            className="catalog-table__checkbox"
+                            checked={isSelected}
+                            disabled={isSaving || isEditing}
+                            onChange={() => toggleCatalogRow(row.article)}
+                          />
+                        </td>
                         <td>
                           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                             <span style={{ fontSize: 11, color: "var(--text-soft)", minWidth: 20, textAlign: "right" }}>

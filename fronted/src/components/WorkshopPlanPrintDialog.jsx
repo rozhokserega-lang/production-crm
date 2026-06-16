@@ -56,7 +56,7 @@ export function WorkshopPlanPrintDialog({
           {planPreview ? (
             <div className="workshop-plan-print-preview">
               <PlanPreviewPrint planPreview={planPreview} articleLookupByItemKey={articleLookupByItemKey} />
-              <div className="actions workshop-plan-print-actions">
+              <div className="actions workshop-plan-print-actions no-print">
                 <button type="button" className="mini" onClick={onPrint}>
                   Печать
                 </button>

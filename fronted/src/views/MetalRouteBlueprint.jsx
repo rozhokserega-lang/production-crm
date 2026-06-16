@@ -7,6 +7,9 @@ import {
   Handle,
   Position,
   MarkerType,
+  BaseEdge,
+  EdgeLabelRenderer,
+  getBezierPath,
   useNodesState,
   useEdgesState,
   addEdge,
@@ -72,7 +75,62 @@ function StageNode({ data }) {
 
 const NODE_TYPES = { start: StartNode, stage: StageNode };
 
-function graphToFlow(graph, disabled, onDeleteStage) {
+function DeletableEdge({
+  id,
+  sourceX,
+  sourceY,
+  targetX,
+  targetY,
+  sourcePosition,
+  targetPosition,
+  style,
+  markerEnd,
+  data,
+}) {
+  const [edgePath, labelX, labelY] = getBezierPath({
+    sourceX,
+    sourceY,
+    sourcePosition,
+    targetX,
+    targetY,
+    targetPosition,
+  });
+
+  return (
+    <>
+      <BaseEdge path={edgePath} markerEnd={markerEnd} style={style} />
+      {!data?.disabled && (
+        <EdgeLabelRenderer>
+          <div
+            className="mbp-edge__del-wrap nodrag nopan"
+            style={{
+              position: "absolute",
+              transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
+              pointerEvents: "all",
+            }}
+          >
+            <button
+              type="button"
+              className="mbp-edge__del"
+              title="Удалить связь"
+              aria-label="Удалить связь между этапами"
+              onClick={(e) => {
+                e.stopPropagation();
+                data?.onDelete?.(id);
+              }}
+            >
+              ×
+            </button>
+          </div>
+        </EdgeLabelRenderer>
+      )}
+    </>
+  );
+}
+
+const EDGE_TYPES = { deletable: DeletableEdge };
+
+function graphToFlow(graph, disabled, onDeleteStage, onDeleteEdge) {
   const normalized = normalizeProcessGraph(graph);
   const nodes = normalized.nodes.map((node) => {
     if (node.kind === "start") {
@@ -101,6 +159,7 @@ function graphToFlow(graph, disabled, onDeleteStage) {
 
   const edges = normalized.edges.map((edge) => ({
     id: edge.id,
+    type: "deletable",
     source: edge.from,
     target: edge.to,
     sourceHandle: "out",
@@ -108,6 +167,10 @@ function graphToFlow(graph, disabled, onDeleteStage) {
     markerEnd: ARROW("#64748b"),
     style: { stroke: "#64748b", strokeWidth: 1.5 },
     deletable: !disabled,
+    data: {
+      disabled,
+      onDelete: onDeleteEdge,
+    },
   }));
 
   return { nodes, edges };
@@ -157,12 +220,23 @@ export function MetalRouteBlueprint({ value, onChange, disabled = false, validat
   );
 
   const initial = useMemo(
-    () => graphToFlow(value, disabled, null),
+    () => graphToFlow(value, disabled, null, null),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
   const [nodes, setNodes, onNodesChange] = useNodesState(initial.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initial.edges);
+
+  const deleteEdge = useCallback(
+    (edgeId) => {
+      setEdges((prev) => {
+        const next = prev.filter((e) => e.id !== edgeId);
+        queueMicrotask(() => emitGraph(nodesRef.current, next));
+        return next;
+      });
+    },
+    [emitGraph, setEdges],
+  );
 
   const deleteStage = useCallback(
     (nodeId) => {
@@ -188,10 +262,10 @@ export function MetalRouteBlueprint({ value, onChange, disabled = false, validat
 
   useEffect(() => {
     if (syncingRef.current) return;
-    const next = graphToFlow(value, disabled, null);
+    const next = graphToFlow(value, disabled, deleteStage, deleteEdge);
     setNodes(next.nodes);
     setEdges(next.edges);
-  }, [value, disabled, deleteStage, setNodes, setEdges]);
+  }, [value, disabled, deleteStage, deleteEdge, setNodes, setEdges]);
 
   useEffect(() => {
     setNodes((prev) =>
@@ -207,10 +281,12 @@ export function MetalRouteBlueprint({ value, onChange, disabled = false, validat
     setEdges((prev) =>
       prev.map((edge) => ({
         ...edge,
+        type: "deletable",
         deletable: !disabled,
+        data: { ...edge.data, disabled, onDelete: deleteEdge },
       })),
     );
-  }, [disabled, deleteStage, setNodes, setEdges]);
+  }, [disabled, deleteStage, deleteEdge, setNodes, setEdges]);
 
   const handleNodesChange = useCallback(
     (changes) => {
@@ -247,11 +323,13 @@ export function MetalRouteBlueprint({ value, onChange, disabled = false, validat
         const next = addEdge(
           {
             ...connection,
+            type: "deletable",
             sourceHandle: connection.sourceHandle || "out",
             targetHandle: connection.targetHandle || "in",
             markerEnd: ARROW("#64748b"),
             style: { stroke: "#64748b", strokeWidth: 1.5 },
             deletable: true,
+            data: { disabled: false, onDelete: deleteEdge },
           },
           prev,
         );
@@ -259,7 +337,7 @@ export function MetalRouteBlueprint({ value, onChange, disabled = false, validat
         return next;
       });
     },
-    [disabled, emitGraph, nodes, setEdges],
+    [disabled, deleteEdge, emitGraph, nodes, setEdges],
   );
 
   const addStage = useCallback(
@@ -324,6 +402,7 @@ export function MetalRouteBlueprint({ value, onChange, disabled = false, validat
           onEdgesChange={handleEdgesChange}
           onConnect={onConnect}
           nodeTypes={NODE_TYPES}
+          edgeTypes={EDGE_TYPES}
           fitView
           fitViewOptions={{ padding: 0.25 }}
           minZoom={0.35}
@@ -344,7 +423,7 @@ export function MetalRouteBlueprint({ value, onChange, disabled = false, validat
         <div className="mbp-hint">
           Тяните стрелку от правого кружка к левому. Две стрелки из одного этапа — параллельная работа;
           две стрелки в один этап — слияние (например, лазер + пила → сварка).
-          {disabled ? " Режим просмотра." : " Delete — удалить выбранную стрелку."}
+          {disabled ? " Режим просмотра." : " Крестик на стрелке — удалить связь."}
         </div>
       )}
 

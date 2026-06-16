@@ -155,6 +155,27 @@ describe("getShipmentStageKey", () => {
     ).toBe("awaiting");
   });
 
+  it("treats relaunch-ready plan cell as awaiting when an in-work order matches item+week", () => {
+    const maps = buildOrderMaps([
+      {
+        item: "Обвязка (1000_80) {{STRAP_FOR:Донини}}",
+        week: "обвязка",
+        source_row_id: "manual:oldbatch",
+        pipeline_stage: "kromka",
+        kromka_status: "В работе",
+      },
+    ]);
+    expect(
+      getShipmentStageKey(
+        { ...inactiveCell, week: "обвязка", qty: 144, canSendToWork: true },
+        "manual:newbatch",
+        maps,
+        "Обвязка (1000_80) {{STRAP_FOR:Донини}}",
+        "Черный",
+      ),
+    ).toBe("awaiting");
+  });
+
   it("still maps inactive plan cell to shipped when linked order is shipped", () => {
     const maps = buildOrderMaps([
       {

@@ -1,0 +1,119 @@
+name: Migrations CI
+
+# Проверка всех миграций на чистом Postgres.
+# Цель: поймать невалидный SQL / рассинхрон порядка / конфликты имён до прода.
+# Логика наката идентична scripts/verify_migrations_locally.sh.
+
+on:
+  push:
+    branches: [main, test, crm]
+    paths:
+      - "supabase/migrations/**"
+      - "SUPABASE_STAGE1_SCHEMA.sql"
+      - ".github/workflows/migrations-ci.yml"
+  pull_request:
+    branches: [main, test, crm]
+    paths:
+      - "supabase/migrations/**"
+      - "SUPABASE_STAGE1_SCHEMA.sql"
+      - ".github/workflows/migrations-ci.yml"
+  workflow_dispatch:
+
+jobs:
+  apply-migrations:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    services:
+      postgres:
+        # Чистый Postgres (не supabase/postgres) — auth-зависимости эмулируем shim-ом.
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: crm_ci
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d crm_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: ci_password
+      PGDATABASE: crm_ci
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Apply auth shim
+        # Эмуляция Supabase auth окружения: pgcrypto, auth.users, auth.uid().
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/_ci_auth_shim.sql
+
+      - name: Apply stage1 schema
+        # Базовые таблицы (orders, shipment_plan_cells, labor_facts). Идут ДО миграций.
+        run: psql -v ON_ERROR_STOP=1 -f SUPABASE_STAGE1_SCHEMA.sql
+
+      - name: Apply all migrations in chronological order
+        # Накатываем каждую миграцию отдельным psql с ON_ERROR_STOP=1.
+        # _ci_auth_shim.sql отсекаем (уже применён); .md/.txt игнорируем.
+        run: |
+          set -e
+          count=0
+          for f in $(find supabase/migrations -maxdepth 1 -type f -name '*.sql' | sort); do
+            base="$(basename "$f")"
+            case "$base" in
+              _ci_auth_shim.sql) echo "skip (shim already applied): $base"; continue ;;
+            esac
+            echo "apply: $base"
+            psql -v ON_ERROR_STOP=1 -f "$f" > /dev/null
+            count=$((count + 1))
+          done
+          echo "Applied $count migrations."
+        shell: bash
+
+      - name: Smoke check — key objects exist
+        run: |
+          set -e
+          read -r HAS_ORDERS HAS_SHIPMENT HAS_AUDIT HAS_RPC_ORDERS HAS_RPC_AUDIT < <(
+            psql -t -A -F' ' -c "
+              select
+                (select count(*) from information_schema.tables where table_schema='public' and table_name='orders')::text,
+                (select count(*) from information_schema.tables where table_schema='public' and table_name='shipment_plan_cells')::text,
+                (select count(*) from information_schema.tables where table_schema='public' and table_name='crm_audit_log')::text,
+                (select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='web_get_orders_all')::text,
+                (select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='web_audit_log_event')::text
+              ;
+            "
+          )
+          ok=1
+          [ "${HAS_ORDERS:-0}" -eq 1 ] || { echo "::error::Нет таблицы public.orders"; ok=0; }
+          [ "${HAS_SHIPMENT:-0}" -eq 1 ] || { echo "::error::Нет таблицы public.shipment_plan_cells"; ok=0; }
+          [ "${HAS_AUDIT:-0}" -eq 1 ] || { echo "::error::Нет таблицы public.crm_audit_log"; ok=0; }
+          [ "${HAS_RPC_ORDERS:-0}" -ge 1 ] || { echo "::error::Нет RPC web_get_orders_all"; ok=0; }
+          [ "${HAS_RPC_AUDIT:-0}" -ge 1 ] || { echo "::error::Нет RPC web_audit_log_event"; ok=0; }
+          if [ "$ok" -ne 1 ]; then exit 1; fi
+          echo "Smoke check OK: ключевые объекты присутствуют."
+        shell: bash
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "### Migrations CI" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "✅ Все миграции наложились cleanly на чистом Postgres." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Накат миграций упал — см. лог шага выше." >> $GITHUB_STEP_SUMMARY
+          fi
+        shell: bash

@@ -12,7 +12,7 @@ export function AdminRolePreviewBar({
   if (!canAdminSettings) return null;
 
   return (
-    <section className="admin-role-preview" aria-label="Проверка ролей оператора">
+    <section className="admin-role-preview no-print" aria-label="Проверка ролей оператора">
       <div className="admin-role-preview__head">
         <span className="admin-role-preview__title">Проверка роли</span>
         {crmRolePreviewActive ? (

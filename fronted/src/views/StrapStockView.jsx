@@ -3,10 +3,13 @@ import { STRAP_OPTIONS } from "../app/appConstants";
 import { toUserError } from "../app/errorCatalogHelpers";
 import {
   buildStrapProductGroupsByCode,
+  collectStrapCatalogProductNames,
   computeWorkshopStrapDemandByInventoryKey,
   formatStrapProductGroups,
   inventoryCodeFromStrapStockType,
   normalizeStrapInventoryCode,
+  sortStrapCodesByProductFilter,
+  strapCodeServesProduct,
   STRAP_FACADE_LAUNCH_COLORS,
   STRAP_LAUNCH_PLAN_WEEK,
   strapRequiresLaunchColorChoice,
@@ -134,6 +137,7 @@ export function StrapStockView({
   const [launchProduct, setLaunchProduct] = useState("");
   const [launchError, setLaunchError] = useState("");
   const [launchSaving, setLaunchSaving] = useState(false);
+  const [productFilter, setProductFilter] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -175,12 +179,28 @@ export function StrapStockView({
     [furnitureDetailArticleRows],
   );
 
+  const productOptions = useMemo(
+    () => collectStrapCatalogProductNames(productsByCode),
+    [productsByCode],
+  );
+
   const stockMap = buildStockMap(stockRows);
 
-  // All known strap types from STRAP_OPTIONS + any in DB not in the list
-  const knownCodes = STRAP_OPTIONS.map(strapOptionToCode);
-  const dbCodes = stockRows.map((r) => String(r.strap_type || ""));
-  const allCodes = Array.from(new Set([...knownCodes, ...dbCodes])).filter(Boolean);
+  const allCodes = useMemo(() => {
+    const known = STRAP_OPTIONS.map(strapOptionToCode);
+    const db = stockRows.map((r) => String(r.strap_type || ""));
+    return Array.from(new Set([...known, ...db])).filter(Boolean);
+  }, [stockRows]);
+
+  const sortedCodes = useMemo(
+    () => sortStrapCodesByProductFilter(allCodes, productsByCode, productFilter),
+    [allCodes, productsByCode, productFilter],
+  );
+
+  const isProductMatch = useCallback(
+    (code) => strapCodeServesProduct(code, productsByCode, productFilter),
+    [productsByCode, productFilter],
+  );
 
   const handleEditStart = (strapType, color, currentQty) => {
     setEditKey(`${strapType}|${color}`);
@@ -287,6 +307,29 @@ export function StrapStockView({
         </button>
       </div>
 
+      <div className="strap-stock-filters">
+        <label className="strap-stock-filter">
+          <span className="strap-stock-filter__label">Изделие</span>
+          <select
+            className="strap-stock-filter__select"
+            value={productFilter}
+            onChange={(e) => setProductFilter(e.target.value)}
+          >
+            <option value="">Все изделия</option>
+            {productOptions.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
+        </label>
+        {productFilter ? (
+          <span className="strap-stock-filter__hint">
+            Обвязка для «{productFilter}» — вверху списка
+          </span>
+        ) : null}
+      </div>
+
       {error && (
         <div className="strap-stock-error">{error}</div>
       )}
@@ -316,9 +359,10 @@ export function StrapStockView({
               </tr>
             </thead>
             <tbody>
-              {allCodes.map((code) => {
+              {sortedCodes.map((code) => {
                 const rows = stockMap[code] || [];
                 const label = STRAP_OPTIONS.find((o) => strapOptionToCode(o) === code) || code;
+                const rowMatchClass = productFilter && isProductMatch(code) ? " strap-stock-row--product-match" : "";
 
                 if (rows.length === 0) {
                   const strapType = code;
@@ -328,7 +372,7 @@ export function StrapStockView({
                   const displayQty = isEditing ? Number.parseInt(editQty, 10) : 0;
                   const qtyForShortage = Number.isFinite(displayQty) && displayQty >= 0 ? displayQty : 0;
                   return (
-                    <tr key={code} className="strap-stock-row strap-stock-row--zero">
+                    <tr key={code} className={`strap-stock-row strap-stock-row--zero${rowMatchClass}`}>
                       <td className="strap-stock-type">{label}</td>
                       <ProductGroupsCell productsByCode={productsByCode} code={strapType} />
                       <td className="strap-stock-color">{color}</td>
@@ -393,7 +437,7 @@ export function StrapStockView({
                   return (
                     <tr
                       key={key}
-                      className={`strap-stock-row ${row.qty === 0 ? "strap-stock-row--zero" : ""}`}
+                      className={`strap-stock-row ${row.qty === 0 ? "strap-stock-row--zero" : ""}${rowMatchClass}`}
                     >
                       <td className="strap-stock-type">{label}</td>
                       <ProductGroupsCell productsByCode={productsByCode} code={row.strap_type} />

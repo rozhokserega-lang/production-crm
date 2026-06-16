@@ -50,6 +50,54 @@ export function buildCreatePlanDialogInit({
   };
 }
 
+/** Заполнение диалога плана из выбранной ячейки отгрузки (статус «Ожидаю заказ»). */
+export function buildEditPlanDialogInit({
+  selection = {},
+  sectionOptions = [],
+  sectionArticleRows = [],
+  resolvePlanMaterial,
+}) {
+  const section = String(selection.section || "").trim() || sectionOptions[0] || "Прочее";
+  const item = String(selection.item || selection.sourceItem || "").trim();
+  const material = String(selection.material || "").trim();
+  const week = String(selection.week || selection.weekCol || "").trim();
+  const qty = selection.qty != null && selection.qty !== "" ? String(selection.qty) : "";
+
+  const pool = normalizeSectionArticles(sectionArticleRows).filter((x) =>
+    catalogSectionMatchesPlanSection(x.sectionName, section),
+  );
+
+  let matched = pool.find(
+    (x) => normText(x.itemName) === normText(item) && normText(x.material) === normText(material),
+  );
+  if (!matched && selection.productArticle) {
+    const art = String(selection.productArticle || "").trim().toUpperCase();
+    matched = pool.find((x) => String(x.article || "").trim().toUpperCase() === art);
+  }
+  if (!matched && item) {
+    const byItem = pool.filter((x) => normText(x.itemName) === normText(item));
+    if (byItem.length === 1) matched = byItem[0];
+  }
+
+  const article = matched
+    ? planCatalogRowSelectKey(matched)
+    : item
+      ? `${item}|||${normText(material)}`
+      : "";
+
+  return {
+    section,
+    article,
+    material: material || (typeof resolvePlanMaterial === "function" ? resolvePlanMaterial(matched) : ""),
+    week,
+    qty,
+    editSource: {
+      row: String(selection.row || selection.rawRow || "").trim(),
+      col: String(selection.col || selection.rawCol || "").trim(),
+    },
+  };
+}
+
 export function buildStrapPlanRows({
   options = [],
   draft = {},

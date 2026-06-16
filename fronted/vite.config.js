@@ -1,6 +1,15 @@
 import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 
+// Vitest по умолчанию выставляет NODE_ENV=test, но только если оно ещё не задано.
+// На машине разработчика NODE_ENV=production зашит в окружении сессии Windows,
+// из-за чего React грузит production-сборку, где отключён act() — и падают все
+// хук-тесты ("act(...) is not supported in production builds of React").
+// Форсируем test только под Vitest, чтобы не влиять на `vite build`.
+if (process.env.VITEST && process.env.NODE_ENV !== "test") {
+  process.env.NODE_ENV = "test";
+}
+
 export default defineConfig(({ mode }) => {
   // For local dev we often need to bypass browser CORS to Supabase.
   // We do this by letting the browser call the same-origin path (/supabase/...)
@@ -12,9 +21,16 @@ export default defineConfig(({ mode }) => {
 
   const shouldUseLocalSupabaseProxy = proxyBase === "/supabase" && proxyTarget;
 
+  const explicitBuildTime = String(process.env.VITE_APP_BUILD_TIME || env.VITE_APP_BUILD_TIME || "").trim();
+  const buildTime =
+    explicitBuildTime || (mode === "production" ? new Date().toISOString() : "");
+
   return {
   plugins: [react()],
   base: "/",
+  define: buildTime
+    ? { "import.meta.env.VITE_APP_BUILD_TIME": JSON.stringify(buildTime) }
+    : undefined,
   test: {
     environment: "jsdom",
     globals: true,

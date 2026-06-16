@@ -93,6 +93,8 @@ fi
 
 npm run lint
 npm run test:run
+export VITE_APP_BUILD_TIME="${VITE_APP_BUILD_TIME:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
+echo "==> Build time: $VITE_APP_BUILD_TIME"
 npm run build
 
 if [[ "$REQUIRE_PROXY" == "1" ]]; then
