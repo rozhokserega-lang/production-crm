@@ -229,13 +229,16 @@ export function MetalRouteBlueprint({ value, onChange, disabled = false, validat
 
   const deleteEdge = useCallback(
     (edgeId) => {
-      setEdges((prev) => {
-        const next = prev.filter((e) => e.id !== edgeId);
-        queueMicrotask(() => emitGraph(nodesRef.current, next));
-        return next;
+      setEdges((prevEdges) => {
+        const nextEdges = prevEdges.filter((e) => e.id !== edgeId);
+        setNodes((prevNodes) => {
+          queueMicrotask(() => emitGraph(prevNodes, nextEdges));
+          return prevNodes;
+        });
+        return nextEdges;
       });
     },
-    [emitGraph, setEdges],
+    [emitGraph, setEdges, setNodes],
   );
 
   const deleteStage = useCallback(
@@ -252,13 +255,6 @@ export function MetalRouteBlueprint({ value, onChange, disabled = false, validat
     },
     [emitGraph, setEdges, setNodes],
   );
-  const nodesRef = useRef(nodes);
-  const edgesRef = useRef(edges);
-
-  useEffect(() => {
-    nodesRef.current = nodes;
-    edgesRef.current = edges;
-  }, [nodes, edges]);
 
   useEffect(() => {
     if (syncingRef.current) return;
@@ -293,22 +289,36 @@ export function MetalRouteBlueprint({ value, onChange, disabled = false, validat
       onNodesChange(changes);
       if (disabled) return;
       const moved = changes.some((c) => c.type === "position" && c.dragging === false);
-      if (moved) {
-        queueMicrotask(() => emitGraph(nodesRef.current, edgesRef.current));
-      }
+      if (!moved) return;
+      queueMicrotask(() => {
+        setNodes((prevNodes) => {
+          setEdges((prevEdges) => {
+            emitGraph(prevNodes, prevEdges);
+            return prevEdges;
+          });
+          return prevNodes;
+        });
+      });
     },
-    [disabled, emitGraph, onNodesChange],
+    [disabled, emitGraph, onNodesChange, setNodes, setEdges],
   );
 
   const handleEdgesChange = useCallback(
     (changes) => {
       onEdgesChange(changes);
       if (disabled) return;
-      if (changes.some((c) => c.type === "remove")) {
-        queueMicrotask(() => emitGraph(nodesRef.current, edgesRef.current));
-      }
+      if (!changes.some((c) => c.type === "remove")) return;
+      queueMicrotask(() => {
+        setNodes((prevNodes) => {
+          setEdges((prevEdges) => {
+            emitGraph(prevNodes, prevEdges);
+            return prevEdges;
+          });
+          return prevNodes;
+        });
+      });
     },
-    [disabled, emitGraph, onEdgesChange],
+    [disabled, emitGraph, onEdgesChange, setNodes, setEdges],
   );
 
   const onConnect = useCallback(
@@ -333,7 +343,7 @@ export function MetalRouteBlueprint({ value, onChange, disabled = false, validat
           },
           prev,
         );
-        queueMicrotask(() => emitGraph(nodesRef.current, next));
+        queueMicrotask(() => emitGraph(nodes, next));
         return next;
       });
     },
@@ -361,11 +371,14 @@ export function MetalRouteBlueprint({ value, onChange, disabled = false, validat
       };
       setNodes((prev) => {
         const next = [...prev, newNode];
-        queueMicrotask(() => emitGraph(next, edgesRef.current));
+        setEdges((prevEdges) => {
+          queueMicrotask(() => emitGraph(next, prevEdges));
+          return prevEdges;
+        });
         return next;
       });
     },
-    [deleteStage, disabled, emitGraph, nodes, setNodes],
+    [deleteStage, disabled, emitGraph, nodes, setEdges, setNodes],
   );
 
   const rootClass = fullScreen ? "mbp-root mbp-root--fullscreen" : "mbp-root";
