@@ -1381,6 +1381,43 @@ button:disabled {
   display: none;
 }
 
+.mbp-wrap .react-flow__handle.mbp-handle {
+  width: 14px;
+  height: 14px;
+  border: 2px solid #0b1220;
+  background: #4ade80;
+  box-shadow: 0 0 0 2px rgba(74, 222, 128, 0.3);
+  transition: box-shadow 0.12s ease, background 0.12s ease;
+}
+
+.mbp-wrap .react-flow__handle-left.mbp-handle {
+  transform: translate(-50%, -50%);
+}
+
+.mbp-wrap .react-flow__handle-right.mbp-handle {
+  transform: translate(50%, -50%);
+}
+
+.mbp-wrap .react-flow__handle.mbp-handle:hover {
+  background: #86efac;
+  box-shadow: 0 0 0 4px rgba(74, 222, 128, 0.35);
+}
+
+.mbp-wrap .react-flow__handle-left.mbp-handle:hover {
+  transform: translate(-50%, -50%);
+}
+
+.mbp-wrap .react-flow__handle-right.mbp-handle:hover {
+  transform: translate(50%, -50%);
+}
+
+.mbp-wrap .react-flow__handle.mbp-handle.connectingto,
+.mbp-wrap .react-flow__handle.mbp-handle.connectingfrom,
+.mbp-wrap .react-flow__handle.mbp-handle.valid {
+  background: #bbf7d0;
+  box-shadow: 0 0 0 5px rgba(74, 222, 128, 0.45);
+}
+
 .mbp-node {
   position: relative;
   min-width: 130px;

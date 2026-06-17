@@ -321,6 +321,47 @@ export function MetalProcessView({
   const [eventsDialog, setEventsDialog] = useState({ open: false, row: null, loading: false, error: "", events: [] });
   const catalogArticleInputRef = useRef(null);
 
+  const closeCatalogEditor = useCallback(() => {
+    setCatalogEditArticle(null);
+  }, []);
+
+  const closeCategoryEditor = useCallback(() => {
+    setCatalogCategoryEdit(null);
+  }, []);
+
+  const handleCatalogGraphChange = useCallback((nextGraph) => {
+    const validation = validateProcessGraph(nextGraph);
+    setCatalogGraphErrors(validation.errors);
+    setCatalogForm((prev) => ({
+      ...prev,
+      processGraph: validation.graph,
+      stageRoute: deriveStageRouteFromGraph(validation.graph),
+    }));
+  }, []);
+
+  const handleCategoryGraphChange = useCallback((nextGraph) => {
+    const validation = validateProcessGraph(nextGraph);
+    setCatalogCategoryGraphErrors(validation.errors);
+    setCatalogCategoryForm((prev) => ({
+      ...prev,
+      processGraph: validation.graph,
+      stageRoute: deriveStageRouteFromGraph(validation.graph),
+    }));
+  }, []);
+
+  useEffect(() => {
+    if (catalogEditArticle !== null) return;
+    setCatalogGraphErrors([]);
+    setCatalogForm(EMPTY_CATALOG_FORM);
+    setCatalogBulkTargetArticles([]);
+  }, [catalogEditArticle]);
+
+  useEffect(() => {
+    if (catalogCategoryEdit !== null) return;
+    setCatalogCategoryGraphErrors([]);
+    setCatalogCategoryForm(EMPTY_CATALOG_FORM);
+  }, [catalogCategoryEdit]);
+
   useEffect(() => {
     if (!catalogEditArticle) return undefined;
     const prevOverflow = document.body.style.overflow;
@@ -328,10 +369,9 @@ export function MetalProcessView({
     const onKey = (e) => {
       if (e.key !== "Escape") return;
       if (metalProcessActionKey.startsWith("catalog:")) return;
-      setCatalogEditArticle(null);
-      setCatalogGraphErrors([]);
-      setCatalogForm(EMPTY_CATALOG_FORM);
-      setCatalogBulkTargetArticles([]);
+      e.preventDefault();
+      e.stopPropagation();
+      closeCatalogEditor();
     };
     window.addEventListener("keydown", onKey);
     const focusTimer = requestAnimationFrame(() => {
@@ -346,7 +386,7 @@ export function MetalProcessView({
       window.removeEventListener("keydown", onKey);
       cancelAnimationFrame(focusTimer);
     };
-  }, [catalogEditArticle, metalProcessActionKey]);
+  }, [catalogEditArticle, metalProcessActionKey, closeCatalogEditor]);
 
   useEffect(() => {
     if (!catalogCategoryEdit) return undefined;
@@ -355,16 +395,38 @@ export function MetalProcessView({
     const onKey = (e) => {
       if (e.key !== "Escape") return;
       if (metalProcessActionKey.startsWith("catalog:")) return;
-      setCatalogCategoryEdit(null);
-      setCatalogCategoryGraphErrors([]);
-      setCatalogCategoryForm(EMPTY_CATALOG_FORM);
+      e.preventDefault();
+      e.stopPropagation();
+      closeCategoryEditor();
     };
     window.addEventListener("keydown", onKey);
     return () => {
       document.body.style.overflow = prevOverflow;
       window.removeEventListener("keydown", onKey);
     };
-  }, [catalogCategoryEdit, metalProcessActionKey]);
+  }, [catalogCategoryEdit, metalProcessActionKey, closeCategoryEditor]);
+
+  useEffect(() => {
+    if (subView !== "catalog") return undefined;
+    if (catalogEditArticle) return undefined;
+    if (catalogCategoryEdit) return undefined;
+    if (catalogSelectedArticles.length === 0) return undefined;
+
+    const onKey = (e) => {
+      if (e.key !== "Escape") return;
+      if (metalProcessActionKey.startsWith("catalog:")) return;
+      e.preventDefault();
+      setCatalogSelectedArticles([]);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [
+    subView,
+    catalogEditArticle,
+    catalogCategoryEdit,
+    catalogSelectedArticles.length,
+    metalProcessActionKey,
+  ]);
 
   useEffect(() => {
     const active = new Set(
@@ -1447,17 +1509,8 @@ export function MetalProcessView({
             stageRoute: deriveStageRouteFromGraph(processGraph),
           });
         };
-        const cancelEdit = () => {
-          setCatalogEditArticle(null);
-          setCatalogGraphErrors([]);
-          setCatalogForm(EMPTY_CATALOG_FORM);
-          setCatalogBulkTargetArticles([]);
-        };
-        const cancelCategoryEdit = () => {
-          setCatalogCategoryEdit(null);
-          setCatalogCategoryGraphErrors([]);
-          setCatalogCategoryForm(EMPTY_CATALOG_FORM);
-        };
+        const cancelEdit = closeCatalogEditor;
+        const cancelCategoryEdit = closeCategoryEditor;
         const startCategoryEdit = (categoryName) => {
           const meta = findCategoryMeta(metalCatalogCategories, categoryName);
           const sampleRow = filteredCatalogRows.find(
@@ -1492,15 +1545,6 @@ export function MetalProcessView({
             stageRoute: deriveStageRouteFromGraph(processGraph),
           });
         };
-        const handleCategoryGraphChange = (nextGraph) => {
-          const validation = validateProcessGraph(nextGraph);
-          setCatalogCategoryGraphErrors(validation.errors);
-          setCatalogCategoryForm((prev) => ({
-            ...prev,
-            processGraph: validation.graph,
-            stageRoute: deriveStageRouteFromGraph(validation.graph),
-          }));
-        };
         const handleCategoryRouteSave = async () => {
           const validation = validateProcessGraph(catalogCategoryForm.processGraph);
           if (!catalogCategoryEdit || !validation.ok) {
@@ -1516,15 +1560,6 @@ export function MetalProcessView({
         };
         const toggleCategoryHidden = async (categoryName, nextHidden) => {
           await upsertMetalCatalogCategory(categoryName, { isHidden: nextHidden });
-        };
-        const handleCatalogGraphChange = (nextGraph) => {
-          const validation = validateProcessGraph(nextGraph);
-          setCatalogGraphErrors(validation.errors);
-          setCatalogForm((prev) => ({
-            ...prev,
-            processGraph: validation.graph,
-            stageRoute: deriveStageRouteFromGraph(validation.graph),
-          }));
         };
         const handleSave = async () => {
           const validation = validateProcessGraph(catalogForm.processGraph);

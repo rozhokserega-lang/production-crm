@@ -37,7 +37,7 @@ function StartNode() {
     <div className="mbp-node mbp-node--start">
       <div className="mbp-node__title">Старт</div>
       <div className="mbp-node__name">План → работа</div>
-      <Handle type="source" position={Position.Right} id="out" />
+      <Handle type="source" position={Position.Right} id="out" className="mbp-handle" />
     </div>
   );
 }
@@ -49,8 +49,8 @@ function StageNode({ data }) {
       className="mbp-node mbp-node--stage"
       style={{ borderColor: c.border, background: c.bg, color: c.text }}
     >
-      <Handle type="target" position={Position.Left} id="in" />
-      <Handle type="source" position={Position.Right} id="out" />
+      <Handle type="target" position={Position.Left} id="in" className="mbp-handle" />
+      <Handle type="source" position={Position.Right} id="out" className="mbp-handle" />
       <div className="mbp-node__title">Этап</div>
       <div className="mbp-node__name">
         <span className="mbp-node__icon">{c.icon}</span>
@@ -203,20 +203,35 @@ function flowToGraph(nodes, edges) {
   };
 }
 
+function graphSignature(graph) {
+  const normalized = normalizeProcessGraph(graph);
+  const nodes = normalized.nodes.map(({ id, kind, stage, x, y }) => ({ id, kind, stage, x, y }));
+  const edges = normalized.edges.map(({ from, to }) => ({ from, to }));
+  return JSON.stringify({ nodes, edges });
+}
+
 export function MetalRouteBlueprint({ value, onChange, disabled = false, validationErrors = [], fullScreen = false }) {
   const syncingRef = useRef(false);
   const nodeSeqRef = useRef(0);
+  const userDraggedRef = useRef(false);
+  const lastEmittedSigRef = useRef(graphSignature(value));
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
 
   const emitGraph = useCallback(
     (nextNodes, nextEdges) => {
-      if (disabled || typeof onChange !== "function") return;
+      if (disabled || typeof onChangeRef.current !== "function") return;
+      const normalized = normalizeProcessGraph(flowToGraph(nextNodes, nextEdges));
+      const sig = graphSignature(normalized);
+      if (sig === lastEmittedSigRef.current) return;
+      lastEmittedSigRef.current = sig;
       syncingRef.current = true;
-      onChange(normalizeProcessGraph(flowToGraph(nextNodes, nextEdges)));
+      onChangeRef.current(normalized);
       queueMicrotask(() => {
         syncingRef.current = false;
       });
     },
-    [disabled, onChange],
+    [disabled],
   );
 
   const initial = useMemo(
@@ -226,6 +241,19 @@ export function MetalRouteBlueprint({ value, onChange, disabled = false, validat
   );
   const [nodes, setNodes, onNodesChange] = useNodesState(initial.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initial.edges);
+  const nodesRef = useRef(nodes);
+  const edgesRef = useRef(edges);
+  nodesRef.current = nodes;
+  edgesRef.current = edges;
+
+  const deleteEdgeRef = useRef(null);
+  const deleteStageRef = useRef(null);
+  const onDeleteStage = useCallback((nodeId) => {
+    deleteStageRef.current?.(nodeId);
+  }, []);
+  const onDeleteEdge = useCallback((edgeId) => {
+    deleteEdgeRef.current?.(edgeId);
+  }, []);
 
   const deleteEdge = useCallback(
     (edgeId) => {
@@ -240,6 +268,7 @@ export function MetalRouteBlueprint({ value, onChange, disabled = false, validat
     },
     [emitGraph, setEdges, setNodes],
   );
+  deleteEdgeRef.current = deleteEdge;
 
   const deleteStage = useCallback(
     (nodeId) => {
@@ -255,13 +284,18 @@ export function MetalRouteBlueprint({ value, onChange, disabled = false, validat
     },
     [emitGraph, setEdges, setNodes],
   );
+  deleteStageRef.current = deleteStage;
 
   useEffect(() => {
     if (syncingRef.current) return;
-    const next = graphToFlow(value, disabled, deleteStage, deleteEdge);
+    const incomingSig = graphSignature(value);
+    const currentSig = graphSignature(flowToGraph(nodesRef.current, edgesRef.current));
+    if (incomingSig === currentSig) return;
+    const next = graphToFlow(value, disabled, onDeleteStage, onDeleteEdge);
+    lastEmittedSigRef.current = incomingSig;
     setNodes(next.nodes);
     setEdges(next.edges);
-  }, [value, disabled, deleteStage, deleteEdge, setNodes, setEdges]);
+  }, [value, disabled, onDeleteStage, onDeleteEdge, setNodes, setEdges]);
 
   useEffect(() => {
     setNodes((prev) =>
@@ -270,7 +304,7 @@ export function MetalRouteBlueprint({ value, onChange, disabled = false, validat
         return {
           ...node,
           draggable: !disabled,
-          data: { ...node.data, disabled, onDelete: deleteStage },
+          data: { ...node.data, disabled, onDelete: onDeleteStage },
         };
       }),
     );
@@ -279,17 +313,23 @@ export function MetalRouteBlueprint({ value, onChange, disabled = false, validat
         ...edge,
         type: "deletable",
         deletable: !disabled,
-        data: { ...edge.data, disabled, onDelete: deleteEdge },
+        data: { ...edge.data, disabled, onDelete: onDeleteEdge },
       })),
     );
-  }, [disabled, deleteStage, deleteEdge, setNodes, setEdges]);
+  }, [disabled, onDeleteStage, onDeleteEdge, setNodes, setEdges]);
 
   const handleNodesChange = useCallback(
     (changes) => {
       onNodesChange(changes);
       if (disabled) return;
-      const moved = changes.some((c) => c.type === "position" && c.dragging === false);
-      if (!moved) return;
+      for (const change of changes) {
+        if (change.type === "position" && change.dragging === true) {
+          userDraggedRef.current = true;
+        }
+      }
+      const dragEnded = changes.some((c) => c.type === "position" && c.dragging === false);
+      if (!dragEnded || !userDraggedRef.current) return;
+      userDraggedRef.current = false;
       queueMicrotask(() => {
         setNodes((prevNodes) => {
           setEdges((prevEdges) => {
@@ -339,7 +379,7 @@ export function MetalRouteBlueprint({ value, onChange, disabled = false, validat
             markerEnd: ARROW("#64748b"),
             style: { stroke: "#64748b", strokeWidth: 1.5 },
             deletable: true,
-            data: { disabled: false, onDelete: deleteEdge },
+            data: { disabled: false, onDelete: onDeleteEdge },
           },
           prev,
         );
@@ -347,7 +387,7 @@ export function MetalRouteBlueprint({ value, onChange, disabled = false, validat
         return next;
       });
     },
-    [disabled, deleteEdge, emitGraph, nodes, setEdges],
+    [disabled, emitGraph, nodes, onDeleteEdge, setEdges],
   );
 
   const addStage = useCallback(
@@ -365,7 +405,7 @@ export function MetalRouteBlueprint({ value, onChange, disabled = false, validat
           stage: stageKey,
           label: METAL_STAGE_LABELS[stageKey] || stageKey,
           disabled,
-          onDelete: deleteStage,
+          onDelete: onDeleteStage,
         },
         draggable: true,
       };
@@ -378,7 +418,7 @@ export function MetalRouteBlueprint({ value, onChange, disabled = false, validat
         return next;
       });
     },
-    [deleteStage, disabled, emitGraph, nodes, setEdges, setNodes],
+    [disabled, emitGraph, nodes, onDeleteStage, setEdges, setNodes],
   );
 
   const rootClass = fullScreen ? "mbp-root mbp-root--fullscreen" : "mbp-root";
@@ -423,6 +463,7 @@ export function MetalRouteBlueprint({ value, onChange, disabled = false, validat
           nodesConnectable={!disabled}
           nodesDraggable={!disabled}
           elementsSelectable={!disabled}
+          connectionRadius={28}
           deleteKeyCode={disabled ? null : "Delete"}
           proOptions={{ hideAttribution: true }}
         >
