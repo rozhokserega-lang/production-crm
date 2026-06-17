@@ -216,7 +216,6 @@ export function MetalRouteBlueprint({ value, onChange, disabled = false, validat
   const userDraggedRef = useRef(false);
   const lastEmittedSigRef = useRef(graphSignature(value));
   const onChangeRef = useRef(onChange);
-  onChangeRef.current = onChange;
 
   const emitGraph = useCallback(
     (nextNodes, nextEdges) => {
@@ -243,8 +242,6 @@ export function MetalRouteBlueprint({ value, onChange, disabled = false, validat
   const [edges, setEdges, onEdgesChange] = useEdgesState(initial.edges);
   const nodesRef = useRef(nodes);
   const edgesRef = useRef(edges);
-  nodesRef.current = nodes;
-  edgesRef.current = edges;
 
   const deleteEdgeRef = useRef(null);
   const deleteStageRef = useRef(null);
@@ -268,7 +265,6 @@ export function MetalRouteBlueprint({ value, onChange, disabled = false, validat
     },
     [emitGraph, setEdges, setNodes],
   );
-  deleteEdgeRef.current = deleteEdge;
 
   const deleteStage = useCallback(
     (nodeId) => {
@@ -284,7 +280,14 @@ export function MetalRouteBlueprint({ value, onChange, disabled = false, validat
     },
     [emitGraph, setEdges, setNodes],
   );
-  deleteStageRef.current = deleteStage;
+
+  useEffect(() => {
+    onChangeRef.current = onChange;
+    nodesRef.current = nodes;
+    edgesRef.current = edges;
+    deleteEdgeRef.current = deleteEdge;
+    deleteStageRef.current = deleteStage;
+  });
 
   useEffect(() => {
     if (syncingRef.current) return;
