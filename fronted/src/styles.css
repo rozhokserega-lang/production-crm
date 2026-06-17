@@ -1790,6 +1790,55 @@ button:disabled {
   color: var(--text-main);
 }
 
+.metal-catalog-category-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-top: 10px;
+}
+
+.metal-catalog-category-chip.is-hidden {
+  opacity: 0.55;
+}
+
+.metal-catalog-category-bar__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-soft);
+  margin-left: auto;
+}
+
+.catalog-category-row td {
+  background: var(--bg-surface-soft);
+  border-top: 2px solid var(--border-main);
+  padding-top: 10px !important;
+  padding-bottom: 10px !important;
+}
+
+.catalog-category-row__inner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.catalog-category-row__count {
+  font-size: 12px;
+  color: var(--text-soft);
+}
+
+.catalog-category-row__badge {
+  font-size: 11px;
+  font-weight: 700;
+  color: #92400e;
+  background: #fef3c7;
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+
 /* ?? end Catalog tab ??????????????????????????????????????????? */
 
 .metal-process-kanban {
@@ -1915,6 +1964,24 @@ button:disabled {
 .metal-process-stats {
   display: grid;
   gap: 10px;
+}
+
+.metal-process-stats__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.metal-process-stats__toolbar .metal-process-field--search {
+  flex: 1;
+  min-width: 200px;
+  max-width: 360px;
+}
+
+.metal-process-stats__count {
+  font-size: 12px;
+  color: var(--text-soft);
 }
 
 .metal-process-stats__kpi {

@@ -479,13 +479,38 @@ export class OrderService {
     return await callBackend("webListMetalProcessCatalog", { activeOnly });
   }
 
-  static async upsertMetalProcessCatalogItem(article, name, isActive = true, stageRoute = null, processGraph = null) {
+  static async listMetalCatalogCategories() {
+    return await callBackend("webListMetalCatalogCategories");
+  }
+
+  static async upsertMetalProcessCatalogItem(
+    article,
+    name,
+    isActive = true,
+    stageRoute = null,
+    processGraph = null,
+    category = null,
+  ) {
     return await callBackend("webUpsertMetalProcessCatalogItem", {
       article,
       name,
       isActive,
       stageRoute,
       processGraph,
+      category,
+    });
+  }
+
+  static async upsertMetalCatalogCategory(
+    name,
+    { isHidden = null, stageRoute = null, processGraph = null, applyRouteToItems = false } = {},
+  ) {
+    return await callBackend("webUpsertMetalCatalogCategory", {
+      name,
+      isHidden,
+      stageRoute,
+      processGraph,
+      applyRouteToItems,
     });
   }
 

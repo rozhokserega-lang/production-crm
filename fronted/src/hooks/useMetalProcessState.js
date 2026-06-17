@@ -6,6 +6,7 @@ import {
   deriveStageRouteFromGraph,
   processGraphFromCatalogRow,
 } from "../app/metalProcessGraph";
+import { mapMetalCatalogCategoryRow, normalizeCatalogCategory } from "../app/metalCatalogHelpers";
 
 const DEFAULT_ROUTE = ["laser", "bending", "welding", "painting"];
 const VALID_STAGES = ["laser", "saw", "bending", "welding", "painting"];
@@ -21,6 +22,7 @@ function mapCatalogRow(row) {
   return {
     article: String(row?.article || row?.metal_article || "").trim(),
     name: String(row?.name || row?.metal_name || "").trim(),
+    category: normalizeCatalogCategory(row?.category),
     isActive: Boolean(row?.is_active ?? row?.isActive ?? true),
     stageRoute,
     processGraph,
@@ -40,6 +42,7 @@ function buildCatalogFromMetalStock(rows) {
     result.push({
       article,
       name,
+      category: "",
       isActive: true,
       stageRoute: DEFAULT_ROUTE,
       processGraph: DEFAULT_PROCESS_GRAPH,
@@ -62,6 +65,7 @@ function mergeCatalogRows(primaryRows, fallbackRows) {
     out.push({
       article,
       name,
+      category: normalizeCatalogCategory(row?.category),
       isActive: row?.isActive !== false,
       stageRoute: Array.isArray(row?.stageRoute) && row.stageRoute.length > 0
         ? row.stageRoute
@@ -130,6 +134,8 @@ export function useMetalProcessState({
 }) {
   const [metalProcessRows, setMetalProcessRows] = useState([]);
   const [metalProcessCatalogRows, setMetalProcessCatalogRows] = useState([]);
+  const [metalCatalogOptionRows, setMetalCatalogOptionRows] = useState([]);
+  const [metalCatalogCategories, setMetalCatalogCategories] = useState([]);
   const [metalProcessLoading, setMetalProcessLoading] = useState(false);
   const [metalProcessCatalogLoading, setMetalProcessCatalogLoading] = useState(false);
   const [metalProcessActionKey, setMetalProcessActionKey] = useState("");
@@ -157,17 +163,20 @@ export function useMetalProcessState({
   const loadMetalProcessData = useCallback(async () => {
     setMetalProcessLoading(true);
     try {
-      const [catalog, items] = await Promise.all([
+      const [catalog, categories, items] = await Promise.all([
         // Важно: грузим и неактивные строки, чтобы они подавляли "fallback" из остатков склада.
         // В UI таблица каталога всё равно фильтрует только активные.
         OrderService.listMetalProcessCatalog(false).catch(() => null),
+        OrderService.listMetalCatalogCategories().catch(() => []),
         OrderService.listMetalProcessItems(),
       ]);
       const catalogRowsPrimary = Array.isArray(catalog) ? catalog.map(mapCatalogRow) : [];
+      const categoryRows = Array.isArray(categories) ? categories.map(mapMetalCatalogCategoryRow) : [];
       const stockRows = await OrderService.getMetalStock().catch(() => []);
       const stockCatalogRows = buildCatalogFromMetalStock(stockRows);
-      const catalogRows = mergeCatalogRows(catalogRowsPrimary, stockCatalogRows);
-      setMetalProcessCatalogRows(catalogRows);
+      setMetalCatalogCategories(categoryRows);
+      setMetalProcessCatalogRows(catalogRowsPrimary);
+      setMetalCatalogOptionRows(mergeCatalogRows(catalogRowsPrimary, stockCatalogRows));
       setMetalProcessRows(Array.isArray(items) ? items.map(mapProcessRow) : []);
     } catch (e) {
       setError(explainRpcMissing(e));
@@ -258,7 +267,7 @@ export function useMetalProcessState({
     }
   }, [canManageOrders, explainRpcMissing, loadMetalProcessData, setError]);
 
-  const upsertMetalCatalogItem = useCallback(async (article, name, routePayload, isActive = true) => {
+  const upsertMetalCatalogItem = useCallback(async (article, name, routePayload, isActive = true, category = "") => {
     if (!canManageOrders) return;
     const key = `catalog:upsert:${article}`;
     setMetalProcessActionKey(key);
@@ -274,7 +283,32 @@ export function useMetalProcessState({
         processGraph = routePayload?.processGraph || DEFAULT_PROCESS_GRAPH;
         stageRoute = routePayload?.stageRoute || deriveStageRouteFromGraph(processGraph);
       }
-      await OrderService.upsertMetalProcessCatalogItem(article, name, isActive, stageRoute, processGraph);
+      await OrderService.upsertMetalProcessCatalogItem(
+        article,
+        name,
+        isActive,
+        stageRoute,
+        processGraph,
+        category,
+      );
+      await loadMetalProcessData();
+    } catch (e) {
+      setError(explainRpcMissing(e));
+    } finally {
+      setMetalProcessActionKey("");
+      setMetalProcessCatalogLoading(false);
+    }
+  }, [canManageOrders, explainRpcMissing, loadMetalProcessData, setError]);
+
+  const upsertMetalCatalogCategory = useCallback(async (name, payload = {}) => {
+    if (!canManageOrders) return;
+    const categoryName = String(name || "").trim();
+    if (!categoryName) return;
+    setMetalProcessActionKey(`catalog:category:${categoryName}`);
+    setMetalProcessCatalogLoading(true);
+    setError("");
+    try {
+      await OrderService.upsertMetalCatalogCategory(categoryName, payload);
       await loadMetalProcessData();
     } catch (e) {
       setError(explainRpcMissing(e));
@@ -324,6 +358,8 @@ export function useMetalProcessState({
   return {
     metalProcessRows,
     metalProcessCatalogRows,
+    metalCatalogOptionRows,
+    metalCatalogCategories,
     metalProcessLoading,
     metalProcessCatalogLoading,
     metalProcessActionKey,
@@ -335,6 +371,7 @@ export function useMetalProcessState({
     saveMetalProcessComment,
     deleteMetalProcessItem,
     upsertMetalCatalogItem,
+    upsertMetalCatalogCategory,
     deleteMetalCatalogItem,
   };
 }

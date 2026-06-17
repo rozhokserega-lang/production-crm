@@ -957,6 +957,8 @@ export function useAppState({ auth }) {
   const {
     metalProcessRows,
     metalProcessCatalogRows,
+    metalCatalogOptionRows,
+    metalCatalogCategories,
     metalProcessLoading,
     metalProcessCatalogLoading,
     metalProcessActionKey,
@@ -968,6 +970,7 @@ export function useAppState({ auth }) {
     saveMetalProcessComment,
     deleteMetalProcessItem,
     upsertMetalCatalogItem,
+    upsertMetalCatalogCategory,
     deleteMetalCatalogItem,
   } = useMetalProcessState({
     view,
@@ -1749,6 +1752,8 @@ export function useAppState({ auth }) {
       adjustMetalStock,
       metalProcessRows,
       metalProcessCatalogRows,
+      metalCatalogOptionRows,
+      metalCatalogCategories,
       metalProcessLoading,
       metalProcessActionKey,
       metalProcessDraft,
@@ -1760,6 +1765,7 @@ export function useAppState({ auth }) {
       saveMetalProcessComment,
       deleteMetalProcessItem,
       upsertMetalCatalogItem,
+      upsertMetalCatalogCategory,
       deleteMetalCatalogItem,
       metalProcessCatalogLoading,
       transitionMetalProcessStage,

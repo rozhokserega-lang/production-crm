@@ -98,6 +98,34 @@ describe("metalProcessGraph", () => {
     expect(filterMetalStatsRows(rows).map((r) => r.id)).toEqual([4, 5]);
   });
 
+  it("aggregates branch stage times onto merge stats row", () => {
+    const groupId = "11111111-1111-1111-1111-111111111111";
+    const rows = [
+      { id: 2, status: "done", forkRole: "branch", forkGroupId: groupId, laserSeconds: 20, sawSeconds: 0 },
+      { id: 3, status: "done", forkRole: "branch", forkGroupId: groupId, laserSeconds: 0, sawSeconds: 6 },
+      { id: 4, status: "done", forkRole: "merge", forkGroupId: groupId, bendingSeconds: 3, weldingSeconds: 35, paintingSeconds: 5 },
+    ];
+    const stats = filterMetalStatsRows(rows);
+    expect(stats).toHaveLength(1);
+    expect(stats[0].laserSeconds).toBe(20);
+    expect(stats[0].sawSeconds).toBe(6);
+    expect(stats[0].bendingSeconds).toBe(3);
+  });
+
+  it("aggregates fork group stage times on parent when merge row is missing", () => {
+    const groupId = "22222222-2222-2222-2222-222222222222";
+    const rows = [
+      { id: 1, status: "done", forkGroupId: groupId, laserSeconds: 0, sawSeconds: 0 },
+      { id: 2, status: "done", forkRole: "branch", forkGroupId: groupId, laserSeconds: 30, sawSeconds: 0 },
+      { id: 3, status: "done", forkRole: "branch", forkGroupId: groupId, laserSeconds: 0, sawSeconds: 12 },
+    ];
+    const stats = filterMetalStatsRows(rows);
+    expect(stats).toHaveLength(1);
+    expect(stats[0].id).toBe(1);
+    expect(stats[0].laserSeconds).toBe(30);
+    expect(stats[0].sawSeconds).toBe(12);
+  });
+
   it("rejects cycles", () => {
     const graph = {
       nodes: [

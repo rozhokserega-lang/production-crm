@@ -311,6 +311,8 @@ function AppInner({ onAuthChangeRef }) {
             canManageOrders={auth.canManageOrders}
             metalProcessRows={metal.metalProcessRows}
             metalProcessCatalogRows={metal.metalProcessCatalogRows}
+            metalCatalogOptionRows={metal.metalCatalogOptionRows}
+            metalCatalogCategories={metal.metalCatalogCategories}
             metalProcessDraft={metal.metalProcessDraft}
             setMetalProcessDraft={metal.setMetalProcessDraft}
             createMetalProcessPlanItem={metal.createMetalProcessPlanItem}
@@ -318,6 +320,7 @@ function AppInner({ onAuthChangeRef }) {
             saveMetalProcessComment={metal.saveMetalProcessComment}
             deleteMetalProcessItem={metal.deleteMetalProcessItem}
             upsertMetalCatalogItem={metal.upsertMetalCatalogItem}
+            upsertMetalCatalogCategory={metal.upsertMetalCatalogCategory}
             deleteMetalCatalogItem={metal.deleteMetalCatalogItem}
             metalProcessActionKey={metal.metalProcessActionKey}
           />

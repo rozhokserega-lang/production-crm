@@ -45,6 +45,28 @@ create table if not exists public.shipment_plan_cells (
   in_work boolean not null default false,
   sheets_needed numeric(12,2) not null default 0,
   available_sheets numeric(12,2) not null default 0,
+  output_per_sheet numeric(12,2) not null default 0,
+  material_enough_for_order boolean,
+  note text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.shipment_cells (
+  id bigserial primary key,
+  source_row_id text,
+  source_col_id text,
+  section_name text not null default 'Прочее',
+  item text not null,
+  material text,
+  week text not null,
+  qty numeric(12,2) not null default 0,
+  bg_color text default '#ffffff',
+  can_send_to_work boolean not null default true,
+  in_work boolean not null default false,
+  sheets_needed numeric(12,2) not null default 0,
+  available_sheets numeric(12,2) not null default 0,
+  output_per_sheet numeric(12,2) not null default 0,
   material_enough_for_order boolean,
   note text,
   created_at timestamptz not null default now(),
@@ -67,13 +89,119 @@ create table if not exists public.labor_facts (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.item_color_map (
+  item_name text primary key,
+  color_name text not null,
+  source text not null default 'manual',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.item_article_map (
+  article text primary key,
+  item_name text not null,
+  source text not null default 'manual',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.materials_stock (
+  material text primary key,
+  qty_sheets numeric(12,2) not null default 0,
+  size_label text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.material_size_map (
+  material_name text primary key,
+  sheet_size text,
+  source text not null default 'manual',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.materials_leftovers (
+  id bigserial primary key,
+  order_id text,
+  item text,
+  material text,
+  sheets_needed numeric(12,2) not null default 0,
+  leftover_format text,
+  leftovers_qty numeric(12,2) not null default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.furniture_sheet_capacity (
+  furniture_model text not null,
+  sheet_size text not null,
+  output_per_sheet numeric(12,2) not null default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  primary key (furniture_model, sheet_size)
+);
+
 create index if not exists idx_orders_week on public.orders(week);
 create index if not exists idx_orders_item on public.orders(item);
 create index if not exists idx_orders_updated_at on public.orders(updated_at desc);
 create index if not exists idx_shipment_plan_cells_week on public.shipment_plan_cells(week);
 create index if not exists idx_shipment_plan_cells_item on public.shipment_plan_cells(item);
+create unique index if not exists ux_shipment_plan_cells_source
+  on public.shipment_plan_cells(source_row_id, source_col_id);
+create index if not exists idx_shipment_cells_week on public.shipment_cells(week);
+create index if not exists idx_shipment_cells_item on public.shipment_cells(item);
+create unique index if not exists ux_shipment_cells_source
+  on public.shipment_cells(source_row_id, source_col_id);
 create index if not exists idx_labor_facts_week on public.labor_facts(week);
 create index if not exists idx_labor_facts_order_id on public.labor_facts(order_id);
+
+create or replace function public.web_normalize_material_name(p_text text)
+returns text
+language sql
+immutable
+as $$
+  select trim(regexp_replace(replace(lower(coalesce(p_text, '')), 'х', 'x'), '\s+', ' ', 'g'));
+$$;
+
+create or replace function public.web_normalize_furniture_model(p_text text)
+returns text
+language sql
+immutable
+as $$
+  select trim(regexp_replace(lower(coalesce(p_text, '')), '\s+', ' ', 'g'));
+$$;
+
+create or replace function public.web_resolve_output_per_sheet(
+  p_section_name text,
+  p_item text,
+  p_material text,
+  p_fallback numeric default 0
+)
+returns numeric
+language sql
+stable
+as $$
+  select coalesce(p_fallback, 0);
+$$;
+
+create or replace function public.web_get_plan_catalog()
+returns table (
+  section_name text,
+  item_name text,
+  material text
+)
+language sql
+stable
+as $$
+  select distinct
+    trim(coalesce(spc.section_name, ''))::text as section_name,
+    trim(coalesce(spc.item, ''))::text as item_name,
+    trim(coalesce(spc.material, ''))::text as material
+  from public.shipment_plan_cells spc
+  where trim(coalesce(spc.section_name, '')) <> ''
+    and trim(coalesce(spc.item, '')) <> '';
+$$;
 
 create or replace function public.web_get_shipment_table()
 returns table (
@@ -148,6 +276,8 @@ as $$
   order by lf.date_finished desc nulls last, lf.order_id;
 $$;
 
+drop function if exists public.web_get_order_stats();
+
 create or replace function public.web_get_order_stats()
 returns table (
   order_id text,
@@ -207,6 +337,8 @@ begin
   where m.item_name = trim(p_item_name);
 end;
 $$;
+
+drop function if exists public.web_get_order_stats();
 
 create or replace function public.web_get_order_stats()
 returns table (

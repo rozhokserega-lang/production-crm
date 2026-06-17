@@ -507,8 +507,13 @@ function sumStageSeconds(row) {
 
 function aggregateForkGroupStageTimes(row, allRows) {
   const groupId = row?.forkGroupId;
-  if (!groupId || row?.forkRole !== "merge") return row;
+  if (!groupId) return row;
   const members = (Array.isArray(allRows) ? allRows : []).filter((r) => r.forkGroupId === groupId);
+  const hasMerge = members.some((member) => member?.forkRole === "merge");
+  const shouldAggregate =
+    row?.forkRole === "merge" ||
+    (!hasMerge && !row?.forkRole && members.some((member) => member?.forkRole === "branch"));
+  if (!shouldAggregate) return row;
   const aggregated = { ...row };
   for (const key of STAGE_TIME_KEYS) {
     aggregated[key] = members.reduce((sum, member) => sum + Number(member?.[key] || 0), 0);

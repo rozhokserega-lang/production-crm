@@ -570,7 +570,9 @@ const RPC_MAP = {
   webEnqueueMetalWorkOrder: "web_enqueue_metal_work_order",
   webSetMetalWorkQueueStatus: "web_set_metal_work_queue_status",
   webListMetalProcessCatalog: "web_list_metal_catalog",
+  webListMetalCatalogCategories: "web_list_metal_catalog_categories",
   webUpsertMetalProcessCatalogItem: "web_upsert_metal_catalog_item",
+  webUpsertMetalCatalogCategory: "web_upsert_metal_catalog_category",
   webDeleteMetalCatalogItem: "web_delete_metal_catalog_item",
   webListMetalProcessItems: "web_list_metal_work_items",
   webListMetalStageEvents: "web_list_metal_stage_events",
@@ -840,6 +842,16 @@ function buildRpcPayload(action, payload = {}) {
       p_is_active: payload.isActive == null ? true : Boolean(payload.isActive),
       p_stage_route: Array.isArray(payload.stageRoute) ? payload.stageRoute : null,
       p_process_graph: payload.processGraph ?? payload.p_process_graph ?? null,
+      p_category: String(payload.category || payload.p_category || "").trim() || null,
+    };
+  }
+  if (action === "webUpsertMetalCatalogCategory") {
+    return {
+      p_name: String(payload.name || payload.p_name || "").trim(),
+      p_is_hidden: payload.isHidden == null ? null : Boolean(payload.isHidden),
+      p_stage_route: Array.isArray(payload.stageRoute) ? payload.stageRoute : null,
+      p_process_graph: payload.processGraph ?? payload.p_process_graph ?? null,
+      p_apply_route_to_items: Boolean(payload.applyRouteToItems ?? payload.p_apply_route_to_items),
     };
   }
   if (action === "webDeleteMetalCatalogItem") {
