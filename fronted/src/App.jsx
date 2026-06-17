@@ -98,8 +98,10 @@ function AppInner({ onAuthChangeRef }) {
     canAdminSettings: auth.canAdminSettings,
     view: shell.view,
     tab: shell.tab,
+    laborSubView: shell.laborSubView,
     setView: shell.setView,
     setTab: shell.setTab,
+    setLaborSubView: shell.setLaborSubView,
   });
 
   useEffect(() => {
@@ -219,6 +221,7 @@ function AppInner({ onAuthChangeRef }) {
             permissions={{
               canAdminSettings: auth.canAdminSettings,
               canOperateProduction: auth.canOperateProduction,
+              canOperateLaborPlanner: auth.canOperateLaborPlanner,
             }}
             shell={{
               setError: shell.setError,

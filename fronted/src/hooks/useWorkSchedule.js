@@ -51,7 +51,6 @@ export function useWorkSchedule({ canAdminSettings, view, setError, toUserError 
   }, []);
 
   const loadWorkSchedule = useCallback(async () => {
-    if (!canAdminSettings) return;
     setWorkScheduleLoading(true);
     try {
       const payload = await OrderService.getWorkSchedule();
@@ -61,7 +60,7 @@ export function useWorkSchedule({ canAdminSettings, view, setError, toUserError 
     } finally {
       setWorkScheduleLoading(false);
     }
-  }, [canAdminSettings, normalizeWorkSchedule, setError, toUserError]);
+  }, [normalizeWorkSchedule, setError, toUserError]);
 
   const saveWorkSchedule = useCallback(async () => {
     if (!canAdminSettings || workScheduleSaving) return;
@@ -92,7 +91,8 @@ export function useWorkSchedule({ canAdminSettings, view, setError, toUserError 
   ]);
 
   useEffect(() => {
-    if (view !== "admin" || !canAdminSettings) return;
+    if (view !== "admin" && view !== "labor") return;
+    if (view === "admin" && !canAdminSettings) return;
     loadWorkSchedule();
   }, [canAdminSettings, loadWorkSchedule, view]);
 

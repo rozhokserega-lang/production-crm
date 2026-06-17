@@ -15,12 +15,15 @@ import { SUPABASE_ANON_KEY, SUPABASE_URL } from "../config";
 import { CRM_ROLE_LABELS } from "../app/appConstants";
 import {
   canOperateProductionForRole,
+  canOperateLaborPlannerForRole,
   canOperateWorkshopStageForRole,
   canUseOperatorPilkaModeForRole,
   canConsumePilkaSheetsForRole,
   canAccessViewForRole,
+  canAccessLaborSubViewForRole,
   canAccessWorkshopTabForRole,
   getDefaultViewForRole,
+  getDefaultLaborSubViewForRole,
   getDefaultWorkshopTabForRole,
   isRestrictedWorkshopOperatorRole,
 } from "../app/crmRoles";
@@ -119,6 +122,7 @@ export function AuthProvider({ children, view, onAuthChange, setError }) {
   );
 
   const canOperateProduction = canOperateProductionForRole(effectiveCrmRole);
+  const canOperateLaborPlanner = canOperateLaborPlannerForRole(effectiveCrmRole);
   const canOperateWorkshopStage = useCallback(
     (stage) => canOperateWorkshopStageForRole(effectiveCrmRole, stage),
     [effectiveCrmRole],
@@ -128,6 +132,14 @@ export function AuthProvider({ children, view, onAuthChange, setError }) {
   const isRestrictedWorkshopOperator = isRestrictedWorkshopOperatorRole(effectiveCrmRole);
   const defaultViewForRole = useMemo(() => getDefaultViewForRole(effectiveCrmRole), [effectiveCrmRole]);
   const defaultWorkshopTabForRole = useMemo(() => getDefaultWorkshopTabForRole(effectiveCrmRole), [effectiveCrmRole]);
+  const defaultLaborSubViewForRole = useMemo(
+    () => getDefaultLaborSubViewForRole(effectiveCrmRole),
+    [effectiveCrmRole],
+  );
+  const canAccessLaborSubView = useCallback(
+    (subView) => canAccessLaborSubViewForRole(effectiveCrmRole, subView),
+    [effectiveCrmRole],
+  );
   const canAccessView = useCallback(
     (viewId) => canAccessViewForRole(effectiveCrmRole, viewId, {
       canAdminSettings: canAdminSettings && !crmRolePreviewActive,
@@ -178,6 +190,7 @@ export function AuthProvider({ children, view, onAuthChange, setError }) {
       crmAuthStrictSaving,
       canAdminSettings,
       canOperateProduction,
+      canOperateLaborPlanner,
       canOperateWorkshopStage,
       canUseOperatorPilkaMode,
       canConsumePilkaSheets,
@@ -185,6 +198,8 @@ export function AuthProvider({ children, view, onAuthChange, setError }) {
       defaultViewForRole,
       defaultWorkshopTabForRole,
       canAccessView,
+      canAccessLaborSubView,
+      defaultLaborSubViewForRole,
       canAccessWorkshopTab,
       canOperateWarehouse,
       canManageOrders,
@@ -238,6 +253,7 @@ export function AuthProvider({ children, view, onAuthChange, setError }) {
       crmAuthStrictSaving,
       canAdminSettings,
       canOperateProduction,
+      canOperateLaborPlanner,
       canOperateWorkshopStage,
       canUseOperatorPilkaMode,
       canConsumePilkaSheets,
@@ -245,6 +261,8 @@ export function AuthProvider({ children, view, onAuthChange, setError }) {
       defaultViewForRole,
       defaultWorkshopTabForRole,
       canAccessView,
+      canAccessLaborSubView,
+      defaultLaborSubViewForRole,
       canAccessWorkshopTab,
       canOperateWarehouse,
       canManageOrders,

@@ -1,13 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
   canOperateProductionForRole,
+  canOperateLaborPlannerForRole,
   canOperateWorkshopStageForRole,
   canUseOperatorPilkaModeForRole,
   canConsumePilkaSheetsForRole,
   canAccessViewForRole,
+  canAccessLaborSubViewForRole,
   canAccessWorkshopTabForRole,
   getAllowedViewIdsForRole,
+  getAllowedLaborSubViewsForRole,
   getAllowedWorkshopTabsForRole,
+  getDefaultViewForRole,
+  getDefaultLaborSubViewForRole,
   normalizeCrmRole,
   resolveWorkshopStageForAction,
 } from "./crmRoles";
@@ -50,6 +55,16 @@ describe("crmRoles", () => {
   it("restricts navigation by operator role", () => {
     expect(getAllowedViewIdsForRole("operator_pilka")).toEqual(["workshop", "cutting"]);
     expect(getAllowedViewIdsForRole("operator_kromka")).toEqual(["workshop"]);
+    expect(getAllowedViewIdsForRole("planner")).toEqual(["labor"]);
+    expect(getAllowedLaborSubViewsForRole("planner")).toEqual(["planner"]);
+    expect(canAccessViewForRole("planner", "labor")).toBe(true);
+    expect(canAccessViewForRole("planner", "shipment")).toBe(false);
+    expect(canAccessLaborSubViewForRole("planner", "planner")).toBe(true);
+    expect(canAccessLaborSubViewForRole("planner", "total")).toBe(false);
+    expect(getDefaultViewForRole("planner")).toBe("labor");
+    expect(getDefaultLaborSubViewForRole("planner")).toBe("planner");
+    expect(canOperateLaborPlannerForRole("planner")).toBe(true);
+    expect(canOperateProductionForRole("planner")).toBe(false);
     expect(canAccessViewForRole("operator_pilka", "cutting")).toBe(true);
     expect(canAccessViewForRole("operator_pilka", "shipment")).toBe(false);
     expect(canAccessViewForRole("operator", "shipment")).toBe(true);

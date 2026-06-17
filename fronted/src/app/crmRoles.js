@@ -1,6 +1,7 @@
 export const CRM_ROLES = [
   "viewer",
   "warehouse",
+  "planner",
   "operator_pilka",
   "operator_kromka",
   "operator_pras",
@@ -12,6 +13,7 @@ export const CRM_ROLES = [
 export const CRM_ROLE_LABELS = {
   viewer: "Наблюдатель",
   warehouse: "Склад",
+  planner: "Планировщик",
   operator_pilka: "Оператор пилы",
   operator_kromka: "Оператор кромки",
   operator_pras: "Оператор присадки",
@@ -19,6 +21,8 @@ export const CRM_ROLE_LABELS = {
   manager: "Менеджер",
   admin: "Админ",
 };
+
+const LABOR_SUB_VIEWS = new Set(["planner", "total", "orders"]);
 
 /** Действие цеха → этап для проверки прав. */
 export const WORKSHOP_ACTION_STAGE = {
@@ -56,6 +60,12 @@ export function canOperateProductionForRole(role) {
   return r === "operator" || r === "manager" || r === "admin";
 }
 
+/** Планировщик трудоёмкости: комплекты, количества, нормативы (read/write). */
+export function canOperateLaborPlannerForRole(role) {
+  const r = normalizeCrmRole(role);
+  return r === "planner" || r === "operator" || r === "manager" || r === "admin";
+}
+
 /** Права на конкретный этап цеха. */
 export function canOperateWorkshopStageForRole(role, stage) {
   const r = normalizeCrmRole(role);
@@ -90,10 +100,26 @@ export function isRestrictedWorkshopOperatorRole(role) {
 /** null = все основные разделы (кроме admin/db по canAdminSettings). */
 export function getAllowedViewIdsForRole(role) {
   const r = normalizeCrmRole(role);
+  if (r === "planner") return ["labor"];
   if (r === "operator_pilka") return ["workshop", "cutting"];
   if (r === "operator_kromka") return ["workshop"];
   if (r === "operator_pras") return ["workshop"];
   return null;
+}
+
+/** null = все подвкладки трудоёмкости. */
+export function getAllowedLaborSubViewsForRole(role) {
+  const r = normalizeCrmRole(role);
+  if (r === "planner") return ["planner"];
+  return null;
+}
+
+export function canAccessLaborSubViewForRole(role, subView) {
+  const id = String(subView || "").trim();
+  if (!LABOR_SUB_VIEWS.has(id)) return false;
+  const allowed = getAllowedLaborSubViewsForRole(role);
+  if (!allowed) return true;
+  return allowed.includes(id);
 }
 
 export function canAccessViewForRole(role, viewId, { canAdminSettings = false } = {}) {
@@ -109,10 +135,17 @@ export function canAccessViewForRole(role, viewId, { canAdminSettings = false } 
 
 export function getDefaultViewForRole(role) {
   const r = normalizeCrmRole(role);
+  if (r === "planner") return "labor";
   if (r === "operator_pilka") return "workshop";
   if (r === "operator_kromka") return "workshop";
   if (r === "operator_pras") return "workshop";
   return "shipment";
+}
+
+export function getDefaultLaborSubViewForRole(role) {
+  const r = normalizeCrmRole(role);
+  if (r === "planner") return "planner";
+  return "planner";
 }
 
 export function getDefaultWorkshopTabForRole(role) {

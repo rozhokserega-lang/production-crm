@@ -95,6 +95,7 @@ export function AppChrome({
           setWarehouseSubView={shell.setWarehouseSubView}
           laborSubView={shell.laborSubView}
           setLaborSubView={shell.setLaborSubView}
+          canAccessLaborSubView={auth.canAccessLaborSubView}
           query={shell.query}
           setQuery={shell.setQuery}
           setWorkshopQrScan={shell.setWorkshopQrScan}

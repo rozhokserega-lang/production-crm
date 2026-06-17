@@ -3,6 +3,7 @@ import { normalizeCrmRole } from "../app/crmRoles";
 
 /** Роли для UI-проверки (не меняют роль в БД). */
 export const CRM_ROLE_PREVIEW_OPTIONS = [
+  "planner",
   "operator_pilka",
   "operator_kromka",
   "operator_pras",

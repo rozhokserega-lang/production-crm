@@ -314,6 +314,7 @@ export function ViewControls({
   setTab,
   warehouseSubView,
   setWarehouseSubView,
+  canAccessLaborSubView,
   laborSubView,
   setLaborSubView,
   query,
@@ -524,28 +525,38 @@ export function ViewControls({
         </div>
       )}
       {view === "labor" && (
+        typeof canAccessLaborSubView !== "function" ||
+        canAccessLaborSubView("total") ||
+        canAccessLaborSubView("orders")
+      ) && (
         <div className="tabs tabs--overview-sub">
-          <button
-            type="button"
-            className={laborSubView === "planner" ? "tab active" : "tab"}
-            onClick={() => setLaborSubView("planner")}
-          >
-            Планировщик
-          </button>
-          <button
-            type="button"
-            className={laborSubView === "total" ? "tab active" : "tab"}
-            onClick={() => setLaborSubView("total")}
-          >
-            Общая
-          </button>
-          <button
-            type="button"
-            className={laborSubView === "orders" ? "tab active" : "tab"}
-            onClick={() => setLaborSubView("orders")}
-          >
-            По заказам
-          </button>
+          {(!canAccessLaborSubView || canAccessLaborSubView("planner")) && (
+            <button
+              type="button"
+              className={laborSubView === "planner" ? "tab active" : "tab"}
+              onClick={() => setLaborSubView("planner")}
+            >
+              Планировщик
+            </button>
+          )}
+          {(!canAccessLaborSubView || canAccessLaborSubView("total")) && (
+            <button
+              type="button"
+              className={laborSubView === "total" ? "tab active" : "tab"}
+              onClick={() => setLaborSubView("total")}
+            >
+              Общая
+            </button>
+          )}
+          {(!canAccessLaborSubView || canAccessLaborSubView("orders")) && (
+            <button
+              type="button"
+              className={laborSubView === "orders" ? "tab active" : "tab"}
+              onClick={() => setLaborSubView("orders")}
+            >
+              По заказам
+            </button>
+          )}
         </div>
       )}
       {view === "metal" && (

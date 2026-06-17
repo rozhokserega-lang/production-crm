@@ -84,7 +84,8 @@ export const LaborView = memo(function LaborView({
     loading,
     load = async () => {},
   } = shell;
-  const { canAdminSettings = false, canOperateProduction = false } = permissions;
+  const { canAdminSettings = false, canOperateProduction = false, canOperateLaborPlanner = false } = permissions;
+  const canSaveLaborPlanner = canOperateLaborPlanner || canOperateProduction;
 
   const [kitQtyByKey, setKitQtyByKey] = useState({});
   const [savedKits, setSavedKits] = useState([]);
@@ -277,7 +278,7 @@ export const LaborView = memo(function LaborView({
   }, []);
 
   const saveKitPlanQty = useCallback(async (kit, qtyRaw) => {
-    if (!canOperateProduction) return;
+    if (!canSaveLaborPlanner) return;
     const dbId = Number(kit?.dbId || 0);
     if (!dbId) return;
     const qty = parseKitPlanQty(qtyRaw);
@@ -291,10 +292,10 @@ export const LaborView = memo(function LaborView({
     } finally {
       setKitPlanSavingId("");
     }
-  }, [canOperateProduction, parseKitPlanQty, setError]);
+  }, [canSaveLaborPlanner, parseKitPlanQty, setError]);
 
   const saveAllKitPlanQty = useCallback(async () => {
-    if (!canOperateProduction) {
+    if (!canSaveLaborPlanner) {
       if (setError) setError("Недостаточно прав: нужна роль оператор, менеджер или админ");
       return;
     }
@@ -321,7 +322,7 @@ export const LaborView = memo(function LaborView({
     } finally {
       setKitPlanBulkSaving(false);
     }
-  }, [canOperateProduction, kitQtyByKey, parseKitPlanQty, savedKits, setError]);
+  }, [canSaveLaborPlanner, kitQtyByKey, parseKitPlanQty, savedKits, setError]);
 
   const saveKitToDb = async (kit) => {
     setKitSavingId(kit.id);
@@ -647,7 +648,7 @@ export const LaborView = memo(function LaborView({
             kitPlanSavingId={kitPlanSavingId}
             kitPlanBulkSaving={kitPlanBulkSaving}
             kitPlanSaveNotice={kitPlanSaveNotice}
-            canSaveKitPlanQty={canOperateProduction}
+            canSaveKitPlanQty={canSaveLaborPlanner}
           />
         </div>
       )}
