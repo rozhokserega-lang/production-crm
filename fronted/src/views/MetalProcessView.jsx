@@ -311,6 +311,7 @@ export function MetalProcessView({
   const [catalogEditArticle, setCatalogEditArticle] = useState(null);
   const [catalogTableSearch, setCatalogTableSearch] = useState("");
   const [catalogSelectedArticles, setCatalogSelectedArticles] = useState([]);
+  const [catalogBulkTargetArticles, setCatalogBulkTargetArticles] = useState([]);
   const [catalogShowHidden, setCatalogShowHidden] = useState(false);
   const [catalogCategoryEdit, setCatalogCategoryEdit] = useState(null);
   const [catalogCategoryForm, setCatalogCategoryForm] = useState(EMPTY_CATALOG_FORM);
@@ -330,6 +331,7 @@ export function MetalProcessView({
       setCatalogEditArticle(null);
       setCatalogGraphErrors([]);
       setCatalogForm(EMPTY_CATALOG_FORM);
+      setCatalogBulkTargetArticles([]);
     };
     window.addEventListener("keydown", onKey);
     const focusTimer = requestAnimationFrame(() => {
@@ -345,6 +347,24 @@ export function MetalProcessView({
       cancelAnimationFrame(focusTimer);
     };
   }, [catalogEditArticle, metalProcessActionKey]);
+
+  useEffect(() => {
+    if (!catalogCategoryEdit) return undefined;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (e) => {
+      if (e.key !== "Escape") return;
+      if (metalProcessActionKey.startsWith("catalog:")) return;
+      setCatalogCategoryEdit(null);
+      setCatalogCategoryGraphErrors([]);
+      setCatalogCategoryForm(EMPTY_CATALOG_FORM);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [catalogCategoryEdit, metalProcessActionKey]);
 
   useEffect(() => {
     const active = new Set(
@@ -1411,6 +1431,8 @@ export function MetalProcessView({
           showHidden: catalogShowHidden,
         });
         const isEditing = catalogEditArticle !== null;
+        const isNewMode = isEditing && catalogEditArticle === "__new__";
+        const isBulkMode = isEditing && catalogEditArticle === "__bulk__";
         const isCategoryEditing = Boolean(catalogCategoryEdit);
         const isSaving = catalogLoading || metalProcessActionKey.startsWith("catalog:");
         const startEdit = (row) => {
@@ -1429,6 +1451,7 @@ export function MetalProcessView({
           setCatalogEditArticle(null);
           setCatalogGraphErrors([]);
           setCatalogForm(EMPTY_CATALOG_FORM);
+          setCatalogBulkTargetArticles([]);
         };
         const cancelCategoryEdit = () => {
           setCatalogCategoryEdit(null);
@@ -1447,6 +1470,24 @@ export function MetalProcessView({
             article: "",
             name: "",
             category: normalizeCatalogCategory(categoryName),
+            processGraph,
+            stageRoute: deriveStageRouteFromGraph(processGraph),
+          });
+        };
+        const startBulkRouteEdit = () => {
+          const targetArticles = catalogSelectedArticles.filter((article) =>
+            filteredCatalogRows.some((row) => row.article === article),
+          );
+          if (!targetArticles.length) return;
+          const sampleRow = filteredCatalogRows.find((row) => row.article === targetArticles[0]);
+          const processGraph = processGraphFromCatalogRow(sampleRow) || DEFAULT_PROCESS_GRAPH;
+          setCatalogBulkTargetArticles(targetArticles);
+          setCatalogEditArticle("__bulk__");
+          setCatalogGraphErrors([]);
+          setCatalogForm({
+            article: "",
+            name: "",
+            category: "",
             processGraph,
             stageRoute: deriveStageRouteFromGraph(processGraph),
           });
@@ -1486,14 +1527,38 @@ export function MetalProcessView({
           }));
         };
         const handleSave = async () => {
-          const article = String(catalogForm.article || "").trim().toUpperCase();
-          const name = String(catalogForm.name || "").trim();
           const validation = validateProcessGraph(catalogForm.processGraph);
-          if (!article || !name) return;
           if (!validation.ok) {
             setCatalogGraphErrors(validation.errors);
             return;
           }
+          if (isBulkMode) {
+            const selectedRows = filteredCatalogRows.filter((row) =>
+              catalogBulkTargetArticles.includes(row.article),
+            );
+            if (!selectedRows.length) {
+              cancelEdit();
+              return;
+            }
+            for (const row of selectedRows) {
+              await upsertMetalCatalogItem(
+                row.article,
+                row.name,
+                {
+                  processGraph: validation.graph,
+                  stageRoute: deriveStageRouteFromGraph(validation.graph),
+                },
+                true,
+                normalizeCatalogCategory(row.category),
+              );
+            }
+            setCatalogSelectedArticles((prev) => prev.filter((a) => !catalogBulkTargetArticles.includes(a)));
+            cancelEdit();
+            return;
+          }
+          const article = String(catalogForm.article || "").trim().toUpperCase();
+          const name = String(catalogForm.name || "").trim();
+          if (!article || !name) return;
           await upsertMetalCatalogItem(
             article,
             name,
@@ -1540,7 +1605,6 @@ export function MetalProcessView({
             await deleteMetalCatalogItem(row.article, row.name);
           }
         };
-        const isNewMode = isEditing && catalogEditArticle === "__new__";
         return (
           <div className="sheet-table-wrap" style={{ padding: 12 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14, flexWrap: "wrap" }}>
@@ -1565,14 +1629,24 @@ export function MetalProcessView({
                 + Добавить изделие
               </button>
               {catalogSelectedArticles.length > 0 ? (
-                <button
-                  type="button"
-                  className="mini warn"
-                  disabled={isSaving || isEditing}
-                  onClick={() => void handleBulkDelete()}
-                >
-                  {isSaving ? "Удаление…" : `Удалить выбранные (${catalogSelectedArticles.length})`}
-                </button>
+                <>
+                  <button
+                    type="button"
+                    className="mini"
+                    disabled={isSaving || isEditing || isCategoryEditing}
+                    onClick={startBulkRouteEdit}
+                  >
+                    Маршрут выбранных ({catalogSelectedArticles.length})
+                  </button>
+                  <button
+                    type="button"
+                    className="mini warn"
+                    disabled={isSaving || isEditing}
+                    onClick={() => void handleBulkDelete()}
+                  >
+                    {isSaving ? "Удаление…" : `Удалить выбранные (${catalogSelectedArticles.length})`}
+                  </button>
+                </>
               ) : null}
             </div>
 
@@ -1606,8 +1680,13 @@ export function MetalProcessView({
               <div className="metal-catalog-fs" role="dialog" aria-modal="true" aria-label="Редактор маршрута">
                 <header className="metal-catalog-fs__head">
                   <div className="metal-catalog-fs__title">
-                    {isNewMode ? "Новое изделие" : `Маршрут: ${catalogEditArticle}`}
+                    {isNewMode
+                      ? "Новое изделие"
+                      : isBulkMode
+                        ? `Маршрут: ${catalogBulkTargetArticles.length} выбранных поз.`
+                        : `Маршрут: ${catalogEditArticle}`}
                   </div>
+                  {!isBulkMode ? (
                   <div className="metal-catalog-fs__fields">
                     <label className="metal-catalog-fs__field metal-catalog-fs__field--article">
                       <span className="metal-catalog-fs__field-label">Артикул</span>
@@ -1638,19 +1717,26 @@ export function MetalProcessView({
                       />
                     </label>
                   </div>
+                  ) : null}
                   <div className="metal-catalog-fs__actions">
                     <button
                       type="button"
                       className="mini ok"
                       disabled={
                         isSaving ||
-                        !String(catalogForm.article || "").trim() ||
-                        !String(catalogForm.name || "").trim() ||
-                        catalogGraphErrors.length > 0
+                        catalogGraphErrors.length > 0 ||
+                        (!isBulkMode && (
+                          !String(catalogForm.article || "").trim() ||
+                          !String(catalogForm.name || "").trim()
+                        ))
                       }
                       onClick={() => void handleSave()}
                     >
-                      {isSaving ? "Сохранение…" : "Сохранить"}
+                      {isSaving
+                        ? "Сохранение…"
+                        : isBulkMode
+                          ? `Применить к выбранным (${catalogBulkTargetArticles.length})`
+                          : "Сохранить"}
                     </button>
                     <button type="button" className="mini" disabled={isSaving} onClick={cancelEdit}>
                       Отмена
@@ -1667,8 +1753,9 @@ export function MetalProcessView({
                   />
                 </div>
                 <footer className="metal-catalog-fs__foot">
-                  Тяните стрелку от правого кружка к левому. Две стрелки из одного этапа — параллельная работа;
-                  две стрелки в один этап — слияние (лазер + пила → сварка). Delete — удалить стрелку. Esc — закрыть.
+                  {isBulkMode
+                    ? "Новый маршрут будет записан во все выбранные артикулы. Esc — закрыть без сохранения."
+                    : "Тяните стрелку от правого кружка к левому. Две стрелки из одного этапа — параллельная работа; две стрелки в один этап — слияние (лазер + пила → сварка). Delete — удалить стрелку. Esc — закрыть."}
                   {catalogGraphErrors.length > 0 && (
                     <div className="mbp-errors">
                       {catalogGraphErrors.map((msg) => (
@@ -1711,7 +1798,7 @@ export function MetalProcessView({
                   />
                 </div>
                 <footer className="metal-catalog-fs__foot">
-                  Новый маршрут будет записан во все активные артикулы этой категории.
+                  Новый маршрут будет записан во все активные артикулы этой категории. Esc — закрыть без сохранения.
                   {catalogCategoryGraphErrors.length > 0 && (
                     <div className="mbp-errors">
                       {catalogCategoryGraphErrors.map((msg) => (
