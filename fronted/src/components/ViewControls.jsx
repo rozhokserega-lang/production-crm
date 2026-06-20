@@ -526,8 +526,10 @@ export function ViewControls({
       )}
       {view === "labor" && (
         typeof canAccessLaborSubView !== "function" ||
+        canAccessLaborSubView("planner") ||
         canAccessLaborSubView("total") ||
-        canAccessLaborSubView("orders")
+        canAccessLaborSubView("orders") ||
+        canAccessLaborSubView("workshopLoad")
       ) && (
         <div className="tabs tabs--overview-sub">
           {(!canAccessLaborSubView || canAccessLaborSubView("planner")) && (
@@ -537,6 +539,15 @@ export function ViewControls({
               onClick={() => setLaborSubView("planner")}
             >
               Планировщик
+            </button>
+          )}
+          {(!canAccessLaborSubView || canAccessLaborSubView("workshopLoad")) && (
+            <button
+              type="button"
+              className={laborSubView === "workshopLoad" ? "tab active" : "tab"}
+              onClick={() => setLaborSubView("workshopLoad")}
+            >
+              Загрузка цеха
             </button>
           )}
           {(!canAccessLaborSubView || canAccessLaborSubView("total")) && (

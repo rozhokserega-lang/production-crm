@@ -335,6 +335,13 @@ export class OrderService {
     return await callBackend("webGetLaborTable");
   }
 
+  // ==================== Загрузка цеха (Workshop Load) ====================
+
+  static async getWorkshopQueue() {
+    const rows = await callBackend("webGetWorkshopQueue");
+    return Array.isArray(rows) ? rows : [];
+  }
+
   static async getLaborKits() {
     return await callBackend("webGetLaborKits");
   }

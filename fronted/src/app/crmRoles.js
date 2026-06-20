@@ -22,7 +22,7 @@ export const CRM_ROLE_LABELS = {
   admin: "Админ",
 };
 
-const LABOR_SUB_VIEWS = new Set(["planner", "total", "orders"]);
+const LABOR_SUB_VIEWS = new Set(["planner", "total", "orders", "workshopLoad"]);
 
 /** Действие цеха → этап для проверки прав. */
 export const WORKSHOP_ACTION_STAGE = {
@@ -110,7 +110,7 @@ export function getAllowedViewIdsForRole(role) {
 /** null = все подвкладки трудоёмкости. */
 export function getAllowedLaborSubViewsForRole(role) {
   const r = normalizeCrmRole(role);
-  if (r === "planner") return ["planner"];
+  if (r === "planner") return ["planner", "workshopLoad"];
   return null;
 }
 

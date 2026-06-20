@@ -586,6 +586,7 @@ const RPC_MAP = {
   webGetLaborKits: "web_get_labor_kits",
   webGetLaborKitPlanQty: "web_get_labor_kit_plan_qty",
   webGetLaborNorms: "web_get_labor_norms",
+  webGetWorkshopQueue: "web_get_workshop_queue",
   webUpsertLaborFact: "web_upsert_labor_fact",
   webUpsertLaborKit: "web_upsert_labor_kit",
   webUpsertLaborKitPlanQty: "web_upsert_labor_kit_plan_qty",

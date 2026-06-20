@@ -7,11 +7,15 @@ export async function buildWorkshopPlanPreview(order, qtyReady, deps = {}) {
   const readyQty = Math.max(1, Number(qtyReady || 0) || 1);
   const sourceRow = String(order?.source_row_id ?? order?.sourceRowId ?? "").trim();
   const week = String(order?.week ?? "").trim();
+  const sourceCol = String(
+    order?.source_col_id ?? order?.sourceColId ?? week,
+  ).trim();
+
   let preview = null;
 
-  if (sourceRow && week) {
+  if (sourceRow && sourceCol) {
     try {
-      preview = await OrderService.previewPlanFromShipment(sourceRow, week);
+      preview = await OrderService.previewPlanFromShipment(sourceRow, sourceCol);
     } catch (_) {
       preview = null;
     }

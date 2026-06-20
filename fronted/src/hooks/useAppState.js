@@ -70,6 +70,7 @@ import { useShipmentBoardRenderDerived } from "./useShipmentBoardRenderDerived";
 import { useFurniturePreviewSync } from "./useFurniturePreviewSync";
 import { useLaborState } from "./useLaborState";
 import { useLaborActions } from "./useLaborActions";
+import { useWorkshopLoad } from "./useWorkshopLoad";
 import { useStageActions } from "./useStageActions";
 import { useConsumeDialog } from "./useConsumeDialog";
 import { useHardwareConsumeDialog } from "./useHardwareConsumeDialog";
@@ -874,6 +875,22 @@ export function useAppState({ auth }) {
     view,
     setError,
     toUserError,
+  });
+  const workshopLoadExecutors = useMemo(
+    () => ({
+      pilka: 1,
+      kromka: Math.max(1, (executorOptions.kromka || []).length),
+      pras: Math.max(1, (executorOptions.pras || []).length),
+      assembly: 1,
+    }),
+    [executorOptions.kromka, executorOptions.pras],
+  );
+  const workshopLoad = useWorkshopLoad({
+    view,
+    laborSubView,
+    setError,
+    toUserError,
+    executorsPerStage: workshopLoadExecutors,
   });
   useEffect(() => {
     let alive = true;
@@ -1715,6 +1732,7 @@ export function useAppState({ auth }) {
       importLaborFileRef,
       exportLaborTotalToExcel,
       saveImportedLaborRowToDb,
+      workshopLoad,
     },
     furniture: {
       furnitureLoading,

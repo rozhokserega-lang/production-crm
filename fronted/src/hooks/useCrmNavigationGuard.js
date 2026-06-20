@@ -24,6 +24,11 @@ export function useCrmNavigationGuard({
   const defaultLaborSubView = useMemo(() => getDefaultLaborSubViewForRole(crmRole), [crmRole]);
 
   useEffect(() => {
+    if (view === "workshopLoad" && typeof setLaborSubView === "function") {
+      setView("labor");
+      setLaborSubView("workshopLoad");
+      return;
+    }
     if (!canAccessViewForRole(crmRole, view, { canAdminSettings })) {
       setView(defaultView);
       if (defaultView === "workshop") {

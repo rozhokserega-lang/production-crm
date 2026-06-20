@@ -223,7 +223,7 @@ export function OverviewPlansPanel({
               </div>
 
               <div className="overview-plans__stats">
-                <span>{m.shippedCount} / {m.orderCount} заказов</span>
+                <span>{m.completedCount ?? m.shippedCount} / {m.orderCount} выпущено</span>
                 <span>{m.closedPlans} / {m.planCount} планов закрыто</span>
               </div>
               <div className="overview-plans__progress-row">
@@ -287,7 +287,7 @@ export function OverviewPlansPanel({
                     m.blockingPlans.map((bp) => (
                       <div key={bp.week} className="overview-plans__plan-block">
                         <div className="overview-plans__plan-block-title">
-                          План {bp.week} — {bp.openCount} не отгружено
+                          План {bp.week} — {bp.openCount} не выпущено
                         </div>
                         <BlockingOrdersList
                           orders={bp.blockingOrders}
@@ -322,7 +322,7 @@ export function OverviewPlansPanel({
                     <div>
                       <div className="overview-plans__plan-card-title">План {p.week}</div>
                       <div className="overview-plans__plan-card-meta">
-                        {p.shippedCount} / {p.orderCount} отгружено
+                        {p.completedCount ?? p.shippedCount} / {p.orderCount} выпущено
                         {!p.isClosed && ` · ${p.openCount} блокер(ов)`}
                       </div>
                     </div>
@@ -375,7 +375,7 @@ export function OverviewPlansPanel({
                 <tr>
                   <th>План</th>
                   <th>Заказы</th>
-                  <th>Отгружено</th>
+                  <th>Выпущено</th>
                   <th>Прогресс</th>
                   <th>Статус</th>
                   <th>Блокеры</th>
@@ -388,7 +388,7 @@ export function OverviewPlansPanel({
                     <tr>
                       <td><b>{p.week}</b></td>
                       <td>{p.orderCount}</td>
-                      <td>{p.shippedCount}</td>
+                      <td>{p.completedCount ?? p.shippedCount}</td>
                       <td className="overview-plans__progress-cell">
                         <ProgressBar percent={p.percent} />
                         <span>{p.percent}%</span>

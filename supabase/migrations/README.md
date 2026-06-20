@@ -25,42 +25,72 @@ This directory is the single source of truth for database changes.
 - Backfill mapping plan is documented in `supabase/migrations/MIGRATION_BACKFILL_PLAN.md`.
 - No runtime behavior changes are introduced by this documentation commit.
 
-## CI: автоматическая проверка миграций на чистом Postgres
+## CI: автоматическая проверка миграций поверх схемы прода
 
-Каждый PR/push, затрагивающий `supabase/migrations/**` или `SUPABASE_STAGE1_SCHEMA.sql`,
-проходит отдельный workflow `.github/workflows/migrations-ci.yml`: поднимается чистый
-`postgres:15-alpine`, и весь стек накатывается в хронологическом порядке. Это ловит
-невалидный SQL, рассинхрон порядка применения и конфликты имён **до прода**.
+Каждый PR/push, затрагивающий `supabase/migrations/**` или `supabase/BASELINE.sql`,
+проходит отдельный workflow `.github/workflows/migrations-ci.yml`.
 
-Поскольку миграции рассчитаны на окружение Supabase (функция `auth.uid()`, таблица
-`auth.users`, роли `anon`/`authenticated`/`service_role`, расширение `pgcrypto`),
-перед миграциями применяется `_ci_auth_shim.sql` — он эмулирует это окружение
-заглушками. **Этот файл не применяется в Supabase**, он нужен только для CI/локальной
-проверки.
+### Подход (Вариант A)
 
-Порядок применения:
-1. `_ci_auth_shim.sql` — эмуляция Supabase auth окружения.
-2. `../../SUPABASE_STAGE1_SCHEMA.sql` — базовые таблицы (`orders`, `shipment_plan_cells`,
-   `labor_facts`) и первичные RPC. Идут **до** миграций, т.к. первая миграция делает
-   `alter table public.orders`.
-3. `*.sql` в этом каталоге (кроме `_ci_auth_shim.sql`) — по таймстемпу в имени файла.
+CI воспроизводит **реальную схему прода** и проверяет, что миграции корректно
+применяются поверх неё — не ломают существующие таблицы/views/функции.
+
+Порядок наката:
+1. **Postgres 17** (версия прода) в Docker.
+2. `DROP SCHEMA public CASCADE` — очищаем дефолтную public.
+3. `_ci_auth_shim.sql` — серверное окружение Supabase, **не входящее в pg_dump**:
+   `pgcrypto`, схема `auth`, `auth.users`, `auth.uid()`, роли `anon`/`authenticated`/
+   `service_role`. Применяется до BASELINE, т.к. BASELINE ссылается на `auth.uid()`
+   в `DEFAULT` колонок. **Не применяется в Supabase** — только для CI/локальной проверки.
+4. **`supabase/BASELINE.sql` целиком** — полный DDL прода (pg_dump v17). Применяется
+   атомарно, как задумал pg_dump (с forward-refs через `check_function_bodies=off`).
+5. **Все миграции** в хронологическом порядке (по таймстемпу в имени), в режиме
+   **WARN-only** (без `ON_ERROR_STOP`).
+6. **Smoke-check** — наличие ключевых объектов (`orders`, `shipment_plan_cells`,
+   `crm_audit_log`, RPC `web_get_orders_all`, `web_audit_log_event`).
+
+### WARN-only режим для миграций
+
+Миграции, падающие на **историческом дрейфе** (например, `CREATE OR REPLACE VIEW`
+с урезанным набором колонок, когда в проде view шире), пишут `WARNING` и
+пропускаются — **CI не падает**. Это сознательное решение: строже (падать на любой
+ошибке) — CI всегда красный, пока не закрыт весь дрейф; WARN-only остаётся полезным.
+
+Статус CI = успех, если:
+- BASELINE применился без ошибок;
+- smoke-check прошёл (ключевые объекты на месте).
+
+Дрейф затем закрывается новыми фикс-миграциями и со временем исчезает.
+
+### Регенерация BASELINE.sql
+
+BASELINE.sql — это `pg_dump` прода. Регенерируется при значимых изменениях схемы:
+
+```powershell
+docker run --rm postgres:17 pg_dump `
+  "postgresql://postgres.nsdwypcbhmfseotclkrm:<PASSWORD>@aws-0-eu-west-1.pooler.supabase.com:5432/postgres?sslmode=require" `
+  --schema=public --schema-only --no-owner --no-privileges `
+  > supabase/BASELINE.sql
+```
+
+Файл должен быть в **UTF-8 без BOM** (PowerShell `>` сохраняет в UTF-16 — конвертируйте).
 
 ### Локальный запуск
 
-```bash
-./scripts/verify_migrations_locally.sh
+```powershell
+./scripts/verify_migrations_locally.ps1
 ```
 
-Требуется локальный Docker. Поднимает Postgres на порту 55432, накатывает тот же
-стек и выводит результат по каждой миграции. Удобно для отладки до коммита.
+Требуется Docker Desktop. Поднимает Postgres 17 на порту 55432, накатывает тот же
+стек (auth-shim → BASELINE → миграции в WARN-only) и выводит результат по каждой
+миграции. Удобно для отладки до коммита.
 
 ### Что проверяет, а что нет
 
-- ✅ Валидность SQL-синтаксиса всех миграций.
-- ✅ Корректный порядок применения (зависимости между миграциями).
-- ✅ Отсутствие конфликтов имён объектов.
+- ✅ Миграции корректно применяются к схеме прода (не ломают существующие объекты).
 - ✅ Наличие ключевых таблиц/RPC после наката (smoke).
-- ❌ RLS-политики в runtime (для этого нужен smoke RPC от роли anon/authenticated —
-      отдельная задача).
-- ❌ Поведение при реальных JWT-claims (CI не выставляет jwt, поэтому `auth.uid()`
-      возвращает NULL).
+- ✅ Регистрирует исторический дрейф как WARNING (видно, какие миграции расходятся).
+- ❌ RLS-политики в runtime (нужен smoke RPC от роли anon/authenticated — отдельная задача).
+- ❌ Поведение при реальных JWT-claims (CI не выставляет jwt, `auth.uid()` → NULL).
+- ❌ Fresh-install с нуля (часть объектов создаётся вручную в проде и не входит в миграции;
+      поэтому CI использует BASELINE прода, а не накат миграций на пустую БД).

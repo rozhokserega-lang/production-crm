@@ -1,4 +1,4 @@
-import { PipelineStage, getOrderStageDisplayLabel, getOverviewLaneId, resolvePipelineStage } from "../orderPipeline";
+import { getOrderStageDisplayLabel, getOverviewLaneId, isOrderProductionPlanComplete, resolvePipelineStage } from "../orderPipeline";
 import { formatEmbeddedPlanItem } from "./orderHelpers";
 import { isWorkshopStrapOrderItem } from "./workshopStrapNeeds";
 import { matchesWeekFilter, normalizeWeekFilter } from "./weekFilterUtils";
@@ -15,6 +15,7 @@ const LANE_LABELS = {
   pras: "Присадка",
   workshop_complete: "Сборка",
   assembled: "Сборка",
+  warehouse_kit: "Склад (комплектация)",
   ready_to_ship: "Отправка",
   shipped: "Отгружено",
 };
@@ -51,11 +52,6 @@ function readOrderId(order) {
 
 function readOrderItem(order) {
   return String(order?.item || order?.itemName || order?.item_label || order?.itemLabel || "—").trim();
-}
-
-function isOrderShipped(order) {
-  if (order?._planStatsSource === "awaiting") return false;
-  return resolvePipelineStage(order) === PipelineStage.SHIPPED;
 }
 
 function getPlanStatsLaneId(order) {
@@ -139,17 +135,17 @@ export function buildPlanSummary(weekLabel, orders) {
   const blockingOrders = [];
 
   let qtyTotal = 0;
-  let qtyShipped = 0;
-  let shippedCount = 0;
+  let qtyCompleted = 0;
+  let completedCount = 0;
 
   for (const o of list) {
     const lane = getPlanStatsLaneId(o);
     stageBreakdown[lane] = (stageBreakdown[lane] || 0) + 1;
     const qty = Number(o?.qty || 0);
     qtyTotal += qty;
-    if (isOrderShipped(o)) {
-      shippedCount += 1;
-      qtyShipped += qty;
+    if (isOrderProductionPlanComplete(o)) {
+      completedCount += 1;
+      qtyCompleted += qty;
     } else {
       const rawItem = readOrderItem(o);
       const display = formatEmbeddedPlanItem(rawItem);
@@ -174,7 +170,7 @@ export function buildPlanSummary(weekLabel, orders) {
   );
 
   const orderCount = list.length;
-  const percent = orderCount > 0 ? Math.round((shippedCount / orderCount) * 100) : 0;
+  const percent = orderCount > 0 ? Math.round((completedCount / orderCount) * 100) : 0;
 
   const rawWeeks = [...new Set(
     list.map((o) => String(o?.week ?? "").trim()).filter(Boolean)
@@ -185,12 +181,16 @@ export function buildPlanSummary(weekLabel, orders) {
     weekKey: normalizePlanWeek(weekLabel) || weekLabel,
     rawWeeks,
     orderCount,
-    shippedCount,
-    openCount: orderCount - shippedCount,
+    completedCount,
+    /** @deprecated используйте completedCount */
+    shippedCount: completedCount,
+    openCount: orderCount - completedCount,
     qtyTotal,
-    qtyShipped,
+    qtyCompleted,
+    /** @deprecated используйте qtyCompleted */
+    qtyShipped: qtyCompleted,
     percent,
-    isClosed: orderCount > 0 && shippedCount === orderCount,
+    isClosed: orderCount > 0 && completedCount === orderCount,
     stageBreakdown,
     blockingOrders,
   };
@@ -221,9 +221,9 @@ export function buildMonthSummary(month, plansByWeek) {
     .filter(Boolean);
 
   const orderCount = plans.reduce((s, p) => s + p.orderCount, 0);
-  const shippedCount = plans.reduce((s, p) => s + p.shippedCount, 0);
+  const completedCount = plans.reduce((s, p) => s + p.completedCount, 0);
   const closedPlans = plans.filter((p) => p.isClosed).length;
-  const percent = orderCount > 0 ? Math.round((shippedCount / orderCount) * 100) : 0;
+  const percent = orderCount > 0 ? Math.round((completedCount / orderCount) * 100) : 0;
 
   const blockingPlans = plans
     .filter((p) => !p.isClosed)
@@ -245,8 +245,10 @@ export function buildMonthSummary(month, plansByWeek) {
     closedPlans,
     openPlans: plans.length - closedPlans,
     orderCount,
-    shippedCount,
-    openCount: orderCount - shippedCount,
+    completedCount,
+    /** @deprecated используйте completedCount */
+    shippedCount: completedCount,
+    openCount: orderCount - completedCount,
     percent,
     isClosed: weekLabels.length > 0 && plans.length === weekLabels.length && plans.every((p) => p.isClosed),
     blockingPlans,

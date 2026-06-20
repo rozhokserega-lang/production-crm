@@ -151,3 +151,15 @@ export function getOverviewLaneId(order) {
 export function isOrderCustomerShipped(order) {
   return resolvePipelineStage(order) === PipelineStage.SHIPPED;
 }
+
+/** План производства закрыт: заказ ушёл на склад (комплектация) или дальше. */
+const PRODUCTION_PLAN_COMPLETE_STAGES = new Set([
+  PipelineStage.WAREHOUSE_KIT,
+  PipelineStage.READY_TO_SHIP,
+  PipelineStage.SHIPPED,
+]);
+
+export function isOrderProductionPlanComplete(order) {
+  if (order?._planStatsSource === "awaiting") return false;
+  return PRODUCTION_PLAN_COMPLETE_STAGES.has(resolvePipelineStage(order));
+}

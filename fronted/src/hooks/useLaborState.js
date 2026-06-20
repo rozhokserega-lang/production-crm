@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 
-const LABOR_SUB_VIEWS = new Set(["total", "orders", "planner"]);
+const LABOR_SUB_VIEWS = new Set(["total", "orders", "planner", "workshopLoad"]);
 
 export function useLaborState(view) {
   const [laborSort, setLaborSort] = useState("total_desc");

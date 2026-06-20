@@ -6,6 +6,7 @@ import { OrderService } from "../services/orderService";
 import { LaborKitBuilder } from "../components/LaborKitBuilder";
 import { normalizeKitItem } from "../app/laborKitPlanner";
 import { LaborPlanSummary } from "../components/LaborPlanSummary";
+import { WorkshopLoadView } from "./WorkshopLoadView";
 
 const isImportedLaborRow = (row) =>
   Boolean(row?.importedLocal) || /^import-/i.test(String(row?.orderId || "").trim());
@@ -78,6 +79,7 @@ export const LaborView = memo(function LaborView({
     manualLaborOpenNonce = 0,
     workSchedule,
     setLaborNormsRows,
+    workshopLoad,
   } = labor;
   const {
     setError,
@@ -651,6 +653,13 @@ export const LaborView = memo(function LaborView({
             canSaveKitPlanQty={canSaveLaborPlanner}
           />
         </div>
+      )}
+      {laborSubView === "workshopLoad" && workshopLoad && (
+        <WorkshopLoadView
+          summary={workshopLoad.summary}
+          loading={workshopLoad.loading}
+          onRefresh={workshopLoad.load}
+        />
       )}
     </>
   );

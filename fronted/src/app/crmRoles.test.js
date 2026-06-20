@@ -56,10 +56,11 @@ describe("crmRoles", () => {
     expect(getAllowedViewIdsForRole("operator_pilka")).toEqual(["workshop", "cutting"]);
     expect(getAllowedViewIdsForRole("operator_kromka")).toEqual(["workshop"]);
     expect(getAllowedViewIdsForRole("planner")).toEqual(["labor"]);
-    expect(getAllowedLaborSubViewsForRole("planner")).toEqual(["planner"]);
+    expect(getAllowedLaborSubViewsForRole("planner")).toEqual(["planner", "workshopLoad"]);
     expect(canAccessViewForRole("planner", "labor")).toBe(true);
     expect(canAccessViewForRole("planner", "shipment")).toBe(false);
     expect(canAccessLaborSubViewForRole("planner", "planner")).toBe(true);
+    expect(canAccessLaborSubViewForRole("planner", "workshopLoad")).toBe(true);
     expect(canAccessLaborSubViewForRole("planner", "total")).toBe(false);
     expect(getDefaultViewForRole("planner")).toBe("labor");
     expect(getDefaultLaborSubViewForRole("planner")).toBe("planner");

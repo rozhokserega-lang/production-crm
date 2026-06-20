@@ -111,9 +111,17 @@ function JobSidebar({ jobs, activeJobId, onOpen, onDelete, onNewJob, loading, on
   );
 }
 
-function ItemRow({ item, idx, accountEdgeBand, onQty, onTurn, onRemove }) {
+function ItemRow({ item, idx, accountEdgeBand, onQty, onSetQty, onTurn, onRemove }) {
   const cut = cuttingPieceSize(item.w, item.h, { accountEdgeBand });
   const showCutDims = accountEdgeBand && (cut.w !== item.w || cut.h !== item.h);
+  const [qtyDraft, setQtyDraft] = useState(null);
+
+  const commitQty = () => {
+    const raw = qtyDraft ?? String(item.qty || 1);
+    const parsed = parseInt(String(raw).replace(/\D/g, ""), 10);
+    onSetQty(idx, Number.isFinite(parsed) && parsed > 0 ? parsed : 1);
+    setQtyDraft(null);
+  };
 
   return (
     <div className={`cv-item${item.turned ? " cv-item--turned" : ""}`}>
@@ -140,9 +148,29 @@ function ItemRow({ item, idx, accountEdgeBand, onQty, onTurn, onRemove }) {
           ↺
         </button>
         <div className="cv-item__qty">
-          <button className="cv-item__qty-btn" onClick={() => onQty(idx, -1)}>−</button>
-          <span className="cv-item__qty-val">{item.qty || 1}</span>
-          <button className="cv-item__qty-btn" onClick={() => onQty(idx, +1)}>+</button>
+          <button className="cv-item__qty-btn" type="button" onClick={() => onQty(idx, -1)}>−</button>
+          <input
+            className="cv-item__qty-val"
+            type="text"
+            inputMode="numeric"
+            aria-label="Количество"
+            value={qtyDraft ?? String(item.qty || 1)}
+            onFocus={() => setQtyDraft(String(item.qty || 1))}
+            onChange={(e) => setQtyDraft(e.target.value.replace(/\D/g, ""))}
+            onBlur={commitQty}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                commitQty();
+                e.currentTarget.blur();
+              }
+              if (e.key === "Escape") {
+                setQtyDraft(null);
+                e.currentTarget.blur();
+              }
+            }}
+          />
+          <button className="cv-item__qty-btn" type="button" onClick={() => onQty(idx, +1)}>+</button>
         </div>
         <button className="cv-item__del" onClick={() => onRemove(idx)} title="Удалить позицию">✕</button>
       </div>
@@ -258,7 +286,7 @@ function AddItemForm({ existingMaterials, onAdd, onClose }) {
 
 // ── Items panel ───────────────────────────────────────────────────────────────
 
-function ItemsPanel({ items, accountEdgeBand, onQty, onTurn, onRemove, showAddForm, existingMaterials, onAdd, onCloseForm }) {
+function ItemsPanel({ items, accountEdgeBand, onQty, onSetQty, onTurn, onRemove, showAddForm, existingMaterials, onAdd, onCloseForm }) {
   return (
     <>
       {showAddForm && (
@@ -287,6 +315,7 @@ function ItemsPanel({ items, accountEdgeBand, onQty, onTurn, onRemove, showAddFo
               idx={idx}
               accountEdgeBand={accountEdgeBand}
               onQty={onQty}
+              onSetQty={onSetQty}
               onTurn={onTurn}
               onRemove={onRemove}
             />
@@ -314,6 +343,7 @@ export function CuttingView() {
     updateSettings,
     addItems,
     updateItemQty,
+    setItemQty,
     toggleItemTurn,
     removeItem,
     deleteJob,
@@ -556,6 +586,7 @@ export function CuttingView() {
               items={activeJob.items}
               accountEdgeBand={!!activeJob.settings.accountEdgeBand}
               onQty={updateItemQty}
+              onSetQty={setItemQty}
               onTurn={toggleItemTurn}
               onRemove={removeItem}
               showAddForm={showAddForm}

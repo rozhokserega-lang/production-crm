@@ -147,6 +147,21 @@ export function useCuttingState() {
     setCuttingResult(null);
   }, [scheduleSave]);
 
+  const setItemQty = useCallback((idx, qty) => {
+    const nextQty = Math.max(1, Math.floor(Number(qty) || 1));
+    setActiveJob((prev) => {
+      const items = prev.items.map((it, i) => {
+        if (i !== idx) return it;
+        if ((it.qty || 1) === nextQty) return it;
+        return { ...it, qty: nextQty };
+      });
+      const updated = { ...prev, items };
+      scheduleSave(updated);
+      return updated;
+    });
+    setCuttingResult(null);
+  }, [scheduleSave]);
+
   // -------- toggle item rotation (swap W↔H, flip turned flag) --------
   const toggleItemTurn = useCallback((idx) => {
     setActiveJob((prev) => {
@@ -201,6 +216,7 @@ export function useCuttingState() {
     updateSettings,
     addItems,
     updateItemQty,
+    setItemQty,
     toggleItemTurn,
     removeItem,
     deleteJob,

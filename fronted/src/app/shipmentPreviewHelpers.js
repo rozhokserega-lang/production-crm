@@ -28,8 +28,9 @@ export function enrichPreviewFromFurniture(preview, deps = {}) {
     existingRows.length === 1 &&
     String(existingRows[0]?.part || "").trim() &&
     (norm(existingRows[0]?.part) === norm(preview?.firstName) ||
-      norm(existingRows[0]?.part) === norm(preview?.detailedName)) &&
-    Number(existingRows[0]?.qty || 0) === Number(preview?.qty || 0);
+      norm(existingRows[0]?.part) === norm(preview?.detailedName));
+  // Кол-во в placeholder-строке с бэкенда может не совпадать с preview.qty после
+  // webReduceOrderQty — не используем сравнение qty для распознавания заглушки.
 
   // Keep backend preview rows when they exist and are not the placeholder row.
   if (existingRows.length > 0 && !isPlaceholderSelfRow) return preview;
