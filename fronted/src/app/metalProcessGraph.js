@@ -62,12 +62,14 @@ function parseGraphNodes(rawNodes) {
       if (kind === "stage") {
         const stage = String(node?.stage || "").trim().toLowerCase();
         if (!METAL_STAGE_KEYS.includes(stage)) return null;
+        const note = String(node?.note ?? node?.stageNote ?? "").trim();
         return {
           id,
           kind: "stage",
           stage,
           x: Number(node?.x ?? 0) || 0,
           y: Number(node?.y ?? 0) || 0,
+          ...(note ? { note } : {}),
         };
       }
       return null;
@@ -271,7 +273,7 @@ export function validateProcessGraph(graph) {
 
   if (stageNodes.length === 0) {
     errors.push("Добавьте хотя бы один этап.");
-    return { ok: false, errors, graph: normalized };
+    return { ok: false, errors, warnings: [], graph: normalized };
   }
 
   const start = nodes.find((n) => n.kind === "start");
@@ -316,17 +318,308 @@ export function validateProcessGraph(graph) {
     errors.push("Есть этапы без связи со «Старт» — проведите стрелку от старта или другого этапа.");
   }
 
-  return { ok: errors.length === 0, errors, graph: normalized };
+  const warnings = [];
+  const runtime = analyzeProcessGraphRuntime(normalized);
+  if (!runtime.supported) {
+    warnings.push(...runtime.warnings);
+  }
+
+  return { ok: errors.length === 0, errors, warnings, graph: normalized, runtime };
 }
 
 export function graphHasParallelBranches(graph) {
-  const plan = extractForkPlan(graph);
-  return plan.mode === "parallel";
+  const runtime = analyzeProcessGraphRuntime(graph);
+  return runtime.mode === "parallel";
 }
 
 function stageIncomingCount(nodes, edges, nodeId) {
   const stageIds = new Set(nodes.filter((n) => n.kind === "stage").map((n) => n.id));
   return edges.filter((e) => e.to === nodeId && stageIds.has(e.from)).length;
+}
+
+function getMergeStageNodeIds(nodes, edges) {
+  return nodes
+    .filter((n) => n.kind === "stage" && stageIncomingCount(nodes, edges, n.id) >= 2)
+    .map((n) => n.id);
+}
+
+function findRouteToMergeNode(nodes, edges, fromNodeId, mergeNodeId) {
+  const adj = buildAdjacency(edges);
+  const mergeIds = new Set(getMergeStageNodeIds(nodes, edges));
+  const stageIds = new Set(nodes.filter((n) => n.kind === "stage").map((n) => n.id));
+  const queue = [[fromNodeId, []]];
+  const visited = new Set();
+
+  while (queue.length > 0) {
+    const [cur, route] = queue.shift();
+    if (visited.has(cur)) continue;
+    visited.add(cur);
+
+    const node = nodeById(nodes, cur);
+    if (!node || node.kind !== "stage") continue;
+
+    if (cur === mergeNodeId) {
+      return route;
+    }
+
+    const nextRoute = [...route, node.stage];
+    for (const nextId of adj.get(cur) || []) {
+      if (!stageIds.has(nextId)) continue;
+      if (mergeIds.has(nextId) && nextId !== mergeNodeId) continue;
+      if (!visited.has(nextId)) queue.push([nextId, nextRoute]);
+    }
+  }
+  return null;
+}
+
+function walkGraphPathToTarget(nodes, edges, startNodeId, targetNodeId) {
+  const adj = buildAdjacency(edges);
+  const mergeIds = new Set(getMergeStageNodeIds(nodes, edges));
+  const stageIds = new Set(nodes.filter((n) => n.kind === "stage").map((n) => n.id));
+  const queue = [[startNodeId, []]];
+  const visited = new Set();
+
+  while (queue.length > 0) {
+    const [cur, path] = queue.shift();
+    if (visited.has(cur)) continue;
+    visited.add(cur);
+
+    const node = nodeById(nodes, cur);
+    if (!node || node.kind !== "stage") continue;
+
+    const nextPath = [...path, node];
+    if (cur === targetNodeId) return nextPath;
+
+    for (const nextId of adj.get(cur) || []) {
+      if (!stageIds.has(nextId)) continue;
+      if (mergeIds.has(nextId) && nextId !== targetNodeId) continue;
+      if (!visited.has(nextId)) queue.push([nextId, nextPath]);
+    }
+  }
+  return null;
+}
+
+function pathStagesMatch(pathNodes, route) {
+  if (!Array.isArray(pathNodes) || !Array.isArray(route)) return false;
+  if (pathNodes.length !== route.length) return false;
+  return pathNodes.every((node, index) => node.stage === String(route[index] || "").toLowerCase());
+}
+
+function branchPathNodesBeforeMerge(pathNodes, mergeTargetId) {
+  if (!Array.isArray(pathNodes) || pathNodes.length === 0) return [];
+  const targetId = String(mergeTargetId || "");
+  if (targetId && pathNodes[pathNodes.length - 1]?.id === targetId) {
+    return pathNodes.slice(0, -1);
+  }
+  return pathNodes;
+}
+
+function resolveBranchStageNote(nodes, edges, { startNodeId, mergeTargetId, route, routeIdx, currentStage }) {
+  if (!mergeTargetId || !Array.isArray(route) || route.length === 0) return null;
+
+  const startIds = startNodeId
+    ? [String(startNodeId)]
+    : graphStartStageNodeIds(nodes, edges);
+
+  for (const startId of startIds) {
+    const path = walkGraphPathToTarget(nodes, edges, startId, String(mergeTargetId));
+    if (!path || path.length < 1) continue;
+
+    const branchNodes = branchPathNodesBeforeMerge(path, mergeTargetId);
+    if (!pathStagesMatch(branchNodes, route)) continue;
+
+    const stepNode = branchNodes[routeIdx] ?? branchNodes.find((node) => node.stage === currentStage);
+    return stepNode?.note || "";
+  }
+
+  return null;
+}
+
+function graphStartStageNodeIds(nodes, edges) {
+  const start = nodes.find((n) => n.kind === "start");
+  const startId = start?.id || START_NODE_ID;
+  const adj = buildAdjacency(edges);
+  const direct = (adj.get(startId) || [])
+    .map((id) => nodeById(nodes, id))
+    .filter((n) => n?.kind === "stage");
+  if (direct.length > 0) return direct.map((n) => n.id);
+
+  const rev = buildReverseAdjacency(edges);
+  return nodes
+    .filter((n) => n.kind === "stage")
+    .filter((n) => {
+      const incoming = rev.get(n.id) || [];
+      return incoming.length === 0 || incoming.every((fromId) => nodeById(nodes, fromId)?.kind === "start");
+    })
+    .map((n) => n.id);
+}
+
+/** Пояснительная записка этапа из process_graph для текущей позиции заказа. */
+export function resolveWorkItemStageNote(row, graph) {
+  const normalized = normalizeProcessGraph(graph);
+  const { nodes, edges } = normalized;
+  const meta = row?.forkMeta ?? row?.fork_meta ?? {};
+  const route = (Array.isArray(row?.stageRoute) ? row.stageRoute : row?.stage_route ?? [])
+    .map((stage) => String(stage || "").trim().toLowerCase())
+    .filter(Boolean);
+  const routeIdx = Math.max(0, Number(row?.routeIdx ?? row?.route_idx ?? 0) || 0);
+  const currentStage = String(row?.currentStage || "").trim().toLowerCase();
+
+  const graphNodeId = meta.sub_group_id || meta.subGroupId || meta.merge_node_id || meta.mergeNodeId;
+  if (meta.is_final_gate === true || meta.isFinalGate === true) {
+    const multi = extractMultiMergePlan(normalized);
+    const finalId = multi?.finalGate?.nodeId;
+    if (finalId) return nodeById(nodes, String(finalId))?.note || "";
+  } else if (row?.forkRole === "merge" && graphNodeId) {
+    const mergeNode = nodeById(nodes, String(graphNodeId));
+    if (mergeNode?.note) return mergeNode.note;
+  }
+
+  const mergeTargetId = meta.merge_node_id || meta.mergeNodeId;
+  const startNodeId = meta.start_node_id || meta.startNodeId;
+  if (mergeTargetId && route.length > 0) {
+    const branchNote = resolveBranchStageNote(nodes, edges, {
+      startNodeId,
+      mergeTargetId,
+      route,
+      routeIdx,
+      currentStage,
+    });
+    if (branchNote !== null) return branchNote;
+  }
+
+  const stageNodes = nodes.filter((n) => n.kind === "stage" && n.stage === currentStage);
+  if (stageNodes.length === 1) return stageNodes[0].note || "";
+
+  if (route.length > 0) {
+    const stepStage = route[routeIdx] || currentStage;
+    let occurrence = 0;
+    const needOccurrence = route.slice(0, routeIdx + 1).filter((s) => s === stepStage).length - 1;
+    for (const node of nodes.filter((n) => n.kind === "stage")) {
+      if (node.stage !== stepStage) continue;
+      if (occurrence === needOccurrence) return node.note || "";
+      occurrence += 1;
+    }
+  }
+
+  return "";
+}
+
+/**
+ * Сложный маршрут: несколько точек слияния (напр. две сварки → покраска).
+ * Возвращает null, если топология — обычная single-fork или линейная.
+ */
+export function extractMultiMergePlan(graph) {
+  const { nodes, edges } = normalizeProcessGraph(graph);
+  const mergeNodeIds = getMergeStageNodeIds(nodes, edges);
+  if (mergeNodeIds.length <= 1) return null;
+
+  const mergeIdSet = new Set(mergeNodeIds);
+  const stageIds = new Set(nodes.filter((n) => n.kind === "stage").map((n) => n.id));
+  const stagePredecessors = (nodeId) =>
+    edges.filter((e) => e.to === nodeId && stageIds.has(e.from)).map((e) => e.from);
+
+  // Финал: ≥2 входа, хотя бы один от другой точки слияния (вторая сварка может быть с 1 входом).
+  const finalGateNodes = mergeNodeIds
+    .map((id) => nodeById(nodes, id))
+    .filter((node) => {
+      const preds = stagePredecessors(node.id);
+      if (preds.length < 2) return false;
+      return preds.some((predId) => mergeIdSet.has(predId));
+    });
+
+  if (finalGateNodes.length === 0) return null;
+
+  const finalGate = finalGateNodes.sort((a, b) => a.x - b.x || a.y - b.y).slice(-1)[0];
+  const finalPredIds = stagePredecessors(finalGate.id);
+
+  const subMergeIdSet = new Set();
+  for (const mergeId of mergeNodeIds) {
+    if (mergeId === finalGate.id) continue;
+    const preds = stagePredecessors(mergeId);
+    if (preds.some((predId) => !mergeIdSet.has(predId))) {
+      subMergeIdSet.add(mergeId);
+    }
+  }
+  for (const predId of finalPredIds) {
+    if (predId !== finalGate.id && !mergeIdSet.has(predId)) {
+      subMergeIdSet.add(predId);
+    }
+  }
+
+  const subMergeNodes = [...subMergeIdSet]
+    .map((id) => nodeById(nodes, id))
+    .filter(Boolean);
+
+  if (subMergeNodes.length < 2) return null;
+
+  const start = nodes.find((n) => n.kind === "start");
+  const startId = start?.id || START_NODE_ID;
+  const adj = buildAdjacency(edges);
+  const startStageNodes = (adj.get(startId) || [])
+    .map((id) => nodeById(nodes, id))
+    .filter((n) => n?.kind === "stage")
+    .sort((a, b) => a.x - b.x || a.y - b.y);
+
+  const subForks = subMergeNodes
+    .sort((a, b) => a.x - b.x || a.y - b.y)
+    .map((mergeNode) => {
+      const branches = [];
+      for (const startNode of startStageNodes) {
+        const route = findRouteToMergeNode(nodes, edges, startNode.id, mergeNode.id);
+        if (!route || route.length === 0) continue;
+        branches.push({
+          branchKey: route[0] || startNode.stage,
+          startNodeId: startNode.id,
+          route,
+          mergeNodeId: mergeNode.id,
+        });
+      }
+      return {
+        mergeNodeId: mergeNode.id,
+        mergeStage: mergeNode.stage,
+        branches,
+      };
+    })
+    .filter((sub) => sub.branches.length > 0);
+
+  if (subForks.length < 2) return null;
+
+  return {
+    mode: "multi_merge",
+    subForks,
+    finalGate: {
+      nodeId: finalGate.id,
+      stage: finalGate.stage,
+      requiresMergeNodeIds: finalPredIds,
+    },
+    mergeNodeCount: mergeNodeIds.length,
+  };
+}
+
+/**
+ * Анализ графа для рантайма: linear / parallel (одно слияние) / multi_merge.
+ */
+export function analyzeProcessGraphRuntime(graph) {
+  const multi = extractMultiMergePlan(graph);
+  if (multi) {
+    return { supported: true, mode: "multi_merge", plan: multi, warnings: [] };
+  }
+
+  const forkPlan = extractForkPlan(graph);
+  if (forkPlan.mode === "parallel") {
+    return { supported: true, mode: "parallel", plan: forkPlan, warnings: [] };
+  }
+  return { supported: true, mode: "linear", plan: forkPlan, warnings: [] };
+}
+
+export function formatMultiMergeStartLabel(plan) {
+  if (!plan?.subForks?.length) return "В работу";
+  const branchCount = plan.subForks.reduce((n, sf) => n + (sf.branches?.length || 0), 0);
+  const mergeCount = plan.subForks.length;
+  const finalStage = plan.finalGate?.stage;
+  const finalLabel = finalStage ? (METAL_STAGE_LABELS[finalStage] || finalStage) : "финал";
+  return `${branchCount} ветки → ${mergeCount} слияния → ${finalLabel}`;
 }
 
 function isMergeStageNode(nodes, edges, nodeId) {
@@ -456,6 +749,76 @@ function rowStatus(row) {
   return String(row?.status || "").toLowerCase();
 }
 
+function forkMeta(row) {
+  return row?.forkMeta ?? row?.fork_meta ?? {};
+}
+
+export function isSubMergeRow(row) {
+  const meta = forkMeta(row);
+  return meta.is_sub_merge === true || meta.isSubMerge === true;
+}
+
+export function isFinalGateRow(row) {
+  const meta = forkMeta(row);
+  return meta.is_final_gate === true || meta.isFinalGate === true;
+}
+
+export function getMultiMergeRootId(row) {
+  const meta = forkMeta(row);
+  const fromMeta = meta.root_parent_id ?? meta.rootParentId;
+  if (fromMeta != null && fromMeta !== "") return Number(fromMeta);
+
+  const parentId = Number(row?.parentId ?? row?.parent_id ?? 0);
+  if (
+    parentId > 0 &&
+    (row?.forkRole === "merge" || row?.fork_role === "merge") &&
+    (isFinalGateRow(row) || meta.mode === "multi_merge")
+  ) {
+    return parentId;
+  }
+
+  if (meta.mode === "multi_merge" && !row?.forkRole && !row?.fork_role) return row?.id ?? null;
+  return null;
+}
+
+function isMultiMergeFamilyRow(row) {
+  const meta = forkMeta(row);
+  return Boolean(
+    meta.mode === "multi_merge" ||
+    meta.root_parent_id != null ||
+    meta.rootParentId != null,
+  );
+}
+
+/** Одна строка на multi_merge заказ: финал → родитель done → последний sub_merge. */
+export function pickMultiMergeCanonicalRow(family) {
+  const safe = Array.isArray(family) ? family : [];
+  const done = safe.filter((row) => rowStatus(row) === "done");
+  const finalGate = done.find((row) => isFinalGateRow(row));
+  if (finalGate) return finalGate;
+
+  const root = safe.find((row) => forkMeta(row).mode === "multi_merge" && !row?.forkRole && !row?.fork_role);
+  if (root && rowStatus(root) === "done" && !done.some((row) => isFinalGateRow(row))) return root;
+
+  const subMerges = done.filter((row) => row?.forkRole === "merge");
+  if (subMerges.length === 0) return null;
+
+  const painting = subMerges.find((row) => String(row?.currentStage || "").toLowerCase() === "painting");
+  if (painting) return painting;
+
+  return subMerges.sort((a, b) => Number(b?.id || 0) - Number(a?.id || 0))[0];
+}
+
+function multiMergeCanonicalId(rows, row) {
+  const rootId = getMultiMergeRootId(row);
+  if (!rootId) return row?.id ?? null;
+  const family = rows.filter(
+    (member) => member.id === rootId || getMultiMergeRootId(member) === rootId,
+  );
+  const canonical = pickMultiMergeCanonicalRow(family);
+  return canonical?.id ?? row?.id ?? null;
+}
+
 /** Index fork groups for UI deduplication (plan / done / stats). */
 export function buildForkGroupIndex(rows) {
   const groups = new Map();
@@ -465,7 +828,11 @@ export function buildForkGroupIndex(rows) {
     const entry = groups.get(groupId) || { mergeDone: false, hasMerge: false };
     if (row.forkRole === "merge") {
       entry.hasMerge = true;
-      if (rowStatus(row) === "done") entry.mergeDone = true;
+      if (rowStatus(row) === "done") {
+        if (isFinalGateRow(row) || !isSubMergeRow(row)) {
+          entry.mergeDone = true;
+        }
+      }
     }
     groups.set(groupId, entry);
   }
@@ -475,13 +842,23 @@ export function buildForkGroupIndex(rows) {
 /** Done tab: one card per order — only merge row for parallel fork groups. */
 export function filterMetalDoneRows(rows) {
   const groupIndex = buildForkGroupIndex(rows);
-  return (Array.isArray(rows) ? rows : []).filter((row) => {
+  const safeRows = Array.isArray(rows) ? rows : [];
+  return safeRows.filter((row) => {
     if (rowStatus(row) !== "done") return false;
     if (row?.forkRole === "branch") return false;
+
+    if (isMultiMergeFamilyRow(row)) {
+      return row.id === multiMergeCanonicalId(safeRows, row);
+    }
+
+    if (isSubMergeRow(row)) return false;
+    if (isFinalGateRow(row)) return true;
+
     const groupId = row?.forkGroupId;
     if (groupId && groupIndex.get(groupId)?.mergeDone) {
-      return row?.forkRole === "merge";
+      return row?.forkRole === "merge" && !isSubMergeRow(row);
     }
+
     return true;
   });
 }
@@ -506,9 +883,27 @@ function sumStageSeconds(row) {
 }
 
 function aggregateForkGroupStageTimes(row, allRows) {
+  const safeRows = Array.isArray(allRows) ? allRows : [];
+
+  const multiRootId = getMultiMergeRootId(row);
+  if (
+    multiRootId != null &&
+    (row.id === multiRootId || row?.forkRole === "merge" || isFinalGateRow(row) || isSubMergeRow(row))
+  ) {
+    const members = safeRows.filter(
+      (r) => r.id === multiRootId || getMultiMergeRootId(r) === multiRootId,
+    );
+    const aggregated = { ...row };
+    for (const key of STAGE_TIME_KEYS) {
+      aggregated[key] = members.reduce((sum, member) => sum + Number(member?.[key] || 0), 0);
+    }
+    aggregated.totalSeconds = sumStageSeconds(aggregated);
+    return aggregated;
+  }
+
   const groupId = row?.forkGroupId;
   if (!groupId) return row;
-  const members = (Array.isArray(allRows) ? allRows : []).filter((r) => r.forkGroupId === groupId);
+  const members = safeRows.filter((r) => r.forkGroupId === groupId);
   const hasMerge = members.some((member) => member?.forkRole === "merge");
   const shouldAggregate =
     row?.forkRole === "merge" ||
@@ -525,14 +920,21 @@ function aggregateForkGroupStageTimes(row, allRows) {
 /** Stats: one row per order; aggregate fork group times on merge row. */
 export function filterMetalStatsRows(rows) {
   const groupIndex = buildForkGroupIndex(rows);
-  return (Array.isArray(rows) ? rows : [])
+  const safeRows = Array.isArray(rows) ? rows : [];
+  return safeRows
     .filter((row) => {
       const status = rowStatus(row);
       if (status === "cancelled") return false;
       if (row?.forkRole === "branch") return false;
+
+      if (isMultiMergeFamilyRow(row)) {
+        if (status !== "done") return false;
+        return row.id === multiMergeCanonicalId(safeRows, row);
+      }
+
       const groupId = row?.forkGroupId;
       if (groupId && groupIndex.get(groupId)?.mergeDone) {
-        return row?.forkRole === "merge";
+        return row?.forkRole === "merge" && !isSubMergeRow(row);
       }
       if (status === "split") return false;
       return true;

@@ -1456,6 +1456,107 @@ button:disabled {
   font-size: 14px;
 }
 
+.mbp-node--selected {
+  box-shadow: 0 0 0 2px #fbbf24, 0 2px 12px rgba(251, 191, 36, 0.35);
+}
+
+.mbp-node--has-note {
+  min-width: 150px;
+}
+
+.mbp-node__note-flag {
+  font-size: 11px;
+  opacity: 0.9;
+}
+
+.mbp-node__note-preview {
+  margin-top: 6px;
+  font-size: 10px;
+  line-height: 1.35;
+  opacity: 0.85;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
+}
+
+.mbp-note-panel {
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid #334155;
+  background: #0f172a;
+  display: grid;
+  gap: 8px;
+  width: min(100%, 26rem);
+  max-width: 26rem;
+}
+
+.mbp-note-panel__head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: #e2e8f0;
+  font-size: 13px;
+}
+
+.mbp-note-panel__head strong {
+  min-width: 0;
+}
+
+.mbp-note-panel__save {
+  flex-shrink: 0;
+  border: 1px solid #22c55e;
+  background: #14532d;
+  color: #dcfce7;
+  border-radius: 8px;
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  line-height: 1.2;
+}
+
+.mbp-note-panel__save:hover {
+  background: #166534;
+}
+
+.mbp-note-panel__input {
+  width: 100%;
+  resize: vertical;
+  min-height: 64px;
+  border-radius: 8px;
+  border: 1px solid #475569;
+  background: #111827;
+  color: #f8fafc;
+  padding: 8px 10px;
+  font-size: 13px;
+  line-height: 1.45;
+  font-family: inherit;
+}
+
+.mbp-note-panel__hint {
+  font-size: 11px;
+  color: #94a3b8;
+  line-height: 1.4;
+}
+
+.card__stage-note {
+  min-width: 0;
+}
+
+.card__stage-note-empty {
+  font-size: 12px;
+  color: var(--text-soft);
+  line-height: 1.45;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px dashed var(--border-main);
+  background: var(--bg-muted, #f8fafc);
+}
+
 .mbp-node__del {
   position: absolute;
   top: -8px;
@@ -1507,6 +1608,31 @@ button:disabled {
   color: #b91c1c;
   display: grid;
   gap: 4px;
+}
+
+.mbp-warnings {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid #fbbf24;
+  background: #fffbeb;
+  font-size: 12px;
+  color: #92400e;
+  display: grid;
+  gap: 4px;
+  line-height: 1.45;
+}
+
+.metal-route-unsupported {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: #fff7ed;
+  border: 1px solid #fdba74;
+  color: #c2410c;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: help;
 }
 
 .metal-catalog-fs {
@@ -1606,6 +1732,13 @@ button:disabled {
 
 .metal-catalog-fs__foot .mbp-errors {
   margin-top: 6px;
+}
+
+.metal-catalog-fs__foot .mbp-warnings {
+  margin-top: 6px;
+  border-color: #b45309;
+  background: rgba(251, 191, 36, 0.12);
+  color: #fcd34d;
 }
 
 /* Route editor */

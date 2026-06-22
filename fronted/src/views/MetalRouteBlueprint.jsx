@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ReactFlow,
   Background,
@@ -42,12 +42,17 @@ function StartNode() {
   );
 }
 
-function StageNode({ data }) {
+function StageNode({ data, selected }) {
   const c = STAGE_COLORS[data.stage] || { border: "#64748b", text: "#cbd5e1", bg: "#1e293b", icon: "•" };
+  const hasNote = Boolean(String(data.note || "").trim());
   return (
     <div
-      className="mbp-node mbp-node--stage"
+      className={`mbp-node mbp-node--stage${selected ? " mbp-node--selected" : ""}${hasNote ? " mbp-node--has-note" : ""}`}
       style={{ borderColor: c.border, background: c.bg, color: c.text }}
+      onClick={(e) => {
+        e.stopPropagation();
+        data.onSelect?.(data.nodeId);
+      }}
     >
       <Handle type="target" position={Position.Left} id="in" className="mbp-handle" />
       <Handle type="source" position={Position.Right} id="out" className="mbp-handle" />
@@ -55,7 +60,13 @@ function StageNode({ data }) {
       <div className="mbp-node__name">
         <span className="mbp-node__icon">{c.icon}</span>
         {data.label || data.stage}
+        {hasNote && <span className="mbp-node__note-flag" title="Есть пояснение">📝</span>}
       </div>
+      {hasNote && (
+        <div className="mbp-node__note-preview" title={data.note}>
+          {String(data.note).trim()}
+        </div>
+      )}
       {!data.disabled && (
         <button
           type="button"
@@ -73,7 +84,10 @@ function StageNode({ data }) {
   );
 }
 
-const NODE_TYPES = { start: StartNode, stage: StageNode };
+const NODE_TYPES = {
+  start: StartNode,
+  stage: (props) => <StageNode {...props} selected={props.selected} />,
+};
 
 function DeletableEdge({
   id,
@@ -130,7 +144,7 @@ function DeletableEdge({
 
 const EDGE_TYPES = { deletable: DeletableEdge };
 
-function graphToFlow(graph, disabled, onDeleteStage, onDeleteEdge) {
+function graphToFlow(graph, disabled, onDeleteStage, onDeleteEdge, selectedNodeId, onSelectNode) {
   const normalized = normalizeProcessGraph(graph);
   const nodes = normalized.nodes.map((node) => {
     if (node.kind === "start") {
@@ -150,10 +164,13 @@ function graphToFlow(graph, disabled, onDeleteStage, onDeleteEdge) {
         nodeId: node.id,
         stage: node.stage,
         label: METAL_STAGE_LABELS[node.stage] || node.stage,
+        note: node.note || "",
         disabled,
         onDelete: onDeleteStage,
+        onSelect: onSelectNode,
       },
       draggable: !disabled,
+      selected: selectedNodeId === node.id,
     };
   });
 
@@ -193,6 +210,7 @@ function flowToGraph(nodes, edges) {
         stage: node.data?.stage,
         x: Math.round(node.position.x),
         y: Math.round(node.position.y),
+        ...(String(node.data?.note || "").trim() ? { note: String(node.data.note).trim() } : {}),
       };
     }),
     edges: edges.map((edge) => ({
@@ -205,17 +223,21 @@ function flowToGraph(nodes, edges) {
 
 function graphSignature(graph) {
   const normalized = normalizeProcessGraph(graph);
-  const nodes = normalized.nodes.map(({ id, kind, stage, x, y }) => ({ id, kind, stage, x, y }));
+  const nodes = normalized.nodes.map(({ id, kind, stage, x, y, note }) => ({ id, kind, stage, x, y, note: note || "" }));
   const edges = normalized.edges.map(({ from, to }) => ({ from, to }));
   return JSON.stringify({ nodes, edges });
 }
 
-export function MetalRouteBlueprint({ value, onChange, disabled = false, validationErrors = [], fullScreen = false }) {
+export function MetalRouteBlueprint({ value, onChange, disabled = false, validationErrors = [], validationWarnings = [], fullScreen = false }) {
   const syncingRef = useRef(false);
   const nodeSeqRef = useRef(0);
   const userDraggedRef = useRef(false);
   const lastEmittedSigRef = useRef(graphSignature(value));
   const onChangeRef = useRef(onChange);
+  const [selectedNodeId, setSelectedNodeId] = useState(null);
+  const [noteDraft, setNoteDraft] = useState("");
+  const [noteJustSaved, setNoteJustSaved] = useState(false);
+  const noteDraftRef = useRef(noteDraft);
 
   const emitGraph = useCallback(
     (nextNodes, nextEdges) => {
@@ -234,7 +256,7 @@ export function MetalRouteBlueprint({ value, onChange, disabled = false, validat
   );
 
   const initial = useMemo(
-    () => graphToFlow(value, disabled, null, null),
+    () => graphToFlow(value, disabled, null, null, null, null),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
@@ -242,6 +264,98 @@ export function MetalRouteBlueprint({ value, onChange, disabled = false, validat
   const [edges, setEdges, onEdgesChange] = useEdgesState(initial.edges);
   const nodesRef = useRef(nodes);
   const edgesRef = useRef(edges);
+
+  useEffect(() => {
+    noteDraftRef.current = noteDraft;
+  }, [noteDraft]);
+
+  const commitSelectedNodeNote = useCallback(
+    (noteText, nodeId = selectedNodeId) => {
+      if (!nodeId || disabled) return;
+      const trimmed = String(noteText ?? "").trim();
+      setNodes((prev) => {
+        const next = prev.map((node) => {
+          if (node.id !== nodeId || node.type !== "stage") return node;
+          return { ...node, data: { ...node.data, note: trimmed } };
+        });
+        setEdges((prevEdges) => {
+          queueMicrotask(() => emitGraph(next, prevEdges));
+          return prevEdges;
+        });
+        return next;
+      });
+      if (nodeId === selectedNodeId) {
+        setNoteDraft(trimmed);
+      }
+    },
+    [disabled, emitGraph, selectedNodeId, setNodes, setEdges],
+  );
+
+  const saveNoteDraft = useCallback(() => {
+    if (!selectedNodeId || disabled) return;
+    commitSelectedNodeNote(noteDraftRef.current, selectedNodeId);
+    setNoteJustSaved(true);
+    window.setTimeout(() => setNoteJustSaved(false), 1500);
+  }, [commitSelectedNodeNote, disabled, selectedNodeId]);
+
+  const closeNotePanel = useCallback(() => {
+    setSelectedNodeId(null);
+    setNoteJustSaved(false);
+  }, []);
+
+  const onSelectNode = useCallback((nodeId) => {
+    if (disabled) return;
+    setSelectedNodeId((prevId) => {
+      if (prevId && prevId !== nodeId) {
+        const prevNode = nodesRef.current.find((n) => n.id === prevId && n.type === "stage");
+        const saved = String(prevNode?.data?.note || "").trim();
+        const draft = String(noteDraftRef.current).trim();
+        if (draft !== saved) {
+          queueMicrotask(() => commitSelectedNodeNote(draft, prevId));
+        }
+      }
+      return nodeId;
+    });
+  }, [commitSelectedNodeNote, disabled]);
+
+  const updateSelectedNodeNote = useCallback(
+    (noteText) => {
+      setNoteDraft(noteText);
+    },
+    [],
+  );
+
+  const selectedStageNode = useMemo(
+    () => nodes.find((node) => node.id === selectedNodeId && node.type === "stage") || null,
+    [nodes, selectedNodeId],
+  );
+
+  useEffect(() => {
+    if (!selectedNodeId) {
+      setNoteDraft("");
+      return;
+    }
+    const node = nodesRef.current.find((n) => n.id === selectedNodeId && n.type === "stage");
+    setNoteDraft(String(node?.data?.note || ""));
+    setNoteJustSaved(false);
+  }, [selectedNodeId]);
+
+  useEffect(() => {
+    if (!selectedStageNode || disabled) return undefined;
+    const onKeyDown = (e) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      e.stopPropagation();
+      const saved = String(selectedStageNode.data?.note || "").trim();
+      const draft = String(noteDraftRef.current).trim();
+      if (draft !== saved) {
+        commitSelectedNodeNote(draft, selectedNodeId);
+      }
+      closeNotePanel();
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [closeNotePanel, commitSelectedNodeNote, disabled, selectedNodeId, selectedStageNode]);
 
   const deleteEdgeRef = useRef(null);
   const deleteStageRef = useRef(null);
@@ -268,6 +382,7 @@ export function MetalRouteBlueprint({ value, onChange, disabled = false, validat
 
   const deleteStage = useCallback(
     (nodeId) => {
+      if (selectedNodeId === nodeId) setSelectedNodeId(null);
       setNodes((prev) => {
         const nextNodes = prev.filter((n) => n.id !== nodeId);
         setEdges((prevEdges) => {
@@ -278,7 +393,7 @@ export function MetalRouteBlueprint({ value, onChange, disabled = false, validat
         return nextNodes;
       });
     },
-    [emitGraph, setEdges, setNodes],
+    [emitGraph, selectedNodeId, setEdges, setNodes],
   );
 
   useEffect(() => {
@@ -294,11 +409,11 @@ export function MetalRouteBlueprint({ value, onChange, disabled = false, validat
     const incomingSig = graphSignature(value);
     const currentSig = graphSignature(flowToGraph(nodesRef.current, edgesRef.current));
     if (incomingSig === currentSig) return;
-    const next = graphToFlow(value, disabled, onDeleteStage, onDeleteEdge);
+    const next = graphToFlow(value, disabled, onDeleteStage, onDeleteEdge, selectedNodeId, onSelectNode);
     lastEmittedSigRef.current = incomingSig;
     setNodes(next.nodes);
     setEdges(next.edges);
-  }, [value, disabled, onDeleteStage, onDeleteEdge, setNodes, setEdges]);
+  }, [value, disabled, onDeleteStage, onDeleteEdge, onSelectNode, selectedNodeId, setNodes, setEdges]);
 
   useEffect(() => {
     setNodes((prev) =>
@@ -307,7 +422,8 @@ export function MetalRouteBlueprint({ value, onChange, disabled = false, validat
         return {
           ...node,
           draggable: !disabled,
-          data: { ...node.data, disabled, onDelete: onDeleteStage },
+          selected: node.id === selectedNodeId,
+          data: { ...node.data, disabled, onDelete: onDeleteStage, onSelect: onSelectNode },
         };
       }),
     );
@@ -319,7 +435,7 @@ export function MetalRouteBlueprint({ value, onChange, disabled = false, validat
         data: { ...edge.data, disabled, onDelete: onDeleteEdge },
       })),
     );
-  }, [disabled, onDeleteStage, onDeleteEdge, setNodes, setEdges]);
+  }, [disabled, onDeleteStage, onDeleteEdge, onSelectNode, selectedNodeId, setNodes, setEdges]);
 
   const handleNodesChange = useCallback(
     (changes) => {
@@ -407,8 +523,10 @@ export function MetalRouteBlueprint({ value, onChange, disabled = false, validat
           nodeId: id,
           stage: stageKey,
           label: METAL_STAGE_LABELS[stageKey] || stageKey,
+          note: "",
           disabled,
           onDelete: onDeleteStage,
+          onSelect: onSelectNode,
         },
         draggable: true,
       };
@@ -421,7 +539,7 @@ export function MetalRouteBlueprint({ value, onChange, disabled = false, validat
         return next;
       });
     },
-    [disabled, emitGraph, nodes, onDeleteStage, setEdges, setNodes],
+    [disabled, emitGraph, nodes, onDeleteStage, onSelectNode, setEdges, setNodes],
   );
 
   const rootClass = fullScreen ? "mbp-root mbp-root--fullscreen" : "mbp-root";
@@ -447,6 +565,33 @@ export function MetalRouteBlueprint({ value, onChange, disabled = false, validat
               </button>
             );
           })}
+        </div>
+      )}
+
+      {!disabled && selectedStageNode && (
+        <div className="mbp-note-panel">
+          <div className="mbp-note-panel__head">
+            <strong>
+              Пояснение: {selectedStageNode.data?.label || selectedStageNode.data?.stage}
+            </strong>
+            <button
+              type="button"
+              className="mbp-note-panel__save"
+              onClick={saveNoteDraft}
+            >
+              {noteJustSaved ? "Сохранено" : "Сохранить"}
+            </button>
+          </div>
+          <textarea
+            className="mbp-note-panel__input"
+            rows={3}
+            placeholder="Текст для оператора на этом этапе (размеры, особенности, внимание…)"
+            value={noteDraft}
+            onChange={(e) => updateSelectedNodeNote(e.target.value)}
+          />
+          <div className="mbp-note-panel__hint">
+            Нажмите «Сохранить», затем Esc — закрыть. Текст показывается оператору в производстве.
+          </div>
         </div>
       )}
 
@@ -481,6 +626,14 @@ export function MetalRouteBlueprint({ value, onChange, disabled = false, validat
           Тяните стрелку от правого кружка к левому. Две стрелки из одного этапа — параллельная работа;
           две стрелки в один этап — слияние (например, лазер + пила → сварка).
           {disabled ? " Режим просмотра." : " Крестик на стрелке — удалить связь."}
+        </div>
+      )}
+
+      {!fullScreen && validationWarnings.length > 0 && (
+        <div className="mbp-warnings">
+          {validationWarnings.map((msg) => (
+            <div key={msg}>{msg}</div>
+          ))}
         </div>
       )}
 

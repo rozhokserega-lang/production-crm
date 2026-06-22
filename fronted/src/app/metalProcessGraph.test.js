@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  analyzeProcessGraphRuntime,
   createLinearProcessGraph,
   deriveStageRouteFromGraph,
   extractForkPlan,
+  extractMultiMergePlan,
   filterMetalDoneRows,
   filterMetalPlanRows,
   filterMetalStatsRows,
@@ -10,8 +12,87 @@ import {
   graphHasParallelBranches,
   normalizeProcessGraph,
   processGraphFromCatalogRow,
+  resolveWorkItemStageNote,
   validateProcessGraph,
 } from "./metalProcessGraph";
+
+/** Modula legs: 4 ветки, 2 сварки → покраска (как GXTV5BMODS3B). */
+function buildModulaLegsGraph() {
+  return normalizeProcessGraph({
+    nodes: [
+      { id: "start", kind: "start", x: 0, y: 200 },
+      { id: "l1", kind: "stage", stage: "laser", x: 150, y: 50 },
+      { id: "s1", kind: "stage", stage: "saw", x: 150, y: 120 },
+      { id: "l2", kind: "stage", stage: "laser", x: 150, y: 280 },
+      { id: "s2", kind: "stage", stage: "saw", x: 150, y: 350 },
+      { id: "b1", kind: "stage", stage: "bending", x: 300, y: 50 },
+      { id: "l3", kind: "stage", stage: "laser", x: 300, y: 120 },
+      { id: "b2", kind: "stage", stage: "bending", x: 300, y: 280 },
+      { id: "l4", kind: "stage", stage: "laser", x: 300, y: 350 },
+      { id: "w1", kind: "stage", stage: "welding", x: 450, y: 85 },
+      { id: "w2", kind: "stage", stage: "welding", x: 450, y: 315 },
+      { id: "p", kind: "stage", stage: "painting", x: 600, y: 200 },
+    ],
+    edges: [
+      { from: "start", to: "l1" }, { from: "start", to: "s1" }, { from: "start", to: "l2" }, { from: "start", to: "s2" },
+      { from: "l1", to: "b1" }, { from: "s1", to: "l3" }, { from: "l2", to: "b2" }, { from: "s2", to: "l4" },
+      { from: "b1", to: "w1" }, { from: "l3", to: "w1" }, { from: "b2", to: "w2" }, { from: "l4", to: "w2" },
+      { from: "w1", to: "p" }, { from: "w2", to: "p" },
+    ],
+  });
+}
+
+/** Граф GXTVSBMODS4B: 4 ветки, 3 слияния, покраска. */
+function buildGx4MultiMergeGraph() {
+  return normalizeProcessGraph({
+    nodes: [
+      { id: "start", kind: "start", x: -169, y: 154 },
+      { id: "s1", kind: "stage", stage: "saw", note: "Пилим штуки", x: 59, y: 314 },
+      { id: "l2", kind: "stage", stage: "laser", note: "Дырки в штуках", x: 289, y: 316 },
+      { id: "l3", kind: "stage", stage: "laser", note: "Режим хуйни", x: 77, y: 133 },
+      { id: "b4", kind: "stage", stage: "bending", note: "Гнём", x: 281, y: 138 },
+      { id: "w5", kind: "stage", stage: "welding", note: "Привариваем", x: 474, y: 224 },
+      { id: "s6", kind: "stage", stage: "saw", note: "Пилим хрени", x: 84, y: -17 },
+      { id: "l7", kind: "stage", stage: "laser", note: "ВЫрезаем дырки", x: 298, y: -26 },
+      { id: "p8", kind: "stage", stage: "painting", x: 913, y: 78 },
+      { id: "w9", kind: "stage", stage: "welding", note: "Свариваем", x: 507, y: 25 },
+      { id: "l1", kind: "stage", stage: "laser", note: "Режим хрени", x: 98, y: -146 },
+      { id: "b2", kind: "stage", stage: "bending", note: "Гнём хрени", x: 358, y: -146 },
+      { id: "w3", kind: "stage", stage: "welding", note: "Варим", x: 597, y: -128 },
+    ],
+    edges: [
+      { from: "start", to: "s1" }, { from: "s1", to: "l2" }, { from: "l2", to: "w5" },
+      { from: "start", to: "l3" }, { from: "l3", to: "b4" }, { from: "b4", to: "w5" },
+      { from: "w5", to: "p8" },
+      { from: "start", to: "s6" }, { from: "s6", to: "l7" }, { from: "l7", to: "w9" }, { from: "w9", to: "p8" },
+      { from: "start", to: "l1" }, { from: "l1", to: "b2" }, { from: "b2", to: "w3" }, { from: "w3", to: "p8" },
+    ],
+  });
+}
+
+/** Реальный граф GXTVSBMODS3B: вторая сварка с одним входом, покраска — финал. */
+function buildModulaCatalogGraph() {
+  return normalizeProcessGraph({
+    nodes: [
+      { id: "start", kind: "start", x: -169, y: 154 },
+      { id: "s1", kind: "stage", stage: "saw", x: 51, y: 328 },
+      { id: "l2", kind: "stage", stage: "laser", x: 289, y: 340 },
+      { id: "l3", kind: "stage", stage: "laser", x: 79, y: 182 },
+      { id: "b4", kind: "stage", stage: "bending", x: 300, y: 187 },
+      { id: "w1", kind: "stage", stage: "welding", x: 509, y: 270 },
+      { id: "s6", kind: "stage", stage: "saw", x: 59, y: 21 },
+      { id: "l7", kind: "stage", stage: "laser", x: 286, y: 45 },
+      { id: "p", kind: "stage", stage: "painting", x: 866, y: 146 },
+      { id: "w2", kind: "stage", stage: "welding", x: 513, y: 114 },
+    ],
+    edges: [
+      { from: "start", to: "s1" }, { from: "s1", to: "l2" }, { from: "l2", to: "w1" },
+      { from: "start", to: "l3" }, { from: "l3", to: "b4" }, { from: "b4", to: "w1" },
+      { from: "w1", to: "p" },
+      { from: "start", to: "s6" }, { from: "s6", to: "l7" }, { from: "l7", to: "w2" }, { from: "w2", to: "p" },
+    ],
+  });
+}
 
 describe("metalProcessGraph", () => {
   it("builds linear graph from route array", () => {
@@ -124,6 +205,150 @@ describe("metalProcessGraph", () => {
     expect(stats[0].id).toBe(1);
     expect(stats[0].laserSeconds).toBe(30);
     expect(stats[0].sawSeconds).toBe(12);
+  });
+
+  it("detects Modula multi-merge route and supports runtime", () => {
+    const graph = buildModulaLegsGraph();
+    const multi = extractMultiMergePlan(graph);
+    expect(multi?.mode).toBe("multi_merge");
+    expect(multi?.subForks).toHaveLength(2);
+    expect(multi?.subForks[0].branches).toHaveLength(2);
+    expect(multi?.subForks[1].branches).toHaveLength(2);
+    expect(multi?.finalGate?.stage).toBe("painting");
+    expect(multi?.finalGate?.requiresMergeNodeIds).toEqual(expect.arrayContaining(["w1", "w2"]));
+
+    expect(graphHasParallelBranches(graph)).toBe(false);
+    const runtime = analyzeProcessGraphRuntime(graph);
+    expect(runtime.supported).toBe(true);
+    expect(runtime.mode).toBe("multi_merge");
+    expect(runtime.warnings).toEqual([]);
+
+    const validation = validateProcessGraph(graph);
+    expect(validation.ok).toBe(true);
+    expect(validation.warnings).toEqual([]);
+  });
+
+  it("detects catalog Modula graph with single-input second weld", () => {
+    const graph = buildModulaCatalogGraph();
+    const multi = extractMultiMergePlan(graph);
+    expect(multi?.finalGate?.stage).toBe("painting");
+    expect(multi?.subForks).toHaveLength(2);
+    expect(multi?.subForks.map((sf) => sf.mergeStage).sort()).toEqual(["welding", "welding"]);
+    expect(multi?.finalGate?.requiresMergeNodeIds).toEqual(expect.arrayContaining(["w1", "w2"]));
+  });
+
+  it("dedupes broken multi_merge done/stats rows to one order", () => {
+    const rows = [
+      { id: 70, status: "split", forkMeta: { mode: "multi_merge" } },
+      { id: 74, status: "done", forkRole: "merge", parentId: 70, currentStage: "welding", forkMeta: { mode: "multi_merge", is_sub_merge: true, root_parent_id: 70 }, weldingSeconds: 10 },
+      { id: 75, status: "done", forkRole: "merge", parentId: 70, currentStage: "painting", forkMeta: { mode: "multi_merge", is_sub_merge: true, root_parent_id: 70 }, paintingSeconds: 5 },
+    ];
+    expect(filterMetalDoneRows(rows).map((r) => r.id)).toEqual([75]);
+    const stats = filterMetalStatsRows(rows);
+    expect(stats).toHaveLength(1);
+    expect(stats[0].id).toBe(75);
+    expect(stats[0].weldingSeconds).toBe(10);
+    expect(stats[0].paintingSeconds).toBe(5);
+  });
+
+  it("shows closed multi_merge parent in done and stats", () => {
+    const rows = [
+      { id: 70, status: "done", forkMeta: { mode: "multi_merge" }, laserSeconds: 1 },
+      { id: 74, status: "done", forkRole: "merge", parentId: 70, currentStage: "welding", forkMeta: { mode: "multi_merge", is_sub_merge: true, root_parent_id: 70 }, weldingSeconds: 10 },
+      { id: 75, status: "done", forkRole: "merge", parentId: 70, currentStage: "painting", forkMeta: { mode: "multi_merge", is_sub_merge: true, root_parent_id: 70 }, paintingSeconds: 5 },
+    ];
+    expect(filterMetalDoneRows(rows).map((r) => r.id)).toEqual([70]);
+    const stats = filterMetalStatsRows(rows);
+    expect(stats).toHaveLength(1);
+    expect(stats[0].id).toBe(70);
+    expect(stats[0].weldingSeconds).toBe(10);
+    expect(stats[0].paintingSeconds).toBe(5);
+  });
+
+  it("dedupes closed multi_merge parent when final gate row exists", () => {
+    const rows = [
+      { id: 90, status: "done", forkMeta: { mode: "multi_merge" }, currentStage: "laser" },
+      {
+        id: 98,
+        status: "done",
+        forkRole: "merge",
+        parentId: 90,
+        currentStage: "painting",
+        forkMeta: { mode: "multi_merge", is_final_gate: true },
+        paintingSeconds: 5,
+      },
+    ];
+    expect(filterMetalDoneRows(rows).map((r) => r.id)).toEqual([98]);
+    expect(filterMetalStatsRows(rows).map((r) => r.id)).toEqual([98]);
+  });
+
+  it("preserves stage notes in process graph", () => {
+    const graph = normalizeProcessGraph({
+      nodes: [
+        { id: "start", kind: "start", x: 0, y: 0 },
+        { id: "l1", kind: "stage", stage: "laser", x: 100, y: 0, note: "Резать по шаблону А" },
+        { id: "w1", kind: "stage", stage: "welding", x: 300, y: 0 },
+      ],
+      edges: [
+        { from: "start", to: "l1" },
+        { from: "l1", to: "w1" },
+      ],
+    });
+    expect(graph.nodes.find((n) => n.id === "l1")?.note).toBe("Резать по шаблону А");
+  });
+
+  it("resolves stage note for branch work item", () => {
+    const graph = buildModulaCatalogGraph();
+    const graphWithNotes = normalizeProcessGraph({
+      ...graph,
+      nodes: graph.nodes.map((node) =>
+        node.id === "l2" ? { ...node, note: "Лазер: внимание к кромке" } : node,
+      ),
+    });
+    const row = {
+      forkRole: "branch",
+      stageRoute: ["saw", "laser"],
+      routeIdx: 1,
+      currentStage: "laser",
+      forkMeta: { merge_node_id: "w1" },
+    };
+    expect(resolveWorkItemStageNote(row, graphWithNotes)).toBe("Лазер: внимание к кромке");
+  });
+
+  it("resolves distinct branch notes for multi_merge with duplicate stage names", () => {
+    const graph = buildGx4MultiMergeGraph();
+    expect(resolveWorkItemStageNote({
+      id: 82,
+      forkRole: "branch",
+      stageRoute: ["saw", "laser"],
+      routeIdx: 0,
+      currentStage: "saw",
+      forkMeta: { merge_node_id: "w5", mode: "multi_merge" },
+    }, graph)).toBe("Пилим штуки");
+    expect(resolveWorkItemStageNote({
+      id: 84,
+      forkRole: "branch",
+      stageRoute: ["saw", "laser"],
+      routeIdx: 0,
+      currentStage: "saw",
+      forkMeta: { merge_node_id: "w9", mode: "multi_merge" },
+    }, graph)).toBe("Пилим хрени");
+    expect(resolveWorkItemStageNote({
+      id: 83,
+      forkRole: "branch",
+      stageRoute: ["laser", "bending"],
+      routeIdx: 0,
+      currentStage: "laser",
+      forkMeta: { merge_node_id: "w5", mode: "multi_merge" },
+    }, graph)).toBe("Режим хуйни");
+    expect(resolveWorkItemStageNote({
+      id: 85,
+      forkRole: "branch",
+      stageRoute: ["laser", "bending"],
+      routeIdx: 0,
+      currentStage: "laser",
+      forkMeta: { merge_node_id: "w3", mode: "multi_merge" },
+    }, graph)).toBe("Режим хрени");
   });
 
   it("rejects cycles", () => {

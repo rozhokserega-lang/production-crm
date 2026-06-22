@@ -3,13 +3,17 @@ import { createPortal } from "react-dom";
 import { readMetalUiPrefs, writeMetalUiPrefs } from "../app/metalProcessUiPrefs";
 import {
   DEFAULT_PROCESS_GRAPH,
+  analyzeProcessGraphRuntime,
+  formatMultiMergeStartLabel,
+  isFinalGateRow,
+  isSubMergeRow,
   deriveStageRouteFromGraph,
-  extractForkPlan,
   filterMetalDoneRows,
   filterMetalPlanRows,
   filterMetalStatsRows,
   getGraphStartStages,
   processGraphFromCatalogRow,
+  resolveWorkItemStageNote,
   validateProcessGraph,
 } from "../app/metalProcessGraph";
 import {
@@ -150,6 +154,8 @@ function formatPlanStatus(row) {
   if (status === "split") return "Ветки в производстве";
   if (row?.forkRole === "branch") return "Ветка";
   if (status === "done") return "Завершен";
+  if (isSubMergeRow(row)) return "Промежуточная сборка";
+  if (isFinalGateRow(row)) return "Финальная сборка";
   if (row?.forkRole === "merge") return "Сборка после веток";
   if (status === "planned" && stageStatus === "queued") return "Ожидает старта";
   if (status === "active" && stageStatus === "queued") return "Ожидает на этапе";
@@ -308,6 +314,7 @@ export function MetalProcessView({
   const [planPreviewRow, setPlanPreviewRow] = useState(null);
   const [catalogForm, setCatalogForm] = useState(EMPTY_CATALOG_FORM);
   const [catalogGraphErrors, setCatalogGraphErrors] = useState([]);
+  const [catalogGraphWarnings, setCatalogGraphWarnings] = useState([]);
   const [catalogEditArticle, setCatalogEditArticle] = useState(null);
   const [catalogTableSearch, setCatalogTableSearch] = useState("");
   const [catalogSelectedArticles, setCatalogSelectedArticles] = useState([]);
@@ -316,6 +323,7 @@ export function MetalProcessView({
   const [catalogCategoryEdit, setCatalogCategoryEdit] = useState(null);
   const [catalogCategoryForm, setCatalogCategoryForm] = useState(EMPTY_CATALOG_FORM);
   const [catalogCategoryGraphErrors, setCatalogCategoryGraphErrors] = useState([]);
+  const [catalogCategoryGraphWarnings, setCatalogCategoryGraphWarnings] = useState([]);
   const [doneDialog, setDoneDialog] = useState({ open: false, row: null, edit: false, doneQty: "", note: "" });
   const [weldingDialog, setWeldingDialog] = useState({ open: false, row: null, executor: "" });
   const [eventsDialog, setEventsDialog] = useState({ open: false, row: null, loading: false, error: "", events: [] });
@@ -332,6 +340,7 @@ export function MetalProcessView({
   const handleCatalogGraphChange = useCallback((nextGraph) => {
     const validation = validateProcessGraph(nextGraph);
     setCatalogGraphErrors(validation.errors);
+    setCatalogGraphWarnings(validation.warnings || []);
     setCatalogForm((prev) => ({
       ...prev,
       processGraph: validation.graph,
@@ -342,6 +351,7 @@ export function MetalProcessView({
   const handleCategoryGraphChange = useCallback((nextGraph) => {
     const validation = validateProcessGraph(nextGraph);
     setCatalogCategoryGraphErrors(validation.errors);
+    setCatalogCategoryGraphWarnings(validation.warnings || []);
     setCatalogCategoryForm((prev) => ({
       ...prev,
       processGraph: validation.graph,
@@ -352,6 +362,7 @@ export function MetalProcessView({
   useEffect(() => {
     if (catalogEditArticle !== null) return;
     setCatalogGraphErrors([]);
+    setCatalogGraphWarnings([]);
     setCatalogForm(EMPTY_CATALOG_FORM);
     setCatalogBulkTargetArticles([]);
   }, [catalogEditArticle]);
@@ -359,6 +370,7 @@ export function MetalProcessView({
   useEffect(() => {
     if (catalogCategoryEdit !== null) return;
     setCatalogCategoryGraphErrors([]);
+    setCatalogCategoryGraphWarnings([]);
     setCatalogCategoryForm(EMPTY_CATALOG_FORM);
   }, [catalogCategoryEdit]);
 
@@ -569,7 +581,12 @@ export function MetalProcessView({
   const removePlanItem = async (row) => {
     const rowId = Number(row?.id || 0);
     if (!(rowId > 0)) return;
-    const ok = window.confirm(`Удалить заказ из плана?\n\n${row?.article || ""} — ${row?.name || ""}\nКол-во: ${row?.qty || 0}\n\nДействие необратимо.`);
+    const isSplitParent = String(row?.status || "").toLowerCase() === "split";
+    const ok = window.confirm(
+      `Удалить заказ из плана?\n\n${row?.article || ""} — ${row?.name || ""}\nКол-во: ${row?.qty || 0}`
+      + (isSplitParent ? "\n\nБудут удалены все ветки и связанные позиции в производстве." : "")
+      + "\n\nДействие необратимо.",
+    );
     if (!ok) return;
     await deleteMetalProcessItem(rowId);
   };
@@ -1059,8 +1076,11 @@ export function MetalProcessView({
                   const busy = metalProcessActionKey.startsWith(`row:${rowKey}:`);
                   const catalogItem = options.find((c) => c.article === row.article);
                   const workGraph = resolveWorkItemProcessGraph(row, catalogItem);
-                  const forkPlan = extractForkPlan(workGraph);
-                  const isParallelPlan = forkPlan.mode === "parallel";
+                  const runtime = analyzeProcessGraphRuntime(workGraph);
+                  const isParallelPlan = runtime.mode === "parallel";
+                  const isMultiMergePlan = runtime.mode === "multi_merge";
+                  const isUnsupportedRoute = !runtime.supported;
+                  const forkPlan = runtime.plan;
                   const planStartStages = isParallelPlan ? [] : resolvePlanStartStages(catalogItem);
                   return (
                     <tr key={`plan-${row.id}`}>
@@ -1073,7 +1093,14 @@ export function MetalProcessView({
                       <td>
                         {String(row.status || "").toLowerCase() === "planned" ? (
                           <>
-                            {isParallelPlan ? (
+                            {isUnsupportedRoute ? (
+                              <span
+                                className="metal-route-unsupported"
+                                title={runtime.warnings?.[0] || "Маршрут не поддержан в производстве"}
+                              >
+                                Маршрут не поддержан
+                              </span>
+                            ) : isParallelPlan ? (
                               <button
                                 type="button"
                                 className="mini ok"
@@ -1082,6 +1109,16 @@ export function MetalProcessView({
                                 title={`Параллельные ветки: ${forkPlan.branches.map((b) => STAGE_LABELS[b.branchKey] || b.branchKey).join(" + ")} → ${STAGE_LABELS[forkPlan.mergeStage] || forkPlan.mergeStage}`}
                               >
                                 {busy ? "Запуск..." : `В работу (${forkPlan.branches.map((b) => STAGE_LABELS[b.branchKey] || b.branchKey).join(" + ")})`}
+                              </button>
+                            ) : isMultiMergePlan ? (
+                              <button
+                                type="button"
+                                className="mini ok"
+                                disabled={!canOperateProduction || busy}
+                                onClick={() => void startFromPlan(row.id, null)}
+                                title={formatMultiMergeStartLabel(forkPlan)}
+                              >
+                                {busy ? "Запуск..." : `В работу (${formatMultiMergeStartLabel(forkPlan)})`}
                               </button>
                             ) : (
                               planStartStages.map((startStage) => (
@@ -1182,7 +1219,13 @@ export function MetalProcessView({
                       {row.forkRole === "branch" && (
                         <span className="badge meta-inline" style={{ marginLeft: 6 }} title="Параллельная ветка">Ветка</span>
                       )}
-                      {row.forkRole === "merge" && (
+                      {row.forkRole === "merge" && isSubMergeRow(row) && (
+                        <span className="badge meta-inline" style={{ marginLeft: 6 }} title="Промежуточное слияние веток">Сварка</span>
+                      )}
+                      {row.forkRole === "merge" && isFinalGateRow(row) && (
+                        <span className="badge meta-inline" style={{ marginLeft: 6 }} title="Финальный этап после всех слияний">Финал</span>
+                      )}
+                      {row.forkRole === "merge" && !isSubMergeRow(row) && !isFinalGateRow(row) && (
                         <span className="badge meta-inline" style={{ marginLeft: 6 }} title="Слияние веток">Сборка</span>
                       )}
                     </div>
@@ -1288,6 +1331,9 @@ export function MetalProcessView({
               const stageSeconds = getStageSeconds(row, stageKey);
               const stageStatus = String(row.stageStatus || "").toLowerCase();
               const isWelding = String(stageKey || "").toLowerCase() === "welding";
+              const catalogItem = options.find((c) => c.article === row.article);
+              const workGraph = resolveWorkItemProcessGraph(row, catalogItem);
+              const stageNote = resolveWorkItemStageNote(row, workGraph);
               return (
                 <article key={`prod-${row.id}`} className="card">
                   <div className="card__content">
@@ -1298,7 +1344,13 @@ export function MetalProcessView({
                           {row.forkRole === "branch" && (
                             <span className="badge meta-inline" title="Параллельная ветка">Ветка</span>
                           )}
-                          {row.forkRole === "merge" && (
+                          {row.forkRole === "merge" && isSubMergeRow(row) && (
+                            <span className="badge meta-inline" title="Промежуточное слияние веток">Сварка</span>
+                          )}
+                          {row.forkRole === "merge" && isFinalGateRow(row) && (
+                            <span className="badge meta-inline" title="Финальный этап после всех слияний">Финал</span>
+                          )}
+                          {row.forkRole === "merge" && !isSubMergeRow(row) && !isFinalGateRow(row) && (
                             <span className="badge meta-inline" title="Слияние веток">Сборка</span>
                           )}
                           <span className="badge meta-inline">План: {row.week || "-"}</span>
@@ -1316,6 +1368,16 @@ export function MetalProcessView({
                           <span className="card__admin-note-label">Комментарий для оператора</span>
                           <span className="card__admin-note-text">{row.operatorComment}</span>
                         </div>
+                      )}
+                    </div>
+                    <div className="card__stage-note">
+                      {String(stageNote || "").trim() ? (
+                        <div className="card__admin-note card__admin-note--side" role="note">
+                          <span className="card__admin-note-label">Пояснение к этапу</span>
+                          <span className="card__admin-note-text">{stageNote}</span>
+                        </div>
+                      ) : (
+                        <div className="card__stage-note-empty">Пояснение к этапу не задано</div>
                       )}
                     </div>
                   </div>
@@ -1499,14 +1561,16 @@ export function MetalProcessView({
         const isSaving = catalogLoading || metalProcessActionKey.startsWith("catalog:");
         const startEdit = (row) => {
           const processGraph = processGraphFromCatalogRow(row);
+          const validation = validateProcessGraph(processGraph);
           setCatalogEditArticle(row.article);
-          setCatalogGraphErrors([]);
+          setCatalogGraphErrors(validation.errors);
+          setCatalogGraphWarnings(validation.warnings || []);
           setCatalogForm({
             article: row.article,
             name: row.name,
             category: normalizeCatalogCategory(row.category),
-            processGraph,
-            stageRoute: deriveStageRouteFromGraph(processGraph),
+            processGraph: validation.graph,
+            stageRoute: deriveStageRouteFromGraph(validation.graph),
           });
         };
         const cancelEdit = closeCatalogEditor;
@@ -1517,14 +1581,16 @@ export function MetalProcessView({
             (row) => normalizeCatalogCategory(row.category) === normalizeCatalogCategory(categoryName),
           );
           const processGraph = meta?.processGraph || processGraphFromCatalogRow(sampleRow) || DEFAULT_PROCESS_GRAPH;
+          const validation = validateProcessGraph(processGraph);
           setCatalogCategoryEdit(normalizeCatalogCategory(categoryName));
-          setCatalogCategoryGraphErrors([]);
+          setCatalogCategoryGraphErrors(validation.errors);
+          setCatalogCategoryGraphWarnings(validation.warnings || []);
           setCatalogCategoryForm({
             article: "",
             name: "",
             category: normalizeCatalogCategory(categoryName),
-            processGraph,
-            stageRoute: deriveStageRouteFromGraph(processGraph),
+            processGraph: validation.graph,
+            stageRoute: deriveStageRouteFromGraph(validation.graph),
           });
         };
         const startBulkRouteEdit = () => {
@@ -1537,6 +1603,7 @@ export function MetalProcessView({
           setCatalogBulkTargetArticles(targetArticles);
           setCatalogEditArticle("__bulk__");
           setCatalogGraphErrors([]);
+    setCatalogGraphWarnings([]);
           setCatalogForm({
             article: "",
             name: "",
@@ -1658,6 +1725,7 @@ export function MetalProcessView({
                 onClick={() => {
                   setCatalogEditArticle("__new__");
                   setCatalogGraphErrors([]);
+    setCatalogGraphWarnings([]);
                   setCatalogForm(EMPTY_CATALOG_FORM);
                 }}
               >
@@ -1791,6 +1859,13 @@ export function MetalProcessView({
                   {isBulkMode
                     ? "Новый маршрут будет записан во все выбранные артикулы. Esc — закрыть без сохранения."
                     : "Тяните стрелку от правого кружка к левому. Две стрелки из одного этапа — параллельная работа; две стрелки в один этап — слияние (лазер + пила → сварка). Delete — удалить стрелку. Esc — закрыть."}
+                  {catalogGraphWarnings.length > 0 && (
+                    <div className="mbp-warnings">
+                      {catalogGraphWarnings.map((msg) => (
+                        <div key={msg}>{msg}</div>
+                      ))}
+                    </div>
+                  )}
                   {catalogGraphErrors.length > 0 && (
                     <div className="mbp-errors">
                       {catalogGraphErrors.map((msg) => (
@@ -1834,6 +1909,13 @@ export function MetalProcessView({
                 </div>
                 <footer className="metal-catalog-fs__foot">
                   Новый маршрут будет записан во все активные артикулы этой категории. Esc — закрыть без сохранения.
+                  {catalogCategoryGraphWarnings.length > 0 && (
+                    <div className="mbp-warnings">
+                      {catalogCategoryGraphWarnings.map((msg) => (
+                        <div key={msg}>{msg}</div>
+                      ))}
+                    </div>
+                  )}
                   {catalogCategoryGraphErrors.length > 0 && (
                     <div className="mbp-errors">
                       {catalogCategoryGraphErrors.map((msg) => (
