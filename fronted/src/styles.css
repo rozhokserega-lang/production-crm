@@ -1460,6 +1460,56 @@ button:disabled {
   box-shadow: 0 0 0 2px #fbbf24, 0 2px 12px rgba(251, 191, 36, 0.35);
 }
 
+.mbp-node--active {
+  box-shadow: 0 0 0 3px #22c55e, 0 0 18px rgba(34, 197, 94, 0.55);
+  transform: scale(1.03);
+}
+
+.mbp-node--done {
+  opacity: 0.72;
+  filter: grayscale(0.35);
+}
+
+.mbp-node--queued {
+  box-shadow: 0 0 0 3px #3b82f6, 0 0 16px rgba(59, 130, 246, 0.45);
+}
+
+.mbp-node--future {
+  box-shadow: 0 0 0 2px #ef4444, 0 0 12px rgba(239, 68, 68, 0.35);
+}
+
+.mbp-node--active.mbp-node--selected {
+  box-shadow: 0 0 0 3px #22c55e, 0 0 0 6px #fbbf24, 0 0 20px rgba(34, 197, 94, 0.45);
+}
+
+.mbp-status-legend {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  margin-right: 10px;
+}
+
+.mbp-status-legend__item {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.mbp-status-legend__item--done {
+  color: #94a3b8;
+}
+
+.mbp-status-legend__item--active {
+  color: #4ade80;
+}
+
+.mbp-status-legend__item--queued {
+  color: #60a5fa;
+}
+
+.mbp-status-legend__item--future {
+  color: #f87171;
+}
+
 .mbp-node--has-note {
   min-width: 150px;
 }

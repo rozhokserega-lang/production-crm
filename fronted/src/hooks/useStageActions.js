@@ -1,29 +1,26 @@
 import { useCallback, useRef } from "react";
-import { STAGE_SYNC_META } from "../app/appConstants";
 import {
   applyOptimisticOrderRow,
   hasOptimisticActionRule,
 } from "../app/appUtils";
 import {
   buildNotifyPayload,
-  buildStageSyncPayload,
 } from "../app/runActionHelpers";
-import { getMaterialLabel, stripPlanItemMeta } from "../app/orderHelpers";
+import { stripPlanItemMeta } from "../app/orderHelpers";
 import {
   getResolvedWorkshopStrapNeeds,
   isWorkshopStrapOrderItem,
   orderCountsTowardStrapDemand,
   strapConsumeColorForOrder,
 } from "../app/workshopStrapNeeds";
-import { resolveSectionNameForOrder } from "../app/appUtils";
 import { resolveWorkshopStageForAction } from "../app/crmRoles";
 import { toUserError } from "../app/errorCatalogHelpers";
 import { OrderService } from "../services/orderService";
 
 /**
  * Хук, инкапсулирующий логику выполнения производственного действия (runAction).
- * Управляет оптимистичным обновлением строк, синхронизацией с Google Sheets,
- * Telegram-уведомлениями и диалогом расхода материала при завершении пилы.
+ * Управляет оптимистичным обновлением строк, Telegram-уведомлениями
+ * и диалогом расхода материала при завершении пилы.
  */
 export function useStageActions({
   canOperateProduction,
@@ -34,9 +31,7 @@ export function useStageActions({
   setShipmentOrders,
   setPendingStageActionKeys,
   orderIndexById,
-  shipmentBoard,
   load,
-  syncPlanCellToGoogleSheet,
   notifyAssemblyReadyTelegram,
   notifyFinalStageTelegram,
   openPilkaDoneConsumeDialog,
@@ -139,22 +134,6 @@ export function useStageActions({
           }
         }
 
-        const stageSync = STAGE_SYNC_META[action];
-        if (stageSync) {
-          const sourceOrder = orderIndexById.get(String(orderId)) || {};
-          const stageSyncPayload = buildStageSyncPayload({
-            orderId,
-            meta,
-            sourceOrder,
-            stageSync,
-            getMaterialLabel,
-            resolveSectionNameForOrder,
-            shipmentBoard,
-          });
-          if (stageSyncPayload) {
-            void syncPlanCellToGoogleSheet(stageSyncPayload);
-          }
-        }
         if (action === "webSetPrasDone" && meta.notifyOnAssembly) {
           notifyAssemblyReadyTelegram(buildNotifyPayload(orderId, meta));
         }
@@ -217,9 +196,7 @@ export function useStageActions({
       setShipmentOrders,
       setPendingStageActionKeys,
       orderIndexById,
-      shipmentBoard,
       load,
-      syncPlanCellToGoogleSheet,
       notifyAssemblyReadyTelegram,
       notifyFinalStageTelegram,
       openPilkaDoneConsumeDialog,

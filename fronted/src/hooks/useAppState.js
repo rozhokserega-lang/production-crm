@@ -12,7 +12,6 @@ import {
 import {
   KROMKA_EXECUTORS,
   PRAS_EXECUTORS,
-  SHEET_MIRROR_GID,
   SUPABASE_ANON_KEY,
   SUPABASE_URL,
 } from "../config";
@@ -28,6 +27,7 @@ import {
   isGarbageShipmentItemName,
   isObvyazkaSectionName,
   isStorageLikeName,
+  isStorageTechHiddenName,
 } from "../utils/shipmentUtils";
 import {
   buildFurnitureTemplates,
@@ -47,7 +47,6 @@ import {
   loadWarehouseDomainData,
   loadOrdersDomainData,
   useOrders,
-  useSheetMirrorFilter,
   useShipmentFilter,
   useWorkshopRows,
 } from "./useOrders";
@@ -405,7 +404,6 @@ export function useAppState({ auth }) {
     view,
     tab,
     callBackend,
-    SHEET_MIRROR_GID,
     setLoading,
     setError,
     setRows,
@@ -493,7 +491,6 @@ export function useAppState({ auth }) {
     syncWarehouseFromGoogleSheet,
     syncLeftoversToGoogleSheet,
     logConsumeToGoogleSheet,
-    syncPlanCellToGoogleSheet,
   } = useEdgeSync({
     setError,
     setWarehouseSyncLoading,
@@ -690,7 +687,6 @@ export function useAppState({ auth }) {
     planSaving,
     resolvedPlanItem,
     furnitureTemplates,
-    syncPlanCellToGoogleSheet,
     load: mutationLoad,
     planEditSource,
     setPlanEditSource,
@@ -746,7 +742,6 @@ export function useAppState({ auth }) {
     resolveStrapMaterialByProduct,
     strapNameToOrderItem,
     normalizeStrapProductKey,
-    syncPlanCellToGoogleSheet,
     load: mutationLoad,
   });
 
@@ -1031,9 +1026,7 @@ export function useAppState({ auth }) {
     setShipmentOrders,
     setPendingStageActionKeys,
     orderIndexById,
-    shipmentBoard,
     load: mutationLoad,
-    syncPlanCellToGoogleSheet,
     notifyAssemblyReadyTelegram,
     notifyFinalStageTelegram,
     openPilkaDoneConsumeDialog,
@@ -1105,10 +1098,6 @@ export function useAppState({ auth }) {
     query,
     weekFilter,
   });
-  const sheetMirrorFiltered = useSheetMirrorFilter({
-    rows,
-    query,
-  });
 
   const shipmentStageFilter = useCallback(
     (stageKey) => passesShipmentStageFilter(stageKey, {
@@ -1128,7 +1117,7 @@ export function useAppState({ auth }) {
     shipmentOrderMaps,
     query,
     weekFilter,
-    isStorageLikeName,
+    isStorageTechHiddenName,
     isObvyazkaSectionName,
     isGarbageShipmentItemName,
     getShipmentStageKey,
@@ -1139,7 +1128,6 @@ export function useAppState({ auth }) {
     view,
     shipmentFiltered,
     laborFiltered,
-    sheetMirrorFiltered,
     baseOrderFiltered,
     rows,
     orderDrawerId,
@@ -1466,7 +1454,6 @@ export function useAppState({ auth }) {
     setError,
     load: mutationLoad,
     sectionArticleRows,
-    syncPlanCellToGoogleSheet,
     loadMetalStock,
   });
 
@@ -1596,6 +1583,7 @@ export function useAppState({ auth }) {
       setSectionCatalogRows,
       sectionArticleRows,
       setSectionArticleRows,
+      furnitureDetailArticleRows,
       shipmentOrders,
       setShipmentOrders,
       materialsStockRows,
@@ -1887,7 +1875,6 @@ export function useAppState({ auth }) {
       callBackend,
       denyActionByRole,
       logConsumeToGoogleSheet,
-      syncPlanCellToGoogleSheet,
     },
     metrics: {
       kpi,

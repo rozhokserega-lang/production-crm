@@ -5,6 +5,7 @@ import {
   extractDetailSizeToken,
   normalizeStrapProductKey,
 } from "../utils/furnitureUtils";
+import { buildStrapProductBySizeToken } from "../app/strapDisplayHelpers";
 
 export function useStrapDerivedData({
   furnitureDetailArticleRows,
@@ -44,29 +45,10 @@ export function useStrapDerivedData({
     return rows;
   }, [furnitureDetailArticleRows]);
 
-  const strapProductBySizeToken = useMemo(() => {
-    const map = new Map();
-    (furnitureDetailArticleRows || []).forEach((r) => {
-      const isActive = r?.is_active ?? r?.isActive;
-      if (isActive === false) return;
-      const productRaw = String(r.product_name || r.productName || "").trim();
-      const productName = canonicalStrapProductName(productRaw);
-      const pattern = String(r.detail_name_pattern || r.detailNamePattern || "").trim();
-      if (!productName) return;
-      const token = extractDetailSizeToken(pattern);
-      if (!token) return;
-      const key = normalizeStrapProductKey(token);
-      if (!map.has(key)) {
-        map.set(key, productName);
-        return;
-      }
-      const existing = String(map.get(key) || "");
-      if (normalizeStrapProductKey(existing) !== normalizeStrapProductKey(productName)) {
-        map.set(key, "");
-      }
-    });
-    return map;
-  }, [furnitureDetailArticleRows]);
+  const strapProductBySizeToken = useMemo(
+    () => buildStrapProductBySizeToken(furnitureDetailArticleRows),
+    [furnitureDetailArticleRows],
+  );
 
   const strapProductsByArticleCode = useMemo(() => {
     const buckets = new Map();

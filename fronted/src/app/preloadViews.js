@@ -17,7 +17,6 @@ const VIEW_LOADERS = {
   hardware: () => import("../views/HardwareView"),
   cutting: () => import("../views/CuttingView"),
   metalProcess: () => import("../views/MetalProcessView"),
-  sheetMirror: () => import("../views/SheetMirrorView"),
   db: () => import("../views/DatabaseCatalogView"),
   admin: () => import("../views/AdminView"),
 };

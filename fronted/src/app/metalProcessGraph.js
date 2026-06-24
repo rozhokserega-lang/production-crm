@@ -414,7 +414,7 @@ function branchPathNodesBeforeMerge(pathNodes, mergeTargetId) {
   return pathNodes;
 }
 
-function resolveBranchStageNote(nodes, edges, { startNodeId, mergeTargetId, route, routeIdx, currentStage }) {
+function resolveBranchStepNode(nodes, edges, { startNodeId, mergeTargetId, route, routeIdx, currentStage }) {
   if (!mergeTargetId || !Array.isArray(route) || route.length === 0) return null;
 
   const startIds = startNodeId
@@ -428,11 +428,15 @@ function resolveBranchStageNote(nodes, edges, { startNodeId, mergeTargetId, rout
     const branchNodes = branchPathNodesBeforeMerge(path, mergeTargetId);
     if (!pathStagesMatch(branchNodes, route)) continue;
 
-    const stepNode = branchNodes[routeIdx] ?? branchNodes.find((node) => node.stage === currentStage);
-    return stepNode?.note || "";
+    return branchNodes[routeIdx] ?? branchNodes.find((node) => node.stage === currentStage) ?? null;
   }
 
   return null;
+}
+
+function resolveBranchStageNote(nodes, edges, ctx) {
+  const stepNode = resolveBranchStepNode(nodes, edges, ctx);
+  return stepNode ? stepNode.note || "" : null;
 }
 
 function graphStartStageNodeIds(nodes, edges) {
@@ -503,6 +507,261 @@ export function resolveWorkItemStageNote(row, graph) {
   }
 
   return "";
+}
+
+/** Узел process_graph, соответствующий текущей позиции заказа на маршруте. */
+export function resolveWorkItemGraphNodeId(row, graph) {
+  const normalized = normalizeProcessGraph(graph);
+  const { nodes, edges } = normalized;
+  const meta = row?.forkMeta ?? row?.fork_meta ?? {};
+  const route = (Array.isArray(row?.stageRoute) ? row.stageRoute : row?.stage_route ?? [])
+    .map((stage) => String(stage || "").trim().toLowerCase())
+    .filter(Boolean);
+  const routeIdx = Math.max(0, Number(row?.routeIdx ?? row?.route_idx ?? 0) || 0);
+  const currentStage = String(row?.currentStage || row?.current_stage || "").trim().toLowerCase();
+
+  if (meta.is_final_gate === true || meta.isFinalGate === true) {
+    const multi = extractMultiMergePlan(normalized);
+    const finalId = multi?.finalGate?.nodeId;
+    if (finalId) return String(finalId);
+  } else if (row?.forkRole === "merge" || row?.fork_role === "merge") {
+    const mergeNodeId =
+      meta.merge_node_id ||
+      meta.mergeNodeId ||
+      meta.sub_group_id ||
+      meta.subGroupId;
+    if (mergeNodeId) return String(mergeNodeId);
+  }
+
+  const mergeTargetId = meta.merge_node_id || meta.mergeNodeId;
+  const startNodeId = meta.start_node_id || meta.startNodeId;
+  if (mergeTargetId && route.length > 0) {
+    const stepNode = resolveBranchStepNode(nodes, edges, {
+      startNodeId,
+      mergeTargetId,
+      route,
+      routeIdx,
+      currentStage,
+    });
+    if (stepNode?.id) return String(stepNode.id);
+  }
+
+  const stageNodes = nodes.filter((n) => n.kind === "stage" && n.stage === currentStage);
+  if (stageNodes.length === 1) return String(stageNodes[0].id);
+
+  if (route.length > 0) {
+    const stepStage = route[routeIdx] || currentStage;
+    let occurrence = 0;
+    const needOccurrence = route.slice(0, routeIdx + 1).filter((s) => s === stepStage).length - 1;
+    for (const node of nodes.filter((n) => n.kind === "stage")) {
+      if (node.stage !== stepStage) continue;
+      if (occurrence === needOccurrence) return String(node.id);
+      occurrence += 1;
+    }
+  }
+
+  return null;
+}
+
+export function isWorkItemStageActive(row) {
+  const stageStatus = String(row?.stageStatus ?? row?.stage_status ?? "").toLowerCase();
+  return stageStatus === "in_progress" || stageStatus === "paused";
+}
+
+export const GRAPH_NODE_STATUS = {
+  DONE: "done",
+  ACTIVE: "active",
+  QUEUED: "queued",
+  FUTURE: "future",
+};
+
+function mergeGraphNodeStatus(left, right) {
+  const rank = {
+    [GRAPH_NODE_STATUS.ACTIVE]: 4,
+    [GRAPH_NODE_STATUS.QUEUED]: 3,
+    [GRAPH_NODE_STATUS.DONE]: 2,
+    [GRAPH_NODE_STATUS.FUTURE]: 1,
+  };
+  if (!left) return right || null;
+  if (!right) return left || null;
+  return rank[left] >= rank[right] ? left : right;
+}
+
+function applyPathNodeStatuses(statuses, pathIds, row) {
+  const memberStatus = String(row?.status ?? "").toLowerCase();
+  const stageStatus = String(row?.stageStatus ?? row?.stage_status ?? "").toLowerCase();
+  const routeIdx = Math.max(0, Number(row?.routeIdx ?? row?.route_idx ?? 0) || 0);
+
+  if (memberStatus === "done") {
+    for (const id of pathIds) {
+      statuses.set(id, mergeGraphNodeStatus(statuses.get(id), GRAPH_NODE_STATUS.DONE));
+    }
+    return;
+  }
+  if (memberStatus === "cancelled") return;
+
+  pathIds.forEach((id, idx) => {
+    let next = GRAPH_NODE_STATUS.FUTURE;
+    if (idx < routeIdx) next = GRAPH_NODE_STATUS.DONE;
+    else if (idx === routeIdx) {
+      if (stageStatus === "in_progress" || stageStatus === "paused") {
+        next = GRAPH_NODE_STATUS.ACTIVE;
+      } else if (stageStatus === "queued") {
+        next = GRAPH_NODE_STATUS.QUEUED;
+      } else {
+        next = GRAPH_NODE_STATUS.FUTURE;
+      }
+    }
+    statuses.set(id, mergeGraphNodeStatus(statuses.get(id), next));
+  });
+}
+
+function applySingleNodeStatus(statuses, nodeId, row) {
+  if (!nodeId) return;
+  const memberStatus = String(row?.status ?? "").toLowerCase();
+  const stageStatus = String(row?.stageStatus ?? row?.stage_status ?? "").toLowerCase();
+  let next = GRAPH_NODE_STATUS.FUTURE;
+  if (memberStatus === "done") next = GRAPH_NODE_STATUS.DONE;
+  else if (stageStatus === "in_progress" || stageStatus === "paused") next = GRAPH_NODE_STATUS.ACTIVE;
+  else if (stageStatus === "queued") next = GRAPH_NODE_STATUS.QUEUED;
+  statuses.set(nodeId, mergeGraphNodeStatus(statuses.get(nodeId), next));
+}
+
+/** Упорядоченные id узлов ветки (без узла слияния). */
+export function getBranchPathNodeIds(row, graph) {
+  const normalized = normalizeProcessGraph(graph);
+  const { nodes, edges } = normalized;
+  const meta = row?.forkMeta ?? row?.fork_meta ?? {};
+  const route = (Array.isArray(row?.stageRoute) ? row.stageRoute : row?.stage_route ?? [])
+    .map((stage) => String(stage || "").trim().toLowerCase())
+    .filter(Boolean);
+  const mergeTargetId = meta.merge_node_id || meta.mergeNodeId;
+  const startNodeId = meta.start_node_id || meta.startNodeId;
+  if (!mergeTargetId || route.length === 0) return [];
+
+  const startIds = startNodeId
+    ? [String(startNodeId)]
+    : graphStartStageNodeIds(nodes, edges);
+
+  for (const startId of startIds) {
+    const path = walkGraphPathToTarget(nodes, edges, startId, String(mergeTargetId));
+    if (!path || path.length < 1) continue;
+
+    const branchNodes = branchPathNodesBeforeMerge(path, mergeTargetId);
+    if (!pathStagesMatch(branchNodes, route)) continue;
+    return branchNodes.map((node) => String(node.id));
+  }
+  return [];
+}
+
+function getLinearPathNodeIds(row, graph) {
+  const normalized = normalizeProcessGraph(graph);
+  const { nodes } = normalized;
+  const route = (Array.isArray(row?.stageRoute) ? row.stageRoute : row?.stage_route ?? [])
+    .map((stage) => String(stage || "").trim().toLowerCase())
+    .filter(Boolean);
+  if (route.length === 0) return [];
+
+  const pathIds = [];
+  for (let i = 0; i < route.length; i += 1) {
+    const stage = route[i];
+    const needOccurrence = route.slice(0, i + 1).filter((s) => s === stage).length - 1;
+    let occurrence = 0;
+    let matched = null;
+    for (const node of nodes.filter((n) => n.kind === "stage")) {
+      if (node.stage !== stage) continue;
+      if (occurrence === needOccurrence) {
+        matched = String(node.id);
+        break;
+      }
+      occurrence += 1;
+    }
+    if (matched) pathIds.push(matched);
+  }
+  return pathIds;
+}
+
+function collectWorkItemNodeStatuses(row, graph, statuses) {
+  const forkRole = String(row?.forkRole ?? row?.fork_role ?? "").trim();
+  const meta = row?.forkMeta ?? row?.fork_meta ?? {};
+
+  if (forkRole === "branch") {
+    applyPathNodeStatuses(statuses, getBranchPathNodeIds(row, graph), row);
+    return;
+  }
+
+  if (forkRole === "merge" || meta.is_final_gate === true || meta.isFinalGate === true) {
+    applySingleNodeStatus(statuses, resolveWorkItemGraphNodeId(row, graph), row);
+    return;
+  }
+
+  const branchPath = getBranchPathNodeIds(row, graph);
+  if (branchPath.length > 0) {
+    applyPathNodeStatuses(statuses, branchPath, row);
+    return;
+  }
+
+  const linearPath = getLinearPathNodeIds(row, graph);
+  if (linearPath.length > 0) {
+    applyPathNodeStatuses(statuses, linearPath, row);
+    return;
+  }
+
+  applySingleNodeStatus(statuses, resolveWorkItemGraphNodeId(row, graph), row);
+}
+
+/** Статусы узлов графа для заказа: done / active / future. */
+export function collectGraphNodeStatusMap(planRow, allRows, graph) {
+  const normalized = normalizeProcessGraph(graph);
+  const statuses = new Map();
+  for (const node of normalized.nodes) {
+    if (node.kind === "stage") statuses.set(String(node.id), GRAPH_NODE_STATUS.FUTURE);
+  }
+
+  const family = getPlanOrderFamilyRows(planRow, allRows);
+  for (const member of family) {
+    if (String(member?.forkRole ?? member?.fork_role ?? "") === "") {
+      const memberStatus = String(member?.status ?? "").toLowerCase();
+      if (memberStatus === "split" || memberStatus === "planned") continue;
+    }
+    collectWorkItemNodeStatuses(member, graph, statuses);
+  }
+  return statuses;
+}
+
+/** id узлов графа, на которых сейчас идёт работа по заказу. */
+export function collectActiveGraphNodeIds(planRow, allRows, graph) {
+  const statusMap = collectGraphNodeStatusMap(planRow, allRows, graph);
+  const ids = new Set();
+  for (const [nodeId, status] of statusMap.entries()) {
+    if (status === GRAPH_NODE_STATUS.ACTIVE) ids.add(nodeId);
+  }
+  return ids;
+}
+
+/** Все work items одного заказа в плане (родитель, ветки, сварки, финал). */
+export function getPlanOrderFamilyRows(planRow, allRows) {
+  const safeRows = Array.isArray(allRows) ? allRows : [];
+  const planId = planRow?.id;
+  const multiRootId = getMultiMergeRootId(planRow);
+  if (multiRootId != null) {
+    return safeRows.filter(
+      (member) => member.id === multiRootId || getMultiMergeRootId(member) === multiRootId,
+    );
+  }
+  if (planRow?.forkGroupId) {
+    return safeRows.filter(
+      (member) =>
+        member.forkGroupId === planRow.forkGroupId ||
+        member.id === planId ||
+        Number(member.parentId ?? member.parent_id ?? 0) === planId,
+    );
+  }
+  const children = safeRows.filter(
+    (member) => Number(member.parentId ?? member.parent_id ?? 0) === planId,
+  );
+  if (children.length > 0) return [planRow, ...children];
+  return safeRows.filter((member) => member.id === planId);
 }
 
 /**

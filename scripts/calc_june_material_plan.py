@@ -25,38 +25,51 @@ PLAN_CSV = ROOT / "_june_plan_v2_utf8.csv"
 ARTICLE_SQL = ROOT / "supabase/migrations/20260414054021_sync_web_get_section_articles_mapped_articles.sql"
 OUT_XLSX = ROOT / "расчет_материала_июнь_2026_в2_результат.xlsx"
 OUT_XLSX_DESKTOP = Path(r"c:\Users\ПК\OneDrive\Desktop\расчет_материала_июнь_2026_в2_результат.xlsx")
+ENV_PATH = ROOT / "fronted" / ".env.local"
 
 SHEET_W = 2800
 SHEET_H = 2070
 CUT_GAP = 3
 
-# Каталог полок (fronted/src/components/ShelfCalculator.jsx)
+# Каталог полок — синхронизирован с fronted/src/app/shelfCatalogHelpers.js (DEFAULT_GX_SHELF_CATALOG)
 SHELF_CATALOG: dict[str, list[tuple[str, int]]] = {
-    "GXssShShelf400WOS": [("полка 387x330", 1)],
-    "GXssShShelf600WOS": [("полка 587x330", 1)],
-    "GXssShShelf900WOS": [("полка 887x330", 1)],
-    "GXssShelf400WOS": [("полка 387x340", 1)],
-    "GXssShelf44-400BVO": [("полка 387x340", 1)],
-    "GXssShelf600WOS": [("полка 587x340", 1)],
-    "GXssShelf44-600BVO": [("полка 587x340", 1)],
-    "GXssShelf900WOS": [("полка 887x340", 1)],
-    "GXssShelf44-900BVO": [("полка 887x340", 1)],
-    "GXss2-400-600hWOS": [("полка 387x340", 5), ("полка 587x330", 1)],
-    "GXss44-2-400-600hBVO": [("полка 387x340", 5), ("полка 587x330", 1)],
-    "GXss2-400-600hBVO": [("полка 387x340", 5), ("полка 587x330", 1)],
-    "GXss1-600WOS": [("полка 587x340", 5)],
-    "GXss1-600BVO": [("полка 587x340", 5)],
-    "GXss44-1-600BVO": [("полка 587x340", 5)],
-    "GXss1-900hWOS": [("полка 887x340", 2), ("полка 887x330", 1)],
-    "GXss44-1-900hBVO": [("полка 887x340", 2), ("полка 887x330", 1)],
-    "GXss1-900hBVO": [("полка 887x340", 2), ("полка 887x330", 1)],
-    "GXss1-900WOS": [("полка 887x340", 5)],
-    "GXss44-1-900BVO": [("полка 887x340", 5)],
-    "GXss1-900BVO": [("полка 887x340", 5)],
-    "GXss2-900hWOS": [("полка 887x340", 4), ("полка 887x330", 2)],
-    "GXss44-2-900hBVO": [("полка 887x340", 4), ("полка 887x330", 2)],
     "GXss2-900hBVO": [("полка 887x340", 4), ("полка 887x330", 2)],
+    "GXss2-900hWOS": [("полка 887x340", 4), ("полка 887x330", 2)],
+    "GXss1-900BVO": [("полка 887x340", 5)],
+    "GXss1-900WOS": [("полка 887x340", 5)],
+    "GXss1-900hBVO": [("полка 887x340", 2), ("полка 887x330", 1)],
+    "GXss1-900hWOS": [("полка 887x340", 2), ("полка 887x330", 1)],
+    "GXss1-600BVO": [("полка 587x340", 5)],
+    "GXss1-600WOS": [("полка 587x340", 5)],
+    "GXss1-600hBVO": [("полка 587x340", 2), ("полка 587x330", 1)],
+    "GXss1-600hWOS": [("полка 587x340", 2), ("полка 587x330", 1)],
+    "GXss1-400BVO": [("полка 387x340", 5)],
+    "GXss1-400WOS": [("полка 387x340", 5)],
+    "GXss2-400-600hBVO": [("полка 387x340", 5), ("полка 587x330", 1)],
+    "GXss2-400-600hWOS": [("полка 387x340", 5), ("полка 587x330", 1)],
+    "GXssShelf900BVO": [("полка 887x340", 1)],
+    "GXssShelf900WOS": [("полка 887x340", 1)],
+    "GXssShelf600BVO": [("полка 587x340", 1)],
+    "GXssShelf600WOS": [("полка 587x340", 1)],
+    "GXssShelf400BVO": [("полка 387x340", 1)],
+    "GXssShelf400WOS": [("полка 387x340", 1)],
+    "GXssShShelf900BVO": [("полка 887x330", 1)],
+    "GXssShShelf900WOS": [("полка 887x330", 1)],
+    "GXssShShelf600BVO": [("полка 587x330", 1)],
+    "GXssShShelf600WOS": [("полка 587x330", 1)],
+    "GXssShShelf400BVO": [("полка 387x330", 1)],
+    "GXssShShelf400WOS": [("полка 387x330", 1)],
+    # устаревшие артикулы (алиасы)
+    "GXssShelf44-400BVO": [("полка 387x340", 1)],
+    "GXssShelf44-600BVO": [("полка 587x340", 1)],
+    "GXssShelf44-900BVO": [("полка 887x340", 1)],
+    "GXss44-2-400-600hBVO": [("полка 387x340", 5), ("полка 587x330", 1)],
+    "GXss44-1-600BVO": [("полка 587x340", 5)],
+    "GXss44-1-900BVO": [("полка 887x340", 5)],
+    "GXss44-1-900hBVO": [("полка 887x340", 2), ("полка 887x330", 1)],
+    "GXss44-2-900hBVO": [("полка 887x340", 4), ("полка 887x330", 2)],
 }
+SHELF_CATALOG_BY_CODE = {k.upper(): v for k, v in SHELF_CATALOG.items()}
 
 MATERIAL_SIZE = {
     "белый": "2800x2070",
@@ -138,6 +151,93 @@ def norm(s: str) -> str:
     return re.sub(r"\s+", " ", str(s or "").lower().replace("ё", "е").strip())
 
 
+def report_material_key(material: str) -> str:
+    """Ключ материала для сводки (сонома/бардолино → бардолино)."""
+    m = normalize_material(material)
+    if m in ("сонома / бардолино", "бардолино", "дуб сонома", "дуб бардолино натуральный"):
+        return "бардолино"
+    if m == "мрамор кристал":
+        return "мрамор кристалл"
+    return m or str(material or "").strip()
+
+
+def merge_report_materials(by_material: dict[str, float]) -> dict[str, float]:
+    merged: dict[str, float] = defaultdict(float)
+    for material, sheets in by_material.items():
+        merged[report_material_key(material)] += sheets
+    return dict(merged)
+
+
+def load_supabase_env() -> tuple[str, str]:
+    import os
+
+    url = os.environ.get("VITE_SUPABASE_URL", "").strip()
+    key = os.environ.get("VITE_SUPABASE_ANON_KEY", "").strip()
+    if ENV_PATH.exists():
+        for line in ENV_PATH.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            name, value = line.split("=", 1)
+            name = name.strip()
+            value = value.strip().strip('"').strip("'")
+            if name == "VITE_SUPABASE_URL" and not url:
+                url = value
+            if name == "VITE_SUPABASE_ANON_KEY" and not key:
+                key = value
+    if not url or not key:
+        return "", ""
+    return url.rstrip("/"), key
+
+
+def supabase_rpc(url: str, key: str, fn: str, payload: dict | None = None) -> list | dict:
+    import json
+    import urllib.request
+
+    endpoint = f"{url}/rest/v1/rpc/{fn}"
+    body = json.dumps(payload or {}, ensure_ascii=False).encode("utf-8")
+    req = urllib.request.Request(
+        endpoint,
+        data=body,
+        headers={
+            "apikey": key,
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        raw = resp.read().decode("utf-8")
+        return json.loads(raw) if raw else []
+
+
+def load_crm_material_remaining() -> dict[str, float]:
+    """Остаток на складе после закрытия всех ячеек плана отгрузки CRM."""
+    url, key = load_supabase_env()
+    if not url or not key:
+        return {}
+
+    stock_by_key: dict[str, float] = defaultdict(float)
+    for row in supabase_rpc(url, key, "web_get_materials_stock"):
+        material = str(row.get("material") or "").strip()
+        if not material:
+            continue
+        stock_by_key[report_material_key(material)] += float(row.get("qty_sheets") or 0)
+
+    needed_by_key: dict[str, float] = defaultdict(float)
+    for row in supabase_rpc(url, key, "web_get_shipment_table"):
+        sheets = float(row.get("sheets_needed") or 0)
+        if sheets <= 0:
+            continue
+        material = str(row.get("material") or "").strip()
+        needed_by_key[report_material_key(material)] += sheets
+
+    remaining: dict[str, float] = {}
+    for key in set(stock_by_key) | set(needed_by_key):
+        remaining[key] = stock_by_key.get(key, 0) - needed_by_key.get(key, 0)
+    return remaining
+
+
 def load_article_map() -> dict:
     text = ARTICLE_SQL.read_text(encoding="utf-8")
     article_map = {}
@@ -193,7 +293,7 @@ def resolve_output_per_sheet(section: str, item: str, material: str, format_type
         "solito1150": "серия 1150" in v_item or ("solito" in v_item and "1150" in v_item and "1350" not in v_item),
         "solito1350": "серия 1350" in v_item or ("1350" in v_item and "solito" in v_item),
         "stabile": "stabile" in v_section or "stabile" in v_item,
-        "donini_grande": "donini grande" in v_item,
+        "donini_grande": "donini grande" in v_item or "ancona" in v_item,
         "klassiko": "классико" in v_item,
         "premier": "премьер" in v_item,
         "donini_r": "donini r" in v_item,
@@ -367,10 +467,21 @@ def find_template(templates: list[dict], name: str, section: str) -> dict | None
     return None
 
 
-def calc_shelf_sheets(code: str, qty: float, material: str, name: str = "") -> tuple[int, str, str]:
-    pairs = SHELF_CATALOG.get(code.strip())
+def is_shelf_plan_row(code: str, name: str) -> bool:
+    return code.upper().startswith("GXSS") or "система хранения" in norm(name) or "полка системы" in norm(name)
+
+
+def resolve_shelf_material(code: str, name: str = "") -> str:
+    name_l = norm(name)
+    if "BVO" in code.upper() or "вотан" in name_l:
+        return "дуб вотан"
+    return "сонома / бардолино"
+
+
+def build_shelf_pieces(code: str, qty: float) -> tuple[list[tuple[int, int]], str]:
+    pairs = SHELF_CATALOG_BY_CODE.get(code.strip().upper())
     if not pairs:
-        return 0, "", "нет в каталоге полок"
+        return [], "нет в каталоге полок"
     pieces: list[tuple[int, int]] = []
     for shelf_name, per_kit in pairs:
         size = parse_shelf_size(shelf_name)
@@ -378,13 +489,17 @@ def calc_shelf_sheets(code: str, qty: float, material: str, name: str = "") -> t
             continue
         total = int(per_kit * qty)
         pieces.extend([size] * total)
+    if not pieces:
+        return [], "нет деталей полок"
+    return pieces, "раскрой полок (ShelfCalculator)"
+
+
+def calc_shelf_sheets(code: str, qty: float, material: str, name: str = "") -> tuple[int, str, str]:
+    pieces, method = build_shelf_pieces(code, qty)
+    if not pieces:
+        return 0, "", method
     sheets = estimate_sheets_from_pieces(pieces, SHEET_W, SHEET_H)
-    name_l = norm(name)
-    if "BVO" in code.upper() or "вотан" in name_l:
-        mat = "дуб вотан"
-    else:
-        mat = "сонома / бардолино"
-    return sheets, mat, "раскрой полок (ShelfCalculator)"
+    return sheets, resolve_shelf_material(code, name), method
 
 
 def resolve_qty_column(df: pd.DataFrame, raw_header_row: list | None) -> str:
@@ -436,6 +551,144 @@ def load_plan(plan_path: Path | None = None) -> pd.DataFrame:
     return pd.read_csv(PLAN_CSV)
 
 
+def write_plan_result_xlsx(
+    plan_path: Path,
+    sheets_by_code: dict[str, int],
+    by_material: dict[str, float],
+    out_path: Path | None = None,
+    strap_types_df: pd.DataFrame | None = None,
+    strap_sheets: int = 0,
+    crm_remaining: dict[str, float] | None = None,
+) -> Path:
+    """Записать план с колонкой D (листов) и сводкой по материалам снизу."""
+    from openpyxl import load_workbook
+    from openpyxl.styles import Font
+
+    out_path = out_path or plan_path.with_name(f"{plan_path.stem}_результат.xlsx")
+    wb = load_workbook(plan_path)
+    ws = wb.active
+
+    hdr_row = 2
+    for i in range(1, min(9, ws.max_row + 1)):
+        row_vals = [norm(ws.cell(i, c).value) for c in range(1, 4)]
+        if any("код" in v or "артикул" in v for v in row_vals):
+            hdr_row = i + 1
+            break
+
+    ws.cell(hdr_row, 4, "Листов")
+    bold = Font(bold=True)
+
+    for r in range(hdr_row + 1, ws.max_row + 1):
+        code = str(ws.cell(r, 1).value or "").strip()
+        if not code or code.lower() in ("nan", "none"):
+            continue
+        qty_val = ws.cell(r, 3).value
+        try:
+            qty = float(qty_val) if qty_val not in (None, "") else 0
+        except (TypeError, ValueError):
+            qty = 0
+        if qty <= 0:
+            continue
+        sheets = sheets_by_code.get(code, "")
+        ws.cell(r, 4, sheets if sheets else "")
+
+    last_data_row = ws.max_row
+    for r in range(ws.max_row, hdr_row, -1):
+        code = str(ws.cell(r, 1).value or "").strip()
+        if code and code.lower() not in ("nan", "none"):
+            try:
+                qty = float(ws.cell(r, 3).value or 0)
+            except (TypeError, ValueError):
+                qty = 0
+            if qty > 0:
+                last_data_row = r
+                break
+
+    start = last_data_row + 2
+    ws.cell(start, 1, "Сводка по материалам").font = bold
+    ws.cell(start + 1, 1, "Материал").font = bold
+    ws.cell(start + 1, 2, "Листов").font = bold
+    if crm_remaining:
+        ws.cell(start + 1, 3, "Остаток").font = bold
+
+    total = 0.0
+    row = start + 2
+    for material, sheets in sorted(by_material.items(), key=lambda x: -x[1]):
+        ws.cell(row, 1, material)
+        val = int(sheets) if sheets == int(sheets) else sheets
+        ws.cell(row, 2, val)
+        if crm_remaining is not None:
+            rem = crm_remaining.get(material)
+            if rem is not None:
+                ws.cell(row, 3, int(rem) if rem == int(rem) else round(rem, 1))
+        total += sheets
+        row += 1
+
+    ws.cell(row, 1, "ИТОГО материал").font = bold
+    ws.cell(row, 2, int(total) if total == int(total) else total).font = bold
+
+    if strap_types_df is not None and len(strap_types_df) > 0 and strap_sheets > 0:
+        row += 2
+        ws.cell(row, 1, "Чёрная обвязка").font = bold
+        row += 1
+        ws.cell(row, 1, "Тип планки").font = bold
+        ws.cell(row, 2, "Шт. планок").font = bold
+        ws.cell(row, 3, "Листов").font = bold
+        black_remaining = (crm_remaining or {}).get("черный")
+        if black_remaining is not None:
+            ws.cell(row, 4, "Остаток чёрный").font = bold
+        row += 1
+        strap_pieces_total = 0
+        for _, strap_row in strap_types_df.iterrows():
+            ws.cell(row, 1, strap_row["Тип планки"])
+            pieces = int(strap_row["Шт. планок"])
+            sheets = int(strap_row["Листов"])
+            ws.cell(row, 2, pieces)
+            ws.cell(row, 3, sheets)
+            strap_pieces_total += pieces
+            row += 1
+        ws.cell(row, 1, "ИТОГО обвязка").font = bold
+        ws.cell(row, 2, strap_pieces_total).font = bold
+        ws.cell(row, 3, strap_sheets).font = bold
+        if black_remaining is not None:
+            rem_black = black_remaining - strap_sheets
+            ws.cell(row, 4, int(rem_black) if rem_black == int(rem_black) else round(rem_black, 1)).font = bold
+        row += 2
+        ws.cell(row, 1, "ВСЕГО ЛИСТОВ").font = bold
+        grand_total = total + strap_sheets
+        ws.cell(row, 2, int(grand_total) if grand_total == int(grand_total) else grand_total).font = bold
+        ws.cell(row, 3, "(материал + обвязка)")
+
+    wb.save(out_path)
+    return out_path
+
+
+def save_plan_result_xlsx(
+    plan_path: Path,
+    sheets_by_code: dict,
+    by_material: dict,
+    strap_types_df: pd.DataFrame | None = None,
+    strap_sheets: int = 0,
+    crm_remaining: dict[str, float] | None = None,
+) -> Path | None:
+    out_path = plan_path.with_name(f"{plan_path.stem}_результат.xlsx")
+    try:
+        return write_plan_result_xlsx(
+            plan_path, sheets_by_code, by_material, out_path,
+            strap_types_df, strap_sheets, crm_remaining,
+        )
+    except OSError as e:
+        alt = plan_path.with_name(f"{plan_path.stem}_результат_новый.xlsx")
+        try:
+            return write_plan_result_xlsx(
+                plan_path, sheets_by_code, by_material, alt,
+                strap_types_df, strap_sheets, crm_remaining,
+            )
+        except OSError:
+            print(f"Skip plan result ({e})")
+            return None
+
+
 def main():
     import sys
 
@@ -447,6 +700,8 @@ def main():
 
     rows = []
     by_material = defaultdict(float)
+    sheets_by_code: dict[str, int] = {}
+    shelf_pieces_by_material: dict[str, list[tuple[int, int]]] = defaultdict(list)
     not_calc = []
 
     for _, r in df.iterrows():
@@ -467,10 +722,14 @@ def main():
             kits = kits_rule
             sheets = math.ceil(qty / kits)
             method = "правило CRM (web_resolve_output_per_sheet)"
-        elif code.upper().startswith("GXSS") or "система хранения" in norm(name) or "полка системы" in norm(name):
-            sheets, mat2, method = calc_shelf_sheets(code, qty, material, name)
-            if mat2:
-                material = normalize_material(mat2)
+        elif is_shelf_plan_row(code, name):
+            pieces, method = build_shelf_pieces(code, qty)
+            if pieces:
+                material = normalize_material(resolve_shelf_material(code, name))
+                sheets = estimate_sheets_from_pieces(pieces, SHEET_W, SHEET_H)
+                shelf_pieces_by_material[material].extend(pieces)
+            else:
+                method = method or "нет в каталоге полок"
         else:
             tpl = find_template(templates, item, section)
             if tpl:
@@ -494,8 +753,11 @@ def main():
             else:
                 method = "не найден шаблон"
 
+        is_shelf = is_shelf_plan_row(code, name)
         if sheets > 0:
-            by_material[material or "(без материала)"] += sheets
+            if not is_shelf:
+                by_material[material or "(без материала)"] += sheets
+            sheets_by_code[code] = sheets
         else:
             not_calc.append(code)
 
@@ -510,19 +772,11 @@ def main():
             "Метод расчёта": method,
         })
 
+    for mat, pieces in shelf_pieces_by_material.items():
+        by_material[mat] += estimate_sheets_from_pieces(pieces, SHEET_W, SHEET_H)
+
     total_sheets = sum(by_material.values())
     orders_df = pd.DataFrame(rows)
-    mat_rows = [{"Материал": m, "Листов": int(s) if s == int(s) else s} for m, s in sorted(by_material.items(), key=lambda x: -x[1])]
-    mat_rows.append({"Материал": "ИТОГО", "Листов": int(total_sheets) if total_sheets == int(total_sheets) else total_sheets})
-    materials_df = pd.DataFrame(mat_rows)
-
-    summary_df = pd.DataFrame([
-        {"Показатель": "Позиций в плане", "Значение": len(rows)},
-        {"Показатель": "Всего изделий (шт.)", "Значение": int(df["qty"].sum())},
-        {"Показатель": "Рассчитано позиций", "Значение": len(rows) - len(not_calc)},
-        {"Показатель": "Не рассчитано", "Значение": len(not_calc)},
-        {"Показатель": "Всего листов", "Значение": int(total_sheets)},
-    ])
 
     plan_rows = [
         {"code": str(r["code"]), "name": str(r["name"]), "qty": float(r["qty"])}
@@ -536,6 +790,34 @@ def main():
         strap_summary_df.loc[strap_summary_df["Показатель"] == "Всего листов обвязки", "Значение"].iloc[0]
     )
     print(f"Strap (black): {strap_pieces} pieces, {strap_sheets} sheets")
+
+    by_material_out = merge_report_materials(by_material)
+
+    crm_remaining = load_crm_material_remaining()
+    if crm_remaining:
+        print(f"CRM stock balance loaded: {len(crm_remaining)} materials")
+
+    mat_rows = [
+        {
+            "Материал": m,
+            "Листов": int(s) if s == int(s) else s,
+            "Остаток": int(crm_remaining[m]) if m in crm_remaining and crm_remaining[m] == int(crm_remaining[m]) else crm_remaining.get(m, ""),
+        }
+        for m, s in sorted(by_material_out.items(), key=lambda x: -x[1])
+    ]
+    grand_total = total_sheets + strap_sheets
+    mat_rows.append({"Материал": "ИТОГО", "Листов": int(grand_total) if grand_total == int(grand_total) else grand_total})
+    materials_df = pd.DataFrame(mat_rows)
+
+    summary_df = pd.DataFrame([
+        {"Показатель": "Позиций в плане", "Значение": len(rows)},
+        {"Показатель": "Всего изделий (шт.)", "Значение": int(df["qty"].sum())},
+        {"Показатель": "Рассчитано позиций", "Значение": len(rows) - len(not_calc)},
+        {"Показатель": "Не рассчитано", "Значение": len(not_calc)},
+        {"Показатель": "Всего листов (материал)", "Значение": int(total_sheets)},
+        {"Показатель": "Листов обвязки (чёрный)", "Значение": strap_sheets},
+        {"Показатель": "Всего листов", "Значение": int(total_sheets) + strap_sheets},
+    ])
 
     for path in (OUT_XLSX, OUT_XLSX_DESKTOP):
         try:
@@ -552,7 +834,14 @@ def main():
         except OSError as e:
             print(f"Skip {path}: {e}")
 
-    print(f"Total sheets (material): {total_sheets:.0f}, not calculated: {len(not_calc)}")
+    print(f"Total sheets (material): {total_sheets:.0f}, strap: {strap_sheets}, grand: {total_sheets + strap_sheets:.0f}, not calculated: {len(not_calc)}")
+
+    if plan_path and plan_path.exists():
+        plan_out = save_plan_result_xlsx(
+            plan_path, sheets_by_code, by_material_out, strap_types_df, strap_sheets, crm_remaining,
+        )
+        if plan_out:
+            print(f"Plan result: {plan_out}")
 
 
 if __name__ == "__main__":

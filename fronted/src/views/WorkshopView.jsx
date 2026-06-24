@@ -1,6 +1,7 @@
 import { memo, useEffect, useMemo } from "react";
 import { KROMKA_EXECUTORS, PRAS_EXECUTORS } from "../config";
 import { extractPlanItemArticle, extractPlanItemQrQty, stripPlanItemMeta } from "../app/orderHelpers";
+import { buildStrapDisplayDeps, resolveStrapTargetCaption } from "../app/strapDisplayHelpers";
 import { sheetsFromTemplateKits } from "../app/appUtils";
 import { findFurnitureTemplate, resolveKitsPerSheetFromTemplate } from "../app/furnitureMaterialYield";
 import {
@@ -129,6 +130,11 @@ export const WorkshopView = memo(function WorkshopView({
       normalizeFurnitureKey,
     }),
     [furnitureTemplates, furnitureCustomTemplates, furnitureDetailArticleRows, normalizeFurnitureKey],
+  );
+
+  const strapDisplayDeps = useMemo(
+    () => buildStrapDisplayDeps(furnitureDetailArticleRows),
+    [furnitureDetailArticleRows],
   );
 
   const workshopStrapRows = useMemo(() => {
@@ -263,6 +269,7 @@ export const WorkshopView = memo(function WorkshopView({
         const showKromka = tab === "all" || tab === "kromka";
         const showPras = tab === "all" || tab === "pras";
         const strapPlankOrder = isWorkshopStrapOrderItem(o.item);
+        const strapTargetCaption = strapPlankOrder ? resolveStrapTargetCaption(o, strapDisplayDeps) : "";
         const showAssembly = (tab === "all" || tab === "assembly") && !strapPlankOrder;
         const showDone = (tab === "all" || tab === "done") && !strapPlankOrder;
         const assemblyDone = isDone(o.assemblyStatus);
@@ -295,6 +302,11 @@ export const WorkshopView = memo(function WorkshopView({
                       </span>
                     ) : null}
                     <span className="badge meta-inline">План: {o.week || "-"}</span>
+                    {strapTargetCaption ? (
+                      <span className="badge meta-inline" title={strapTargetCaption}>
+                        {strapTargetCaption}
+                      </span>
+                    ) : null}
                     <span className="badge meta-inline" title={qrQty > 0 && qrQty !== orderQty ? `Комплектов по QR: ${qrQty}` : undefined}>
                       Кол-во: {orderQty || 0}
                       {qrQty > 0 && qrQty !== orderQty ? ` (${qrQty} компл.)` : ""}

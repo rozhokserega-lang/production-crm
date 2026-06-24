@@ -41,7 +41,6 @@ import { toUserError } from "../app/errorCatalogHelpers";
  * @param {boolean} params.planSaving
  * @param {string} params.resolvedPlanItem
  * @param {Array} params.furnitureTemplates
- * @param {Function} params.syncPlanCellToGoogleSheet
  * @param {Function} params.load
  * @param {object|null} params.planEditSource
  * @param {Function} params.setPlanEditSource
@@ -71,7 +70,6 @@ export function usePlanDialog({
   planSaving,
   resolvedPlanItem,
   furnitureTemplates,
-  syncPlanCellToGoogleSheet,
   load,
   planEditSource,
   setPlanEditSource,
@@ -211,7 +209,6 @@ export function usePlanDialog({
     setError("");
     try {
       await OrderService.createShipmentPlanCell({ sectionName: planSection, item, material, week, qty });
-      void syncPlanCellToGoogleSheet({ sectionName: planSection, item, material, week, qty });
       setPlanArticle("");
       setPlanMaterial("");
       setPlanQty("");
@@ -238,7 +235,6 @@ export function usePlanDialog({
     setPlanArticle,
     setPlanMaterial,
     setPlanQty,
-    syncPlanCellToGoogleSheet,
     load,
   ]);
 
@@ -277,7 +273,6 @@ export function usePlanDialog({
         week,
         qty,
       });
-      void syncPlanCellToGoogleSheet({ sectionName: planSection, item, material, week, qty });
       setPlanEditSource(null);
       setPlanDialogOpen(false);
       await load();
@@ -298,7 +293,6 @@ export function usePlanDialog({
     setPlanSaving,
     setPlanDialogOpen,
     setPlanEditSource,
-    syncPlanCellToGoogleSheet,
     load,
   ]);
 
@@ -350,7 +344,6 @@ export function usePlanDialog({
         isMissingError: isShipmentCellMissingError,
         requestBuilder: (p) => ({ p_row: p.row, p_col: p.col }),
       });
-      void syncPlanCellToGoogleSheet({ sectionName: planSection, item, material, week, qty });
       setPlanEditSource(null);
       setPlanDialogOpen(false);
       if (typeof setSelectedShipments === "function") {
@@ -376,7 +369,6 @@ export function usePlanDialog({
     setPlanEditSource,
     setPlanDialogOpen,
     setSelectedShipments,
-    syncPlanCellToGoogleSheet,
     load,
   ]);
 
@@ -451,7 +443,6 @@ export function usePlanDialog({
     try {
       for (const { resolvedItem, material, week, qty, section } of items) {
         await OrderService.createShipmentPlanCell({ sectionName: section, item: resolvedItem, material, week, qty });
-        void syncPlanCellToGoogleSheet({ sectionName: section, item: resolvedItem, material, week, qty });
       }
       setPlanDialogOpen(false);
       await load();
@@ -460,7 +451,7 @@ export function usePlanDialog({
     } finally {
       setPlanSaving(false);
     }
-  }, [canOperateProduction, denyActionByRole, setError, setPlanSaving, setPlanDialogOpen, syncPlanCellToGoogleSheet, load]);
+  }, [canOperateProduction, denyActionByRole, setError, setPlanSaving, setPlanDialogOpen, load]);
 
   /** Предпросмотр нескольких позиций (накопленный список из диалога). */
   const previewMultiplePlanDialogItems = useCallback((items) => {

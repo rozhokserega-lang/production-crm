@@ -1,6 +1,7 @@
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ShipmentSplitDialog } from "../components/ShipmentSplitDialog";
 import { formatStrapPlanTargetCaption, stripPlanItemMeta, getMaterialLabel } from "../app/orderHelpers";
+import { buildStrapDisplayDeps, resolveStrapTargetCaption } from "../app/strapDisplayHelpers";
 import { useShipment } from "../contexts/ShipmentContext";
 import { useCutting } from "../contexts/CuttingContext";
 import { useNavigation } from "../contexts/NavigationContext";
@@ -12,7 +13,7 @@ import {
 import { PlanQrImage } from "../components/PlanQrImage";
 import { getReadableTextColor } from "../utils/colorUtils";
 import { normalizeFurnitureKey } from "../utils/furnitureUtils";
-import { getShipmentStageKey, isStorageLikeName } from "../utils/shipmentUtils";
+import { getShipmentStageKey, isStorageShipmentRow } from "../utils/shipmentUtils";
 import { stageBg, stageLabel } from "../app/statusHelpers";
 import { parseItemSize } from "../app/appUtils";
 
@@ -58,7 +59,13 @@ export const ShipmentView = memo(function ShipmentView() {
     openEditPlanDialog,
     setSelectedShipments,
     weeks,
+    furnitureDetailArticleRows,
   } = useShipment();
+
+  const strapDisplayDeps = useMemo(
+    () => buildStrapDisplayDeps(furnitureDetailArticleRows),
+    [furnitureDetailArticleRows],
+  );
 
   const [splitDialogOpen, setSplitDialogOpen] = useState(false);
 
@@ -94,9 +101,7 @@ export const ShipmentView = memo(function ShipmentView() {
       window.scrollTo?.({ top: 0, left: 0 });
     });
   }, [isPlanPreviewOpen]);
-  const storageSelected = selectedShipments.filter(
-    (s) => isStorageLikeName(s.item) || isStorageLikeName(s.section),
-  );
+  const storageSelected = selectedShipments.filter(isStorageShipmentRow);
   const storageSelectedCount = storageSelected.length;
 
   const addToCutting = useCallback(() => {
@@ -179,9 +184,12 @@ export const ShipmentView = memo(function ShipmentView() {
         {selectedShipments.length > 0 || strapItems.length > 0 ? (
           <div className="selection-summary">
             <div className="selection-summary-title">Расчет для выделенных ячеек:</div>
-            {selectedShipmentSummary.items.map((x, idx) => (
+            {selectedShipmentSummary.items.map((x, idx) => {
+              const strapCaption = resolveStrapTargetCaption(x, strapDisplayDeps);
+              return (
               <div key={`${x.row}-${x.col}-${idx}`} className="selection-summary-item">
                 <div>{x.item}</div>
+                {strapCaption ? <div style={{ color: "#92400e", fontSize: 13 }}>{strapCaption}</div> : null}
                 {x.multiDecor && x.materialLines?.length > 0 ? (
                   <div>
                     <div>
@@ -201,7 +209,8 @@ export const ShipmentView = memo(function ShipmentView() {
                   </div>
                 )}
               </div>
-            ))}
+            );
+            })}
             <div className="selection-summary-title" style={{ marginTop: 10 }}>Общее количество:</div>
             {selectedShipmentSummary.materials.map((m) => (
               <div key={m.material}>• {m.material}: {m.sheets} лист(ов)</div>
@@ -695,11 +704,19 @@ export const ShipmentView = memo(function ShipmentView() {
               {strapItems.length > 0 && (
                 <> | Обвязка: <b>{strapItems.reduce((sum, x) => sum + Number(x.qty || 0), 0)} шт.</b></>
               )}
-              {selectedShipments.length === 1 && (
+              {selectedShipments.length === 1 && (() => {
+                const sel = selectedShipments[0];
+                const strapCaption = resolveStrapTargetCaption(sel, strapDisplayDeps);
+                return (
                 <>
-                  {" "} | <b>{selectedShipments[0].item}</b> | Неделя <b>{selectedShipments[0].week || "-"}</b> | Кол-во <b>{selectedShipments[0].qty}</b>
+                  {" "} | <b>{sel.item}</b>
+                  {strapCaption ? (
+                    <> · <b>{strapCaption}</b></>
+                  ) : null}
+                  {" "}| Неделя <b>{sel.week || "-"}</b> | Кол-во <b>{sel.qty}</b>
                 </>
-              )}
+                );
+              })()}
             </div>
             <div className="actions shipment-toolbar__actions">
               <button

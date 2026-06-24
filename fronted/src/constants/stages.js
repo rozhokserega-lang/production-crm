@@ -1,20 +1,3 @@
-export const STAGE_SYNC_META = {
-  webSetPilkaInWork: { code: "pilka_in_work", label: "Пила: в работе" },
-  webSetPilkaDone: { code: "pilka_done", label: "Пила: готово" },
-  webSetPilkaPause: { code: "pilka_pause", label: "Пила: пауза" },
-  webSetKromkaInWork: { code: "kromka_in_work", label: "Кромка: в работе" },
-  webSetKromkaDone: { code: "kromka_done", label: "Кромка: готово" },
-  webSetKromkaPause: { code: "kromka_pause", label: "Кромка: пауза" },
-  webSetPrasInWork: { code: "pras_in_work", label: "Присадка: в работе" },
-  webSetPrasDone: { code: "pras_done", label: "Присадка: готово" },
-  webSetPrasPause: { code: "pras_pause", label: "Присадка: пауза" },
-  webSetAssemblyDone: { code: "assembly_done", label: "Сборка: готово" },
-  webSetWarehouseKitReady: { code: "warehouse_kit", label: "Финал: на склад" },
-  webSetWarehouseKitInWork: { code: "warehouse_kit_in_work", label: "Склад: в работу" },
-  webSetWarehouseKitDone: { code: "warehouse_kit_done", label: "Склад: готово" },
-  webSetShippingDone: { code: "shipping_done", label: "Отгрузка: готово" },
-};
-
 export const TERMINAL_PIPELINE_STAGES = new Set([
   "assembled",
   "ready_to_ship", 

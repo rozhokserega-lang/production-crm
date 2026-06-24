@@ -8,7 +8,7 @@
  * - useFilters — общие фильтры (query, weekFilter, statusFilter, цвета)
  * - useShipmentFilters — фильтры отгрузки (viewMode, hiddenGroups)
  * - Остальные фильтры живут в useOrders.js (useBaseOrderFilter, useLaborFilter,
- *   useSheetMirrorFilter, useShipmentFilter) и useShipmentUiState.js
+ *   useShipmentFilter) и useShipmentUiState.js
  */
 
 import { useState, useMemo, useCallback } from "react";
@@ -95,6 +95,5 @@ export function useShipmentFilters() {
 export {
   useBaseOrderFilter,
   useLaborFilter,
-  useSheetMirrorFilter,
   useShipmentFilter,
 } from "./useOrders";

@@ -57,13 +57,51 @@ export function sectionSortKey(name, sectionOrder = []) {
   return idx === -1 ? 999 : idx;
 }
 
+export function isShelfPlanOrderItem(item) {
+  const raw = String(item || "");
+  if (!raw) return false;
+  if (/\{\{ART:\s*GXss/i.test(raw)) return true;
+  if (/\bGXss[A-Za-z0-9-]+/i.test(raw)) return true;
+  const stripped = stripPlanItemMeta(raw);
+  return /^полка\s+\d{2,4}\s*[_xх×]\s*\d{2,4}/i.test(stripped);
+}
+
+/** Тех. позиции хранения, которые скрываем из обычных секций плана (не заказы полок). */
+export function isStorageTechHiddenName(text) {
+  const t = normText(text);
+  if (!t) return false;
+  if (isShelfPlanOrderItem(text)) return false;
+  if (t.includes("система хранения")) return true;
+  if (t.includes("полка системы")) return true;
+  if (t.startsWith("gxss")) return true;
+  if (/^\d{2,4}\s*[_xх×]\s*\d{2,4}\b/.test(t)) return true;
+  if (/полка\s+\d{2,4}\s*[_xх×]\s*\d{2,4}/.test(t)) return true;
+  return false;
+}
+
 export function isStorageLikeName(text) {
   const t = normText(text);
   if (!t) return false;
   if (t.includes("система хранения")) return true;
+  if (t.includes("полка системы")) return true;
+  if (t.startsWith("gxss")) return true;
   // Частые имена тех-позиций хранения: "387_330 Вотан", "587_330 Сонома" и т.п.
-  if (/^\d{2,4}\s*[_xх]\s*\d{2,4}\b/.test(t)) return true;
+  if (/^\d{2,4}\s*[_xх×]\s*\d{2,4}\b/.test(t)) return true;
+  // Раскладка полок в плане отгрузки: "полка 587x340 (Вотан)"
+  if (/полка\s+\d{2,4}\s*[_xх×]\s*\d{2,4}/.test(t)) return true;
   return false;
+}
+
+export function isStorageShipmentRow(selection) {
+  if (!selection) return false;
+  if (isShelfPlanOrderItem(selection.item)) return true;
+  const article = String(
+    selection.productArticle || selection.article || selection.mappedArticleCode || "",
+  )
+    .trim()
+    .toUpperCase();
+  if (article.startsWith("GXSS")) return true;
+  return isStorageLikeName(selection.item) || isStorageLikeName(selection.section);
 }
 
 export function isObvyazkaSectionName(name) {

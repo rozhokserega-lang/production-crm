@@ -102,7 +102,7 @@ def strap_color(item: str) -> str:
 
 def resolve_alias(item: str) -> str:
     t = norm(item)
-    if "donini grande" in t or "донини гранде" in t or "donini grande" in t:
+    if "donini grande" in t or "донини гранде" in t or "ancona" in t or "анкона" in t:
         return "донини гранде"
     if "donini r" in t or "донини r" in t:
         return "донини r"

@@ -50,7 +50,6 @@ function makeProps(overrides = {}) {
     resolveStrapMaterialByProduct: vi.fn(() => "Материал"),
     strapNameToOrderItem: vi.fn((s) => s),
     normalizeStrapProductKey: vi.fn((s) => s),
-    syncPlanCellToGoogleSheet: vi.fn(),
     load: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };

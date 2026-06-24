@@ -34,7 +34,6 @@ import { embedStrapTargetProduct } from "../app/orderHelpers";
  * @param {Function} params.resolveStrapMaterialByProduct
  * @param {Function} params.strapNameToOrderItem
  * @param {Function} params.normalizeStrapProductKey
- * @param {Function} params.syncPlanCellToGoogleSheet
  * @param {Function} params.load
  */
 export function useStrapDialog({
@@ -59,7 +58,6 @@ export function useStrapDialog({
   resolveStrapMaterialByProduct,
   strapNameToOrderItem,
   normalizeStrapProductKey,
-  syncPlanCellToGoogleSheet,
   load,
 }) {
   const openStrapDialog = useCallback(() => {
@@ -125,7 +123,6 @@ export function useStrapDialog({
           embedStrapTargetProduct,
         });
         await OrderService.createShipmentPlanCell(payload);
-        void syncPlanCellToGoogleSheet(payload);
       }
       setStrapItems([]);
       setStrapDialogOpen(false);
@@ -148,7 +145,6 @@ export function useStrapDialog({
     setStrapDialogOpen,
     resolveStrapMaterialByProduct,
     strapNameToOrderItem,
-    syncPlanCellToGoogleSheet,
     load,
   ]);
 

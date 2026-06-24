@@ -30,6 +30,23 @@ const STAGE_COLORS = {
   painting: { border: "#06b6d4", text: "#67e8f9", bg: "#1a2a3a", icon: "🎨" },
 };
 
+function resolveNodeStatusVisual(stage, nodeStatus) {
+  const base = STAGE_COLORS[stage] || { border: "#64748b", text: "#cbd5e1", bg: "#1e293b", icon: "•" };
+  if (nodeStatus === "done") {
+    return { border: "#64748b", text: "#94a3b8", bg: "#334155", icon: base.icon };
+  }
+  if (nodeStatus === "active") {
+    return { border: "#22c55e", text: "#bbf7d0", bg: "#14532d", icon: base.icon };
+  }
+  if (nodeStatus === "queued") {
+    return { border: "#3b82f6", text: "#bfdbfe", bg: "#1e3a5f", icon: base.icon };
+  }
+  if (nodeStatus === "future") {
+    return { border: "#ef4444", text: "#fecaca", bg: "#5c1a1a", icon: base.icon };
+  }
+  return base;
+}
+
 const ARROW = (color) => ({ type: MarkerType.ArrowClosed, color });
 
 function StartNode() {
@@ -43,11 +60,29 @@ function StartNode() {
 }
 
 function StageNode({ data, selected }) {
-  const c = STAGE_COLORS[data.stage] || { border: "#64748b", text: "#cbd5e1", bg: "#1e293b", icon: "•" };
+  const c = resolveNodeStatusVisual(data.stage, data.nodeStatus);
   const hasNote = Boolean(String(data.note || "").trim());
+  const statusClass =
+    data.nodeStatus === "done"
+      ? "mbp-node--done"
+      : data.nodeStatus === "active"
+        ? "mbp-node--active"
+        : data.nodeStatus === "queued"
+          ? "mbp-node--queued"
+          : data.nodeStatus === "future"
+            ? "mbp-node--future"
+            : "";
   return (
     <div
-      className={`mbp-node mbp-node--stage${selected ? " mbp-node--selected" : ""}${hasNote ? " mbp-node--has-note" : ""}`}
+      className={[
+        "mbp-node",
+        "mbp-node--stage",
+        selected ? "mbp-node--selected" : "",
+        statusClass,
+        hasNote ? "mbp-node--has-note" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
       style={{ borderColor: c.border, background: c.bg, color: c.text }}
       onClick={(e) => {
         e.stopPropagation();
@@ -144,8 +179,9 @@ function DeletableEdge({
 
 const EDGE_TYPES = { deletable: DeletableEdge };
 
-function graphToFlow(graph, disabled, onDeleteStage, onDeleteEdge, selectedNodeId, onSelectNode) {
+function graphToFlow(graph, disabled, onDeleteStage, onDeleteEdge, selectedNodeId, onSelectNode, nodeStatusMap) {
   const normalized = normalizeProcessGraph(graph);
+  const statusLookup = nodeStatusMap instanceof Map ? nodeStatusMap : null;
   const nodes = normalized.nodes.map((node) => {
     if (node.kind === "start") {
       return {
@@ -166,6 +202,7 @@ function graphToFlow(graph, disabled, onDeleteStage, onDeleteEdge, selectedNodeI
         label: METAL_STAGE_LABELS[node.stage] || node.stage,
         note: node.note || "",
         disabled,
+        nodeStatus: statusLookup?.get(node.id) ?? nodeStatusMap?.[node.id] ?? null,
         onDelete: onDeleteStage,
         onSelect: onSelectNode,
       },
@@ -228,7 +265,16 @@ function graphSignature(graph) {
   return JSON.stringify({ nodes, edges });
 }
 
-export function MetalRouteBlueprint({ value, onChange, disabled = false, validationErrors = [], validationWarnings = [], fullScreen = false }) {
+export function MetalRouteBlueprint({
+  value,
+  onChange,
+  disabled = false,
+  validationErrors = [],
+  validationWarnings = [],
+  fullScreen = false,
+  activeNodeIds = [],
+  nodeStatusMap = null,
+}) {
   const syncingRef = useRef(false);
   const nodeSeqRef = useRef(0);
   const userDraggedRef = useRef(false);
@@ -238,6 +284,14 @@ export function MetalRouteBlueprint({ value, onChange, disabled = false, validat
   const [noteDraft, setNoteDraft] = useState("");
   const [noteJustSaved, setNoteJustSaved] = useState(false);
   const noteDraftRef = useRef(noteDraft);
+  const resolvedNodeStatusMap = useMemo(() => {
+    if (nodeStatusMap instanceof Map) return nodeStatusMap;
+    if (nodeStatusMap && typeof nodeStatusMap === "object") return nodeStatusMap;
+    const legacy = new Map();
+    const ids = activeNodeIds instanceof Set ? activeNodeIds : new Set(activeNodeIds || []);
+    for (const id of ids) legacy.set(String(id), "active");
+    return legacy.size > 0 ? legacy : null;
+  }, [nodeStatusMap, activeNodeIds]);
 
   const emitGraph = useCallback(
     (nextNodes, nextEdges) => {
@@ -256,7 +310,7 @@ export function MetalRouteBlueprint({ value, onChange, disabled = false, validat
   );
 
   const initial = useMemo(
-    () => graphToFlow(value, disabled, null, null, null, null),
+    () => graphToFlow(value, disabled, null, null, null, null, resolvedNodeStatusMap),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
@@ -409,21 +463,31 @@ export function MetalRouteBlueprint({ value, onChange, disabled = false, validat
     const incomingSig = graphSignature(value);
     const currentSig = graphSignature(flowToGraph(nodesRef.current, edgesRef.current));
     if (incomingSig === currentSig) return;
-    const next = graphToFlow(value, disabled, onDeleteStage, onDeleteEdge, selectedNodeId, onSelectNode);
+    const next = graphToFlow(value, disabled, onDeleteStage, onDeleteEdge, selectedNodeId, onSelectNode, resolvedNodeStatusMap);
     lastEmittedSigRef.current = incomingSig;
     setNodes(next.nodes);
     setEdges(next.edges);
-  }, [value, disabled, onDeleteStage, onDeleteEdge, onSelectNode, selectedNodeId, setNodes, setEdges]);
+  }, [value, disabled, onDeleteStage, onDeleteEdge, onSelectNode, selectedNodeId, resolvedNodeStatusMap, setNodes, setEdges]);
 
   useEffect(() => {
     setNodes((prev) =>
       prev.map((node) => {
         if (node.type !== "stage") return { ...node, draggable: !disabled };
+        const nodeStatus =
+          resolvedNodeStatusMap instanceof Map
+            ? resolvedNodeStatusMap.get(node.id) ?? null
+            : resolvedNodeStatusMap?.[node.id] ?? null;
         return {
           ...node,
           draggable: !disabled,
           selected: node.id === selectedNodeId,
-          data: { ...node.data, disabled, onDelete: onDeleteStage, onSelect: onSelectNode },
+          data: {
+            ...node.data,
+            disabled,
+            nodeStatus,
+            onDelete: onDeleteStage,
+            onSelect: onSelectNode,
+          },
         };
       }),
     );
@@ -435,7 +499,7 @@ export function MetalRouteBlueprint({ value, onChange, disabled = false, validat
         data: { ...edge.data, disabled, onDelete: onDeleteEdge },
       })),
     );
-  }, [disabled, onDeleteStage, onDeleteEdge, onSelectNode, selectedNodeId, setNodes, setEdges]);
+  }, [disabled, onDeleteStage, onDeleteEdge, onSelectNode, selectedNodeId, resolvedNodeStatusMap, setNodes, setEdges]);
 
   const handleNodesChange = useCallback(
     (changes) => {

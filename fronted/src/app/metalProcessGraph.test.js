@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   analyzeProcessGraphRuntime,
+  collectActiveGraphNodeIds,
+  collectGraphNodeStatusMap,
   createLinearProcessGraph,
   deriveStageRouteFromGraph,
   extractForkPlan,
@@ -10,8 +12,10 @@ import {
   filterMetalStatsRows,
   getGraphStartStages,
   graphHasParallelBranches,
+  GRAPH_NODE_STATUS,
   normalizeProcessGraph,
   processGraphFromCatalogRow,
+  resolveWorkItemGraphNodeId,
   resolveWorkItemStageNote,
   validateProcessGraph,
 } from "./metalProcessGraph";
@@ -349,6 +353,132 @@ describe("metalProcessGraph", () => {
       currentStage: "laser",
       forkMeta: { merge_node_id: "w3", mode: "multi_merge" },
     }, graph)).toBe("Режим хрени");
+  });
+
+  it("resolves graph node id for branch work item", () => {
+    const graph = buildGx4MultiMergeGraph();
+    expect(resolveWorkItemGraphNodeId({
+      forkRole: "branch",
+      stageRoute: ["saw", "laser"],
+      routeIdx: 0,
+      currentStage: "saw",
+      forkMeta: { merge_node_id: "w9", mode: "multi_merge" },
+    }, graph)).toBe("s6");
+    expect(resolveWorkItemGraphNodeId({
+      forkRole: "branch",
+      stageRoute: ["laser", "bending"],
+      routeIdx: 0,
+      currentStage: "laser",
+      forkMeta: { merge_node_id: "w5", mode: "multi_merge" },
+    }, graph)).toBe("l3");
+  });
+
+  it("resolves sub_merge graph node id from sub_group_id", () => {
+    const graph = buildGx4MultiMergeGraph();
+    expect(resolveWorkItemGraphNodeId({
+      forkRole: "merge",
+      currentStage: "welding",
+      forkMeta: { is_sub_merge: true, sub_group_id: "w9", mode: "multi_merge" },
+    }, graph)).toBe("w9");
+    expect(resolveWorkItemGraphNodeId({
+      forkRole: "merge",
+      currentStage: "welding",
+      forkMeta: { is_sub_merge: true, sub_group_id: "w3", mode: "multi_merge" },
+    }, graph)).toBe("w3");
+  });
+
+  it("collects active graph node ids for multi_merge plan", () => {
+    const graph = buildGx4MultiMergeGraph();
+    const parent = { id: 117, status: "split", forkMeta: { mode: "multi_merge" } };
+    const rows = [
+      parent,
+      {
+        id: 118,
+        forkRole: "branch",
+        status: "done",
+        stageRoute: ["saw", "laser"],
+        routeIdx: 1,
+        parentId: 117,
+        forkMeta: { root_parent_id: 117, merge_node_id: "w9", mode: "multi_merge" },
+      },
+      {
+        id: 119,
+        forkRole: "branch",
+        status: "active",
+        stageStatus: "in_progress",
+        currentStage: "laser",
+        stageRoute: ["laser", "bending"],
+        routeIdx: 0,
+        parentId: 117,
+        forkMeta: { root_parent_id: 117, merge_node_id: "w5", mode: "multi_merge" },
+      },
+    ];
+    const statusMap = collectGraphNodeStatusMap(parent, rows, graph);
+    expect(statusMap.get("s6")).toBe(GRAPH_NODE_STATUS.DONE);
+    expect(statusMap.get("l7")).toBe(GRAPH_NODE_STATUS.DONE);
+    expect(statusMap.get("l3")).toBe(GRAPH_NODE_STATUS.ACTIVE);
+    expect(statusMap.get("b4")).toBe(GRAPH_NODE_STATUS.FUTURE);
+    expect(statusMap.get("w9")).toBe(GRAPH_NODE_STATUS.FUTURE);
+  });
+
+  it("marks all queued sub_merge welds as blue", () => {
+    const graph = buildGx4MultiMergeGraph();
+    const parent = { id: 127, status: "split", forkMeta: { mode: "multi_merge" } };
+    const rows = [
+      parent,
+      {
+        id: 132,
+        forkRole: "merge",
+        status: "active",
+        stageStatus: "queued",
+        currentStage: "welding",
+        forkMeta: { is_sub_merge: true, sub_group_id: "w9", root_parent_id: 127, mode: "multi_merge" },
+      },
+      {
+        id: 133,
+        forkRole: "merge",
+        status: "active",
+        stageStatus: "queued",
+        currentStage: "welding",
+        forkMeta: { is_sub_merge: true, sub_group_id: "w3", root_parent_id: 127, mode: "multi_merge" },
+      },
+      {
+        id: 134,
+        forkRole: "merge",
+        status: "active",
+        stageStatus: "queued",
+        currentStage: "welding",
+        forkMeta: { is_sub_merge: true, sub_group_id: "w5", root_parent_id: 127, mode: "multi_merge" },
+      },
+    ];
+    const statusMap = collectGraphNodeStatusMap(parent, rows, graph);
+    expect(statusMap.get("w9")).toBe(GRAPH_NODE_STATUS.QUEUED);
+    expect(statusMap.get("w3")).toBe(GRAPH_NODE_STATUS.QUEUED);
+    expect(statusMap.get("w5")).toBe(GRAPH_NODE_STATUS.QUEUED);
+    expect(statusMap.get("p8")).toBe(GRAPH_NODE_STATUS.FUTURE);
+  });
+
+  it("marks queued branch stage as blue", () => {
+    const graph = buildGx4MultiMergeGraph();
+    const parent = { id: 117, status: "split", forkMeta: { mode: "multi_merge" } };
+    const rows = [
+      parent,
+      {
+        id: 128,
+        forkRole: "branch",
+        status: "active",
+        stageStatus: "queued",
+        currentStage: "laser",
+        stageRoute: ["saw", "laser"],
+        routeIdx: 1,
+        parentId: 117,
+        forkMeta: { root_parent_id: 117, merge_node_id: "w9", mode: "multi_merge" },
+      },
+    ];
+    const statusMap = collectGraphNodeStatusMap(parent, rows, graph);
+    expect(statusMap.get("s6")).toBe(GRAPH_NODE_STATUS.DONE);
+    expect(statusMap.get("l7")).toBe(GRAPH_NODE_STATUS.QUEUED);
+    expect(statusMap.get("w9")).toBe(GRAPH_NODE_STATUS.FUTURE);
   });
 
   it("rejects cycles", () => {

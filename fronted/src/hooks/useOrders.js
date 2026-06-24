@@ -262,26 +262,8 @@ export function useLaborFilter({
   }, [laborRows, query, weekFilter]);
 }
 
-export function useSheetMirrorFilter({
-  rows = [],
-  query = "",
-} = {}) {
-  return useMemo(() => {
-    const q = String(query || "").trim().toLowerCase();
-    return rows.filter((x) => {
-      const byQuery =
-        !q ||
-        String(x.item_label || x.itemLabel || "").toLowerCase().includes(q) ||
-        String(x.article_code || x.articleCode || "").toLowerCase().includes(q) ||
-        String(x.order_code || x.orderCode || "").toLowerCase().includes(q) ||
-        String(x.material_raw || x.materialRaw || "").toLowerCase().includes(q);
-      return byQuery;
-    });
-  }, [query, rows]);
-}
-
 export function isOrdersDomainView(view) {
-  return !["shipment", "sheetMirror", "warehouse", "labor", "furniture", "metal", "metalProcess"].includes(String(view || ""));
+  return !["shipment", "warehouse", "labor", "furniture", "metal", "metalProcess"].includes(String(view || ""));
 }
 
 function mergeOrdersById(chunks) {
@@ -559,7 +541,7 @@ export function useShipmentFilter({
   shipmentOrderMaps = null,
   query = "",
   weekFilter = "all",
-  isStorageLikeName = () => false,
+  isStorageTechHiddenName = () => false,
   isObvyazkaSectionName = () => false,
   isGarbageShipmentItemName = () => false,
   getShipmentStageKey = () => "awaiting",
@@ -570,14 +552,14 @@ export function useShipmentFilter({
     const isStorageSystemSection = (name) => /система\s*хранения/i.test(String(name || ""));
     return (shipmentBoard.sections || [])
       .filter((s) => {
-        if (!isStorageLikeName(s.name)) return true;
+        if (!isStorageTechHiddenName(s.name)) return true;
         // Keep dedicated storage system section visible in shipment plan.
         return isStorageSystemSection(s.name) || isObvyazkaSectionName(s.name);
       })
       .map((s) => ({
         ...s,
         items: (s.items || []).filter((it) => {
-          if (isStorageLikeName(it.item) && !isObvyazkaSectionName(s.name)) return false;
+          if (isStorageTechHiddenName(it.item) && !isObvyazkaSectionName(s.name)) return false;
           if (isGarbageShipmentItemName(it.item)) return false;
           const sourceRow = it.sourceRowId != null ? String(it.sourceRowId) : String(it.row);
           const visibleCells = (it.cells || []).filter((c) => {
@@ -596,7 +578,7 @@ export function useShipmentFilter({
     getShipmentStageKey,
     isGarbageShipmentItemName,
     isObvyazkaSectionName,
-    isStorageLikeName,
+    isStorageTechHiddenName,
     passesShipmentStageFilter,
     query,
     shipmentBoard.sections,

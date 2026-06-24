@@ -4,7 +4,6 @@ export function useCommonDerivedData({
   view,
   shipmentFiltered,
   laborFiltered,
-  sheetMirrorFiltered,
   baseOrderFiltered,
   rows,
   orderDrawerId,
@@ -12,9 +11,8 @@ export function useCommonDerivedData({
   const filtered = useMemo(() => {
     if (view === "shipment") return shipmentFiltered;
     if (view === "labor") return laborFiltered;
-    if (view === "sheetMirror") return sheetMirrorFiltered;
     return baseOrderFiltered;
-  }, [baseOrderFiltered, laborFiltered, sheetMirrorFiltered, shipmentFiltered, view]);
+  }, [baseOrderFiltered, laborFiltered, shipmentFiltered, view]);
 
   const orderDrawerLines = useMemo(() => {
     const id = String(orderDrawerId || "").trim();

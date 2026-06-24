@@ -7,12 +7,16 @@ import {
   formatMultiMergeStartLabel,
   isFinalGateRow,
   isSubMergeRow,
+  collectGraphNodeStatusMap,
   deriveStageRouteFromGraph,
   filterMetalDoneRows,
   filterMetalPlanRows,
   filterMetalStatsRows,
   getGraphStartStages,
+  getPlanOrderFamilyRows,
+  isWorkItemStageActive,
   processGraphFromCatalogRow,
+  resolveWorkItemGraphNodeId,
   resolveWorkItemStageNote,
   validateProcessGraph,
 } from "../app/metalProcessGraph";
@@ -312,6 +316,7 @@ export function MetalProcessView({
   const [commentDraftById, setCommentDraftById] = useState({});
   const [kanbanDrawerId, setKanbanDrawerId] = useState("");
   const [planPreviewRow, setPlanPreviewRow] = useState(null);
+  const [planStatusRow, setPlanStatusRow] = useState(null);
   const [catalogForm, setCatalogForm] = useState(EMPTY_CATALOG_FORM);
   const [catalogGraphErrors, setCatalogGraphErrors] = useState([]);
   const [catalogGraphWarnings, setCatalogGraphWarnings] = useState([]);
@@ -476,6 +481,23 @@ export function MetalProcessView({
     () => (Array.isArray(metalProcessRows) ? metalProcessRows : []),
     [metalProcessRows],
   );
+  const planStatusDialog = useMemo(() => {
+    if (!planStatusRow) return null;
+    const article = String(planStatusRow.article || "").trim().toUpperCase();
+    const catalogItem = options.find((c) => String(c?.article || "").trim().toUpperCase() === article) || null;
+    const processGraph = resolveWorkItemProcessGraph(planStatusRow, catalogItem);
+    const nodeStatusMap = collectGraphNodeStatusMap(planStatusRow, rows, processGraph);
+    const family = getPlanOrderFamilyRows(planStatusRow, rows);
+    const activeStages = [
+      ...new Set(
+        family
+          .filter((member) => isWorkItemStageActive(member))
+          .map((member) => STAGE_LABELS[member.currentStage] || member.currentStage)
+          .filter(Boolean),
+      ),
+    ];
+    return { processGraph, nodeStatusMap, activeStages };
+  }, [planStatusRow, rows, options]);
 
   const filteredCatalog = useMemo(() => {
     const q = normalizeSearchText(catalogSearchText);
@@ -502,6 +524,15 @@ export function MetalProcessView({
     setCatalogSearchText(value);
     applyCatalogMatch(options, value);
   };
+
+  useEffect(() => {
+    if (!planStatusRow) return undefined;
+    const onKey = (e) => {
+      if (e.key === "Escape") setPlanStatusRow(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [planStatusRow]);
 
   const activeRows = useMemo(
     () => rows.filter((row) => {
@@ -672,6 +703,8 @@ export function MetalProcessView({
   };
   const openPlanPreview = (row) => setPlanPreviewRow(row || null);
   const closePlanPreview = () => setPlanPreviewRow(null);
+  const openPlanStatus = (row) => setPlanStatusRow(row || null);
+  const closePlanStatus = () => setPlanStatusRow(null);
   const printPlanPreview = () => window.print();
   const removeDoneItem = async (rowId) => {
     if (!canManageOrders) return;
@@ -798,6 +831,45 @@ export function MetalProcessView({
             <button type="button" className="mini" onClick={closePlanPreview}>Закрыть</button>
           </div>
         </div>
+      )}
+
+      {subView === "plan" && planStatusRow && planStatusDialog && createPortal(
+        <div className="metal-catalog-fs" role="dialog" aria-modal="true" aria-label="Статус маршрута заказа">
+          <header className="metal-catalog-fs__head">
+            <div className="metal-catalog-fs__title">
+              <div>{planStatusRow.name || "Заказ"}</div>
+              <div style={{ fontSize: 12, color: "var(--text-soft)", marginTop: 4 }}>
+                {planStatusRow.article || "—"} · План {planStatusRow.week || "—"} · {planStatusRow.qty ?? "—"} шт · {formatPlanStatus(planStatusRow)}
+              </div>
+            </div>
+            <div className="metal-catalog-fs__actions">
+              <button type="button" className="mini" onClick={closePlanStatus}>
+                Закрыть
+              </button>
+            </div>
+          </header>
+          <div className="metal-catalog-fs__body">
+            <MetalRouteBlueprint
+              value={planStatusDialog.processGraph}
+              disabled
+              fullScreen
+              nodeStatusMap={planStatusDialog.nodeStatusMap}
+            />
+          </div>
+          <footer className="metal-catalog-fs__foot">
+            <span className="mbp-status-legend">
+              <span className="mbp-status-legend__item mbp-status-legend__item--done">Серый — пройден</span>
+              <span className="mbp-status-legend__item mbp-status-legend__item--active">Зелёный — в работе</span>
+              <span className="mbp-status-legend__item mbp-status-legend__item--queued">Синий — ожидает работу</span>
+              <span className="mbp-status-legend__item mbp-status-legend__item--future">Красный — впереди</span>
+            </span>
+            {planStatusDialog.activeStages.length > 0
+              ? ` Сейчас в работе: ${planStatusDialog.activeStages.join(", ")}.`
+              : " Сейчас нет активных этапов."}
+            {" "}Esc — закрыть.
+          </footer>
+        </div>,
+        document.body,
       )}
 
       {doneDialog.open && doneDialog.row && createPortal(
@@ -1144,6 +1216,15 @@ export function MetalProcessView({
                             >
                               Просмотр
                             </button>
+                            <button
+                              type="button"
+                              className="mini ok"
+                              style={{ marginLeft: 8 }}
+                              onClick={() => openPlanStatus(row)}
+                              title="Маршрут и этапы в работе"
+                            >
+                              Статус
+                            </button>
                             {canManageOrders && (
                               <button
                                 type="button"
@@ -1166,6 +1247,15 @@ export function MetalProcessView({
                               title="Просмотр: изделие / артикул / количество"
                             >
                               Просмотр
+                            </button>
+                            <button
+                              type="button"
+                              className="mini ok"
+                              style={{ marginLeft: 8 }}
+                              onClick={() => openPlanStatus(row)}
+                              title="Маршрут и этапы в работе"
+                            >
+                              Статус
                             </button>
                             {canManageOrders && (
                               <button

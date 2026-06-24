@@ -2,7 +2,6 @@ const VIEW_CACHE_TTL_MS = {
   overview: 60 * 1000,
   workshop: 60 * 1000,
   stats: 60 * 1000,
-  sheetMirror: 60 * 1000,
   labor: 60 * 1000,
   shipment: 90 * 1000,
   warehouse: 2 * 60 * 1000,
@@ -70,22 +69,19 @@ export function clearAllViewCaches() {
 export function getMutationInvalidationViews(view) {
   const key = normalizeView(view);
   if (["overview", "workshop", "stats"].includes(key)) {
-    return ["overview", "workshop", "stats", "shipment", "warehouse", "sheetMirror", "strapStock"];
+    return ["overview", "workshop", "stats", "shipment", "warehouse", "strapStock"];
   }
   if (key === "shipment") {
-    return ["shipment", "overview", "workshop", "stats", "warehouse", "furniture", "sheetMirror", "strapStock"];
+    return ["shipment", "overview", "workshop", "stats", "warehouse", "furniture", "strapStock"];
   }
   if (key === "warehouse") {
-    return ["warehouse", "shipment", "overview", "workshop", "stats", "sheetMirror", "strapStock"];
+    return ["warehouse", "shipment", "overview", "workshop", "stats", "strapStock"];
   }
   if (key === "furniture") {
     return ["furniture", "shipment", "workshop", "warehouse", "strapStock"];
   }
   if (key === "labor") {
     return ["labor"];
-  }
-  if (key === "sheetMirror") {
-    return ["sheetMirror", "shipment", "overview", "workshop", "stats"];
   }
   return getCachedViews();
 }

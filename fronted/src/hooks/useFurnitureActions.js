@@ -25,7 +25,6 @@ export function useFurnitureActions({
   setError,
   load,
   sectionArticleRows,
-  syncPlanCellToGoogleSheet,
   loadMetalStock,
 }) {
   const importMetalFileRef = useRef(null);
@@ -61,7 +60,6 @@ export function useFurnitureActions({
         article,
       };
       await OrderService.createShipmentPlanCell(request);
-      void syncPlanCellToGoogleSheet(request);
       await load();
     } catch (e) {
       setError(toUserError(e));
@@ -69,7 +67,7 @@ export function useFurnitureActions({
     } finally {
       setActionLoading("");
     }
-  }, [canOperateProduction, setActionLoading, setError, load, denyActionByRole, syncPlanCellToGoogleSheet]);
+  }, [canOperateProduction, setActionLoading, setError, load, denyActionByRole]);
 
   const createFurniturePlanOrder = useCallback(async (payload) => {
     if (!canOperateProduction) {
@@ -121,7 +119,6 @@ export function useFurnitureActions({
         article: resolvedArticle,
       };
       await OrderService.createShipmentPlanCell(request);
-      void syncPlanCellToGoogleSheet(request);
       await load();
     } catch (e) {
       setError(toUserError(e));
@@ -135,7 +132,6 @@ export function useFurnitureActions({
     setError,
     load,
     denyActionByRole,
-    syncPlanCellToGoogleSheet,
     sectionArticleRows,
   ]);
 

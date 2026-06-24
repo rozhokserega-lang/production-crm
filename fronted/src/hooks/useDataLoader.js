@@ -95,10 +95,6 @@ function applyViewSnapshot(view, snapshot, setters) {
     setMaterialsStockRows(snapshot.materialsStockRows || []);
     return true;
   }
-  if (view === "sheetMirror") {
-    setRows(snapshot.rows || []);
-    return true;
-  }
   if (view === "warehouse") {
     setWarehouseRows(snapshot.warehouseRows || []);
     setMaterialsStockRows(snapshot.materialsStockRows || []);
@@ -177,9 +173,6 @@ function buildViewSnapshot({
       materialsStockRows: shipmentPayload?.materialsStockRows || [],
     };
   }
-  if (view === "sheetMirror") {
-    return { rows: Array.isArray(data) ? data : [] };
-  }
   if (view === "warehouse") {
     return {
       warehouseRows: Array.isArray(data) ? data : [],
@@ -226,7 +219,6 @@ export function useDataLoader({
   view,
   tab: _tab,
   callBackend,
-  SHEET_MIRROR_GID,
   setLoading,
   setError,
   setRows,
@@ -371,8 +363,6 @@ export function useDataLoader({
             setLoading(false);
           }
         }
-      } else if (view === "sheetMirror") {
-        data = await OrderService.getSheetOrdersMirror(SHEET_MIRROR_GID);
       } else if (view === "warehouse") {
         warehousePayload = await loadWarehouseDomainData({ callBackend });
         data = warehousePayload.data;
@@ -394,9 +384,6 @@ export function useDataLoader({
         // Shipment state is applied above with progressive orders loading.
       } else if (view === "overview") {
         // Overview state is applied above with progressive orders loading.
-      } else if (view === "sheetMirror") {
-        setRows(Array.isArray(data) ? data : []);
-        setViewCache(view, buildViewSnapshot({ view, data }));
       } else if (view === "warehouse") {
         let consumeResolveBoard = null;
         if (warehousePayload?.consumeResolveBoard != null) {
@@ -500,7 +487,6 @@ export function useDataLoader({
       setLoading(false);
     }
   }, [
-    SHEET_MIRROR_GID,
     callBackend,
     isOrdersDomainView,
     loadFurnitureDomainData,

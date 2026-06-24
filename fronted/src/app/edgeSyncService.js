@@ -58,8 +58,3 @@ export async function logConsumeToGoogleSheetEdge(baseUrl, token, params) {
   if (!hasCreds(baseUrl, token)) return;
   return postEdge(baseUrl, token, "log-consume-sheet", params);
 }
-
-export async function syncPlanCellToGoogleSheetEdge(baseUrl, token, params) {
-  if (!hasCreds(baseUrl, token)) return;
-  return postEdge(baseUrl, token, "sync-plan-cell-to-gsheet", params);
-}

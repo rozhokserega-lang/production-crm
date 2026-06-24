@@ -26,7 +26,6 @@ function makeProps(overrides = {}) {
     setError: vi.fn(),
     load: vi.fn().mockResolvedValue(undefined),
     sectionArticleRows: [],
-    syncPlanCellToGoogleSheet: vi.fn().mockResolvedValue(undefined),
     loadMetalStock: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };

@@ -567,12 +567,6 @@ export class OrderService {
     return await callBackend("webSetConsumeLogSheetName", { sheetName });
   }
 
-  // ==================== Зеркало Google Sheets ====================
-
-  static async getSheetOrdersMirror(sheetGid) {
-    return await callBackend("webGetSheetOrdersMirror", { p_sheet_gid: sheetGid });
-  }
-
   // ==================== Этапы производства (Stage actions) ====================
 
   static async finalizeWorkshopOrder(orderId, qtyReady) {

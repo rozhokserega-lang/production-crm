@@ -19,7 +19,6 @@ vi.mock("../app/appUtils", () => ({
 
 vi.mock("../app/runActionHelpers", () => ({
   buildNotifyPayload: vi.fn(() => ({ orderId: "1", meta: {} })),
-  buildStageSyncPayload: vi.fn(() => ({ sync: true })),
 }));
 
 vi.mock("../app/orderHelpers", () => ({
@@ -50,7 +49,6 @@ function makeProps(overrides = {}) {
     orderIndexById: new Map(),
     shipmentBoard: { sections: [] },
     load: vi.fn().mockResolvedValue(undefined),
-    syncPlanCellToGoogleSheet: vi.fn(),
     notifyAssemblyReadyTelegram: vi.fn(),
     notifyFinalStageTelegram: vi.fn(),
     openPilkaDoneConsumeDialog: vi.fn(),

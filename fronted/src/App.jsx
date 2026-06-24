@@ -24,7 +24,6 @@ const WarehouseView = lazy(() => import("./views/WarehouseView").then((m) => ({ 
 const WarehouseMissingView = lazy(() => import("./views/WarehouseMissingView").then((m) => ({ default: m.WarehouseMissingView })));
 const StrapStockView = lazy(() => import("./views/StrapStockView").then((m) => ({ default: m.StrapStockView })));
 const StatsView = lazy(() => import("./views/StatsView").then((m) => ({ default: m.StatsView })));
-const SheetMirrorView = lazy(() => import("./views/SheetMirrorView").then((m) => ({ default: m.SheetMirrorView })));
 const FurnitureView = lazy(() => import("./views/FurnitureView").then((m) => ({ default: m.FurnitureView })));
 const MetalView = lazy(() => import("./views/MetalView").then((m) => ({ default: m.MetalView })));
 const MetalProcessView = lazy(() => import("./views/MetalProcessView").then((m) => ({ default: m.MetalProcessView })));
@@ -336,14 +335,6 @@ function AppInner({ onAuthChangeRef }) {
             getStatsDeleteActionKey={getStatsDeleteActionKey}
             canManageOrders={auth.canManageOrders}
             deleteStatsOrder={actions.deleteStatsOrder}
-          />
-        );
-      case "sheetMirror":
-        return (
-          <SheetMirrorView
-            filtered={shipment.filtered}
-            loading={shell.loading}
-            formatDateTimeRu={formatDateTimeRu}
           />
         );
       case "furniture":

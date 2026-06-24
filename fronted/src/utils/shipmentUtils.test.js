@@ -3,11 +3,36 @@ import {
   catalogSectionMatchesPlanSection,
   getPlanSectionVariant,
   getShipmentStageKey,
+  isShelfPlanOrderItem,
+  isStorageLikeName,
+  isStorageShipmentRow,
+  isStorageTechHiddenName,
   itemMatchesPlanSectionVariant,
   shipmentOrderItemWeekKey,
 } from "./shipmentUtils";
 import { mergeOrderPreferNewer, shipmentOrderKey } from "../app/orderHelpers";
 import { passesShipmentStageFilter } from "../app/appUtils";
+
+describe("isStorageLikeName", () => {
+  it("detects shelf rows from shipment plan table", () => {
+    expect(isStorageLikeName("полка 587x340 (Вотан)")).toBe(true);
+    expect(isStorageLikeName("полка 387x330 (Сонома)")).toBe(true);
+    expect(isStorageLikeName("Система хранения. 1 секция 600 мм")).toBe(true);
+    expect(isStorageLikeName("Donini 750 мм. Дуб Вотан")).toBe(false);
+  });
+
+  it("keeps shelf plan orders visible in shipment filter", () => {
+    const shelf = "GXss1-600BVO :: QTY=30 :: полка 587x340 (Вотан) {{ART:GXss1-600BVO}}";
+    expect(isShelfPlanOrderItem(shelf)).toBe(true);
+    expect(isStorageTechHiddenName(shelf)).toBe(false);
+    expect(isStorageTechHiddenName("587_330 Вотан")).toBe(true);
+  });
+
+  it("detects GX shelf articles in selection payload", () => {
+    expect(isStorageShipmentRow({ item: "Test", productArticle: "GXss1-600WOS" })).toBe(true);
+    expect(isStorageShipmentRow({ item: "полка 587x340 (Вотан)", section: "Дуб Вотан" })).toBe(true);
+  });
+});
 
 describe("getPlanSectionVariant", () => {
   it("detects white and black section suffixes", () => {

@@ -16,9 +16,4 @@ export {
   WAREHOUSE_SYNC_GID,
   LEFTOVERS_SYNC_GID,
   CONSUME_LOG_SHEET_NAME,
-  PLAN_SYNC_SHEET_ID,
-  PLAN_SYNC_GID,
-  SHEET_MIRROR_GID,
 } from "../constants/views";
-
-export { STAGE_SYNC_META } from "../constants/stages";
