@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { enrichPreviewFromFurniture } from "./shipmentPreviewHelpers";
+import { enrichPreviewFromFurniture, enrichPreviewWithStrapProduct } from "./shipmentPreviewHelpers";
 
 const doniniTemplate = {
   productName: "Donini Grande 750",
@@ -64,5 +64,23 @@ describe("enrichPreviewFromFurniture", () => {
     const enriched = enrichPreviewFromFurniture(preview, deps({ resolveFurnitureTemplateForPreview: resolve }));
     expect(enriched.rows).toHaveLength(2);
     expect(resolve).not.toHaveBeenCalled();
+  });
+});
+
+describe("enrichPreviewWithStrapProduct", () => {
+  it("adds strapTargetProduct for strap-plan week without section", () => {
+    const preview = {
+      firstName: "502_80",
+      detailedName: "502_80. Черный",
+      colorName: "Черный",
+      planNumber: "обвязка",
+      qty: 200,
+      rows: [
+        { part: "Столешки (660_530)", qty: "400" },
+        { part: "Обвязка (1000_80)", qty: "400" },
+      ],
+    };
+    const enriched = enrichPreviewWithStrapProduct(preview, { item: "502_80. Черный", week: "обвязка" }, {});
+    expect(enriched.strapTargetProduct).toBe("Донини R");
   });
 });

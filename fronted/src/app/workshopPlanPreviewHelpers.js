@@ -1,7 +1,41 @@
 import { OrderService } from "../services/orderService";
 import { formatDateTimeForPrint } from "./appUtils";
-import { enrichPreviewFromFurniture } from "./shipmentPreviewHelpers";
-import { extractPlanItemArticle } from "./orderHelpers";
+import { enrichPreviewFromFurniture, enrichPreviewWithStrapProduct } from "./shipmentPreviewHelpers";
+import { extractPlanItemArticle, getPlanPreviewArticleCode } from "./orderHelpers";
+import { resolvePlanPreviewArticleByName } from "./planPreviewHelpers";
+import { buildStrapDisplayDeps } from "./strapDisplayHelpers";
+import {
+  canonicalStrapProductName,
+  extractDetailSizeToken,
+  normalizeStrapProductKey,
+} from "../utils/furnitureUtils";
+import { extractStrapTargetProduct } from "./orderHelpers";
+
+function enrichWorkshopPreviewWithStrap(preview, order, deps = {}) {
+  const strapDisplayDeps = deps.strapDisplayDeps || buildStrapDisplayDeps(deps.furnitureDetailArticleRows);
+  const shipmentRow = {
+    item: order?.item,
+    sourceItem: order?.item,
+    week: order?.week || preview?.planNumber,
+    planNumber: preview?.planNumber,
+    material: order?.material || order?.colorName || preview?.colorName,
+    strapProduct: order?.strapProduct || order?.strap_product,
+    section: order?.section || order?.sectionName,
+  };
+  return enrichPreviewWithStrapProduct(preview, shipmentRow, {
+    canonicalStrapProductName,
+    normalizeFurnitureKey: deps.normalizeFurnitureKey,
+    getPlanPreviewArticleCode,
+    resolvePlanPreviewArticleByName,
+    articleLookupByItemKey: deps.articleLookupByItemKey,
+    strapProductsByArticleCode: deps.strapProductsByArticleCode,
+    normalizeStrapProductKey,
+    extractDetailSizeToken,
+    extractStrapTargetProduct,
+    strapProductBySizeToken: strapDisplayDeps.strapProductBySizeToken,
+    strapTargetProduct: deps.strapTargetProduct,
+  });
+}
 
 export async function buildWorkshopPlanPreview(order, qtyReady, deps = {}) {
   const readyQty = Math.max(1, Number(qtyReady || 0) || 1);
@@ -52,7 +86,7 @@ export async function buildWorkshopPlanPreview(order, qtyReady, deps = {}) {
     _key: `workshop-${String(order?.orderId || order?.order_id || "")}-${readyQty}`,
   };
 
-  const enriched = await enrichPreviewFromFurniture(preview, {
+  let enriched = enrichPreviewFromFurniture(preview, {
     furnitureTemplates: deps.furnitureTemplates,
     resolveFurnitureTemplateForPreview: deps.resolveFurnitureTemplateForPreview,
     buildPreviewRowsFromFurnitureTemplate: deps.buildPreviewRowsFromFurnitureTemplate,
@@ -60,6 +94,7 @@ export async function buildWorkshopPlanPreview(order, qtyReady, deps = {}) {
     furnitureLoading: deps.furnitureLoading,
     furnitureError: deps.furnitureError,
   });
+  enriched = enrichWorkshopPreviewWithStrap(enriched, order, deps);
 
   const originalQty = Math.max(1, Number(order?.qty || 0) || readyQty);
   if (originalQty === readyQty || !Array.isArray(enriched?.rows) || !enriched.rows.length) {

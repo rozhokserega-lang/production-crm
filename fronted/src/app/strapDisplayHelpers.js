@@ -8,7 +8,11 @@ import {
   formatStrapPlanTargetCaption,
   resolveStrapTargetProductFromShipmentRow,
 } from "./orderHelpers";
-import { isWorkshopStrapOrderItem } from "./workshopStrapNeeds";
+import {
+  STRAP_LAUNCH_PLAN_WEEK,
+  detectWorkshopStrapProductLine,
+  isWorkshopStrapOrderItem,
+} from "./workshopStrapNeeds";
 
 const DONINI_R_STRAP_CODES = new Set(["288_80", "502_80", "520_75.5", "544_80"]);
 
@@ -35,12 +39,25 @@ export function buildStrapProductBySizeToken(furnitureDetailArticleRows = []) {
   return map;
 }
 
+export function isStrapLaunchPlanWeek(week) {
+  return String(week || "").trim().toLowerCase() === STRAP_LAUNCH_PLAN_WEEK;
+}
+
 function isStrapDisplayContext(row, rawItem) {
   const section = String(row?.section || row?.sectionName || "").toLowerCase();
   if (section.includes("обвяз")) return true;
+  if (isStrapLaunchPlanWeek(row?.week || row?.planNumber)) return true;
   if (isWorkshopStrapOrderItem(rawItem)) return true;
   if (extractStrapTargetProduct(rawItem)) return true;
   return Boolean(String(row?.strapProduct || "").trim());
+}
+
+function productFromWorkshopStrapLine(line) {
+  if (line === "donini_r") return canonicalStrapProductName("Донини R");
+  if (line === "donini") return canonicalStrapProductName("Донини");
+  if (line === "donini_grande") return canonicalStrapProductName("Донини Grande");
+  if (line === "avella_lite") return canonicalStrapProductName("Авелла Лайт");
+  return "";
 }
 
 function productFromKnownStrapCode(token) {
@@ -63,6 +80,9 @@ export function resolveStrapTargetProductForDisplay(row = {}, deps = {}) {
 
   const fromRow = resolveStrapTargetProductFromShipmentRow(row);
   if (fromRow) return canonicalStrapProductName(fromRow);
+
+  const fromLine = productFromWorkshopStrapLine(detectWorkshopStrapProductLine(rawItem));
+  if (fromLine) return fromLine;
 
   const token = extractDetailSizeToken(rawItem) || extractDetailSizeToken(String(row?.item || ""));
   if (!token) return "";

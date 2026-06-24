@@ -26,6 +26,13 @@ describe("strapDisplayHelpers", () => {
     expect(resolveStrapTargetProductForDisplay({ item: "502_80", week: "обвязка" }, {})).toBe("Донини R");
   });
 
+  it("resolves Donini R for strap-plan order with material suffix", () => {
+    expect(resolveStrapTargetProductForDisplay({ item: "502_80. Черный", week: "обвязка" }, {})).toBe("Донини R");
+    expect(resolveStrapTargetCaption({ item: "502_80. Черный", week: "обвязка" }, {})).toBe(
+      "Обвязка для изделия: Донини R",
+    );
+  });
+
   it("uses STRAP_FOR meta when present", () => {
     expect(
       resolveStrapTargetProductForDisplay(

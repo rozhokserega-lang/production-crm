@@ -1045,6 +1045,8 @@ export function useAppState({ auth }) {
       furnitureLoading,
       furnitureError,
       articleLookupByItemKey,
+      furnitureDetailArticleRows,
+      strapProductsByArticleCode,
     }),
     [
       furnitureTemplates,
@@ -1052,6 +1054,8 @@ export function useAppState({ auth }) {
       furnitureLoading,
       furnitureError,
       articleLookupByItemKey,
+      furnitureDetailArticleRows,
+      strapProductsByArticleCode,
     ],
   );
 

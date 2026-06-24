@@ -1,6 +1,7 @@
 import { OrderService } from "../services/orderService";
 import { extractPlanItemArticle, getPlanPreviewArticleCode } from "./orderHelpers";
 import { resolvePlanPreviewArticleByName, resolveProductionOrderIdForShipment } from "./planPreviewHelpers";
+import { isStrapLaunchPlanWeek, resolveStrapTargetProductForDisplay } from "./strapDisplayHelpers";
 
 export function enrichPreviewFromFurniture(preview, deps = {}) {
   if (!preview || preview.isStrapPlan) return preview;
@@ -99,7 +100,10 @@ export function enrichPreviewWithStrapProduct(preview, shipmentRow, deps = {}) {
   const sectionKey = typeof normalizeText === "function"
     ? normalizeText(shipmentRow?.section || "")
     : String(shipmentRow?.section || "").toLowerCase();
-  if (!sectionKey.includes("обвяз") && !shipmentHint) return preview;
+  const strapPlanWeek = isStrapLaunchPlanWeek(
+    shipmentRow?.week || shipmentRow?.planNumber || preview?.planNumber,
+  );
+  if (!sectionKey.includes("обвяз") && !shipmentHint && !strapPlanWeek) return preview;
   const articleCode = String(
     (typeof getArticleCode === "function" ? getArticleCode(preview) : "") ||
     (typeof resolveFallbackArticle === "function"
@@ -147,12 +151,21 @@ export function enrichPreviewWithStrapProduct(preview, shipmentRow, deps = {}) {
       ? canonicalName("Авелла Лайт")
       : "Авелла Лайт";
   })();
+  const productFromDisplay = resolveStrapTargetProductForDisplay(
+    {
+      ...shipmentRow,
+      item: itemForStrapMeta,
+      week: shipmentRow?.week || shipmentRow?.planNumber || preview?.planNumber,
+    },
+    { strapProductBySizeToken: deps.strapProductBySizeToken },
+  );
   const productName =
     shipmentHint ||
     productFromSize ||
     productFromAvellaLiteCode ||
     productFromArticle ||
-    productFromDialog;
+    productFromDialog ||
+    productFromDisplay;
   if (!productName) return preview;
   return {
     ...preview,

@@ -269,7 +269,7 @@ export const WorkshopView = memo(function WorkshopView({
         const showKromka = tab === "all" || tab === "kromka";
         const showPras = tab === "all" || tab === "pras";
         const strapPlankOrder = isWorkshopStrapOrderItem(o.item);
-        const strapTargetCaption = strapPlankOrder ? resolveStrapTargetCaption(o, strapDisplayDeps) : "";
+        const strapTargetCaption = resolveStrapTargetCaption(o, strapDisplayDeps);
         const showAssembly = (tab === "all" || tab === "assembly") && !strapPlankOrder;
         const showDone = (tab === "all" || tab === "done") && !strapPlankOrder;
         const assemblyDone = isDone(o.assemblyStatus);
