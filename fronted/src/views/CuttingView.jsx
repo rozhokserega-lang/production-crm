@@ -111,10 +111,19 @@ function JobSidebar({ jobs, activeJobId, onOpen, onDelete, onNewJob, loading, on
   );
 }
 
-function ItemRow({ item, idx, accountEdgeBand, onQty, onSetQty, onTurn, onRemove }) {
+function parseCuttingDimInput(raw, fallback) {
+  const normalized = String(raw ?? "").trim().replace(",", ".");
+  const parsed = parseFloat(normalized);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.min(9999, Math.round(parsed));
+}
+
+function ItemRow({ item, idx, accountEdgeBand, onQty, onSetQty, onSetSize, onTurn, onRemove }) {
   const cut = cuttingPieceSize(item.w, item.h, { accountEdgeBand });
   const showCutDims = accountEdgeBand && (cut.w !== item.w || cut.h !== item.h);
   const [qtyDraft, setQtyDraft] = useState(null);
+  const [sizeDraft, setSizeDraft] = useState(null);
+  const dimsEditRef = useRef(null);
 
   const commitQty = () => {
     const raw = qtyDraft ?? String(item.qty || 1);
@@ -123,12 +132,74 @@ function ItemRow({ item, idx, accountEdgeBand, onQty, onSetQty, onTurn, onRemove
     setQtyDraft(null);
   };
 
+  const commitSize = () => {
+    const draft = sizeDraft || {};
+    const nextW = parseCuttingDimInput(draft.w, Number(item.w) || 1);
+    const nextH = parseCuttingDimInput(draft.h, Number(item.h) || 1);
+    onSetSize(idx, nextW, nextH);
+    setSizeDraft(null);
+  };
+
+  const handleDimsBlur = (e) => {
+    if (dimsEditRef.current?.contains(e.relatedTarget)) return;
+    commitSize();
+  };
+
+  const dimKeyDown = (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      commitSize();
+      e.currentTarget.blur();
+    }
+    if (e.key === "Escape") {
+      setSizeDraft(null);
+      e.currentTarget.blur();
+    }
+  };
+
   return (
     <div className={`cv-item${item.turned ? " cv-item--turned" : ""}`}>
       <div className="cv-item__main">
         <div className="cv-item__name" title={item.itemName}>{item.itemName}</div>
         <div className="cv-item__dims">
-          {formatCuttingDim(item.w)}×{formatCuttingDim(item.h)} мм
+          <span ref={dimsEditRef} className="cv-item__dims-edit" title="Размер детали, мм">
+            <input
+              className="cv-item__dim-input"
+              type="text"
+              inputMode="decimal"
+              aria-label="Ширина, мм"
+              value={sizeDraft?.w ?? formatCuttingDim(item.w)}
+              onFocus={() => setSizeDraft({
+                w: String(item.w ?? ""),
+                h: String(item.h ?? ""),
+              })}
+              onChange={(e) => setSizeDraft((prev) => ({
+                w: e.target.value.replace(/[^\d.,]/g, ""),
+                h: prev?.h ?? String(item.h ?? ""),
+              }))}
+              onBlur={handleDimsBlur}
+              onKeyDown={dimKeyDown}
+            />
+            <span className="cv-item__dims-x">×</span>
+            <input
+              className="cv-item__dim-input"
+              type="text"
+              inputMode="decimal"
+              aria-label="Высота, мм"
+              value={sizeDraft?.h ?? formatCuttingDim(item.h)}
+              onFocus={() => setSizeDraft({
+                w: String(item.w ?? ""),
+                h: String(item.h ?? ""),
+              })}
+              onChange={(e) => setSizeDraft((prev) => ({
+                w: prev?.w ?? String(item.w ?? ""),
+                h: e.target.value.replace(/[^\d.,]/g, ""),
+              }))}
+              onBlur={handleDimsBlur}
+              onKeyDown={dimKeyDown}
+            />
+            <span className="cv-item__dims-unit">мм</span>
+          </span>
           {showCutDims ? (
             <span className="cv-item__chip cv-item__chip--cut" title="Размер в раскрое с учётом кромки">
               → {formatCuttingDim(cut.w)}×{formatCuttingDim(cut.h)}
@@ -286,7 +357,7 @@ function AddItemForm({ existingMaterials, onAdd, onClose }) {
 
 // ── Items panel ───────────────────────────────────────────────────────────────
 
-function ItemsPanel({ items, accountEdgeBand, onQty, onSetQty, onTurn, onRemove, showAddForm, existingMaterials, onAdd, onCloseForm }) {
+function ItemsPanel({ items, accountEdgeBand, onQty, onSetQty, onSetSize, onTurn, onRemove, showAddForm, existingMaterials, onAdd, onCloseForm }) {
   return (
     <>
       {showAddForm && (
@@ -316,6 +387,7 @@ function ItemsPanel({ items, accountEdgeBand, onQty, onSetQty, onTurn, onRemove,
               accountEdgeBand={accountEdgeBand}
               onQty={onQty}
               onSetQty={onSetQty}
+              onSetSize={onSetSize}
               onTurn={onTurn}
               onRemove={onRemove}
             />
@@ -344,6 +416,7 @@ export function CuttingView() {
     addItems,
     updateItemQty,
     setItemQty,
+    setItemSize,
     toggleItemTurn,
     removeItem,
     deleteJob,
@@ -587,6 +660,7 @@ export function CuttingView() {
               accountEdgeBand={!!activeJob.settings.accountEdgeBand}
               onQty={updateItemQty}
               onSetQty={setItemQty}
+              onSetSize={setItemSize}
               onTurn={toggleItemTurn}
               onRemove={removeItem}
               showAddForm={showAddForm}
