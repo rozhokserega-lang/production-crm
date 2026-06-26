@@ -262,7 +262,7 @@ const STAGE_COLORS = {
   painting: { bg: "#1a2a3a", border: "#06b6d4", text: "#67e8f9", icon: "🎨" },
 };
 
-const WELDING_EXECUTORS = ["Сергей", "Иван", "Виталик", "Андрей"];
+const WELDING_EXECUTORS = ["Сергей", "Иван", "Вадим", "Андрей"];
 
 function StageBadge({ stage, size = "md" }) {
   const c = STAGE_COLORS[stage] || { bg: "#222", border: "#666", text: "#ccc", icon: "•" };
