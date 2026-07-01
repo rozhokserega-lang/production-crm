@@ -3,6 +3,7 @@ import { OrderService } from "../services/orderService";
 import { matchesWeekFilter } from "../app/weekFilterUtils";
 import { orderCountsTowardStrapDemand, isWorkshopStrapOrderItem } from "../app/workshopStrapNeeds";
 import { orderMatchesWorkshopQrScan } from "../app/workshopQrSearchHelpers";
+import { compareWorkshopPilkaRows } from "../app/workshopPilkaQueueOrder";
 
 export function useOrders({
   autoLoad = true
@@ -82,6 +83,7 @@ export function useWorkshopRows({
   isInWork = () => false,
   getOverviewLaneId = () => "",
   isOrderCustomerShipped = () => false,
+  pilkaQueueOrderIds = [],
 } = {}) {
   return useMemo(() => {
     /** На «Склад обвязки» нужен тот же набор заказов, что в цеху при вкладке «Все» — для колонки нехватки. */
@@ -139,6 +141,9 @@ export function useWorkshopRows({
       return isInWork(o.pilkaStatus) || isInWork(o.kromkaStatus) || isInWork(o.prasStatus);
     };
     list.sort((a, b) => {
+      if (effectiveTab === "pilka") {
+        return compareWorkshopPilkaRows(a, b, pilkaQueueOrderIds, { isRowInWork, isRowPaused });
+      }
       const aw = isRowInWork(a) ? 1 : 0;
       const bw = isRowInWork(b) ? 1 : 0;
       if (aw !== bw) return bw - aw;
@@ -148,7 +153,7 @@ export function useWorkshopRows({
       return String(a.item || "").localeCompare(String(b.item || ""), "ru");
     });
     return list;
-  }, [filtered, getOverviewLaneId, isDone, isInWork, isOrderCustomerShipped, tab, view]);
+  }, [filtered, getOverviewLaneId, isDone, isInWork, isOrderCustomerShipped, pilkaQueueOrderIds, tab, view]);
 }
 
 export function useBaseOrderFilter({
@@ -330,11 +335,9 @@ export async function fetchAllOrdersWithRetry(options = {}) {
 
 export async function loadOrdersDomainData({ view }) {
   if (view === "stats") {
-    try {
-      return await OrderService.getOrderStats();
-    } catch (_) {
-      return fetchAllOrdersWithRetry({ preferStaged: false, maxAttempts: 3 });
-    }
+    // Для календаря активности нужны pilka_*_at / kromka_*_at / pras_*_at,
+    // их нет в web_get_order_stats.
+    return fetchAllOrdersWithRetry({ preferStaged: false, maxAttempts: 3 });
   }
   return fetchAllOrdersWithRetry({ preferStaged: true, maxAttempts: 1 });
 }

@@ -549,6 +549,36 @@ export class OrderService {
     return await callBackend("webDeleteMetalProcessItem", { id });
   }
 
+  // ==================== Склад готовой металлической продукции ====================
+
+  static async receiveMetalFinished(workItemId) {
+    return await callBackend("webReceiveMetalFinished", { workItemId });
+  }
+
+  static async listMetalFinishedStock() {
+    return await callBackend("webListMetalFinishedStock");
+  }
+
+  static async listMetalFinishedMoves(limit = 300) {
+    return await callBackend("webListMetalFinishedMoves", { limit });
+  }
+
+  static async shipMetalFinished(article, qty, note = null) {
+    return await callBackend("webShipMetalFinished", { article, qty, note });
+  }
+
+  static async adjustMetalFinishedStock(article, qty) {
+    return await callBackend("webAdjustMetalFinishedStock", { article, qty });
+  }
+
+  static async addMetalFinishedManual(article, qty, note = null) {
+    return await callBackend("webAddMetalFinishedManual", { article, qty, note });
+  }
+
+  static async deleteMetalFinishedStock(article, note = null) {
+    return await callBackend("webDeleteMetalFinishedStock", { article, note });
+  }
+
   // ==================== График работы ====================
 
   static async getWorkSchedule() {
@@ -565,6 +595,14 @@ export class OrderService {
 
   static async setConsumeLogSheetName(sheetName) {
     return await callBackend("webSetConsumeLogSheetName", { sheetName });
+  }
+
+  static async getPilkaQueueOrder() {
+    return await callBackend("webGetPilkaQueueOrder");
+  }
+
+  static async setPilkaQueueOrder(orderIds) {
+    return await callBackend("webSetPilkaQueueOrder", { orderIds });
   }
 
   // ==================== Этапы производства (Stage actions) ====================

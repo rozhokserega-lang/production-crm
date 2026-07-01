@@ -318,6 +318,7 @@ function AppInner({ onAuthChangeRef }) {
             transitionMetalProcessStage={metal.transitionMetalProcessStage}
             saveMetalProcessComment={metal.saveMetalProcessComment}
             deleteMetalProcessItem={metal.deleteMetalProcessItem}
+            receiveMetalFinished={metal.receiveMetalFinished}
             upsertMetalCatalogItem={metal.upsertMetalCatalogItem}
             upsertMetalCatalogCategory={metal.upsertMetalCatalogCategory}
             deleteMetalCatalogItem={metal.deleteMetalCatalogItem}
@@ -328,6 +329,7 @@ function AppInner({ onAuthChangeRef }) {
         return (
           <StatsView
             statsList={shell.statsList}
+            activityOrders={shell.rows}
             loading={shell.loading}
             getStageLabel={getStageLabel}
             getOverallStatusDisplay={getOverallStatusDisplay}
@@ -406,6 +408,8 @@ function AppInner({ onAuthChangeRef }) {
             saveConsumeLogSheetSetting={admin.saveConsumeLogSheetSetting}
             supabaseProxyEnabled={auth.supabaseProxyEnabled}
             setSupabaseProxyEnabled={auth.setSupabaseProxyEnabled}
+            rolePreviewBarEnabled={auth.rolePreviewBarEnabled}
+            setRolePreviewBarEnabled={auth.setRolePreviewBarEnabled}
           />
         );
       case "workshop":

@@ -30,6 +30,12 @@ export function normalizeOrder(row) {
     adminComment: row.adminComment ?? row.admin_comment ?? "",
     sourceRowId: row.sourceRowId ?? row.source_row_id ?? "",
     source_row_id: row.source_row_id ?? row.sourceRowId ?? "",
+    pilkaStartedAt: row.pilkaStartedAt ?? row.pilka_started_at ?? "",
+    pilkaDoneAt: row.pilkaDoneAt ?? row.pilka_done_at ?? "",
+    kromkaStartedAt: row.kromkaStartedAt ?? row.kromka_started_at ?? "",
+    kromkaDoneAt: row.kromkaDoneAt ?? row.kromka_done_at ?? "",
+    prasStartedAt: row.prasStartedAt ?? row.pras_started_at ?? "",
+    prasDoneAt: row.prasDoneAt ?? row.pras_done_at ?? "",
   };
   out.pipelineStage = row.pipeline_stage ?? row.pipelineStage ?? null;
   out.pipelineStage = resolvePipelineStage(out);

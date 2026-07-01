@@ -251,6 +251,24 @@ export function useMetalProcessState({
     }
   }, [canManageOrders, explainRpcMissing, loadMetalProcessData, setError]);
 
+  // Зачислить готовую позицию производства на склад готовой продукции.
+  // Переводит metal_work_items.status 'done' -> 'stocked', позиция исчезает из «Готовых».
+  const receiveMetalFinished = useCallback(async (id) => {
+    if (!canManageOrders) return;
+    const rowId = Number(id || 0);
+    if (!(rowId > 0)) return;
+    setMetalProcessActionKey(`row:${rowId}:receive`);
+    setError("");
+    try {
+      await OrderService.receiveMetalFinished(rowId);
+      await loadMetalProcessData();
+    } catch (e) {
+      setError(explainRpcMissing(e));
+    } finally {
+      setMetalProcessActionKey("");
+    }
+  }, [canManageOrders, explainRpcMissing, loadMetalProcessData, setError]);
+
   const saveMetalProcessComment = useCallback(async (id, comment) => {
     if (!canManageOrders) return;
     const rowId = Number(id || 0);
@@ -370,6 +388,7 @@ export function useMetalProcessState({
     transitionMetalProcessStage,
     saveMetalProcessComment,
     deleteMetalProcessItem,
+    receiveMetalFinished,
     upsertMetalCatalogItem,
     upsertMetalCatalogCategory,
     deleteMetalCatalogItem,

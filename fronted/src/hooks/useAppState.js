@@ -70,6 +70,7 @@ import { useFurniturePreviewSync } from "./useFurniturePreviewSync";
 import { useLaborState } from "./useLaborState";
 import { useLaborActions } from "./useLaborActions";
 import { useWorkshopLoad } from "./useWorkshopLoad";
+import { usePilkaQueueOrder } from "./usePilkaQueueOrder";
 import { useStageActions } from "./useStageActions";
 import { useConsumeDialog } from "./useConsumeDialog";
 import { useHardwareConsumeDialog } from "./useHardwareConsumeDialog";
@@ -981,6 +982,7 @@ export function useAppState({ auth }) {
     transitionMetalProcessStage,
     saveMetalProcessComment,
     deleteMetalProcessItem,
+    receiveMetalFinished,
     upsertMetalCatalogItem,
     upsertMetalCatalogCategory,
     deleteMetalCatalogItem,
@@ -1251,6 +1253,7 @@ export function useAppState({ auth }) {
     getStageLabel,
     getOverviewLaneId,
   });
+  const pilkaQueue = usePilkaQueueOrder({ enabled: view === "workshop" });
   const workshopRows = useWorkshopRows({
     filtered,
     view,
@@ -1259,6 +1262,7 @@ export function useAppState({ auth }) {
     isInWork,
     getOverviewLaneId,
     isOrderCustomerShipped,
+    pilkaQueueOrderIds: pilkaQueue.orderIds,
   });
   /** Всегда очередь пилы — для режима оператора независимо от вкладки цеха. */
   const pilkaWorkshopRows = useWorkshopRows({
@@ -1269,7 +1273,12 @@ export function useAppState({ auth }) {
     isInWork,
     getOverviewLaneId,
     isOrderCustomerShipped,
+    pilkaQueueOrderIds: pilkaQueue.orderIds,
   });
+  useEffect(() => {
+    if (view !== "workshop") return;
+    pilkaQueue.syncWithRows(pilkaWorkshopRows);
+  }, [view, pilkaWorkshopRows, pilkaQueue.syncWithRows]);
   const {
     shipmentMaterialBalance,
     shipmentTableRowsWithStockStatus,
@@ -1677,6 +1686,9 @@ export function useAppState({ auth }) {
       refreshProductionDebts,
       openFinalDoneDialog,
       openPlanPrint,
+      pilkaQueueOrderIds: pilkaQueue.orderIds,
+      pilkaQueueSaving: pilkaQueue.saving,
+      reorderPilkaRows: pilkaQueue.reorderRows,
     },
     warehouse: {
       warehouseRows,
@@ -1774,6 +1786,7 @@ export function useAppState({ auth }) {
       createMetalProcessPlanItem,
       saveMetalProcessComment,
       deleteMetalProcessItem,
+      receiveMetalFinished,
       upsertMetalCatalogItem,
       upsertMetalCatalogCategory,
       deleteMetalCatalogItem,

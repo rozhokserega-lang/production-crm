@@ -580,6 +580,13 @@ const RPC_MAP = {
   webTransitionMetalProcessStage: "web_transition_metal_stage",
   webSetMetalProcessComment: "web_set_metal_work_item_comment",
   webDeleteMetalProcessItem: "web_delete_metal_work_item",
+  webReceiveMetalFinished: "web_receive_metal_finished",
+  webListMetalFinishedStock: "web_list_metal_finished_stock",
+  webListMetalFinishedMoves: "web_list_metal_finished_moves",
+  webShipMetalFinished: "web_ship_metal_finished",
+  webAdjustMetalFinishedStock: "web_adjust_metal_finished_stock",
+  webAddMetalFinishedManual: "web_add_metal_finished_manual",
+  webDeleteMetalFinishedStock: "web_delete_metal_finished_stock",
   webGetLeftovers: "web_get_leftovers",
   webGetLeftoversHistory: "web_get_leftovers_history",
   webGetLaborTable: "web_get_labor_table",
@@ -600,6 +607,8 @@ const RPC_MAP = {
   webGetWorkSchedule: "web_get_work_schedule",
   webGetConsumeLogSheetName: "web_get_consume_log_sheet_name",
   webSetConsumeLogSheetName: "web_set_consume_log_sheet_name",
+  webGetPilkaQueueOrder: "web_get_pilka_queue_order",
+  webSetPilkaQueueOrder: "web_set_pilka_queue_order",
   webSetCrmAuthStrict: "web_set_crm_auth_strict",
   webSetWorkSchedule: "web_set_work_schedule",
   webListCrmUserRoles: "web_list_crm_user_roles",
@@ -901,6 +910,45 @@ function buildRpcPayload(action, payload = {}) {
       p_item_id: Number(payload.id || payload.p_item_id || 0),
     };
   }
+  if (action === "webReceiveMetalFinished") {
+    return {
+      p_work_item_id: Number(payload.workItemId ?? payload.p_work_item_id ?? payload.id ?? 0),
+    };
+  }
+  if (action === "webListMetalFinishedStock") {
+    return {};
+  }
+  if (action === "webListMetalFinishedMoves") {
+    return {
+      p_limit: Number(payload.limit ?? payload.p_limit ?? 300),
+    };
+  }
+  if (action === "webShipMetalFinished") {
+    return {
+      p_article: String(payload.article || payload.p_article || "").trim().toUpperCase(),
+      p_qty: Number(payload.qty ?? payload.p_qty ?? 0),
+      p_note: String(payload.note || payload.p_note || "").trim() || null,
+    };
+  }
+  if (action === "webAdjustMetalFinishedStock") {
+    return {
+      p_article: String(payload.article || payload.p_article || "").trim().toUpperCase(),
+      p_qty: Number(payload.qty ?? payload.p_qty ?? 0),
+    };
+  }
+  if (action === "webAddMetalFinishedManual") {
+    return {
+      p_article: String(payload.article || payload.p_article || "").trim().toUpperCase(),
+      p_qty: Number(payload.qty ?? payload.p_qty ?? 0),
+      p_note: String(payload.note || payload.p_note || "").trim() || null,
+    };
+  }
+  if (action === "webDeleteMetalFinishedStock") {
+    return {
+      p_article: String(payload.article || payload.p_article || "").trim().toUpperCase(),
+      p_note: String(payload.note || payload.p_note || "").trim() || null,
+    };
+  }
   if (action === "webUpsertItemColorMap") {
     return {
       p_item_name: String(payload.itemName || "").trim(),
@@ -966,6 +1014,12 @@ function buildRpcPayload(action, payload = {}) {
   if (action === "webSetConsumeLogSheetName") {
     return {
       p_sheet_name: String(payload.sheetName ?? payload.p_sheet_name ?? "").trim(),
+    };
+  }
+  if (action === "webSetPilkaQueueOrder") {
+    const ids = payload.orderIds ?? payload.order_ids ?? payload.p_order_ids ?? [];
+    return {
+      p_order_ids: Array.isArray(ids) ? ids : [],
     };
   }
   if (action === "webSetWorkSchedule") {

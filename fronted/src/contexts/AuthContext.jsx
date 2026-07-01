@@ -28,6 +28,7 @@ import {
   isRestrictedWorkshopOperatorRole,
 } from "../app/crmRoles";
 import { useCrmRolePreview } from "../hooks/useCrmRolePreview";
+import { useRolePreviewBarPreference } from "../hooks/useRolePreviewBarPreference";
 import { toUserError as toUserErrorFn } from "../app/errorCatalogHelpers";
 
 const AuthContext = createContext(null);
@@ -109,6 +110,20 @@ export function AuthProvider({ children, view, onAuthChange, setError }) {
     setSupabaseProxyEnabled,
     toggleSupabaseProxy,
   } = useSupabaseProxyPreference();
+
+  const {
+    rolePreviewBarEnabled,
+    setRolePreviewBarEnabled: setRolePreviewBarEnabledRaw,
+    toggleRolePreviewBar,
+  } = useRolePreviewBarPreference();
+
+  const setRolePreviewBarEnabled = useCallback(
+    (enabled) => {
+      setRolePreviewBarEnabledRaw(Boolean(enabled));
+      if (!enabled) clearCrmRolePreview();
+    },
+    [setRolePreviewBarEnabledRaw, clearCrmRolePreview],
+  );
 
   const crmRoleLabel = useMemo(() => {
     const label = CRM_ROLE_LABELS[effectiveCrmRole] || CRM_ROLE_LABELS.viewer;
@@ -231,6 +246,9 @@ export function AuthProvider({ children, view, onAuthChange, setError }) {
       supabaseProxyEnabled,
       setSupabaseProxyEnabled,
       toggleSupabaseProxy,
+      rolePreviewBarEnabled,
+      setRolePreviewBarEnabled,
+      toggleRolePreviewBar,
     }),
     [
       authEnabled,
@@ -294,6 +312,9 @@ export function AuthProvider({ children, view, onAuthChange, setError }) {
       supabaseProxyEnabled,
       setSupabaseProxyEnabled,
       toggleSupabaseProxy,
+      rolePreviewBarEnabled,
+      setRolePreviewBarEnabled,
+      toggleRolePreviewBar,
     ],
   );
 

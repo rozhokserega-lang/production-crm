@@ -1,5 +1,6 @@
 import { memo, useMemo } from "react";
 import { StatsKpiGrid } from "../components/KpiGrid";
+import { WorkshopActivityCalendar } from "../components/WorkshopActivityCalendar";
 import {
   Bar,
   BarChart,
@@ -50,6 +51,7 @@ const BOTTLENECK_ALLOWED_STAGES = new Set(["Пила", "Кромка", "Прис
 
 export const StatsView = memo(function StatsView({
   statsList,
+  activityOrders,
   loading,
   getStageLabel,
   getOverallStatusDisplay,
@@ -84,9 +86,12 @@ export const StatsView = memo(function StatsView({
   return (
     <>
       {!statsList.length && !loading && <div className="empty">Нет данных для статистики</div>}
+      <div className="stats-top-row">
+        <WorkshopActivityCalendar orders={activityOrders} />
+        {statsList.length > 0 && <StatsKpiGrid statsList={statsList} />}
+      </div>
       {statsList.length > 0 && (
         <>
-          <StatsKpiGrid statsList={statsList} />
           <div className="stats-charts-grid">
             <section className="stats-chart-card">
               <h3>Throughput по неделям</h3>

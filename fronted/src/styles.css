@@ -3205,6 +3205,57 @@ button:disabled {
   gap: 10px;
 }
 
+.workshop-card__drag {
+  flex: 0 0 auto;
+  align-self: center;
+  width: 28px;
+  min-height: 44px;
+  margin-left: 2px;
+  border: 1px dashed #94b8bf;
+  border-radius: 10px;
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 14px;
+  line-height: 1;
+  letter-spacing: -2px;
+  cursor: grab;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.workshop-card__drag:hover {
+  background: #e8f4f5;
+  border-color: #155e66;
+  color: #155e66;
+}
+
+.workshop-card__drag:active {
+  cursor: grabbing;
+}
+
+.workshop-card--drag-over {
+  outline: 2px solid #155e66;
+  outline-offset: 2px;
+  background: #f0fdfa;
+}
+
+.workshop-card--dragging {
+  opacity: 0.55;
+}
+
+.workshop-pilka-queue-hint {
+  margin: 0 0 10px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid #bae6fd;
+  background: #f0f9ff;
+  color: #0c4a6e;
+  font-size: 13px;
+}
+
 .workshop-card__body {
   flex: 1 1 auto;
   min-width: 0;
@@ -3452,6 +3503,20 @@ button:disabled {
   margin: 0 0 12px;
 }
 
+.stats-top-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.stats-top-row .kpi-grid--stats {
+  flex: 1 1 360px;
+  min-width: 0;
+  margin: 0;
+}
+
 .stats-chart-card {
   background: var(--bg-surface);
   border: 1px solid var(--border-main);
@@ -3469,6 +3534,201 @@ button:disabled {
 .stats-chart-box {
   width: 100%;
   min-height: 280px;
+}
+
+.workshop-activity-calendar {
+  position: relative;
+  width: fit-content;
+  max-width: 292px;
+  margin: 0 0 12px;
+  padding: 10px 12px 12px;
+  border: 1px solid var(--border-main, #d4dde8);
+  border-radius: 12px;
+  background: var(--bg-surface, #fff);
+  box-shadow: 0 8px 16px rgba(15, 23, 42, 0.07);
+}
+
+.workshop-activity-calendar__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.workshop-activity-calendar__title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 800;
+  color: #1e293b;
+}
+
+.workshop-activity-calendar__nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.workshop-activity-calendar__nav-btn {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #475569;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.workshop-activity-calendar__nav-btn:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.workshop-activity-calendar__month {
+  min-width: 92px;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: #334155;
+}
+
+.workshop-activity-calendar__body {
+  width: 252px;
+}
+
+.workshop-activity-calendar__weekdays,
+.workshop-activity-calendar__grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+
+.workshop-activity-calendar__weekdays {
+  margin-bottom: 4px;
+}
+
+.workshop-activity-calendar__weekday {
+  text-align: center;
+  font-size: 10px;
+  font-weight: 600;
+  color: #94a3b8;
+}
+
+.workshop-activity-calendar__cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  width: 34px;
+  height: 38px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
+.workshop-activity-calendar__cell--empty {
+  pointer-events: none;
+}
+
+.workshop-activity-calendar__cell.is-hovered:not(.is-today) {
+  background: #f1f5f9;
+}
+
+.workshop-activity-calendar__cell.is-today .workshop-activity-calendar__day {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: #0f766e;
+  color: #fff;
+  line-height: 24px;
+}
+
+.workshop-activity-calendar__day {
+  width: 24px;
+  height: 24px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 24px;
+  text-align: center;
+  color: #0f172a;
+}
+
+.workshop-activity-calendar__dots {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-height: 4px;
+}
+
+.workshop-activity-calendar__dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 999px;
+  background: #e2e8f0;
+}
+
+.workshop-activity-calendar__dot.is-on {
+  background: currentColor;
+}
+
+.workshop-activity-calendar__dot--pilka.is-on {
+  color: #2563eb;
+  background: #2563eb;
+}
+
+.workshop-activity-calendar__dot--kromka.is-on {
+  color: #0f766e;
+  background: #0f766e;
+}
+
+.workshop-activity-calendar__dot--pras.is-on {
+  color: #b45309;
+  background: #b45309;
+}
+
+.workshop-activity-calendar__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #eef2f7;
+  font-size: 10px;
+  color: #64748b;
+}
+
+.workshop-activity-calendar__legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.workshop-activity-calendar__legend .workshop-activity-calendar__dot {
+  background: currentColor;
+}
+
+.workshop-activity-calendar__tooltip {
+  position: absolute;
+  z-index: 20;
+  left: 0;
+  right: 0;
+  top: calc(100% + 6px);
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.14);
+  font-size: 11px;
+  line-height: 1.4;
+  color: #334155;
 }
 
 /* Workshop load dashboard */
@@ -11306,4 +11566,158 @@ button.mini.accent:hover:not(:disabled) {
   background: #0f172a;
   border-color: #0f172a;
   color: #fff;
+}
+
+/* Metal finished stock warehouse */
+.metal-finished-stock {
+  display: grid;
+  gap: 12px;
+}
+
+.metal-finished-stock__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.metal-finished-stock__tabs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.metal-finished-stock__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+}
+
+.metal-finished-stock__search {
+  flex: 1 1 220px;
+  min-width: 200px;
+  max-width: 360px;
+  min-height: 34px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border-main);
+  background: var(--bg-surface);
+  font-size: 12px;
+  box-sizing: border-box;
+}
+
+.metal-finished-stock__toolbar .mini {
+  flex: 0 0 auto;
+  min-height: 34px;
+  min-width: auto;
+  margin: 0;
+  align-self: center;
+}
+
+.metal-finished-stock__add-btn {
+  white-space: nowrap;
+}
+
+.metal-finished-stock__total {
+  flex: 1 1 auto;
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--text-soft);
+  white-space: nowrap;
+  align-self: center;
+}
+
+.metal-finished-stock__row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.metal-finished-stock__row-actions .mini {
+  min-width: auto;
+  min-height: 32px;
+  padding: 4px 10px;
+  margin: 0;
+}
+
+.catalog-search-combobox {
+  position: relative;
+}
+
+.catalog-search-combobox__input {
+  width: 100%;
+  min-height: 36px;
+  box-sizing: border-box;
+}
+
+.catalog-search-combobox__list {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  max-height: 240px;
+  overflow: auto;
+  background: var(--bg-surface, #fff);
+  border: 1px solid var(--border-main, #d4dde8);
+  border-radius: 10px;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.14);
+}
+
+.catalog-search-combobox__option {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.catalog-search-combobox__option:hover,
+.catalog-search-combobox__option:focus-visible {
+  background: var(--accent-muted, #e8f4f5);
+  outline: none;
+}
+
+.catalog-search-combobox__article {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  font-weight: 700;
+  color: #0f5664;
+}
+
+.catalog-search-combobox__name {
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.35;
+}
+
+.catalog-search-combobox__empty {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  padding: 10px 12px;
+  font-size: 12px;
+  color: #64748b;
+  background: var(--bg-surface, #fff);
+  border: 1px solid var(--border-main, #d4dde8);
+  border-radius: 10px;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.14);
+}
+
+.catalog-search-combobox__picked {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #334155;
 }

@@ -14,11 +14,24 @@ import {
   WAREHOUSE_SYNC_SHEET_ID,
 } from "../app/appConstants";
 import { extractErrorMessage } from "../app/errorCatalogHelpers";
+import { OrderService } from "../services/orderService";
 
 function resolveCreds() {
   const baseUrl = String(SUPABASE_URL || "").replace(/\/$/, "");
   const token = String(SUPABASE_ANON_KEY || "").trim();
   return { baseUrl, token };
+}
+
+async function resolveConsumeLogSheetName(fallback = "") {
+  try {
+    const raw = await OrderService.getConsumeLogSheetName();
+    const row = Array.isArray(raw) ? raw[0] : raw;
+    const name = String(row?.sheet_name ?? row?.sheetName ?? "").trim();
+    if (name) return name;
+  } catch (_) {
+    /* RPC может быть недоступен в старой сборке */
+  }
+  return String(fallback || "").trim() || CONSUME_LOG_SHEET_NAME;
 }
 
 /**
@@ -114,9 +127,10 @@ export function useEdgeSync({
       const { baseUrl, token } = resolveCreds();
       if (!baseUrl || !token) return;
       try {
+        const sheetName = await resolveConsumeLogSheetName(consumeLogSheetName);
         await logConsumeToGoogleSheetEdge(baseUrl, token, {
           sheetId: WAREHOUSE_SYNC_SHEET_ID,
-          sheetName: String(consumeLogSheetName || "").trim() || CONSUME_LOG_SHEET_NAME,
+          sheetName,
           orderId: String(meta.orderId || "").trim(),
           item: String(meta.item || "").trim(),
           material: String(meta.material || "").trim(),

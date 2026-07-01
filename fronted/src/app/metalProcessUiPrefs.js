@@ -1,6 +1,6 @@
 const METAL_UI_PREFS_KEY = "crm_metal_process_ui_v1";
 
-const SUB_VIEWS = new Set(["plan", "kanban", "production", "stats", "catalog"]);
+const SUB_VIEWS = new Set(["plan", "kanban", "production", "stats", "catalog", "stock"]);
 const PRODUCTION_TABS = new Set(["laser", "saw", "bending", "welding", "painting", "done"]);
 
 const DEFAULTS = {

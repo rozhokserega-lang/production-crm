@@ -64,14 +64,16 @@ export function AppChrome({
         />
       )}
 
-      <AdminRolePreviewBar
-        canAdminSettings={auth.canAdminSettings}
-        crmRolePreview={auth.crmRolePreview}
-        crmRolePreviewActive={auth.crmRolePreviewActive}
-        setCrmRolePreview={auth.setCrmRolePreview}
-        clearCrmRolePreview={auth.clearCrmRolePreview}
-        actualCrmRoleLabel={auth.actualCrmRoleLabel}
-      />
+      {auth.canAdminSettings && auth.rolePreviewBarEnabled && (
+        <AdminRolePreviewBar
+          canAdminSettings={auth.canAdminSettings}
+          crmRolePreview={auth.crmRolePreview}
+          crmRolePreviewActive={auth.crmRolePreviewActive}
+          setCrmRolePreview={auth.setCrmRolePreview}
+          clearCrmRolePreview={auth.clearCrmRolePreview}
+          actualCrmRoleLabel={auth.actualCrmRoleLabel}
+        />
+      )}
 
       {showMainTopPanels && (
         <ViewSwitcher

@@ -46,6 +46,16 @@ describe("normalizeOrder", () => {
     expect(result.colorName).toBe("Белый");
     expect(result.sheetsNeeded).toBe(5);
     expect(result.sourceRowId).toBe("row1");
+    expect(result.pilkaStartedAt).toBe("");
+  });
+  it("maps stage timestamps", () => {
+    const result = normalizeOrder({
+      order_id: "1",
+      pilka_started_at: "2026-06-12T09:00:00Z",
+      kromka_done_at: "2026-06-15T10:00:00Z",
+    });
+    expect(result.pilkaStartedAt).toBe("2026-06-12T09:00:00Z");
+    expect(result.kromkaDoneAt).toBe("2026-06-15T10:00:00Z");
   });
   it("preserves camelCase when present", () => {
     const row = { orderId: "456", pilkaStatus: "Пауза" };

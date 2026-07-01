@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { KROMKA_EXECUTORS, PRAS_EXECUTORS } from "../config";
 import { extractPlanItemArticle, extractPlanItemQrQty, stripPlanItemMeta } from "../app/orderHelpers";
 import { buildStrapDisplayDeps, resolveStrapTargetCaption } from "../app/strapDisplayHelpers";
@@ -77,6 +77,8 @@ export const WorkshopView = memo(function WorkshopView({
     refreshProductionDebts,
     openFinalDoneDialog,
     openPlanPrint,
+    pilkaQueueSaving,
+    reorderPilkaRows,
   } = workshop;
   const { canOperateProduction, canOperateWorkshopStage } = permissions;
   const canPilka = typeof canOperateWorkshopStage === "function"
@@ -111,6 +113,38 @@ export const WorkshopView = memo(function WorkshopView({
     ? executorOptions.pras
     : PRAS_EXECUTORS;
   const isPending = (key) => (typeof isActionPending === "function" ? isActionPending(key) : actionLoading === key);
+  const pilkaReorderEnabled = tab === "pilka" && canPilka;
+  const [dragOrderId, setDragOrderId] = useState(null);
+  const [dragOverOrderId, setDragOverOrderId] = useState(null);
+
+  const handlePilkaDragStart = (orderId) => (e) => {
+    if (!pilkaReorderEnabled || !orderId) return;
+    setDragOrderId(orderId);
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", orderId);
+  };
+
+  const handlePilkaDragOver = (orderId) => (e) => {
+    if (!pilkaReorderEnabled || !dragOrderId || !orderId || dragOrderId === orderId) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    setDragOverOrderId(orderId);
+  };
+
+  const handlePilkaDrop = (orderId) => (e) => {
+    e.preventDefault();
+    if (!pilkaReorderEnabled || !dragOrderId || !orderId || dragOrderId === orderId) return;
+    if (typeof reorderPilkaRows === "function") {
+      reorderPilkaRows(workshopRows, dragOrderId, orderId);
+    }
+    setDragOrderId(null);
+    setDragOverOrderId(null);
+  };
+
+  const resetPilkaDrag = () => {
+    setDragOrderId(null);
+    setDragOverOrderId(null);
+  };
 
   // Build strap stock lookup: { "1158_50": 98, ... } (нормализуем код размера)
   const strapStockByType = useMemo(() => {
@@ -217,6 +251,12 @@ export const WorkshopView = memo(function WorkshopView({
 
   return (
     <>
+      {pilkaReorderEnabled && workshopRows.length > 1 && (
+        <div className="workshop-pilka-queue-hint">
+          Перетащите карточки для приоритета пиления
+          {pilkaQueueSaving ? " · сохранение…" : ""}
+        </div>
+      )}
       {!workshopRows.length && !loading && <div className="empty">Нет заказов</div>}
       {workshopRows.map((o, idx) => {
         const orderId = String(o.orderId || o.order_id || "");
@@ -287,8 +327,29 @@ export const WorkshopView = memo(function WorkshopView({
         const stageIcon = STAGE_ICON[pipelineStage] || "🪚";
 
         return (
-          <article key={orderId || `${o.item}-${o.row}`} className={`card workshop-card ${statusClass(o)}`}>
+          <article
+            key={orderId || `${o.item}-${o.row}`}
+            className={`card workshop-card ${statusClass(o)}${dragOverOrderId === orderId ? " workshop-card--drag-over" : ""}${dragOrderId === orderId ? " workshop-card--dragging" : ""}`}
+            onDragOver={handlePilkaDragOver(orderId)}
+            onDragLeave={() => {
+              if (dragOverOrderId === orderId) setDragOverOrderId(null);
+            }}
+            onDrop={handlePilkaDrop(orderId)}
+          >
             <div className="workshop-card__row">
+              {pilkaReorderEnabled ? (
+                <button
+                  type="button"
+                  className="workshop-card__drag"
+                  draggable
+                  title="Перетащите для приоритета"
+                  aria-label="Перетащите для приоритета"
+                  onDragStart={handlePilkaDragStart(orderId)}
+                  onDragEnd={resetPilkaDrag}
+                >
+                  ⋮⋮
+                </button>
+              ) : null}
               <div className="workshop-card__body">
             <div className="card__content">
               <div className="card__main">

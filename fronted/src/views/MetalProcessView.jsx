@@ -28,6 +28,7 @@ import {
 } from "../app/metalCatalogHelpers";
 import { OrderService } from "../services/orderService";
 import { MetalRouteBlueprint, MetalRouteGraphSummary } from "./MetalRouteBlueprint";
+import { MetalFinishedStockView } from "./MetalFinishedStockView";
 
 const STAGE_LABELS = {
   laser: "Лазер",
@@ -301,6 +302,7 @@ export function MetalProcessView({
   transitionMetalProcessStage,
   saveMetalProcessComment,
   deleteMetalProcessItem,
+  receiveMetalFinished,
   upsertMetalCatalogItem,
   upsertMetalCatalogCategory,
   deleteMetalCatalogItem,
@@ -712,6 +714,19 @@ export function MetalProcessView({
     if (!ok) return;
     await deleteMetalProcessItem(rowId);
   };
+
+  // Зачислить готовую позицию на склад готовой металлической продукции.
+  // После зачисления позиция получает статус 'stocked' и исчезает из вкладки «Готовые».
+  const receiveToStock = async (row) => {
+    if (!canManageOrders) return;
+    const rowId = Number(row?.id || 0);
+    if (!(rowId > 0)) return;
+    const ok = window.confirm(
+      `Зачислить на склад готовой продукции?\n\n${row?.article || ""} — ${row?.name || ""}\nКол-во: ${row?.qty || 0}\n\nПозиция будет перемещена на вкладку «Склад металла».`
+    );
+    if (!ok) return;
+    await receiveMetalFinished(rowId);
+  };
   const getCommentDraft = (row) => {
     const key = String(row?.id || "");
     if (!key) return "";
@@ -784,6 +799,13 @@ export function MetalProcessView({
             Каталог
           </button>
         )}
+        <button
+          type="button"
+          className={subView === "stock" ? "tab active" : "tab"}
+          onClick={() => setSubView("stock")}
+        >
+          Склад
+        </button>
       </div>
 
       {subView === "plan" && planPreviewRow && (
@@ -1473,46 +1495,60 @@ export function MetalProcessView({
                   </div>
                   <div className="actions">
                     <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                      <button
-                        type="button"
-                        className="mini ghost"
-                        disabled={!canOperateProduction || busy || productionTab === "done" || stageStatus === "in_progress"}
-                        onClick={() => {
-                          if (!canOperateProduction || busy || productionTab === "done") return;
-                          if (stageStatus === "paused") {
-                            transitionMetalProcessStage(row.id, "resume");
-                            return;
-                          }
-                          if (isWelding) {
-                            openWeldingExecutorDialog(row);
-                            return;
-                          }
-                          transitionMetalProcessStage(row.id, "start");
-                        }}
-                      >
-                        {stageStatus === "paused" ? "Продолжить" : "Начать"}
-                      </button>
-                      <button
-                        type="button"
-                        className="mini ok"
-                        disabled={
-                          !canOperateProduction ||
-                          busy ||
-                          productionTab === "done" ||
-                          (stageStatus !== "in_progress" && stageStatus !== "paused")
-                        }
-                        onClick={() => openDoneDialog(row)}
-                      >
-                        Готово
-                      </button>
-                      <button
-                        type="button"
-                        className="mini warn"
-                        disabled={!canOperateProduction || busy || productionTab === "done" || stageStatus !== "in_progress"}
-                        onClick={() => transitionMetalProcessStage(row.id, "pause")}
-                      >
-                        Пауза
-                      </button>
+                      {productionTab !== "done" && (
+                        <>
+                          <button
+                            type="button"
+                            className="mini ghost"
+                            disabled={!canOperateProduction || busy || stageStatus === "in_progress"}
+                            onClick={() => {
+                              if (!canOperateProduction || busy) return;
+                              if (stageStatus === "paused") {
+                                transitionMetalProcessStage(row.id, "resume");
+                                return;
+                              }
+                              if (isWelding) {
+                                openWeldingExecutorDialog(row);
+                                return;
+                              }
+                              transitionMetalProcessStage(row.id, "start");
+                            }}
+                          >
+                            {stageStatus === "paused" ? "Продолжить" : "Начать"}
+                          </button>
+                          <button
+                            type="button"
+                            className="mini ok"
+                            disabled={
+                              !canOperateProduction ||
+                              busy ||
+                              (stageStatus !== "in_progress" && stageStatus !== "paused")
+                            }
+                            onClick={() => openDoneDialog(row)}
+                          >
+                            Готово
+                          </button>
+                          <button
+                            type="button"
+                            className="mini warn"
+                            disabled={!canOperateProduction || busy || stageStatus !== "in_progress"}
+                            onClick={() => transitionMetalProcessStage(row.id, "pause")}
+                          >
+                            Пауза
+                          </button>
+                        </>
+                      )}
+                      {productionTab === "done" && canManageOrders && (
+                        <button
+                          type="button"
+                          className="mini"
+                          disabled={busy}
+                          onClick={() => void receiveToStock(row)}
+                          title="Зачислить готовую позицию на склад готовой продукции"
+                        >
+                          На склад
+                        </button>
+                      )}
                       {productionTab === "done" && canManageOrders && (
                         <button
                           type="button"
@@ -2146,8 +2182,17 @@ export function MetalProcessView({
         );
       })()}
 
+      {subView === "stock" && (
+        <MetalFinishedStockView
+          canManageOrders={canManageOrders}
+          catalogRows={metalProcessCatalogRows}
+        />
+      )}
+
       <div className="empty metal-process-hint">
-        Подсказка: запустите изделие в работу — первый этап берётся из маршрута каталога. Далее в «Производстве» отмечайте этапы кнопками Начать / Пауза / Готово.
+        {subView === "production" && productionTab === "done"
+          ? "Подсказка: готовые позиции можно зачислить на склад или удалить из списка."
+          : "Подсказка: запустите изделие в работу — первый этап берётся из маршрута каталога. Далее в «Производстве» отмечайте этапы кнопками Начать / Пауза / Готово."}
       </div>
 
       {kanbanDrawerRow &&

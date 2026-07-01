@@ -58,6 +58,8 @@ export function AdminView({
   saveConsumeLogSheetSetting,
   supabaseProxyEnabled,
   setSupabaseProxyEnabled,
+  rolePreviewBarEnabled,
+  setRolePreviewBarEnabled,
 }) {
   const dayLabels = {
     mon: "Пн",
@@ -115,6 +117,24 @@ export function AdminView({
             Активные маршруты: <b>{supabaseRouteLabels.join(" → ")}</b>.
           </>
         )}
+      </div>
+      <div className="admin-panel__head">
+        <div className="admin-panel__title">Проверка роли в интерфейсе</div>
+        <button
+          type="button"
+          className={`mini ${rolePreviewBarEnabled ? "ok" : "warn"}`}
+          onClick={() => setRolePreviewBarEnabled(!rolePreviewBarEnabled)}
+          title="Показывать или скрывать панель «Проверка роли» на всех экранах"
+        >
+          {rolePreviewBarEnabled ? "Панель: включена" : "Панель: выключена"}
+        </button>
+      </div>
+      <div className="empty" style={{ marginBottom: 14 }}>
+        {rolePreviewBarEnabled
+          ? "Панель «Проверка роли» видна под шапкой. Можно переключать UI без смены роли в БД."
+          : "Панель скрыта. Чтобы снова проверять интерфейс от лица оператора — включите здесь."}
+        {" "}
+        Настройка сохраняется только в этом браузере.
       </div>
       <div className="admin-panel__head">
         <div className="admin-panel__title">Управление ролями пользователей</div>
