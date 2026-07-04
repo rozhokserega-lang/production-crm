@@ -1,0 +1,40 @@
+name: Deploy production (VPS)
+
+# Автодеплой фронтенда на прод (crm-v175.ru).
+# SSH-ключ в secrets ограничен на сервере forced command —
+# он может запускать только scripts/deploy-frontend-vps.sh.
+
+on:
+  push:
+    branches:
+      - crm
+    paths:
+      - "fronted/**"
+      - "scripts/deploy-frontend-vps.sh"
+      - ".github/workflows/deploy-production.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          echo "${{ secrets.VPS_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+
+      - name: Deploy on VPS
+        run: |
+          ssh -i ~/.ssh/deploy_key \
+            -o UserKnownHostsFile=~/.ssh/known_hosts \
+            -o ServerAliveInterval=30 \
+            -o ServerAliveCountMax=20 \
+            "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" \
+            deploy
