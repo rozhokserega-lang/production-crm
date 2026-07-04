@@ -8094,7 +8094,26 @@ button:hover {
 
 .cutting-plan__toolbar-actions {
   display: flex;
+  align-items: center;
   gap: 8px;
+}
+
+.cutting-plan__mirror-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #92400e;
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
+  border-radius: 8px;
+  padding: 6px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.cutting-plan__mirror-toggle input {
+  cursor: pointer;
 }
 
 .cutting-plan__warning {

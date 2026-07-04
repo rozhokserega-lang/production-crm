@@ -4,6 +4,24 @@ import { downloadAllCUT } from "../app/cutExport";
 import { downloadAllNXCut } from "../app/nxcutExport";
 import { formatCuttingDim, roundCuttingDim } from "../app/cuttingCatalogHelpers";
 
+const AUTOCUT_MIRROR_Y_STORAGE_KEY = "crm_cutting_autocut_mirror_y";
+
+function loadAutoCutMirrorYPref() {
+  try {
+    return localStorage.getItem(AUTOCUT_MIRROR_Y_STORAGE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function saveAutoCutMirrorYPref(value) {
+  try {
+    localStorage.setItem(AUTOCUT_MIRROR_Y_STORAGE_KEY, value ? "1" : "0");
+  } catch {
+    /* ignore */
+  }
+}
+
 const DISPLAY_W = 560;
 const PALETTE = [
   "#b3d9ff", "#ffd9b3", "#b3ffcc", "#e8b3ff",
@@ -1057,6 +1075,7 @@ export function CuttingPlanView({ plan, onClose }) {
   const [selection, setSelection] = useState(null);
   const [buffer, setBuffer] = useState([]);
   const [bufferPlacement, setBufferPlacement] = useState(null);
+  const [autoCutMirrorY, setAutoCutMirrorY] = useState(loadAutoCutMirrorYPref);
 
   useEffect(() => {
     if (plan?.materialGroups) {
@@ -1237,13 +1256,27 @@ export function CuttingPlanView({ plan, onClose }) {
           >
             ⬇ NXCut (.xml)
           </button>
+          <label
+            className="cutting-plan__mirror-toggle no-print"
+            title="Включите, если раскрой на станке получается перевёрнутым по вертикали относительно проекта. Проверьте на одном листе перед массовым резом."
+          >
+            <input
+              type="checkbox"
+              checked={autoCutMirrorY}
+              onChange={(e) => {
+                setAutoCutMirrorY(e.target.checked);
+                saveAutoCutMirrorYPref(e.target.checked);
+              }}
+            />
+            Зеркально по Y (AutoCUT)
+          </label>
           <button
             className="mini cutting-plan__dxf-btn accent"
             title="Скачать AutoCUT (.CUT) — формат King Stone AutoSAW (NPC-330)"
             onClick={() => downloadAllCUT(
               localPlan.materialGroups,
               localPlan.jobName || "Раскрой",
-              localPlan.settings
+              { ...localPlan.settings, mirrorY: autoCutMirrorY }
             )}
           >
             ⬇ AutoCUT (.cut)

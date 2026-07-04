@@ -61,34 +61,52 @@ function buildStrips(pieces) {
     }));
 }
 
+/**
+ * Инвертирует Y-координату верхнего края области высотой h,
+ * начинающейся в screenY (координаты экрана, Y растёт вниз),
+ * относительно всей высоты листа sheetH.
+ * Используется опционально для станков, у которых конвенция оси Y
+ * при импорте .cut получается зеркальной относительно раскроя из CRM.
+ */
+function flipTop(screenY, h, sheetH) {
+  return sheetH - screenY - h;
+}
+
 /** Рендерит одну деталь или sub-column для короткой детали в полосе */
-function renderPiecePart(p, strip, pieceTypes, uidCounter, lines, pad, kerf, addSpare) {
+function renderPiecePart(p, strip, pieceTypes, uidCounter, lines, pad, kerf, addSpare, sheetH, mirrorY) {
   const p1 = pad + "  ";
   const p2 = pad + "    ";
   const typeKey = `${p.label}|${fmt(p.w)}|${fmt(p.h)}`;
   const pieceUid = pieceTypes?.get(typeKey)?.uid;
   const uidAttr = pieceUid !== undefined ? ` UID="${pieceUid}"` : "";
   const pxAttr = p.nx > 0.01 ? ` Px="${fmt(p.nx)}"` : "";
-  const pyAttr = strip.y > 0.01 ? ` Py="${fmt(strip.y)}"` : "";
+
+  // Py контейнера/полосы (высота strip.h) и Py самой детали (высота p.h) совпадают,
+  // если деталь полной высоты полосы; для короткой детали (sub-column) они расходятся —
+  // после отражения короткая деталь оказывается прижата к ПРОТИВОПОЛОЖНОМУ краю полосы.
+  const stripTop  = mirrorY ? flipTop(strip.y, strip.h, sheetH) : strip.y;
+  const pieceTop  = mirrorY ? flipTop(strip.y, p.h, sheetH)     : strip.y;
+  const stripPyAttr = stripTop > 0.01 ? ` Py="${fmt(stripTop)}"` : "";
+  const piecePyAttr = pieceTop > 0.01 ? ` Py="${fmt(pieceTop)}"` : "";
   const isShort = p.h < strip.h - 0.5;
 
   if (!isShort) {
     lines.push(
-      `${p1}<Part X="${fmt(p.w)}" Y="${fmt(p.h)}"${pxAttr}${pyAttr}${uidAttr}/>`
+      `${p1}<Part X="${fmt(p.w)}" Y="${fmt(p.h)}"${pxAttr}${piecePyAttr}${uidAttr}/>`
     );
     return;
   }
 
   lines.push(
-    `${p1}<Part X="${fmt(p.w)}" Y="${fmt(strip.h)}"${pxAttr}${pyAttr}>`
+    `${p1}<Part X="${fmt(p.w)}" Y="${fmt(strip.h)}"${pxAttr}${stripPyAttr}>`
   );
   lines.push(
-    `${p2}<Part X="${fmt(p.w)}" Y="${fmt(p.h)}"${pxAttr}${pyAttr}${uidAttr}/>`
+    `${p2}<Part X="${fmt(p.w)}" Y="${fmt(p.h)}"${pxAttr}${piecePyAttr}${uidAttr}/>`
   );
 
   const spareH = strip.h - p.h - kerf;
   if (spareH > 0.5) {
-    const sparePy = strip.y + p.h + kerf;
+    const sparePy = mirrorY ? stripTop : strip.y + p.h + kerf;
     lines.push(
       `${p2}<Part X="${fmt(p.w)}" Y="${fmt(spareH)}"${pxAttr}` +
       ` Py="${fmt(sparePy)}" UID="${uidCounter.val++}" Spare="true"/>`
@@ -125,7 +143,7 @@ function collectPieceTypes(group) {
  * Возвращает { xml, spares: Map<"WxH", {w, h, count}> }
  */
 function renderLayout(id, sheet, settings, pieceTypes) {
-  const { sheetW, sheetH, kerf } = settings;
+  const { sheetW, sheetH, kerf, mirrorY = false } = settings;
   const lW = sheet.sheetW ?? sheetW;
   const lH = sheet.sheetH ?? sheetH;
 
@@ -157,19 +175,19 @@ function renderLayout(id, sheet, settings, pieceTypes) {
   );
 
   for (const strip of strips) {
-    const stripPy = strip.y;
     const stripH  = strip.h;
+    const stripPy = mirrorY ? flipTop(strip.y, stripH, lH) : strip.y;
     const pyAttr  = stripPy > 0.01 ? ` Py="${fmt(stripPy)}"` : "";
 
     lines.push(`              <Part X="${lW}" Y="${fmt(stripH)}"${pyAttr}>`);
 
     let maxRight = 0;
     for (const p of strip.pieces) {
-      renderPiecePart(p, strip, pieceTypes, uidCounter, lines, "              ", kerf, addSpare);
+      renderPiecePart(p, strip, pieceTypes, uidCounter, lines, "              ", kerf, addSpare, lH, mirrorY);
       maxRight = Math.max(maxRight, p.nx + p.w);
     }
 
-    // Остаток справа в полосе
+    // Остаток справа в полосе (та же Y-полоса, что и у контейнера)
     const sparePx = maxRight + kerf;
     const spareW  = lW - sparePx;
     if (spareW > 0.5) {
@@ -184,12 +202,13 @@ function renderLayout(id, sheet, settings, pieceTypes) {
     lines.push(`              </Part>`);
   }
 
-  // Нижний остаток
+  // Нижний остаток (после последней полосы в экранных координатах)
   if (strips.length > 0) {
     const lastS = strips[strips.length - 1];
-    const sparePy = lastS.y + lastS.h + kerf;
-    const spareH  = lH - sparePy;
+    const bottomStart = lastS.y + lastS.h + kerf;
+    const spareH  = lH - bottomStart;
     if (spareH > 0.5) {
+      const sparePy = mirrorY ? flipTop(bottomStart, spareH, lH) : bottomStart;
       lines.push(
         `              <Part X="${lW}" Y="${fmt(spareH)}"` +
         ` Py="${fmt(sparePy)}" UID="${uidCounter.val++}" Spare="true"/>`
@@ -238,9 +257,13 @@ export function generateCUTFile(materialGroups, jobName, settings = {}) {
     marginX     = 20,
     marginY     = 20,
     allowRotate = false,
+    // Некоторые станки/версии AutoSAW интерпретируют Py в обратную сторону —
+    // раскрой из CRM приходит зеркальным по вертикали. Включайте по необходимости
+    // после проверки на конкретном станке.
+    mirrorY     = false,
   } = settings;
 
-  const st = { sheetW, sheetH, kerf, marginX, marginY };
+  const st = { sheetW, sheetH, kerf, marginX, marginY, mirrorY };
 
   const lines = [];
   lines.push('<?xml version="1.0" encoding="UTF-16" standalone="yes"?>');
