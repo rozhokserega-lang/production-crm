@@ -111,12 +111,11 @@ function buildSnapGrid(pieces, idx, w, h, kerf, marginX, marginY) {
 }
 
 /** Привязка к ближайшим координатам сетки (X и Y от существующих деталей). */
-function collectSnapCandidates(pieces, idx, rawX, rawY, settings, sheetW, sheetH) {
-  const piece = pieces[idx];
+function collectSnapCandidatesAt(pieces, excludeIdx, pw, ph, rawX, rawY, settings, sheetW, sheetH) {
   const kerf = settings?.kerf ?? 4.8;
   const marginX = settings?.marginX ?? 20;
   const marginY = settings?.marginY ?? 20;
-  const { xs, ys } = buildSnapGrid(pieces, idx, piece.w, piece.h, kerf, marginX, marginY);
+  const { xs, ys } = buildSnapGrid(pieces, excludeIdx, pw, ph, kerf, marginX, marginY);
   const candidates = [];
   const rx = roundMm(rawX);
   const ry = roundMm(rawY);
@@ -176,6 +175,21 @@ function collectSnapCandidates(pieces, idx, rawX, rawY, settings, sheetW, sheetH
   return candidates;
 }
 
+function collectSnapCandidates(pieces, idx, rawX, rawY, settings, sheetW, sheetH) {
+  const piece = pieces[idx];
+  if (!piece) return [];
+  return collectSnapCandidatesAt(pieces, idx, piece.w, piece.h, rawX, rawY, settings, sheetW, sheetH);
+}
+
+function toBufferPiece(piece) {
+  return {
+    label: String(piece?.label || "—"),
+    w: roundCuttingDim(piece?.w),
+    h: roundCuttingDim(piece?.h),
+    rotated: !!piece?.rotated,
+  };
+}
+
 function normalizeSheetPieces(sheet) {
   if (!sheet?.pieces) return;
   for (const p of sheet.pieces) {
@@ -222,7 +236,7 @@ function RemainderZone({ displayX, displayY, displayW, displayH, label, hatchId 
 
 // ─── Piece editor panel ───────────────────────────────────────────────────────
 
-function PieceEditor({ piece, settings, sheetW, sheetH, pieces, pieceIdx, onUpdate, onClose }) {
+function PieceEditor({ piece, settings, sheetW, sheetH, pieces, pieceIdx, onUpdate, onMoveToBuffer, onClose }) {
   const [draftW, setDraftW] = useState(String(piece.w));
   const [draftH, setDraftH] = useState(String(piece.h));
   const [draftX, setDraftX] = useState(String(roundMm(piece.x)));
@@ -282,6 +296,16 @@ function PieceEditor({ piece, settings, sheetW, sheetH, pieces, pieceIdx, onUpda
 
       <div className="cutting-plan__piece-editor-actions">
         <button type="button" className="mini" onClick={handleRotate} title="Повернуть на 90°">↺ Повернуть</button>
+        {typeof onMoveToBuffer === "function" && (
+          <button
+            type="button"
+            className="mini warn"
+            onClick={onMoveToBuffer}
+            title="Убрать с листа в буфер — потом можно поставить на другой лист"
+          >
+            → В буфер
+          </button>
+        )}
       </div>
 
       <div className="cutting-plan__piece-editor-size">
@@ -314,6 +338,80 @@ function PieceEditor({ piece, settings, sheetW, sheetH, pieces, pieceIdx, onUpda
   );
 }
 
+// ─── Buffer panel ─────────────────────────────────────────────────────────────
+
+function BufferPanel({
+  buffer,
+  colorMap,
+  activeIdx,
+  onSelect,
+  onRemove,
+  onClear,
+}) {
+  if (!buffer.length) return null;
+
+  return (
+    <div className="cutting-plan__buffer no-print">
+      <div className="cutting-plan__buffer-head">
+        <div>
+          <div className="cutting-plan__buffer-title">Буфер деталей</div>
+          <div className="cutting-plan__buffer-hint">
+            {activeIdx != null
+              ? "Перетащите деталь на нужный лист или нажмите Esc для отмены"
+              : "Выберите деталь и поставьте её на любой лист"}
+          </div>
+        </div>
+        <button type="button" className="mini" onClick={onClear} title="Очистить буфер">
+          Очистить
+        </button>
+      </div>
+      <div className="cutting-plan__buffer-list">
+        {buffer.map((piece, idx) => {
+          const size = formatPieceSize(piece.w, piece.h, piece.rotated);
+          const active = activeIdx === idx;
+          return (
+            <button
+              key={`${piece.label}-${size}-${idx}`}
+              type="button"
+              className={`cutting-plan__buffer-item${active ? " cutting-plan__buffer-item--active" : ""}`}
+              onClick={() => onSelect(active ? null : idx)}
+              title={active ? "Отменить выбор" : "Выбрать для размещения на листе"}
+            >
+              <span
+                className="cutting-plan__buffer-swatch"
+                style={{ background: colorForLabel(piece.label, colorMap) }}
+              />
+              <span className="cutting-plan__buffer-item-text">
+                <span className="cutting-plan__buffer-item-name">{piece.label}</span>
+                <span className="cutting-plan__buffer-item-size">{size} мм</span>
+              </span>
+              <span
+                role="button"
+                tabIndex={0}
+                className="cutting-plan__buffer-remove"
+                title="Удалить из буфера"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRemove(idx);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onRemove(idx);
+                  }
+                }}
+              >
+                ✕
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ─── SheetDiagram with drag-and-drop ─────────────────────────────────────────
 
 function SheetDiagram({
@@ -325,6 +423,8 @@ function SheetDiagram({
   selectedIdx,
   onSelectPiece,
   onMovePiece,
+  placementPiece,
+  onPlacePieceAt,
 }) {
   const svgRef = useRef(null);
   const dragRef = useRef(null);  // holds drag state without triggering re-render on each move
@@ -370,6 +470,53 @@ function SheetDiagram({
       );
     });
   }, [pieces, kerf, marginX, marginY, sheetW, sheetH]);
+
+  const checkPlacementValid = useCallback((mmX, mmY, pw, ph) => {
+    return pieceFitsAt(pieces, -1, mmX, mmY, pw, ph, settings, sheetW, sheetH);
+  }, [pieces, settings, sheetW, sheetH]);
+
+  const computePlacementDragState = useCallback((clientX, clientY, base) => {
+    const { x: svgX, y: svgY } = clientToSvg(clientX, clientY);
+    const mmX = snapMm((svgX - base.offsetDX) / scaleX);
+    const mmY = snapMm((svgY - base.offsetDY) / scaleY);
+    const pw = base.pieceW;
+    const ph = base.pieceH;
+    const clampedX = Math.max(marginX, Math.min(sheetW - marginX - pw, mmX));
+    const clampedY = Math.max(marginY, Math.min(sheetH - marginY - ph, mmY));
+
+    const candidates = collectSnapCandidatesAt(
+      pieces, -1, pw, ph, clampedX, clampedY, settings, sheetW, sheetH,
+    );
+
+    let dropX = clampedX;
+    let dropY = clampedY;
+    let guideX = null;
+    let guideY = null;
+
+    for (const cand of candidates) {
+      const cx = roundMm(cand.x);
+      const cy = roundMm(cand.y);
+      if (checkPlacementValid(cx, cy, pw, ph)) {
+        dropX = cx;
+        dropY = cy;
+        guideX = cand.guideX;
+        guideY = cand.guideY;
+        break;
+      }
+    }
+
+    const valid = checkPlacementValid(dropX, dropY, pw, ph);
+    return {
+      ...base,
+      ghostX: dropX * scaleX,
+      ghostY: dropY * scaleY,
+      dropX,
+      dropY,
+      guideX,
+      guideY,
+      valid,
+    };
+  }, [clientToSvg, scaleX, scaleY, marginX, marginY, sheetW, sheetH, pieces, settings, checkPlacementValid]);
 
   // Build current drag visual state from raw mouse position
   const computeDragState = useCallback((clientX, clientY, base) => {
@@ -442,7 +589,7 @@ function SheetDiagram({
 
   // ── Global mouse events during drag ──────────────────────────────────────
   useEffect(() => {
-    if (!drag) return;
+    if (!drag || drag.placement) return;
 
     const onMove = (e) => {
       const updated = computeDragState(e.clientX, e.clientY, dragRef.current);
@@ -467,7 +614,66 @@ function SheetDiagram({
     };
   }, [drag, computeDragState, onMovePiece]);
 
+  useEffect(() => {
+    if (!drag?.placement) return;
+
+    const onMove = (e) => {
+      const updated = computePlacementDragState(e.clientX, e.clientY, dragRef.current);
+      dragRef.current = updated;
+      setDrag({ ...updated });
+    };
+
+    const onUp = (e) => {
+      const final = computePlacementDragState(e.clientX, e.clientY, dragRef.current);
+      if (final.valid && onPlacePieceAt) {
+        onPlacePieceAt(final.dropX, final.dropY);
+      }
+      dragRef.current = null;
+      setDrag(null);
+    };
+
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, [drag, computePlacementDragState, onPlacePieceAt]);
+
+  const startPlacementDrag = (e) => {
+    if (!placementPiece || !onPlacePieceAt) return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    const { x: svgX, y: svgY } = clientToSvg(e.clientX, e.clientY);
+    const pw = placementPiece.w;
+    const ph = placementPiece.h;
+    const startX = marginX;
+    const startY = marginY;
+    const pSvgX = startX * scaleX;
+    const pSvgY = startY * scaleY;
+
+    const base = {
+      placement: true,
+      pieceW: pw,
+      pieceH: ph,
+      offsetDX: svgX - pSvgX,
+      offsetDY: svgY - pSvgY,
+      ghostX: pSvgX,
+      ghostY: pSvgY,
+      ghostW: pw * scaleX,
+      ghostH: ph * scaleY,
+      fill: colorForLabel(placementPiece.label, colorMap),
+      dropX: startX,
+      dropY: startY,
+      valid: checkPlacementValid(startX, startY, pw, ph),
+    };
+    dragRef.current = base;
+    setDrag({ ...base });
+  };
+
   const handlePieceMouseDown = (e, idx) => {
+    if (placementPiece) return;
     e.preventDefault();
     e.stopPropagation();
 
@@ -501,10 +707,17 @@ function SheetDiagram({
   };
 
   const handleBackgroundMouseDown = (e) => {
+    if (placementPiece && onPlacePieceAt) {
+      if (e.target.closest?.(".cutting-plan__piece-group")) return;
+      startPlacementDrag(e);
+      return;
+    }
     if (e.target === e.currentTarget || e.target.classList.contains("cutting-plan__svg-bg")) {
       onSelectPiece?.(null);
     }
   };
+
+  const isPlacementTarget = !!placementPiece;
 
   // ── Remainder zones ───────────────────────────────────────────────────────
   const maxRight  = pieces.length ? Math.max(...pieces.map((p) => p.x + p.w)) : 0;
@@ -517,7 +730,7 @@ function SheetDiagram({
   return (
     <svg
       ref={svgRef}
-      className={`cutting-plan__svg${isDragging ? " cutting-plan__svg--dragging" : ""}`}
+      className={`cutting-plan__svg${isDragging ? " cutting-plan__svg--dragging" : ""}${isPlacementTarget ? " cutting-plan__svg--placement-target" : ""}`}
       viewBox={`0 0 ${DISPLAY_W} ${displayH}`}
       width={DISPLAY_W}
       height={displayH}
@@ -730,9 +943,12 @@ function MaterialGroup({
   globalColorMap,
   settings,
   selection,
+  bufferPlacement,
   onSelectPiece,
   onMovePiece,
   onUpdatePiece,
+  onMoveToBuffer,
+  onPlaceFromBuffer,
 }) {
   return (
     <div className="cutting-plan__material-group">
@@ -754,9 +970,10 @@ function MaterialGroup({
         const selectedPiece = sheetSelectedIdx != null
           ? sheet.pieces[sheetSelectedIdx]
           : null;
+        const placementPiece = bufferPlacement?.piece || null;
 
         return (
-          <div key={sIdx} className="cutting-plan__sheet print-page">
+          <div key={sIdx} className={`cutting-plan__sheet print-page${placementPiece ? " cutting-plan__sheet--placement-target" : ""}`}>
             <div className="cutting-plan__sheet-header">
               <span className="cutting-plan__sheet-title">
                 {group.material}
@@ -790,6 +1007,12 @@ function MaterialGroup({
                     ? (pIdx, x, y) => onMovePiece(gIdx, sIdx, pIdx, x, y)
                     : null
                 }
+                placementPiece={placementPiece}
+                onPlacePieceAt={
+                  placementPiece && bufferPlacement
+                    ? (x, y) => onPlaceFromBuffer?.(gIdx, sIdx, bufferPlacement.bufferIdx, x, y)
+                    : null
+                }
               />
 
               <div className="cutting-plan__sheet-right">
@@ -803,6 +1026,7 @@ function MaterialGroup({
                     sheetH={sheet.sheetH}
                     onClose={() => onSelectPiece?.(gIdx, sIdx, null)}
                     onUpdate={(patch) => onUpdatePiece?.(gIdx, sIdx, sheetSelectedIdx, patch)}
+                    onMoveToBuffer={() => onMoveToBuffer?.(gIdx, sIdx, sheetSelectedIdx)}
                   />
                 )}
                 <SheetTable pieces={sheet.pieces} />
@@ -831,6 +1055,8 @@ function MaterialGroup({
 export function CuttingPlanView({ plan, onClose }) {
   const [localPlan, setLocalPlan] = useState(null);
   const [selection, setSelection] = useState(null);
+  const [buffer, setBuffer] = useState([]);
+  const [bufferPlacement, setBufferPlacement] = useState(null);
 
   useEffect(() => {
     if (plan?.materialGroups) {
@@ -838,20 +1064,27 @@ export function CuttingPlanView({ plan, onClose }) {
       normalizePlanPieces(copy);
       setLocalPlan(copy);
       setSelection(null);
+      setBuffer([]);
+      setBufferPlacement(null);
     } else {
       setLocalPlan(null);
       setSelection(null);
+      setBuffer([]);
+      setBufferPlacement(null);
     }
   }, [plan]);
 
   useEffect(() => {
-    if (!selection) return undefined;
+    if (!selection && bufferPlacement == null) return undefined;
     const onKey = (e) => {
-      if (e.key === "Escape") setSelection(null);
+      if (e.key === "Escape") {
+        setSelection(null);
+        setBufferPlacement(null);
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selection]);
+  }, [selection, bufferPlacement]);
 
   const globalColorMap = useMemo(() => {
     const map = new Map();
@@ -863,8 +1096,11 @@ export function CuttingPlanView({ plan, onClose }) {
         }
       }
     }
+    for (const piece of buffer) {
+      colorForLabel(piece.label, map);
+    }
     return map;
-  }, [localPlan]);
+  }, [localPlan, buffer]);
 
   const onSelectPiece = useCallback((gIdx, sIdx, pIdx) => {
     if (pIdx == null) {
@@ -897,10 +1133,66 @@ export function CuttingPlanView({ plan, onClose }) {
     });
   }, []);
 
+  const onMoveToBuffer = useCallback((gIdx, sIdx, pIdx) => {
+    setLocalPlan((prev) => {
+      if (!prev?.materialGroups) return prev;
+      const next = JSON.parse(JSON.stringify(prev));
+      const sheet = next.materialGroups[gIdx]?.sheets?.[sIdx];
+      if (!sheet?.pieces?.[pIdx]) return prev;
+      const [removed] = sheet.pieces.splice(pIdx, 1);
+      if (removed) {
+        setBuffer((buf) => [...buf, toBufferPiece(removed)]);
+      }
+      return next;
+    });
+    setSelection(null);
+    setBufferPlacement(null);
+  }, []);
+
+  const onPlaceFromBuffer = useCallback((gIdx, sIdx, bufferIdx, x, y) => {
+    setLocalPlan((prev) => {
+      if (!prev?.materialGroups) return prev;
+      const piece = buffer[bufferIdx];
+      if (!piece) return prev;
+      const next = JSON.parse(JSON.stringify(prev));
+      const sheet = next.materialGroups[gIdx]?.sheets?.[sIdx];
+      if (!sheet) return prev;
+      const px = roundMm(x);
+      const py = roundMm(y);
+      if (!pieceFitsAt(sheet.pieces, -1, px, py, piece.w, piece.h, prev.settings, sheet.sheetW, sheet.sheetH)) {
+        return prev;
+      }
+      sheet.pieces.push({
+        label: piece.label,
+        w: piece.w,
+        h: piece.h,
+        rotated: !!piece.rotated,
+        x: px,
+        y: py,
+      });
+      queueMicrotask(() => {
+        setBuffer((buf) => buf.filter((_, i) => i !== bufferIdx));
+        setBufferPlacement(null);
+      });
+      return next;
+    });
+  }, [buffer]);
+
+  const onRemoveFromBuffer = useCallback((bufferIdx) => {
+    setBuffer((buf) => buf.filter((_, i) => i !== bufferIdx));
+    setBufferPlacement(null);
+  }, []);
+
+  const onClearBuffer = useCallback(() => {
+    setBuffer([]);
+    setBufferPlacement(null);
+  }, []);
+
   const isModified = useMemo(() => {
+    if (buffer.length > 0) return true;
     if (!plan?.materialGroups || !localPlan?.materialGroups) return false;
     return JSON.stringify(localPlan.materialGroups) !== JSON.stringify(plan.materialGroups);
-  }, [localPlan, plan]);
+  }, [localPlan, plan, buffer.length]);
 
   if (!plan?.materialGroups || !localPlan?.materialGroups) return null;
 
@@ -924,7 +1216,12 @@ export function CuttingPlanView({ plan, onClose }) {
             <button
               className="mini"
               title="Сбросить ручные изменения — вернуть позиции из алгоритма"
-              onClick={() => setLocalPlan(JSON.parse(JSON.stringify(plan)))}
+              onClick={() => {
+                setLocalPlan(JSON.parse(JSON.stringify(plan)));
+                setBuffer([]);
+                setBufferPlacement(null);
+                setSelection(null);
+              }}
             >
               ↺ Сбросить
             </button>
@@ -984,8 +1281,27 @@ export function CuttingPlanView({ plan, onClose }) {
 
       {/* Hint */}
       <div className="cutting-plan__dnd-hint no-print">
-        <span>💡 При перетаскивании X/Y привязываются к координатам сетки (±{SNAP_X_MM} мм). Или введите X/Y вручную справа.</span>
+        <span>
+          💡 Перетаскивайте детали по листу или убирайте проблемные в буфер (→ В буфер) и ставьте на другой лист.
+          Esc — отмена выбора.
+        </span>
       </div>
+
+      <BufferPanel
+        buffer={buffer}
+        colorMap={globalColorMap}
+        activeIdx={bufferPlacement?.bufferIdx ?? null}
+        onSelect={(bufferIdx) => {
+          if (bufferIdx == null) {
+            setBufferPlacement(null);
+            return;
+          }
+          setSelection(null);
+          setBufferPlacement({ bufferIdx, piece: buffer[bufferIdx] });
+        }}
+        onRemove={onRemoveFromBuffer}
+        onClear={onClearBuffer}
+      />
 
       <div className="cutting-plan__content">
         {localPlan.materialGroups.map((group, gIdx) => (
@@ -996,9 +1312,12 @@ export function CuttingPlanView({ plan, onClose }) {
             globalColorMap={globalColorMap}
             settings={localPlan.settings}
             selection={selection}
+            bufferPlacement={bufferPlacement}
             onSelectPiece={onSelectPiece}
             onMovePiece={onMovePiece}
             onUpdatePiece={onUpdatePiece}
+            onMoveToBuffer={onMoveToBuffer}
+            onPlaceFromBuffer={onPlaceFromBuffer}
           />
         ))}
       </div>
