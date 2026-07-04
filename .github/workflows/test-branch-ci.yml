@@ -58,4 +58,5 @@ jobs:
 
       - name: Warn if smoke skipped
         if: ${{ env.STAGING_SUPABASE_URL == '' || env.STAGING_SUPABASE_ANON_KEY == '' }}
-        run: echo "Supabase smoke skipped: set STAGING_SUPABASE_URL and STAGING_SUPABASE_ANON_KEY secrets."
+        run: |
+          echo "Supabase smoke skipped - set STAGING_SUPABASE_URL and STAGING_SUPABASE_ANON_KEY secrets."
