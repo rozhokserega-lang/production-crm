@@ -20,6 +20,9 @@ on:
 jobs:
   build-and-smoke:
     runs-on: ubuntu-latest
+    env:
+      STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+      STAGING_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
     defaults:
       run:
         working-directory: fronted
@@ -47,12 +50,12 @@ jobs:
         run: npm run build
 
       - name: Run Supabase RPC smoke
-        if: ${{ secrets.STAGING_SUPABASE_URL != '' && secrets.STAGING_SUPABASE_ANON_KEY != '' }}
+        if: ${{ env.STAGING_SUPABASE_URL != '' && env.STAGING_SUPABASE_ANON_KEY != '' }}
         run: npm run smoke:rpc
         env:
-          SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+          SUPABASE_URL: ${{ env.STAGING_SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ env.STAGING_SUPABASE_ANON_KEY }}
 
       - name: Warn if smoke skipped
-        if: ${{ secrets.STAGING_SUPABASE_URL == '' || secrets.STAGING_SUPABASE_ANON_KEY == '' }}
+        if: ${{ env.STAGING_SUPABASE_URL == '' || env.STAGING_SUPABASE_ANON_KEY == '' }}
         run: echo "Supabase smoke skipped: set STAGING_SUPABASE_URL and STAGING_SUPABASE_ANON_KEY secrets."
