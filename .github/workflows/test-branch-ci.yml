@@ -23,6 +23,8 @@ jobs:
     env:
       STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
       STAGING_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+      VITE_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+      VITE_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
     defaults:
       run:
         working-directory: fronted
