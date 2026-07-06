@@ -3,10 +3,11 @@ import { useWorkshopFinalDone } from "../components/WorkshopFinalDoneDialog";
 import { useWorkshopPlanPrintDialog } from "../components/WorkshopPlanPrintDialog";
 import { useShipmentSendToWorkDialog } from "../components/ShipmentSendToWorkDialog";
 import { useOverviewPlanMonths } from "./useOverviewPlanMonths";
-import { buildNotifyPayload } from "../app/runActionHelpers";
+import { applyRealtimeOrdersChange } from "../app/realtimeOrderPatch";
 import * as XLSX from "xlsx";
 import {
   callBackend,
+  getSupabaseAuthSession,
   getSupabaseRealtimeClient,
 } from "../api";
 import {
@@ -760,17 +761,32 @@ export function useAppState({ auth }) {
     let reloadTimer = null;
     let fallbackId = null;
 
+    const patchOrdersFromRealtime = (payload) => {
+      const patchList = (list) => applyRealtimeOrdersChange(list, payload, { normalize: normalizeOrder });
+      setRows((prev) => patchList(prev));
+      setShipmentOrders((prev) => patchList(prev));
+    };
+
     const scheduleReload = () => {
       if (disposed) return;
       if (reloadTimer) window.clearTimeout(reloadTimer);
       reloadTimer = window.setTimeout(() => {
         reloadTimer = null;
-        load({ background: true }).catch(() => {});
-      }, 1500);
+        load({ background: true, preferStaged: false }).catch(() => {});
+      }, 800);
     };
+
+    const handleOrdersChange = (payload) => {
+      patchOrdersFromRealtime(payload);
+      scheduleReload();
+    };
+
     const ensureFallbackPolling = () => {
       if (disposed || fallbackId) return;
-      fallbackId = window.setInterval(() => load({ background: true }).catch(() => {}), 60000);
+      fallbackId = window.setInterval(
+        () => load({ background: true, preferStaged: false }).catch(() => {}),
+        60000,
+      );
     };
     const clearFallbackPolling = () => {
       if (!fallbackId) return;
@@ -792,12 +808,17 @@ export function useAppState({ auth }) {
       "metal_work_queue",
     ];
 
+    const token = String(getSupabaseAuthSession()?.access_token || "").trim();
+    if (token) {
+      client.realtime.setAuth(token);
+    }
+
     const channel = client
       .channel("crm-db-changes")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "orders" },
-        scheduleReload,
+        handleOrdersChange,
       );
 
     REALTIME_TABLES.filter((t) => t !== "orders").forEach((table) => {
@@ -828,7 +849,15 @@ export function useAppState({ auth }) {
       clearFallbackPolling();
       client.removeChannel(channel).catch(() => {});
     };
-  }, [load]);
+  }, [load, setRows, setShipmentOrders]);
+
+  useEffect(() => {
+    if (view !== "workshop" && view !== "floorMap") return undefined;
+    const pollId = window.setInterval(() => {
+      load({ background: true, preferStaged: false }).catch(() => {});
+    }, 30000);
+    return () => window.clearInterval(pollId);
+  }, [view, load]);
 
   useEffect(() => {
     let cancelled = false;

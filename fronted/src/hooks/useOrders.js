@@ -333,13 +333,17 @@ export async function fetchAllOrdersWithRetry(options = {}) {
   throw lastError || new Error("NETWORK_UNAVAILABLE");
 }
 
-export async function loadOrdersDomainData({ view }) {
+export async function loadOrdersDomainData({ view, preferStaged } = {}) {
   if (view === "stats") {
     // Для календаря активности нужны pilka_*_at / kromka_*_at / pras_*_at,
     // их нет в web_get_order_stats.
     return fetchAllOrdersWithRetry({ preferStaged: false, maxAttempts: 3 });
   }
-  return fetchAllOrdersWithRetry({ preferStaged: true, maxAttempts: 1 });
+  const useStaged = preferStaged !== false;
+  return fetchAllOrdersWithRetry({
+    preferStaged: useStaged,
+    maxAttempts: useStaged ? 1 : 2,
+  });
 }
 
 export async function loadShipmentBoardPayload({

@@ -11,9 +11,9 @@ import {
   isOrdersDomainView,
 } from "./useOrders";
 
-async function loadOrdersWithCacheFallback({ view, callBackend }) {
+async function loadOrdersWithCacheFallback({ view, callBackend, preferStaged }) {
   try {
-    return await loadOrdersDomainData({ view, callBackend });
+    return await loadOrdersDomainData({ view, callBackend, preferStaged });
   } catch (e) {
     const overviewCache = getViewCache("overview");
     const shipmentCache = getViewCache("shipment");
@@ -250,9 +250,10 @@ export function useDataLoader({
   const loadSeqRef = useRef(0);
   const loadInFlightRef = useRef(false);
 
-  const load = useCallback(async ({ background = false } = {}) => {
+  const load = useCallback(async ({ background = false, preferStaged } = {}) => {
     loadInFlightRef.current = true;
     const seq = ++loadSeqRef.current;
+    const ordersPreferStaged = preferStaged ?? !background;
     if (!background) {
       setLoading(true);
       setError("");
@@ -342,7 +343,7 @@ export function useDataLoader({
         })();
 
         try {
-          const fresh = await loadOrdersWithCacheFallback({ view, callBackend });
+          const fresh = await loadOrdersWithCacheFallback({ view, callBackend, preferStaged: ordersPreferStaged });
           if (seq !== loadSeqRef.current) return;
           const rows = Array.isArray(fresh) ? fresh.map(normalizeOrder) : [];
           setRows(rows);
@@ -369,14 +370,14 @@ export function useDataLoader({
       } else if (view === "labor") {
         data = await OrderService.getLaborTable();
       } else if (view === "stats") {
-        data = await loadOrdersWithCacheFallback({ view, callBackend });
+        data = await loadOrdersWithCacheFallback({ view, callBackend, preferStaged: ordersPreferStaged });
       } else if (view === "furniture") {
         furniturePayload = await loadFurnitureDomainData({ callBackend });
         data = furniturePayload.data;
       } else if (view === "metalProcess") {
         data = [];
       } else {
-        data = await loadOrdersWithCacheFallback({ view, callBackend });
+        data = await loadOrdersWithCacheFallback({ view, callBackend, preferStaged: ordersPreferStaged });
       }
 
       if (seq !== loadSeqRef.current) return;

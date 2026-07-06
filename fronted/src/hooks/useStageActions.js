@@ -153,7 +153,7 @@ export function useStageActions({
           return;
         }
         // Non-blocking reconcile: optimistic state updates instantly, backend sync runs in background.
-        void load();
+        void load({ preferStaged: false });
       } catch (e) {
         if (hasOptimisticRule && stageActionSeqRef.current.get(key) === seq) {
           if (rowsSnapshot) {
