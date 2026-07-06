@@ -1,6 +1,37 @@
 import { firstSelectedWeek } from "./weekFilterUtils";
-import { normalizeCatalogItemName } from "./errorCatalogHelpers";
+import { normalizeCatalogItemName, normalizeCatalogDedupKey } from "./errorCatalogHelpers";
 import { normText, catalogSectionMatchesPlanSection, sectionNamesMatch } from "../utils/shipmentUtils";
+
+/** Ключ для слияния дублей изделия (базовая секция + «… черный/белый», суффикс «25» в названии). */
+export function planCatalogRowDedupKey(row) {
+  const item = normalizeCatalogDedupKey(String(row?.itemName || row?.item_name || ""))
+    .replace(/\s+25(\s*мм)?\s*$/i, "");
+  const mat = normText(String(row?.material || row?.table_color || ""));
+  return `${item}|${mat}`;
+}
+
+function planCatalogRowDedupRank(row, planSection = "") {
+  let score = 0;
+  if (sectionNamesMatch(row?.sectionName || row?.section_name, planSection)) score += 100;
+  const art = String(row?.article || "").trim();
+  if (art && !art.startsWith("ITEM-")) score += 50;
+  const name = String(row?.itemName || row?.item_name || "");
+  if (!/\s25(\s*мм)?\s*$/i.test(name)) score += 10;
+  return score;
+}
+
+/** Оставляет одну строку на изделие+материал, предпочитая точную секцию и артикул из справочника. */
+export function dedupePlanCatalogRows(rows = [], planSection = "") {
+  const byKey = new Map();
+  for (const row of rows) {
+    const k = planCatalogRowDedupKey(row);
+    const prev = byKey.get(k);
+    if (!prev || planCatalogRowDedupRank(row, planSection) > planCatalogRowDedupRank(prev, planSection)) {
+      byKey.set(k, row);
+    }
+  }
+  return [...byKey.values()];
+}
 
 export function buildStrapDialogInit({
   strapItems = [],

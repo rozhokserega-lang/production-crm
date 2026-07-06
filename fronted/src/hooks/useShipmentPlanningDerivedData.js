@@ -1,8 +1,8 @@
 import { useMemo } from "react";
 import { normalizeCatalogItemName } from "../app/errorCatalogHelpers";
 import {
+  dedupePlanCatalogRows,
   matchPlanCatalogRowSelectKey,
-  planCatalogRowSelectKey,
   resolvePlanCatalogSelection,
 } from "../app/shipmentDialogHelpers";
 import { getMaterialLabel } from "../app/orderHelpers";
@@ -91,12 +91,9 @@ export function useShipmentPlanningDerivedData({
       .filter((x) => catalogSectionMatchesPlanSection(x.sectionName, planSection) && x.article && x.itemName)
       .filter((x) => itemMatchesPlanSectionVariant(x.itemName, planSection, sectionOptions))
       .sort((a, b) => a.itemName.localeCompare(b.itemName, "ru"));
-    const byKey = new Map();
-    list.forEach((row) => {
-      const k = planCatalogRowSelectKey(row);
-      if (!byKey.has(k)) byKey.set(k, row);
-    });
-    return [...byKey.values()];
+    return dedupePlanCatalogRows(list, planSection).sort((a, b) =>
+      a.itemName.localeCompare(b.itemName, "ru"),
+    );
   }, [sectionArticleRows, planSection, sectionOptions]);
 
   const selectedItemVariants = useMemo(() => {

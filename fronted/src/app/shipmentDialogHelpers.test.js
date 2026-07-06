@@ -1,10 +1,54 @@
 import { describe, expect, it } from "vitest";
 import {
   buildCreatePlanDialogInit,
+  dedupePlanCatalogRows,
   matchPlanCatalogRowSelectKey,
   planCatalogRowSelectKey,
   resolvePlanCatalogSelection,
 } from "./shipmentDialogHelpers";
+
+describe("dedupePlanCatalogRows", () => {
+  it("merges premier black duplicates from base section and color alias", () => {
+    const rows = [
+      {
+        sectionName: "Премьер",
+        article: "ITEM-0fa02d3b21",
+        itemName: "Премьер. Черный. Бетон Чикаго светло-серый 25",
+        material: "Бетон чикаго 25",
+      },
+      {
+        sectionName: "Премьер черный",
+        article: "GXodPremBC",
+        itemName: "Премьер. Черный. Бетон Чикаго светло-серый",
+        material: "Бетон чикаго 25",
+      },
+    ];
+    const deduped = dedupePlanCatalogRows(rows, "Премьер черный");
+    expect(deduped).toHaveLength(1);
+    expect(deduped[0].article).toBe("GXodPremBC");
+    expect(deduped[0].sectionName).toBe("Премьер черный");
+  });
+
+  it("merges premier white duplicates the same way", () => {
+    const rows = [
+      {
+        sectionName: "Премьер",
+        article: "ITEM-00a4165c2c",
+        itemName: "Премьер. Белый. Бетон Чикаго светло-серый 25",
+        material: "Бетон чикаго 25",
+      },
+      {
+        sectionName: "Премьер белый",
+        article: "GXodPremWBC",
+        itemName: "Премьер. Белый. Бетон Чикаго светло-серый",
+        material: "Бетон чикаго 25",
+      },
+    ];
+    const deduped = dedupePlanCatalogRows(rows, "Премьер белый");
+    expect(deduped).toHaveLength(1);
+    expect(deduped[0].article).toBe("GXodPremWBC");
+  });
+});
 
 describe("planCatalogRowSelectKey", () => {
   it("uses uppercased article and normalized material when present", () => {
