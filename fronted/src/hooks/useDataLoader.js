@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from "react";
 import { OrderService } from "../services/orderService";
+import { partitionDomains } from "../app/domainReload";
 import { getViewCache, setViewCache } from "./viewCache";
 import {
   loadOrdersDomainData,
@@ -213,6 +214,270 @@ function buildViewSnapshot({
     return snap;
   }
   return null;
+}
+
+function createLoaderSetters({
+  setRows,
+  setShipmentBoard,
+  setPlanCatalogRows,
+  setSectionCatalogRows,
+  setSectionArticleRows,
+  setShipmentOrders,
+  setFurnitureDetailArticleRows,
+  setFurnitureCustomTemplates,
+  setMaterialsStockRows,
+  setLeftoversRows,
+  setLeftoversHistoryRows,
+  setConsumeHistoryRows,
+  setPilkaDoneHistoryRows,
+  setWarehouseRows,
+  setLaborRows,
+  setFurnitureArticleRows,
+}) {
+  return {
+    setRows,
+    setShipmentBoard,
+    setPlanCatalogRows,
+    setSectionCatalogRows,
+    setSectionArticleRows,
+    setShipmentOrders,
+    setFurnitureDetailArticleRows,
+    setFurnitureCustomTemplates,
+    setMaterialsStockRows,
+    setLeftoversRows,
+    setLeftoversHistoryRows,
+    setConsumeHistoryRows,
+    setPilkaDoneHistoryRows,
+    setWarehouseRows,
+    setLaborRows,
+    setFurnitureArticleRows,
+  };
+}
+
+async function reloadOrdersDomain({
+  view,
+  seq,
+  loadSeqRef,
+  callBackend,
+  preferStaged,
+  normalizeOrder,
+  normalizeShipmentBoard,
+  setters,
+}) {
+  const data = await loadOrdersWithCacheFallback({ view, callBackend, preferStaged });
+  if (seq !== loadSeqRef.current) return;
+  const normalizedRows = Array.isArray(data) ? data.map(normalizeOrder) : [];
+  setters.setRows(normalizedRows);
+  if (view === "workshop" || view === "floorMap" || view === "overview" || view === "stats" || view === "shipment") {
+    setters.setShipmentOrders(normalizedRows);
+  }
+  let workshopBoard = null;
+  let workshopTemplates = [];
+  let workshopDetailArticles = [];
+  if (view === "workshop" || view === "floorMap" || view === "strapStock") {
+    const [boardResult, templatesResult, detailArticlesResult] = await Promise.all([
+      view === "workshop" || view === "floorMap" ? OrderService.getShipmentBoard().catch(() => null) : Promise.resolve(null),
+      typeof setters.setFurnitureCustomTemplates === "function"
+        ? OrderService.getFurnitureCustomTemplates().catch(() => null)
+        : Promise.resolve(null),
+      OrderService.getFurnitureDetailArticles().catch(() => null),
+    ]);
+    if (seq !== loadSeqRef.current) return;
+    if ((view === "workshop" || view === "floorMap") && boardResult != null) {
+      try {
+        workshopBoard = normalizeShipmentBoard(boardResult);
+        setters.setShipmentBoard(workshopBoard);
+      } catch (_) {
+        /* keep previous board */
+      }
+    }
+    if (Array.isArray(templatesResult) && typeof setters.setFurnitureCustomTemplates === "function") {
+      workshopTemplates = templatesResult;
+      setters.setFurnitureCustomTemplates(templatesResult);
+    }
+    workshopDetailArticles = Array.isArray(detailArticlesResult) ? detailArticlesResult : [];
+    setters.setFurnitureDetailArticleRows(workshopDetailArticles);
+  }
+  setViewCache(view, buildViewSnapshot({
+    view,
+    normalizedRows,
+    workshopBoard,
+    workshopTemplates,
+    workshopDetailArticles,
+  }));
+}
+
+async function reloadShipmentDomain({
+  view,
+  seq,
+  loadSeqRef,
+  normalizeShipmentBoard,
+  mergeShipmentBoardWithTable,
+  normalizeOrder,
+  setters,
+}) {
+  if (view === "shipment") {
+    const boardPayload = await loadShipmentBoardPayload({
+      normalizeShipmentBoard,
+      mergeShipmentBoardWithTable,
+    });
+    if (seq !== loadSeqRef.current) return;
+    const normalizedBoard = normalizeShipmentBoard(boardPayload.data);
+    setters.setPlanCatalogRows(boardPayload.planCatalogRows || []);
+    setters.setSectionCatalogRows(boardPayload.sectionCatalogRows || []);
+    setters.setSectionArticleRows(boardPayload.sectionArticleRows || []);
+    setters.setFurnitureDetailArticleRows(boardPayload.furnitureDetailArticleRows || []);
+    if (typeof setters.setFurnitureCustomTemplates === "function") {
+      setters.setFurnitureCustomTemplates(boardPayload.furnitureCustomTemplates || []);
+    }
+    setters.setMaterialsStockRows(boardPayload.materialsStockRows || []);
+    setters.setShipmentBoard(normalizedBoard);
+    setViewCache(view, buildViewSnapshot({
+      view,
+      data: normalizedBoard,
+      shipmentPayload: { ...boardPayload, shipmentOrders: [] },
+    }));
+
+    const shipmentOrders = await loadShipmentOrdersPayload({ normalizeOrder });
+    if (seq !== loadSeqRef.current) return;
+    setters.setShipmentOrders(shipmentOrders);
+    setViewCache(view, buildViewSnapshot({
+      view,
+      data: normalizedBoard,
+      shipmentPayload: { ...boardPayload, shipmentOrders },
+    }));
+    return;
+  }
+
+  if (view === "overview") {
+    const boardPayload = await loadShipmentBoardPayload({
+      normalizeShipmentBoard,
+      mergeShipmentBoardWithTable,
+    }).catch(() => null);
+    if (seq !== loadSeqRef.current) return;
+    if (boardPayload?.data) {
+      const overviewBoard = normalizeShipmentBoard(boardPayload.data);
+      setters.setShipmentBoard(overviewBoard);
+      const cachedRows = readCachedOrderRows();
+      setViewCache(view, buildViewSnapshot({
+        view,
+        normalizedRows: cachedRows.length ? cachedRows.map(normalizeOrder) : undefined,
+        overviewBoard,
+      }));
+    }
+    return;
+  }
+
+  if (view === "workshop" || view === "floorMap" || view === "strapStock") {
+    const [boardResult, templatesResult, detailArticlesResult] = await Promise.all([
+      view === "workshop" || view === "floorMap" ? OrderService.getShipmentBoard().catch(() => null) : Promise.resolve(null),
+      typeof setters.setFurnitureCustomTemplates === "function"
+        ? OrderService.getFurnitureCustomTemplates().catch(() => null)
+        : Promise.resolve(null),
+      OrderService.getFurnitureDetailArticles().catch(() => null),
+    ]);
+    if (seq !== loadSeqRef.current) return;
+    if ((view === "workshop" || view === "floorMap") && boardResult != null) {
+      try {
+        setters.setShipmentBoard(normalizeShipmentBoard(boardResult));
+      } catch (_) {
+        /* keep previous board */
+      }
+    }
+    if (Array.isArray(templatesResult) && typeof setters.setFurnitureCustomTemplates === "function") {
+      setters.setFurnitureCustomTemplates(templatesResult);
+    }
+    setters.setFurnitureDetailArticleRows(Array.isArray(detailArticlesResult) ? detailArticlesResult : []);
+    return;
+  }
+
+  if (view === "hardware" || view === "warehouseMissing") {
+    const [articlesResult, stockResult, detailArticlesResult, templatesResult] = await Promise.all([
+      OrderService.getSectionArticles().catch(() => null),
+      OrderService.getMaterialsStock().catch(() => null),
+      OrderService.getFurnitureDetailArticles().catch(() => null),
+      OrderService.getFurnitureCustomTemplates().catch(() => null),
+    ]);
+    if (seq !== loadSeqRef.current) return;
+    setters.setSectionArticleRows(Array.isArray(articlesResult) ? articlesResult : []);
+    setters.setMaterialsStockRows(Array.isArray(stockResult) ? stockResult : []);
+    setters.setFurnitureDetailArticleRows(Array.isArray(detailArticlesResult) ? detailArticlesResult : []);
+    if (typeof setters.setFurnitureCustomTemplates === "function") {
+      setters.setFurnitureCustomTemplates(Array.isArray(templatesResult) ? templatesResult : []);
+    }
+  }
+}
+
+async function reloadWarehouseDomain({
+  view,
+  seq,
+  loadSeqRef,
+  callBackend,
+  normalizeShipmentBoard,
+  setters,
+}) {
+  const warehousePayload = await loadWarehouseDomainData({ callBackend });
+  if (seq !== loadSeqRef.current) return;
+  let consumeResolveBoard = null;
+  if (warehousePayload?.consumeResolveBoard != null) {
+    try {
+      consumeResolveBoard = normalizeShipmentBoard(warehousePayload.consumeResolveBoard);
+    } catch (_) {
+      consumeResolveBoard = null;
+    }
+  }
+  setters.setMaterialsStockRows(warehousePayload?.materialsStockRows || []);
+  setters.setLeftoversRows(warehousePayload?.leftoversRows || []);
+  setters.setLeftoversHistoryRows(warehousePayload?.leftoversHistoryRows || []);
+  setters.setConsumeHistoryRows(warehousePayload?.consumeHistoryRows || []);
+  setters.setPilkaDoneHistoryRows(warehousePayload?.pilkaDoneHistoryRows || []);
+  setters.setWarehouseRows(Array.isArray(warehousePayload.data) ? warehousePayload.data : []);
+  if (consumeResolveBoard) {
+    setters.setShipmentBoard(consumeResolveBoard);
+  }
+  if (Array.isArray(warehousePayload?.consumeResolveOrders)) {
+    setters.setShipmentOrders(warehousePayload.consumeResolveOrders);
+  }
+  if (typeof setters.setFurnitureCustomTemplates === "function" && Array.isArray(warehousePayload?.consumeResolveTemplates)) {
+    setters.setFurnitureCustomTemplates(warehousePayload.consumeResolveTemplates);
+  }
+  setViewCache(view, buildViewSnapshot({
+    view,
+    data: warehousePayload.data,
+    warehousePayload: {
+      ...warehousePayload,
+      consumeResolveBoard,
+    },
+  }));
+}
+
+async function reloadLaborDomain({ view, seq, loadSeqRef, setters }) {
+  const data = await OrderService.getLaborTable();
+  if (seq !== loadSeqRef.current) return;
+  setters.setLaborRows(Array.isArray(data) ? data : []);
+  setViewCache(view, buildViewSnapshot({ view, data }));
+}
+
+async function reloadFurnitureDomain({
+  view,
+  seq,
+  loadSeqRef,
+  callBackend,
+  setters,
+}) {
+  const furniturePayload = await loadFurnitureDomainData({ callBackend });
+  if (seq !== loadSeqRef.current) return;
+  setters.setFurnitureArticleRows(furniturePayload?.furnitureArticleRows || []);
+  setters.setFurnitureDetailArticleRows(furniturePayload?.furnitureDetailArticleRows || []);
+  if (typeof setters.setFurnitureCustomTemplates === "function") {
+    setters.setFurnitureCustomTemplates(furniturePayload?.furnitureCustomTemplates || []);
+  }
+  setters.setRows(Array.isArray(furniturePayload.data) ? furniturePayload.data : []);
+  setViewCache(view, buildViewSnapshot({
+    view,
+    data: furniturePayload.data,
+    furniturePayload,
+  }));
 }
 
 export function useDataLoader({
@@ -521,6 +786,123 @@ export function useDataLoader({
     view,
   ]);
 
+  const loadDomains = useCallback(async ({
+    background = true,
+    domains = [],
+    preferStaged,
+    extras = {},
+  } = {}) => {
+    const uniqueDomains = [...new Set((Array.isArray(domains) ? domains : []).filter(Boolean))];
+    if (!uniqueDomains.length) return;
+
+    const { internal, external } = partitionDomains(uniqueDomains);
+    if (!internal.length && !external.length) return;
+
+    loadInFlightRef.current = true;
+    const seq = ++loadSeqRef.current;
+    const ordersPreferStaged = preferStaged ?? !background;
+    const setters = createLoaderSetters({
+      setRows,
+      setShipmentBoard,
+      setPlanCatalogRows,
+      setSectionCatalogRows,
+      setSectionArticleRows,
+      setShipmentOrders,
+      setFurnitureDetailArticleRows,
+      setFurnitureCustomTemplates,
+      setMaterialsStockRows,
+      setLeftoversRows,
+      setLeftoversHistoryRows,
+      setConsumeHistoryRows,
+      setPilkaDoneHistoryRows,
+      setWarehouseRows,
+      setLaborRows,
+      setFurnitureArticleRows,
+    });
+
+    try {
+      for (const domain of internal) {
+        if (seq !== loadSeqRef.current) return;
+        if (domain === "orders") {
+          await reloadOrdersDomain({
+            view,
+            seq,
+            loadSeqRef,
+            callBackend,
+            preferStaged: ordersPreferStaged,
+            normalizeOrder,
+            normalizeShipmentBoard,
+            setters,
+          });
+        } else if (domain === "shipment") {
+          await reloadShipmentDomain({
+            view,
+            seq,
+            loadSeqRef,
+            normalizeShipmentBoard,
+            mergeShipmentBoardWithTable,
+            normalizeOrder,
+            setters,
+          });
+        } else if (domain === "warehouse") {
+          await reloadWarehouseDomain({
+            view,
+            seq,
+            loadSeqRef,
+            callBackend,
+            normalizeShipmentBoard,
+            setters,
+          });
+        } else if (domain === "labor") {
+          await reloadLaborDomain({ view, seq, loadSeqRef, setters });
+        } else if (domain === "furniture") {
+          await reloadFurnitureDomain({
+            view,
+            seq,
+            loadSeqRef,
+            callBackend,
+            setters,
+          });
+        }
+      }
+
+      await Promise.all(
+        external.map(async (domain) => {
+          const handler = extras?.[domain];
+          if (typeof handler === "function") {
+            await handler();
+          }
+        }),
+      );
+    } catch (_) {
+      /* фоновая перезагрузка — без ошибок в UI */
+    } finally {
+      loadInFlightRef.current = false;
+    }
+  }, [
+    callBackend,
+    mergeShipmentBoardWithTable,
+    normalizeOrder,
+    normalizeShipmentBoard,
+    setConsumeHistoryRows,
+    setFurnitureArticleRows,
+    setFurnitureCustomTemplates,
+    setFurnitureDetailArticleRows,
+    setLaborRows,
+    setLeftoversHistoryRows,
+    setLeftoversRows,
+    setMaterialsStockRows,
+    setPilkaDoneHistoryRows,
+    setPlanCatalogRows,
+    setRows,
+    setSectionArticleRows,
+    setSectionCatalogRows,
+    setShipmentBoard,
+    setShipmentOrders,
+    setWarehouseRows,
+    view,
+  ]);
+
   useEffect(() => {
     const setters = {
       setRows,
@@ -574,5 +956,5 @@ export function useDataLoader({
     setWarehouseRows,
   ]);
 
-  return { load };
+  return { load, loadDomains };
 }

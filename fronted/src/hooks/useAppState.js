@@ -136,6 +136,7 @@ import {
   parseStrapSize,
   passesShipmentStageFilter,
 } from "../app/appUtils";
+import { getViewDomains, resolveDomainsForRealtimeEvent } from "../app/domainReload";
 
 export function useAppState({ auth }) {
   const {
@@ -403,7 +404,7 @@ export function useAppState({ auth }) {
   } = useFurnitureData();
   const isActionPending = useCallback((key) => pendingStageActionKeys.has(key), [pendingStageActionKeys]);
 
-  const { load: rawLoad } = useDataLoader({
+  const { load: rawLoad, loadDomains: rawLoadDomains } = useDataLoader({
     view,
     tab,
     callBackend,
@@ -436,6 +437,13 @@ export function useAppState({ auth }) {
     toUserError,
   });
   const load = useCallback((options) => rawLoad(options), [rawLoad]);
+  const loadDomains = useCallback(
+    (options) => rawLoadDomains(options),
+    [rawLoadDomains],
+  );
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  const domainReloadExtrasRef = useRef({});
   const mutationLoad = useCallback(async () => {
     invalidateViewCaches(getMutationInvalidationViews(view));
     await rawLoad();
@@ -749,131 +757,19 @@ export function useAppState({ auth }) {
   });
 
   useEffect(() => {
-    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-      const fallbackId = setInterval(() => load({ background: true }).catch(() => {}), 60000);
-      return () => clearInterval(fallbackId);
-    }
-    const client = getSupabaseRealtimeClient();
-    if (!client) {
-      const fallbackId = setInterval(() => load({ background: true }).catch(() => {}), 60000);
-      return () => clearInterval(fallbackId);
-    }
-    let disposed = false;
-    let reloadTimer = null;
-    let fallbackId = null;
-
-    const patchOrdersFromRealtime = (payload) => {
-      const patchList = (list) => applyRealtimeOrdersChange(list, payload, { normalize: normalizeOrder });
-      setRows((prev) => patchList(prev));
-      setShipmentOrders((prev) => patchList(prev));
-    };
-
-    // Полная фоновая перезагрузка — страховка для данных, которые realtime-патч
-    // не обновляет точечно (обогащённые поля, агрегаты). Дебаунс склеивает
-    // всплески событий, а минимальный интервал не даёт каждому изменению в БД
-    // гонять полный reload у всех клиентов (экономия egress на Free-тарифе).
-    const RELOAD_DEBOUNCE_MS = 2000;
-    const RELOAD_MIN_INTERVAL_MS = 15000;
-    let lastReloadAt = 0;
-
-    const scheduleReload = () => {
-      if (disposed) return;
-      if (reloadTimer) window.clearTimeout(reloadTimer);
-      const wait = Math.max(
-        RELOAD_DEBOUNCE_MS,
-        lastReloadAt + RELOAD_MIN_INTERVAL_MS - Date.now(),
-      );
-      reloadTimer = window.setTimeout(() => {
-        reloadTimer = null;
-        lastReloadAt = Date.now();
-        load({ background: true, preferStaged: false }).catch(() => {});
-      }, wait);
-    };
-
-    const handleOrdersChange = (payload) => {
-      patchOrdersFromRealtime(payload);
-      scheduleReload();
-    };
-
-    const ensureFallbackPolling = () => {
-      if (disposed || fallbackId) return;
-      fallbackId = window.setInterval(
-        () => load({ background: true, preferStaged: false }).catch(() => {}),
-        60000,
-      );
-    };
-    const clearFallbackPolling = () => {
-      if (!fallbackId) return;
-      window.clearInterval(fallbackId);
-      fallbackId = null;
-    };
-
-    const REALTIME_TABLES = [
-      "orders",
-      "shipment_plan_cells",
-      "labor_facts",
-      "materials_stock",
-      "materials_leftovers",
-      "materials_moves",
-      "crm_audit_log",
-      "furniture_product_map",
-      "furniture_detail_item_map",
-      "metal_components_stock",
-      "metal_work_queue",
-    ];
-
-    const token = String(getSupabaseAuthSession()?.access_token || "").trim();
-    if (token) {
-      client.realtime.setAuth(token);
-    }
-
-    const channel = client
-      .channel("crm-db-changes")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "orders" },
-        handleOrdersChange,
-      );
-
-    REALTIME_TABLES.filter((t) => t !== "orders").forEach((table) => {
-      channel.on(
-        "postgres_changes",
-        { event: "*", schema: "public", table },
-        scheduleReload,
-      );
-    });
-
-    channel.subscribe((status) => {
-      if (status === "SUBSCRIBED") {
-        clearFallbackPolling();
-        return;
-      }
-      if (
-        status === "CHANNEL_ERROR" ||
-        status === "TIMED_OUT" ||
-        status === "CLOSED"
-      ) {
-        ensureFallbackPolling();
-      }
-    });
-
-    return () => {
-      disposed = true;
-      if (reloadTimer) window.clearTimeout(reloadTimer);
-      clearFallbackPolling();
-      client.removeChannel(channel).catch(() => {});
-    };
-  }, [load, setRows, setShipmentOrders]);
-
-  useEffect(() => {
     if (view !== "workshop" && view !== "floorMap") return undefined;
     // Реалтайм по orders/metal_work_queue/labor_facts даёт живые обновления,
     // опрос по таймеру остаётся редкой страховкой.
     const pollId = window.setInterval(() => {
-      load({ background: true, preferStaged: false }).catch(() => {});
+      loadDomains({
+        background: true,
+        preferStaged: false,
+        domains: getViewDomains(view),
+        extras: domainReloadExtrasRef.current,
+      }).catch(() => {});
     }, 120000);
     return () => window.clearInterval(pollId);
-  }, [view, load]);
+  }, [view, loadDomains]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1040,6 +936,144 @@ export function useAppState({ auth }) {
     setError,
     toUserError,
   });
+
+  useEffect(() => {
+    domainReloadExtrasRef.current = {
+      metal: async () => {
+        await loadMetalStock();
+        await loadMetalQueue();
+      },
+      metalProcess: () => loadMetalProcessData(),
+      admin: () => loadAuditLog({ offset: auditOffset }),
+    };
+  }, [loadMetalStock, loadMetalQueue, loadMetalProcessData, loadAuditLog, auditOffset]);
+
+  useEffect(() => {
+    const reloadViewDomains = () => {
+      loadDomains({
+        background: true,
+        preferStaged: false,
+        domains: getViewDomains(viewRef.current),
+        extras: domainReloadExtrasRef.current,
+      }).catch(() => {});
+    };
+
+    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+      const fallbackId = setInterval(reloadViewDomains, 60000);
+      return () => clearInterval(fallbackId);
+    }
+    const client = getSupabaseRealtimeClient();
+    if (!client) {
+      const fallbackId = setInterval(reloadViewDomains, 60000);
+      return () => clearInterval(fallbackId);
+    }
+
+    let disposed = false;
+    let reloadTimer = null;
+    let fallbackId = null;
+
+    const patchOrdersFromRealtime = (payload) => {
+      const patchList = (list) => applyRealtimeOrdersChange(list, payload, { normalize: normalizeOrder });
+      setRows((prev) => patchList(prev));
+      setShipmentOrders((prev) => patchList(prev));
+    };
+
+    const RELOAD_DEBOUNCE_MS = 2000;
+    const RELOAD_MIN_INTERVAL_MS = 15000;
+    let lastReloadAt = 0;
+
+    const scheduleDomainReload = (table) => {
+      const domains = resolveDomainsForRealtimeEvent(table, viewRef.current);
+      if (!domains.length) return;
+      if (disposed) return;
+      if (reloadTimer) window.clearTimeout(reloadTimer);
+      const wait = Math.max(
+        RELOAD_DEBOUNCE_MS,
+        lastReloadAt + RELOAD_MIN_INTERVAL_MS - Date.now(),
+      );
+      reloadTimer = window.setTimeout(() => {
+        reloadTimer = null;
+        lastReloadAt = Date.now();
+        loadDomains({
+          background: true,
+          preferStaged: false,
+          domains,
+          extras: domainReloadExtrasRef.current,
+        }).catch(() => {});
+      }, wait);
+    };
+
+    const handleOrdersChange = (payload) => {
+      patchOrdersFromRealtime(payload);
+      scheduleDomainReload("orders");
+    };
+
+    const ensureFallbackPolling = () => {
+      if (disposed || fallbackId) return;
+      fallbackId = window.setInterval(reloadViewDomains, 60000);
+    };
+    const clearFallbackPolling = () => {
+      if (!fallbackId) return;
+      window.clearInterval(fallbackId);
+      fallbackId = null;
+    };
+
+    const REALTIME_TABLES = [
+      "orders",
+      "shipment_plan_cells",
+      "labor_facts",
+      "materials_stock",
+      "materials_leftovers",
+      "materials_moves",
+      "crm_audit_log",
+      "furniture_product_map",
+      "furniture_detail_item_map",
+      "metal_components_stock",
+      "metal_work_queue",
+    ];
+
+    const token = String(getSupabaseAuthSession()?.access_token || "").trim();
+    if (token) {
+      client.realtime.setAuth(token);
+    }
+
+    const channel = client
+      .channel("crm-db-changes")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "orders" },
+        handleOrdersChange,
+      );
+
+    REALTIME_TABLES.filter((t) => t !== "orders").forEach((table) => {
+      channel.on(
+        "postgres_changes",
+        { event: "*", schema: "public", table },
+        () => scheduleDomainReload(table),
+      );
+    });
+
+    channel.subscribe((status) => {
+      if (status === "SUBSCRIBED") {
+        clearFallbackPolling();
+        return;
+      }
+      if (
+        status === "CHANNEL_ERROR" ||
+        status === "TIMED_OUT" ||
+        status === "CLOSED"
+      ) {
+        ensureFallbackPolling();
+      }
+    });
+
+    return () => {
+      disposed = true;
+      if (reloadTimer) window.clearTimeout(reloadTimer);
+      clearFallbackPolling();
+      client.removeChannel(channel).catch(() => {});
+    };
+  }, [loadDomains, setRows, setShipmentOrders]);
 
   const { shipmentOrderMaps, orderIndexById } = useShipmentOrderIndexes({
     shipmentOrders,
