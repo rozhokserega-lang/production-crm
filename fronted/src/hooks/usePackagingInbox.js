@@ -63,7 +63,7 @@ export function usePackagingInbox({
 
   useEffect(() => {
     refreshPackagingOrders();
-    const timer = window.setInterval(refreshPackagingOrders, 30000);
+    const timer = window.setInterval(refreshPackagingOrders, 120000);
     return () => window.clearInterval(timer);
   }, [refreshPackagingOrders]);
 

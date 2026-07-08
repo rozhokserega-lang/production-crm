@@ -768,13 +768,26 @@ export function useAppState({ auth }) {
       setShipmentOrders((prev) => patchList(prev));
     };
 
+    // Полная фоновая перезагрузка — страховка для данных, которые realtime-патч
+    // не обновляет точечно (обогащённые поля, агрегаты). Дебаунс склеивает
+    // всплески событий, а минимальный интервал не даёт каждому изменению в БД
+    // гонять полный reload у всех клиентов (экономия egress на Free-тарифе).
+    const RELOAD_DEBOUNCE_MS = 2000;
+    const RELOAD_MIN_INTERVAL_MS = 15000;
+    let lastReloadAt = 0;
+
     const scheduleReload = () => {
       if (disposed) return;
       if (reloadTimer) window.clearTimeout(reloadTimer);
+      const wait = Math.max(
+        RELOAD_DEBOUNCE_MS,
+        lastReloadAt + RELOAD_MIN_INTERVAL_MS - Date.now(),
+      );
       reloadTimer = window.setTimeout(() => {
         reloadTimer = null;
+        lastReloadAt = Date.now();
         load({ background: true, preferStaged: false }).catch(() => {});
-      }, 800);
+      }, wait);
     };
 
     const handleOrdersChange = (payload) => {
@@ -854,9 +867,11 @@ export function useAppState({ auth }) {
 
   useEffect(() => {
     if (view !== "workshop" && view !== "floorMap") return undefined;
+    // Реалтайм по orders/metal_work_queue/labor_facts даёт живые обновления,
+    // опрос по таймеру остаётся редкой страховкой.
     const pollId = window.setInterval(() => {
       load({ background: true, preferStaged: false }).catch(() => {});
-    }, 30000);
+    }, 120000);
     return () => window.clearInterval(pollId);
   }, [view, load]);
 
