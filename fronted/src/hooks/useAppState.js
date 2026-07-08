@@ -442,8 +442,10 @@ export function useAppState({ auth }) {
     [rawLoadDomains],
   );
   const viewRef = useRef(view);
-  viewRef.current = view;
   const domainReloadExtrasRef = useRef({});
+  useEffect(() => {
+    viewRef.current = view;
+  }, [view]);
   const mutationLoad = useCallback(async () => {
     invalidateViewCaches(getMutationInvalidationViews(view));
     await rawLoad();
