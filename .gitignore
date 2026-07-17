@@ -18,3 +18,48 @@ supabase/.temp/
 
 # Local error artifacts
 sync_plan_error.json
+
+# Временные отчёты/расчёты/выгрузки в корне репозитория (всё, что начинается с _)
+/_*.txt
+/_*.csv
+/_*.json
+/_*.md
+/_*.sql
+/_*.css
+/_review_zip*/
+/_review_zip*/
+/_migration_parts/
+/_performance_fixes/
+/nul
+/NUL
+
+# Локальные выгрузки данных в корне
+/расчет_*.xlsx
+/kromka_done_*.csv
+/kromka_done_*.xlsx
+/order_timeline_*.zip
+
+# Python кэш
+scripts/__pycache__/
+*.pyc
+
+# Локальные миграционные payload'ы и временные скрипты (генерируются при ручном накате через MCP)
+scripts/_*.js
+scripts/_*.json
+scripts/_*.txt
+scripts/_migration_parts/
+scripts/_seed_migration_out.txt
+scripts/data/
+
+# Локальные скрипты запуска agent-инфраструктуры (не для пуша — пользовательские)
+scripts/Start-Crm*.bat
+scripts/start-crm-agent.ps1
+scripts/start-local-dev.ps1
+scripts/create-crm-agent-shortcuts.ps1
+
+# Agent-локальная инфраструктура (не для пуша — деплойится отдельно)
+agents/
+docs/LOCAL_AGENT_ARCHITECTURE.md
+
+# Supabase NUL-артефакт (Windows redirect bug)
+supabase/migrations/NUL

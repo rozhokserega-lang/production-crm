@@ -29,6 +29,42 @@ export function DomainDrawer({ open, setOpen, view, setView }) {
     setOpen(false);
   };
 
+  // На телефоне — компактный сегментированный переключатель (3 кнопки в ряд),
+  // без выезжающего drawer и без плавающей кнопки «Режим».
+  if (isMobileLayout) {
+    return (
+      <div className="domain-switch" role="tablist" aria-label="Режим работы">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={isFurnitureDomain}
+          className={`domain-switch__btn${isFurnitureDomain ? " active" : ""}`}
+          onClick={goFurniture}
+        >
+          <span aria-hidden="true">🪑</span> Мебель
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={view === "metalProcess"}
+          className={`domain-switch__btn${view === "metalProcess" ? " active" : ""}`}
+          onClick={goMetalProcess}
+        >
+          <span aria-hidden="true">⚙️</span> Металл
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={isWarehouseDomain}
+          className={`domain-switch__btn${isWarehouseDomain ? " active" : ""}`}
+          onClick={goWarehouse}
+        >
+          <span aria-hidden="true">🏭</span> Склад
+        </button>
+      </div>
+    );
+  }
+
   return (
     <>
       {open && isMobileLayout && (
@@ -50,16 +86,6 @@ export function DomainDrawer({ open, setOpen, view, setView }) {
       >
         <div className="domain-drawer__head-row">
           <div className="domain-drawer__head">Режим работы</div>
-          {isMobileLayout && (
-            <button
-              type="button"
-              className="domain-drawer__close"
-              aria-label="Закрыть"
-              onClick={() => setOpen(false)}
-            >
-              ×
-            </button>
-          )}
         </div>
         <button
           type="button"
