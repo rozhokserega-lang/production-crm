@@ -133,6 +133,7 @@ export function buildPlanSummary(weekLabel, orders) {
   const list = orders || [];
   const stageBreakdown = {};
   const blockingOrders = [];
+  const completedOrders = [];
 
   let qtyTotal = 0;
   let qtyCompleted = 0;
@@ -143,31 +144,32 @@ export function buildPlanSummary(weekLabel, orders) {
     stageBreakdown[lane] = (stageBreakdown[lane] || 0) + 1;
     const qty = Number(o?.qty || 0);
     qtyTotal += qty;
+    const rawItem = readOrderItem(o);
+    const display = formatEmbeddedPlanItem(rawItem);
+    const orderCard = {
+      orderId: readOrderId(o),
+      item: display.title,
+      article: display.article,
+      qrQty: display.qrQty,
+      qty,
+      week: o?.week,
+      stage: resolvePipelineStage(o),
+      stageLabel: getPlanStatsStageLabel(o),
+      laneLabel: laneLabel(lane),
+      _awaitingKey: o?._awaitingKey || "",
+    };
     if (isOrderProductionPlanComplete(o)) {
       completedCount += 1;
       qtyCompleted += qty;
+      completedOrders.push(orderCard);
     } else {
-      const rawItem = readOrderItem(o);
-      const display = formatEmbeddedPlanItem(rawItem);
-      blockingOrders.push({
-        orderId: readOrderId(o),
-        item: display.title,
-        article: display.article,
-        qrQty: display.qrQty,
-        qty,
-        week: o?.week,
-        stage: resolvePipelineStage(o),
-        stageLabel: getPlanStatsStageLabel(o),
-        laneLabel: laneLabel(lane),
-        _awaitingKey: o?._awaitingKey || "",
-      });
+      blockingOrders.push(orderCard);
     }
   }
 
-  blockingOrders.sort((a, b) =>
-    String(a.laneLabel).localeCompare(String(b.laneLabel), "ru")
-    || String(a.item).localeCompare(String(b.item), "ru")
-  );
+  const byItem = (a, b) => String(a.item).localeCompare(String(b.item), "ru");
+  blockingOrders.sort((a, b) => String(a.laneLabel).localeCompare(String(b.laneLabel), "ru") || byItem(a, b));
+  completedOrders.sort(byItem);
 
   const orderCount = list.length;
   const percent = orderCount > 0 ? Math.round((completedCount / orderCount) * 100) : 0;
@@ -193,6 +195,7 @@ export function buildPlanSummary(weekLabel, orders) {
     isClosed: orderCount > 0 && completedCount === orderCount,
     stageBreakdown,
     blockingOrders,
+    completedOrders,
   };
 }
 
@@ -233,6 +236,15 @@ export function buildMonthSummary(month, plansByWeek) {
       blockingOrders: p.blockingOrders,
     }));
 
+  // Выполненные заказы по неделям месяца — для просмотра «что уже выпущено».
+  const completedPlans = plans
+    .filter((p) => p.completedCount > 0)
+    .map((p) => ({
+      week: p.week,
+      completedCount: p.completedCount,
+      completedOrders: p.completedOrders,
+    }));
+
   const missingWeeks = weekLabels.filter((w) => !plansByWeek.has(w));
 
   return {
@@ -252,6 +264,7 @@ export function buildMonthSummary(month, plansByWeek) {
     percent,
     isClosed: weekLabels.length > 0 && plans.length === weekLabels.length && plans.every((p) => p.isClosed),
     blockingPlans,
+    completedPlans,
     plans,
   };
 }

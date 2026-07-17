@@ -101,10 +101,85 @@ function describeAuditRow(row) {
   };
 }
 
+/**
+ * Человекочитаемая длительность между двумя ISO-таймстемпами.
+ * "4 дня", "12 часов", "45 минут", "только что". Большие значения округляем до дней.
+ */
+function formatDuration(startIso, endIso) {
+  const start = new Date(startIso).getTime();
+  const end = new Date(endIso).getTime();
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return "";
+  const min = Math.round((end - start) / 60000);
+  if (min < 1) return "только что";
+  if (min < 60) return `${min} мин`;
+  const hours = Math.floor(min / 60);
+  const remMin = min % 60;
+  if (hours < 24) return remMin ? `${hours} ч ${remMin} мин` : `${hours} ч`;
+  const days = Math.floor(hours / 24);
+  const remHours = hours % 24;
+  return remHours ? `${days} дн ${remHours} ч` : `${days} дн`;
+}
+
+/**
+ * Сводка этапов с длительностью: «Пила: старт 10.07 12:41 → финиш 14.07 05:54 (4 дня)».
+ * Строится из *_started_at / *_done_at в данных заказа (точные машинные timestamps).
+ * Возвращает массив событий-этапов для вставки в начало timeline.
+ */
+function buildStageSummaryEvents(order, orderId) {
+  if (!order) return [];
+  const stages = [
+    { key: "pilka", label: "Пила", startedAt: order.pilkaStartedAt, doneAt: order.pilkaDoneAt },
+    { key: "kromka", label: "Кромка", startedAt: order.kromkaStartedAt, doneAt: order.kromkaDoneAt },
+    { key: "pras", label: "Присадка", startedAt: order.prasStartedAt, doneAt: order.prasDoneAt },
+  ];
+  const events = [];
+  for (const s of stages) {
+    const started = String(s.startedAt || "").trim();
+    const done = String(s.doneAt || "").trim();
+    if (!started && !done) continue; // этап не начался — пропускаем
+    let title;
+    let lines = [];
+    if (started && done) {
+      const dur = formatDuration(started, done);
+      title = `${s.label}: готово`;
+      lines = [`старт → ${formatShort(started)} · финиш → ${formatShort(done)}${dur ? ` (${dur})` : ""}`];
+    } else if (started) {
+      title = `${s.label}: в работе`;
+      const dur = formatDuration(started, new Date().toISOString());
+      lines = [`старт → ${formatShort(started)}${dur ? ` · длится ${dur}` : ""}`];
+    } else {
+      // done без started — редкий случай (данные импортированы). Показываем финиш.
+      title = `${s.label}: готово`;
+      lines = [`финиш → ${formatShort(done)}`];
+    }
+    events.push({
+      id: `stage-${s.key}-${orderId}`,
+      // createdAt задаём как момент финиша (или старта, если ещё в работе) —
+      // чтобы событие встало в хронологию timeline рядом с реальным моментом.
+      createdAt: done || started,
+      title,
+      actor: "Система",
+      tone: "stage",
+      lines,
+    });
+  }
+  return events;
+}
+
+/** Краткая дата «14.07 05:54» из ISO в UTC (детерминированно, не зависит от часового пояса машины). */
+function formatShort(iso) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return String(iso || "");
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${pad(d.getUTCDate())}.${pad(d.getUTCMonth() + 1)} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
+}
+
 export function buildOrderTimeline({ orderId, auditRows, orderRows }) {
   const rows = Array.isArray(orderRows) ? orderRows : [];
   const first = rows[0] || {};
   const timeline = [];
+
+  // 1. Заказ создан — самое раннее событие.
   const createdAt = String(first.createdAt || first.created_at || "").trim();
   if (createdAt) {
     timeline.push({
@@ -117,6 +192,13 @@ export function buildOrderTimeline({ orderId, auditRows, orderRows }) {
     });
   }
 
+  // 2. Наглядная сводка этапов с длительностью (главное, чего не хватало).
+  //    Строится из точных *_started_at / *_done_at заказа, а не из текстовых статусов.
+  for (const evt of buildStageSummaryEvents(first, orderId)) {
+    timeline.push(evt);
+  }
+
+  // 3. Сырая история из audit log: смены статусов, списания, комментарии.
   (Array.isArray(auditRows) ? auditRows : [])
     .filter((row) => rowMatchesOrder(row, orderId))
     .forEach((row) => {

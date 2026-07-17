@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useCallback, useMemo, useState } from "react";
 import {
   buildMonthsSummary,
   buildPlansSummary,
@@ -13,6 +13,54 @@ function ProgressBar({ percent }) {
   return (
     <div className="overview-plans__progress" aria-hidden>
       <div className="overview-plans__progress-fill" style={{ width: `${p}%` }} />
+    </div>
+  );
+}
+
+/**
+ * Мини-сетка недель месяца: каждый чип = одна неделя с статусом.
+ * ✅ закрыт полностью · ⚠️ есть незакрытые заказы · • нет заказов по плану.
+ * Title показывает детали при наведении. Даёт одним взглядом увидеть проблемную неделю.
+ */
+function WeekMiniGrid({ weeks, plans, missingWeeks }) {
+  const plansByWeek = useMemo(() => {
+    const map = new Map();
+    for (const p of plans || []) map.set(String(p.week), p);
+    return map;
+  }, [plans]);
+  const missingSet = useMemo(
+    () => new Set((missingWeeks || []).map((w) => String(w))),
+    [missingWeeks],
+  );
+  return (
+    <div className="overview-plans__week-mini-grid" role="list" aria-label="Статус планов месяца">
+      {(weeks || []).map((w) => {
+        const key = String(w);
+        const plan = plansByWeek.get(key);
+        const isMissing = missingSet.has(key);
+        let cls = "overview-plans__week-mini-chip";
+        let mark = "•";
+        let title = `План ${w}: нет заказов`;
+        if (plan) {
+          if (plan.isClosed) {
+            cls += " overview-plans__week-mini-chip--closed";
+            mark = "✅";
+            title = `План ${w}: закрыт (${plan.orderCount} зак.)`;
+          } else {
+            cls += " overview-plans__week-mini-chip--open";
+            mark = "⚠️";
+            title = `План ${w}: ${plan.openCount} не выпущено из ${plan.orderCount} (${plan.percent}%)`;
+          }
+        } else if (isMissing) {
+          cls += " overview-plans__week-mini-chip--missing";
+        }
+        return (
+          <span key={key} className={cls} title={title} role="listitem">
+            <span className="overview-plans__week-mini-num">{w}</span>
+            <span className="overview-plans__week-mini-mark" aria-hidden>{mark}</span>
+          </span>
+        );
+      })}
     </div>
   );
 }
@@ -123,6 +171,51 @@ function BlockingOrdersList({ orders, onOpenOrder }) {
   );
 }
 
+/**
+ * Универсальный список заказов (используется и для блокеров, и для выполненных).
+ * Принимает те же card-объекты, что BlockingOrdersList, но с настраиваемой
+ * пустой подсказкой (например «Все заказы отгружены» vs «Выполненных заказов нет»).
+ */
+function OrderCardsList({ orders, onOpenOrder, emptyText = "Список пуст" }) {
+  if (!orders?.length) {
+    return <div className="overview-plans__hint">{emptyText}</div>;
+  }
+  return (
+    <ul className="overview-plans__blockers">
+      {orders.map((o) => (
+        <li key={o.orderId || o._awaitingKey || `${o.item}-${o.week}`}>
+          <button
+            type="button"
+            className="overview-plans__blocker-btn"
+            onClick={() => o.orderId && onOpenOrder?.(o.orderId)}
+            disabled={!o.orderId || !onOpenOrder}
+          >
+            <div className="overview-plans__blocker-head">
+              <span className="overview-plans__blocker-id">
+                {o.orderId ? `#${o.orderId}` : "Без ID"}
+              </span>
+              <span
+                className="overview-plans__blocker-qty"
+                title={o.qrQty > 0 && o.qrQty !== Number(o.qty) ? `Комплектов по QR: ${o.qrQty}` : undefined}
+              >
+                {o.qty} шт
+                {o.qrQty > 0 && o.qrQty !== Number(o.qty) ? ` (${o.qrQty} компл.)` : ""}
+              </span>
+            </div>
+            <div className="overview-plans__blocker-item">
+              {o.item}
+              {o.article ? (
+                <span className="overview-plans__blocker-article">{o.article}</span>
+              ) : null}
+            </div>
+            <span className="overview-plans__blocker-stage">{o.laneLabel || o.stageLabel}</span>
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export function OverviewPlansPanel({
   filtered,
   rows,
@@ -141,7 +234,41 @@ export function OverviewPlansPanel({
 }) {
   const [expandedPlan, setExpandedPlan] = useState(null);
   const [expandedMonth, setExpandedMonth] = useState(null);
+  // Вкладка внутри раскрытого месяца: "blockers" (что мешает) | "completed" (выполнено).
+  const [expandedMonthTab, setExpandedMonthTab] = useState("blockers");
+  // Текст поиска внутри раскрытого месяца — фильтрует заказы по ID/изделию в обеих вкладках.
+  const [monthSearch, setMonthSearch] = useState("");
   const [editorMode, setEditorMode] = useState(null); // null | "add" | monthId
+
+  /** Фильтрует списки заказов внутри планов месяца по поисковому запросу.
+   *  Ищет по orderId и item (без учёта регистра). Возвращает plans с обновлёнными
+   *  blockingOrders/completedOrders и пересчитанными счётчиками. */
+  const filterMonthPlans = useCallback((plans, query) => {
+    const q = String(query || "").trim().toLowerCase();
+    if (!q) return plans;
+    return (plans || [])
+      .map((p) => {
+        const match = (o) => {
+          const id = String(o?.orderId || "").toLowerCase();
+          const item = String(o?.item || "").toLowerCase();
+          const article = String(o?.article || "").toLowerCase();
+          return id.includes(q) || item.includes(q) || article.includes(q);
+        };
+        const blockingOrders = (p.blockingOrders || []).filter(match);
+        const completedOrders = (p.completedOrders || []).filter(match);
+        return {
+          ...p,
+          blockingOrders,
+          completedOrders,
+          // Счётчики переcчитываем по отфильтрованным спискам — чтобы заголовки
+          // «План X — N не выпущено» отражали результат поиска, а не исходный массив.
+          openCount: blockingOrders.length,
+          completedCount: completedOrders.length,
+          orderCount: blockingOrders.length + completedOrders.length,
+        };
+      })
+      .filter((p) => (p.blockingOrders || []).length || (p.completedOrders || []).length);
+  }, []);
 
   const awaitingOrders = useMemo(
     () => collectAwaitingPlanOrders(shipmentBoard, shipmentOrderMaps, weekFilter),
@@ -231,6 +358,8 @@ export function OverviewPlansPanel({
                 <span className="overview-plans__percent">{m.percent}%</span>
               </div>
 
+              <WeekMiniGrid weeks={m.weeks} plans={m.plans} missingWeeks={m.missingWeeks} />
+
               {m.missingWeeks.length > 0 && (
                 <div className="overview-plans__warn">
                   Нет заказов по планам: {m.missingWeeks.join(", ")}
@@ -247,9 +376,16 @@ export function OverviewPlansPanel({
                 <button
                   type="button"
                   className="mini"
-                  onClick={() => setExpandedMonth(expandedMonth === m.id ? null : m.id)}
+                  onClick={() => {
+                    if (expandedMonth === m.id) {
+                      setExpandedMonth(null);
+                    } else {
+                      setExpandedMonth(m.id);
+                      setExpandedMonthTab("blockers");
+                    }
+                  }}
                 >
-                  {expandedMonth === m.id ? "Скрыть" : "Что мешает закрыть"}
+                  {expandedMonth === m.id ? "Скрыть" : "Подробнее"}
                 </button>
                 <button
                   type="button"
@@ -279,25 +415,84 @@ export function OverviewPlansPanel({
                 />
               )}
 
-              {expandedMonth === m.id && (
+              {expandedMonth === m.id && (() => {
+                // Применяем поисковый запрос к планам месяца (фильтрация по ID/изделию).
+                const fb = filterMonthPlans(m.blockingPlans, monthSearch);
+                const fc = filterMonthPlans(m.completedPlans, monthSearch);
+                const totalFound = fb.reduce((s, p) => s + p.openCount, 0) + fc.reduce((s, p) => s + p.completedCount, 0);
+                const hasQuery = String(monthSearch || "").trim().length > 0;
+                return (
                 <div className="overview-plans__expand">
-                  {m.blockingPlans.length === 0 ? (
-                    <div className="overview-plans__hint">Месяц полностью закрыт</div>
-                  ) : (
-                    m.blockingPlans.map((bp) => (
-                      <div key={bp.week} className="overview-plans__plan-block">
-                        <div className="overview-plans__plan-block-title">
-                          План {bp.week} — {bp.openCount} не выпущено
+                  <div className="overview-plans__tabs" role="tablist">
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={expandedMonthTab === "blockers"}
+                      className={`overview-plans__tab${expandedMonthTab === "blockers" ? " overview-plans__tab--active" : ""}`}
+                      onClick={() => setExpandedMonthTab("blockers")}
+                    >
+                      Что мешает закрыть ({fb.reduce((s, p) => s + p.openCount, 0)})
+                    </button>
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={expandedMonthTab === "completed"}
+                      className={`overview-plans__tab${expandedMonthTab === "completed" ? " overview-plans__tab--active" : ""}`}
+                      onClick={() => setExpandedMonthTab("completed")}
+                    >
+                      Выполнено ({fc.reduce((s, p) => s + p.completedCount, 0)})
+                    </button>
+                  </div>
+
+                  <input
+                    type="search"
+                    className="overview-plans__search"
+                    placeholder="Поиск по ID или изделию…"
+                    value={monthSearch}
+                    onChange={(e) => setMonthSearch(e.target.value)}
+                    aria-label="Поиск заказа в месяце"
+                  />
+                  {hasQuery && totalFound === 0 && (
+                    <div className="overview-plans__hint">Ничего не найдено</div>
+                  )}
+
+                  {expandedMonthTab === "blockers" ? (
+                    fb.length === 0 && !hasQuery ? (
+                      <div className="overview-plans__hint">Месяц полностью закрыт</div>
+                    ) : (
+                      fb.map((bp) => (
+                        <div key={bp.week} className="overview-plans__plan-block">
+                          <div className="overview-plans__plan-block-title">
+                            План {bp.week} — {bp.openCount} не выпущено
+                          </div>
+                          <BlockingOrdersList
+                            orders={bp.blockingOrders}
+                            onOpenOrder={onOpenOrderDrawer}
+                          />
                         </div>
-                        <BlockingOrdersList
-                          orders={bp.blockingOrders}
-                          onOpenOrder={onOpenOrderDrawer}
-                        />
-                      </div>
-                    ))
+                      ))
+                    )
+                  ) : (
+                    fc.length === 0 && !hasQuery ? (
+                      <div className="overview-plans__hint">Выполненных заказов пока нет</div>
+                    ) : (
+                      fc.map((cp) => (
+                        <div key={cp.week} className="overview-plans__plan-block">
+                          <div className="overview-plans__plan-block-title">
+                            План {cp.week} — {cp.completedCount} выполнено
+                          </div>
+                          <OrderCardsList
+                            orders={cp.completedOrders}
+                            onOpenOrder={onOpenOrderDrawer}
+                            emptyText="Выполненных заказов нет"
+                          />
+                        </div>
+                      ))
+                    )
                   )}
                 </div>
-              )}
+                );
+              })()}
             </article>
           ))}
         </div>
