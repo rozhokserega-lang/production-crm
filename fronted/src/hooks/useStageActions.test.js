@@ -135,7 +135,7 @@ describe("useStageActions – runAction", () => {
     expect(props.openPrasDoneStrapDialog).toHaveBeenCalledWith("order1", { isStrapOrder: true, mode: "done" });
   });
 
-  it("calls notifyFinalStageTelegram for webSetWarehouseKitReady", async () => {
+  it("does not notify Telegram on webSetWarehouseKitReady", async () => {
     OrderService.updateOrderStage.mockResolvedValueOnce({ ok: true });
     const props = makeProps();
     const { result } = renderHook(() => useStageActions(props));
@@ -144,7 +144,7 @@ describe("useStageActions – runAction", () => {
       await result.current.runAction("webSetWarehouseKitReady", "order1", {}, { notifyOnFinalStage: true });
     });
 
-    expect(props.notifyFinalStageTelegram).toHaveBeenCalled();
+    expect(props.notifyFinalStageTelegram).not.toHaveBeenCalled();
   });
 
   it("reverts optimistic updates on error", async () => {

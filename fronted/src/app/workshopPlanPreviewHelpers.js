@@ -87,6 +87,15 @@ export async function buildWorkshopPlanPreview(order, qtyReady, deps = {}) {
   };
 
   let enriched = enrichPreviewFromFurniture(preview, {
+    shipmentRow: {
+      item: order?.item,
+      sourceItem: order?.item,
+      week: order?.week || preview?.planNumber,
+      planNumber: preview?.planNumber,
+      material: order?.material || order?.colorName || preview?.colorName,
+      strapProduct: order?.strapProduct || order?.strap_product,
+      section: order?.section || order?.sectionName,
+    },
     furnitureTemplates: deps.furnitureTemplates,
     resolveFurnitureTemplateForPreview: deps.resolveFurnitureTemplateForPreview,
     buildPreviewRowsFromFurnitureTemplate: deps.buildPreviewRowsFromFurnitureTemplate,

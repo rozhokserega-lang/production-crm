@@ -33,7 +33,6 @@ export function useStageActions({
   orderIndexById,
   load,
   notifyAssemblyReadyTelegram,
-  notifyFinalStageTelegram,
   openPilkaDoneConsumeDialog,
   openPilkaDoneConsumeDialogOnError,
   openPrasDoneStrapDialog,
@@ -145,9 +144,6 @@ export function useStageActions({
           openPrasDoneStrapDialog(orderId, { ...meta, mode: "pause" });
           return;
         }
-        if (action === "webSetWarehouseKitReady" && meta.notifyOnFinalStage) {
-          notifyFinalStageTelegram(buildNotifyPayload(orderId, meta));
-        }
         if (action === "webSetPilkaDone") {
           openPilkaDoneConsumeDialog(orderId, meta);
           return;
@@ -198,7 +194,6 @@ export function useStageActions({
       orderIndexById,
       load,
       notifyAssemblyReadyTelegram,
-      notifyFinalStageTelegram,
       openPilkaDoneConsumeDialog,
       openPilkaDoneConsumeDialogOnError,
       openPrasDoneStrapDialog,

@@ -43,6 +43,14 @@ export function isStrapLaunchPlanWeek(week) {
   return String(week || "").trim().toLowerCase() === STRAP_LAUNCH_PLAN_WEEK;
 }
 
+/** Контекст печатного листа / предпросмотра только для обвязки. */
+export function isStrapPlanPreviewContext(row = {}, preview = {}) {
+  const rawItem = String(
+    row?.sourceItem || row?.item || preview?.firstName || preview?.detailedName || "",
+  ).trim();
+  return isStrapDisplayContext(row, rawItem);
+}
+
 function isStrapDisplayContext(row, rawItem) {
   const section = String(row?.section || row?.sectionName || "").toLowerCase();
   if (section.includes("обвяз")) return true;

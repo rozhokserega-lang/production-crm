@@ -1591,7 +1591,7 @@ export function MetalProcessView({
             )}
           </div>
           <div className="sheet-table-wrap">
-            <table className="sheet-table">
+            <table className="sheet-table sheet-table--mobile-cards">
               <thead>
                 <tr>
                   <th className="w-id">ID</th>
@@ -1626,19 +1626,19 @@ export function MetalProcessView({
                   const canDelete = canManageOrders && String(row.status || "").toLowerCase() === "done";
                   return (
                     <tr key={`stats-${row.id}`}>
-                      <td style={{ fontWeight: 800 }}>{row.id || "-"}</td>
-                      <td>{row.article || "-"}</td>
-                      <td>{row.name || "-"}</td>
-                      <td style={{ fontWeight: 800, textAlign: "center" }}>{row.qty ?? "-"}</td>
-                      <td>{formatStageTime(row.laserSeconds)}</td>
-                      <td>{formatStageTime(row.sawSeconds)}</td>
-                      <td>{formatStageTime(row.bendingSeconds)}</td>
-                      <td>{formatStageTime(row.weldingSeconds)}</td>
-                      <td>{formatStageTime(row.paintingSeconds)}</td>
-                      <td><b>{formatStageTime(row.totalSeconds)}</b></td>
-                      <td>{formatPlanStatus(row)}</td>
-                      <td>{Number(row.shortfallQty || 0) > 0 ? <b>{row.shortfallQty}</b> : "-"}</td>
-                      <td>
+                      <td data-label="ID" style={{ fontWeight: 800 }}>{row.id || "-"}</td>
+                      <td data-label="Артикул">{row.article || "-"}</td>
+                      <td data-label="Название">{row.name || "-"}</td>
+                      <td data-label="Кол-во" style={{ fontWeight: 800, textAlign: "center" }}>{row.qty ?? "-"}</td>
+                      <td data-label="Лазер">{formatStageTime(row.laserSeconds)}</td>
+                      <td data-label="Пила">{formatStageTime(row.sawSeconds)}</td>
+                      <td data-label="Гибка">{formatStageTime(row.bendingSeconds)}</td>
+                      <td data-label="Сварка">{formatStageTime(row.weldingSeconds)}</td>
+                      <td data-label="Покраска">{formatStageTime(row.paintingSeconds)}</td>
+                      <td data-label="Итого"><b>{formatStageTime(row.totalSeconds)}</b></td>
+                      <td data-label="Статус">{formatPlanStatus(row)}</td>
+                      <td data-label="Не хватило">{Number(row.shortfallQty || 0) > 0 ? <b>{row.shortfallQty}</b> : "-"}</td>
+                      <td data-label="Действие" data-full>
                         <button
                           type="button"
                           className="mini"
@@ -1972,6 +1972,10 @@ export function MetalProcessView({
                     </button>
                   </div>
                 </header>
+                <div className="metal-route-mobile-warn" role="note">
+                  ⚠️ Редактор маршрута рассчитан на мышь (drag стрелок) и неудобен на телефоне.
+                  Откройте каталог с компьютера для полноценного редактирования.
+                </div>
                 <div className="metal-catalog-fs__body">
                   <MetalRouteBlueprint
                     value={catalogForm.processGraph}

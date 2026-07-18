@@ -1,10 +1,68 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AppHeader } from "./AppHeader";
 import { DomainDrawer } from "./DomainDrawer";
 import { ViewSwitcher } from "./ViewSwitcher";
 import { ViewControls } from "./ViewControls";
 import { MobileBottomBar } from "./MobileBottomBar";
+import { MobileSearchFab } from "./MobileSearchFab";
+import { BackToTopFab } from "./BackToTopFab";
+import { PullToRefresh } from "./PullToRefresh";
 import { AdminRolePreviewBar } from "./AdminRolePreviewBar";
+
+// Свайп влево/вправо на телефоне переключает домен (Мебель→Металл→Склад→Мебель).
+// Не срабатывает внутри горизонтально-скроллящихся контейнеров (таблиц, канбанов, табов).
+const DOMAIN_ORDER = ["furniture", "metalProcess", "warehouseMissing"];
+const DOMAIN_TARGET_VIEW = { furniture: "shipment", metalProcess: "metalProcess", warehouseMissing: "warehouseMissing" };
+
+function useDomainSwipe(setView) {
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia("(max-width: 600px)").matches) return;
+
+    let startX = 0;
+    let startY = 0;
+    let tracking = false;
+
+    const onStart = (e) => {
+      const t = e.touches ? e.touches[0] : e;
+      const target = t.target;
+      if (target && target.closest) {
+        if (
+          target.closest(".sheet-table-wrap, .overview-board, .metal-process-kanban, .tabs, .view-switch, .mobile-bottom-bar, .domain-switch, .mobile-search-bar, dialog, [data-no-swipe]")
+        ) {
+          tracking = false;
+          return;
+        }
+      }
+      tracking = true;
+      startX = t.clientX;
+      startY = t.clientY;
+    };
+
+    const onEnd = (e) => {
+      if (!tracking) return;
+      tracking = false;
+      const t = e.changedTouches ? e.changedTouches[0] : e;
+      const dx = t.clientX - startX;
+      const dy = t.clientY - startY;
+      if (Math.abs(dx) < 70 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+      setView((prevView) => {
+        const cur = DOMAIN_ORDER.find((d) =>
+          d === "furniture" ? prevView !== "metalProcess" && prevView !== "warehouseMissing" : prevView === d,
+        ) || "furniture";
+        const idx = DOMAIN_ORDER.indexOf(cur);
+        const nextIdx = dx < 0 ? (idx + 1) % DOMAIN_ORDER.length : (idx - 1 + DOMAIN_ORDER.length) % DOMAIN_ORDER.length;
+        return DOMAIN_TARGET_VIEW[DOMAIN_ORDER[nextIdx]];
+      });
+    };
+
+    document.addEventListener("touchstart", onStart, { passive: true });
+    document.addEventListener("touchend", onEnd, { passive: true });
+    return () => {
+      document.removeEventListener("touchstart", onStart);
+      document.removeEventListener("touchend", onEnd);
+    };
+  }, [setView]);
+}
 
 export function AppChrome({
   shell,
@@ -20,6 +78,9 @@ export function AppChrome({
   const [domainDrawerOpen, setDomainDrawerOpen] = useState(false);
   const showMainTopPanels =
     shell.view !== "metalProcess" && shell.view !== "warehouseMissing";
+
+  // Свайп между доменами на телефоне (только на <= 600px внутри хука).
+  useDomainSwipe(shell.setView);
 
   return (
     <div className="page">
@@ -196,6 +257,9 @@ export function AppChrome({
         canAccessView={auth.canAccessView}
         defaultWorkshopTab={auth.defaultWorkshopTabForRole}
       />
+      <MobileSearchFab view={shell.view} query={shell.query} setQuery={shell.setQuery} />
+      <BackToTopFab />
+      <PullToRefresh />
     </div>
   );
 }

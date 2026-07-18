@@ -225,3 +225,45 @@ export function catalogItemToDraft(item) {
     })),
   };
 }
+
+export const SHELF_CALCULATOR_ROWS_STORAGE_KEY = "crm_shelf_calculator_rows_v1";
+
+export function loadShelfCalculatorRows() {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(SHELF_CALCULATOR_ROWS_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed) || !parsed.length) return null;
+    return parsed
+      .map((row) => ({
+        code: String(row?.code || "").trim(),
+        qty: String(row?.qty ?? "").trim(),
+      }))
+      .filter((row) => row.code || row.qty);
+  } catch {
+    return null;
+  }
+}
+
+export function saveShelfCalculatorRows(rows = []) {
+  if (typeof window === "undefined") return;
+  try {
+    const payload = rows.map((row) => ({
+      code: String(row?.code || "").trim(),
+      qty: String(row?.qty ?? "").trim(),
+    }));
+    window.localStorage.setItem(SHELF_CALCULATOR_ROWS_STORAGE_KEY, JSON.stringify(payload));
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
+
+export function clearShelfCalculatorRowsStorage() {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(SHELF_CALCULATOR_ROWS_STORAGE_KEY);
+  } catch {
+    /* ignore */
+  }
+}

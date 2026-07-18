@@ -272,6 +272,9 @@ def apply_overrides(line: str, qty: float, needs: list[dict]) -> list[dict]:
             by_code[code]["needed"] = target
         elif target > 0:
             by_code[code] = {"code": code, "needed": target, "name": STRAP_DISPLAY.get(code, code)}
+    if line in LINE_RULES:
+        allowed = set(rules.keys())
+        by_code = {k: v for k, v in by_code.items() if k in allowed}
     return [x for x in by_code.values() if x["needed"] > 0]
 
 

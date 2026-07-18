@@ -628,6 +628,8 @@ export const ShipmentView = memo(function ShipmentView() {
                               key={`${sourceRow}-${sourceCol}`}
                               type="button"
                               className={`${cls} ${isSelected ? "selected" : ""}`}
+                              title={`${stageLabel(stageKey)}${bottomPill ? ` · ${bottomPill}` : ""}`}
+                              aria-label={`${stageLabel(stageKey)}${bottomPill ? `, ${bottomPill}` : ""}`}
                               onMouseEnter={(e) =>
                                 setHoverTip({
                                   visible: true,

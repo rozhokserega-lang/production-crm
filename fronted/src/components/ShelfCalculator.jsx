@@ -11,10 +11,13 @@ import {
   DEFAULT_GX_SHELF_CATALOG,
   inferShelfColorFromItem,
   loadCustomCatalogItems,
+  loadShelfCalculatorRows,
   mergeShelfCatalog,
   normalizeCatalogCode,
   removeDbCatalogItemById,
   resolveShelfColor,
+  saveShelfCalculatorRows,
+  clearShelfCalculatorRowsStorage,
   SHELF_COLOR_SUGGESTIONS,
   sortShelfColors,
   upsertDbCatalogItem,
@@ -46,6 +49,12 @@ let idCounter = 0;
 function makeRow(code = "", qty = "") {
   idCounter += 1;
   return { id: idCounter, code, qty };
+}
+
+function buildInitialShelfRows() {
+  const saved = loadShelfCalculatorRows();
+  const source = saved?.length ? saved : [{ code: "", qty: "" }];
+  return source.map((row) => makeRow(row.code, row.qty));
 }
 
 function calcTotals(rows, catalogMap) {
@@ -208,7 +217,7 @@ export default function ShelfCalculator({ canOperateProduction = false, canManag
     [dbCatalogItems],
   );
   const catalogMap = useMemo(() => buildCatalogMap(catalogItems), [catalogItems]);
-  const [rows, setRows] = useState([makeRow()]);
+  const [rows, setRows] = useState(() => buildInitialShelfRows());
   const [activeRowId, setActiveRowId] = useState(0);
   const [search, setSearch] = useState("");
   const [isCatalogOpen, setIsCatalogOpen] = useState(false);
@@ -223,6 +232,10 @@ export default function ShelfCalculator({ canOperateProduction = false, canManag
   const [selectedShelves, setSelectedShelves] = useState([]);
   const [planWeek, setPlanWeek] = useState("");
   const [planLoading, setPlanLoading] = useState(false);
+
+  useEffect(() => {
+    saveShelfCalculatorRows(rows);
+  }, [rows]);
 
   const suggestions = useMemo(() => {
     const q = String(search || "").trim().toLowerCase();
@@ -670,7 +683,10 @@ export default function ShelfCalculator({ canOperateProduction = false, canManag
 
       <div className="actions" style={{ marginTop: 10 }}>
         <button type="button" className="mini" onClick={() => addRow()}>+ Добавить строку</button>
-        <button type="button" className="mini secondary" onClick={() => setRows([makeRow()])}>Очистить</button>
+        <button type="button" className="mini secondary" onClick={() => {
+          clearShelfCalculatorRowsStorage();
+          setRows([makeRow()]);
+        }}>Очистить</button>
       </div>
 
       <div style={{ marginTop: 16 }}>

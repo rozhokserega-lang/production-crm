@@ -143,8 +143,6 @@ export function useWorkshopFinalDone({
   mutationLoad,
   setError,
   runAction,
-  notifyFinalStageTelegram,
-  buildNotifyPayload,
   previewDeps,
   articleLookupByItemKey,
 }) {
@@ -230,10 +228,7 @@ export function useWorkshopFinalDone({
             void mutationLoad();
           }
         } else if (qtyReady >= orderQty) {
-          await runAction("webSetWarehouseKitReady", orderId, {}, {
-            notifyOnFinalStage: true,
-            ...(meta?.notifyMeta || {}),
-          });
+          await runAction("webSetWarehouseKitReady", orderId, {}, meta?.notifyMeta || {});
         } else {
           await callBackend("webFinalizeWorkshopOrder", {
             orderId,
@@ -242,9 +237,6 @@ export function useWorkshopFinalDone({
           try {
             await OrderService.completeReplacementForWorkshopOrder(orderId);
           } catch (_) {}
-          if (typeof notifyFinalStageTelegram === "function") {
-            notifyFinalStageTelegram(buildNotifyPayload(orderId, { ...(meta?.notifyMeta || {}), qty: qtyReady }));
-          }
           void mutationLoad();
         }
         setOpen(false);
@@ -263,8 +255,6 @@ export function useWorkshopFinalDone({
       meta,
       runAction,
       callBackend,
-      notifyFinalStageTelegram,
-      buildNotifyPayload,
       mutationLoad,
       refreshProductionDebts,
       setError,

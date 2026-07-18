@@ -1,10 +1,92 @@
 import { OrderService } from "../services/orderService";
-import { extractPlanItemArticle, getPlanPreviewArticleCode } from "./orderHelpers";
+import { extractPlanItemArticle, getPlanPreviewArticleCode, stripPlanItemMeta, stripStrapTargetMeta } from "./orderHelpers";
 import { resolvePlanPreviewArticleByName, resolveProductionOrderIdForShipment } from "./planPreviewHelpers";
-import { isStrapLaunchPlanWeek, resolveStrapTargetProductForDisplay } from "./strapDisplayHelpers";
+import { isStrapLaunchPlanWeek, isStrapPlanPreviewContext, resolveStrapTargetProductForDisplay } from "./strapDisplayHelpers";
+import { isWorkshopStrapOrderItem } from "./workshopStrapNeeds";
+import { extractDetailSizeToken, normalizeStrapProductKey } from "../utils/furnitureUtils";
+
+/** Оставляет только строки деталей обвязки в печатном листе. */
+export function filterPlanPreviewRowsToStrapOnly(rows = []) {
+  return (Array.isArray(rows) ? rows : []).filter((row) =>
+    /обвязк/i.test(String(row?.part || row?.name || "")),
+  );
+}
+
+function strapPartLabel(raw, colorName = "") {
+  let part = stripStrapTargetMeta(stripPlanItemMeta(String(raw || ""))).trim();
+  const color = String(colorName || "").trim();
+  if (color) {
+    const suffix = `. ${color}`;
+    if (part.toLowerCase().endsWith(suffix.toLowerCase())) {
+      part = part.slice(0, -suffix.length).trim();
+    }
+  }
+  const dotIdx = part.indexOf(".");
+  if (dotIdx > 0 && /^\d{3,5}[_x]\d{2,5}/i.test(part.slice(0, dotIdx).replace(/x/gi, "_"))) {
+    part = part.slice(0, dotIdx).trim().replace(/x/gi, "_");
+  }
+  return part;
+}
+
+export function buildStrapOrderPlanPreviewRows(preview, shipmentRow) {
+  const qty = Number(preview?.qty || 0);
+  const rawQty = preview?.rows?.[0]?.qty;
+  const item = strapPartLabel(
+    shipmentRow?.sourceItem || shipmentRow?.item || preview?.firstName || preview?.detailedName,
+    preview?.colorName || shipmentRow?.material,
+  );
+  if (!item) return [];
+  const qtyStr = qty > 0
+    ? String(Number.isInteger(qty) ? Math.trunc(qty) : qty)
+    : String(rawQty || "").trim();
+  return [{ part: item, qty: qtyStr }];
+}
+
+function filterStrapRowsForOrderedCode(rows, shipmentRow, preview) {
+  const rawItem = String(
+    shipmentRow?.sourceItem || shipmentRow?.item || preview?.firstName || preview?.detailedName || "",
+  ).trim();
+  const normalizedItem = strapPartLabel(rawItem, preview?.colorName || shipmentRow?.material);
+  if (!isWorkshopStrapOrderItem(normalizedItem)) return rows;
+  const token = normalizeStrapProductKey(extractDetailSizeToken(normalizedItem) || normalizedItem);
+  if (!token) return rows;
+  const matched = rows.filter((row) => {
+    const part = normalizeStrapProductKey(String(row?.part || ""));
+    return part.includes(token);
+  });
+  return matched.length > 0 ? matched : rows;
+}
+
+function applyStrapOnlyPlanRows(preview, shipmentRow) {
+  const existingRows = Array.isArray(preview?.rows)
+    ? preview.rows.filter((row) => String(row?.part || "").trim())
+    : [];
+  const strapRows = filterStrapRowsForOrderedCode(
+    filterPlanPreviewRowsToStrapOnly(existingRows),
+    shipmentRow,
+    preview,
+  );
+  if (strapRows.length > 0) {
+    return { ...preview, rows: strapRows };
+  }
+  if (existingRows.length === 1) {
+    return {
+      ...preview,
+      rows: [{
+        part: strapPartLabel(existingRows[0].part, preview?.colorName || shipmentRow?.material),
+        qty: existingRows[0].qty,
+      }],
+    };
+  }
+  return { ...preview, rows: buildStrapOrderPlanPreviewRows(preview, shipmentRow) };
+}
 
 export function enrichPreviewFromFurniture(preview, deps = {}) {
   if (!preview || preview.isStrapPlan) return preview;
+  const shipmentRow = deps.shipmentRow;
+  if (shipmentRow && isStrapPlanPreviewContext(shipmentRow, preview)) {
+    return applyStrapOnlyPlanRows(preview, shipmentRow);
+  }
   const existingRows = Array.isArray(preview.rows)
     ? preview.rows.filter((row) => String(row?.part || "").trim())
     : [];
@@ -167,10 +249,14 @@ export function enrichPreviewWithStrapProduct(preview, shipmentRow, deps = {}) {
     productFromDialog ||
     productFromDisplay;
   if (!productName) return preview;
-  return {
+  const result = {
     ...preview,
     strapTargetProduct: productName,
   };
+  if (isStrapPlanPreviewContext(shipmentRow, preview)) {
+    return applyStrapOnlyPlanRows(result, shipmentRow);
+  }
+  return result;
 }
 
 export async function loadShipmentTableBySourceMap() {
@@ -277,6 +363,7 @@ export function createShipmentPlanPreviewEnricher(deps = {}) {
 
   return (preview, shipmentRow, orderIdOverride = "") => {
     const withFurniture = enrichPreviewFromFurniture(preview, {
+      shipmentRow,
       furnitureTemplates: deps.furnitureTemplates,
       resolveFurnitureTemplateForPreview: deps.resolveFurnitureTemplateForPreview,
       buildPreviewRowsFromFurnitureTemplate: deps.buildPreviewRowsFromFurnitureTemplate,

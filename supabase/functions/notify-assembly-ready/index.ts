@@ -90,6 +90,21 @@ function toErrorMessage(error: unknown): string {
   return String(error ?? "Unknown error");
 }
 
+/** Один или несколько chat_id: через запятую в TELEGRAM_CHAT_ID и/или TELEGRAM_EXTRA_CHAT_IDS. */
+function parseTelegramChatIds(...parts: string[]): string[] {
+  const seen = new Set<string>();
+  const ids: string[] = [];
+  for (const part of parts) {
+    for (const raw of String(part || "").split(/[,;\s]+/)) {
+      const id = raw.trim();
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      ids.push(id);
+    }
+  }
+  return ids;
+}
+
 serve(async (req) => {
   const corsHeaders = {
     "Access-Control-Allow-Origin": "*",
@@ -105,13 +120,16 @@ serve(async (req) => {
   }
 
   const token = String(Deno.env.get("TELEGRAM_BOT_TOKEN") || "").trim();
-  const chatId = String(Deno.env.get("TELEGRAM_CHAT_ID") || "").trim();
-  if (!token || !chatId) {
+  const chatIds = parseTelegramChatIds(
+    String(Deno.env.get("TELEGRAM_CHAT_ID") || ""),
+    String(Deno.env.get("TELEGRAM_EXTRA_CHAT_IDS") || ""),
+  );
+  if (!token || chatIds.length === 0) {
     return new Response(
       JSON.stringify({
         ok: false,
         error:
-          "Telegram not configured: set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID for this Edge Function (Dashboard → Edge Functions → Secrets).",
+          "Telegram not configured: set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID (and optionally TELEGRAM_EXTRA_CHAT_IDS) for this Edge Function.",
       }),
       { status: 500, headers: corsHeaders },
     );
@@ -206,21 +224,43 @@ serve(async (req) => {
     `⏰ Время: <b>${escapeHtml(moscowNow())}</b>\n` +
     `🆔 ID: <code>${escapeHtml(orderId)}</code>`;
 
-  const sendBody: Record<string, unknown> = {
-    chat_id: chatId,
+  const sendBodyBase: Record<string, unknown> = {
     text: message,
     parse_mode: "HTML",
     disable_web_page_preview: true,
   };
   if (stage !== "final_done") {
-    sendBody.reply_markup = buildAssemblyButton(orderId);
-  }
-  const tgRes = await telegramBotRequest(token, "sendMessage", sendBody);
-  const tgJson = await tgRes.json().catch(() => ({}));
-  if (!tgRes.ok || !tgJson?.ok) {
-    return new Response(JSON.stringify({ ok: false, telegram: tgJson }), { status: 502, headers: corsHeaders });
+    sendBodyBase.reply_markup = buildAssemblyButton(orderId);
   }
 
-  return new Response(JSON.stringify({ ok: true, messageId: tgJson?.result?.message_id ?? null }), { status: 200, headers: corsHeaders });
+  const deliveries: Array<{ chatId: string; messageId: number | null; ok: boolean; error?: unknown }> = [];
+  for (const targetChatId of chatIds) {
+    const tgRes = await telegramBotRequest(token, "sendMessage", {
+      ...sendBodyBase,
+      chat_id: targetChatId,
+    });
+    const tgJson = await tgRes.json().catch(() => ({}));
+    const ok = Boolean(tgRes.ok && tgJson?.ok);
+    deliveries.push({
+      chatId: targetChatId,
+      messageId: ok ? (tgJson?.result?.message_id ?? null) : null,
+      ok,
+      error: ok ? undefined : tgJson,
+    });
+  }
+
+  const anyOk = deliveries.some((d) => d.ok);
+  if (!anyOk) {
+    return new Response(JSON.stringify({ ok: false, deliveries }), { status: 502, headers: corsHeaders });
+  }
+
+  return new Response(
+    JSON.stringify({
+      ok: true,
+      messageId: deliveries.find((d) => d.ok)?.messageId ?? null,
+      deliveries,
+    }),
+    { status: 200, headers: corsHeaders },
+  );
 });
 

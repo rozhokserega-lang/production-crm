@@ -238,7 +238,7 @@ export const WarehouseView = memo(function WarehouseView({
       )}
       {warehouseSubView === "history" && consumeHistoryTableRows.length > 0 && (
         <div className="sheet-table-wrap">
-          <table className="sheet-table">
+          <table className="sheet-table sheet-table--mobile-cards">
             <thead>
               <tr>
                 <th>Когда</th>
@@ -254,17 +254,17 @@ export const WarehouseView = memo(function WarehouseView({
             <tbody>
               {consumeHistoryTableRows.map((r) => (
                 <tr key={r.moveId || `${r.createdAt}-${r.orderId}-${r.material}`}>
-                  <td>{r.createdAt ? new Date(r.createdAt).toLocaleString("ru-RU", { timeZone: "Europe/Moscow" }) : "-"}</td>
-                  <td>
+                  <td data-label="Когда">{r.createdAt ? new Date(r.createdAt).toLocaleString("ru-RU", { timeZone: "Europe/Moscow" }) : "-"}</td>
+                  <td data-label="Событие">
                     {r.rowType === "leftover"
                       ? "Сформирован остаток"
                       : r.rowType === "pilka_done"
                         ? "Пильщик завершил"
                         : "Списание"}
                   </td>
-                  <td>{r.orderId || "-"}</td>
-                  <td>{renderMaterialButton(r.material)}</td>
-                  <td>
+                  <td data-label="Заказ">{r.orderId || "-"}</td>
+                  <td data-label="Материал">{renderMaterialButton(r.material)}</td>
+                  <td data-label="Списано (листов)">
                     {r.rowType === "consume" ? (
                       <b>{r.qtySheets}</b>
                     ) : r.rowType === "pilka_done" && Number(r.expectedSheets) > 0 ? (
@@ -273,9 +273,9 @@ export const WarehouseView = memo(function WarehouseView({
                       <b>-</b>
                     )}
                   </td>
-                  <td><b>{r.rowType === "leftover" ? `${r.leftoversQty}${r.leftoverFormat ? ` (${r.leftoverFormat})` : ""}` : "-"}</b></td>
-                  <td>{r.comment || "-"}</td>
-                  <td>
+                  <td data-label="Остаток"><b>{r.rowType === "leftover" ? `${r.leftoversQty}${r.leftoverFormat ? ` (${r.leftoverFormat})` : ""}` : "-"}</b></td>
+                  <td data-label="Комментарий">{r.comment || "-"}</td>
+                  <td data-label="Действие" data-full>
                     {r.rowType === "pilka_done" && canOperateWarehouse ? (
                       <button
                         type="button"

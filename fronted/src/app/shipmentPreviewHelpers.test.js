@@ -82,5 +82,44 @@ describe("enrichPreviewWithStrapProduct", () => {
     };
     const enriched = enrichPreviewWithStrapProduct(preview, { item: "502_80. Черный", week: "обвязка" }, {});
     expect(enriched.strapTargetProduct).toBe("Донини R");
+    expect(enriched.rows).toHaveLength(1);
+    expect(enriched.rows[0]).toMatchObject({ part: "Обвязка (1000_80)", qty: "400" });
+  });
+});
+
+describe("enrichPreviewFromFurniture — обвязка", () => {
+  it("не разворачивает шаблон мебели для плана обвязки", () => {
+    const preview = {
+      firstName: "1000_80",
+      detailedName: "1000_80. Черный",
+      qty: 650,
+      rows: [{ part: "1000_80. Черный", qty: "650" }],
+    };
+    const enriched = enrichPreviewFromFurniture(preview, {
+      ...deps(),
+      shipmentRow: { item: "1000_80. Черный", week: "обвязка", section: "Обвязка" },
+    });
+    expect(enriched.rows).toHaveLength(1);
+    expect(enriched.rows[0]).toMatchObject({ part: "1000_80", qty: "650" });
+  });
+
+  it("оставляет только строки обвязки, если в preview уже полный BOM", () => {
+    const preview = {
+      firstName: "1000_80",
+      detailedName: "1000_80. Черный",
+      qty: 650,
+      rows: [
+        { part: "Столешки (660_530)", qty: "1300" },
+        { part: "Середина (660_290)", qty: "650" },
+        { part: "Обвязка (1000_80)", qty: "1300" },
+        { part: "Обвязка (558_80)", qty: "2600" },
+      ],
+    };
+    const enriched = enrichPreviewFromFurniture(preview, {
+      ...deps(),
+      shipmentRow: { item: "1000_80. Черный", week: "обвязка", section: "Обвязка" },
+    });
+    expect(enriched.rows).toHaveLength(1);
+    expect(enriched.rows.map((r) => r.part)).toEqual(["Обвязка (1000_80)"]);
   });
 });
