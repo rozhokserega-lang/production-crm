@@ -223,8 +223,15 @@ describe("passesShipmentStageFilter", () => {
   it("passes shipped", () => {
     expect(passesShipmentStageFilter("shipped", filters)).toBe(true);
   });
-  it("blocks warehouse_kit_wait", () => {
-    expect(passesShipmentStageFilter("warehouse_kit_wait", filters)).toBe(false);
+  // Заказы, ушедшие на склад (warehouse_kit_*), показываются на вкладке «Отправлено»
+  // (showShipped) — раньше были скрыты со всех экранов, теперь видны, чтобы не терять
+  // заказы после перехода на склад.
+  it("passes warehouse_kit_wait when showShipped is true", () => {
+    expect(passesShipmentStageFilter("warehouse_kit_wait", filters)).toBe(true);
+  });
+  it("blocks warehouse_kit_wait when showShipped is false", () => {
+    const noShipped = { ...filters, showShipped: false };
+    expect(passesShipmentStageFilter("warehouse_kit_wait", noShipped)).toBe(false);
   });
   it("blocks plan_idle", () => {
     expect(passesShipmentStageFilter("plan_idle", filters)).toBe(false);

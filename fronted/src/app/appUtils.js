@@ -582,12 +582,17 @@ export function passesShipmentStageFilter(stageKey, filters) {
   if (stageKey === "ready_assembly") return filters.showReadyAssembly;
   if (stageKey === "assembled_wait_ship") return filters.showAwaitShipment;
   if (stageKey === "shipped") return filters.showShipped;
+  // Заказы, ушедшие на склад (warehouse_kit_*), показываем на вкладке «Отправлено»
+  // вместе с финально отгруженными. Раньше они были скрыты со всех экранов отгрузки —
+  // после перехода на склад заказ «пропадал». Теперь он остаётся видимым, а статус
+  // ячейки сохраняет warehouse_kit_*, чтобы в колонке «Статус» отличить «на складе»
+  // от «финально отгружено».
   if (
     stageKey === "warehouse_kit_wait"
     || stageKey === "warehouse_kit_work"
     || stageKey === "warehouse_kit_done"
   ) {
-    return false;
+    return filters.showShipped;
   }
   if (stageKey === "plan_idle") {
     return false;
