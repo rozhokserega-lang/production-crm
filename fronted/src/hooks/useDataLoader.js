@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import { OrderService } from "../services/orderService";
 import { partitionDomains } from "../app/domainReload";
+import { reconcileOrderSnapshot } from "../app/orderSnapshotGuard";
 import { getViewCache, setViewCache } from "./viewCache";
 import {
   loadOrdersDomainData,
@@ -260,6 +261,7 @@ async function reloadOrdersDomain({
   loadSeqRef,
   callBackend,
   preferStaged,
+  preserveOnEmpty,
   normalizeOrder,
   normalizeShipmentBoard,
   setters,
@@ -267,9 +269,9 @@ async function reloadOrdersDomain({
   const data = await loadOrdersWithCacheFallback({ view, callBackend, preferStaged });
   if (seq !== loadSeqRef.current) return;
   const normalizedRows = Array.isArray(data) ? data.map(normalizeOrder) : [];
-  setters.setRows(normalizedRows);
+  setters.setRows((current) => reconcileOrderSnapshot(current, normalizedRows, { preserveOnEmpty }));
   if (view === "workshop" || view === "floorMap" || view === "overview" || view === "stats" || view === "shipment") {
-    setters.setShipmentOrders(normalizedRows);
+    setters.setShipmentOrders((current) => reconcileOrderSnapshot(current, normalizedRows, { preserveOnEmpty }));
   }
   let workshopBoard = null;
   let workshopTemplates = [];
@@ -298,13 +300,15 @@ async function reloadOrdersDomain({
     workshopDetailArticles = Array.isArray(detailArticlesResult) ? detailArticlesResult : [];
     setters.setFurnitureDetailArticleRows(workshopDetailArticles);
   }
-  setViewCache(view, buildViewSnapshot({
-    view,
-    normalizedRows,
-    workshopBoard,
-    workshopTemplates,
-    workshopDetailArticles,
-  }));
+  if (!preserveOnEmpty || normalizedRows.length > 0) {
+    setViewCache(view, buildViewSnapshot({
+      view,
+      normalizedRows,
+      workshopBoard,
+      workshopTemplates,
+      workshopDetailArticles,
+    }));
+  }
 }
 
 async function reloadShipmentDomain({
@@ -472,7 +476,6 @@ async function reloadFurnitureDomain({
   if (typeof setters.setFurnitureCustomTemplates === "function") {
     setters.setFurnitureCustomTemplates(furniturePayload?.furnitureCustomTemplates || []);
   }
-  setters.setRows(Array.isArray(furniturePayload.data) ? furniturePayload.data : []);
   setViewCache(view, buildViewSnapshot({
     view,
     data: furniturePayload.data,
@@ -611,13 +614,15 @@ export function useDataLoader({
           const fresh = await loadOrdersWithCacheFallback({ view, callBackend, preferStaged: ordersPreferStaged });
           if (seq !== loadSeqRef.current) return;
           const rows = Array.isArray(fresh) ? fresh.map(normalizeOrder) : [];
-          setRows(rows);
-          setShipmentOrders(rows);
-          setViewCache(view, buildViewSnapshot({
-            view,
-            normalizedRows: rows,
-            overviewBoard,
-          }));
+          setRows((current) => reconcileOrderSnapshot(current, rows, { preserveOnEmpty: background }));
+          setShipmentOrders((current) => reconcileOrderSnapshot(current, rows, { preserveOnEmpty: background }));
+          if (!background || rows.length > 0) {
+            setViewCache(view, buildViewSnapshot({
+              view,
+              normalizedRows: rows,
+              overviewBoard,
+            }));
+          }
           setError("");
         } catch (e) {
           if (seq !== loadSeqRef.current) return;
@@ -687,9 +692,9 @@ export function useDataLoader({
         setViewCache(view, buildViewSnapshot({ view, data }));
       } else if (isOrdersDomainView(view)) {
         normalizedRows = Array.isArray(data) ? data.map(normalizeOrder) : [];
-        setRows(normalizedRows);
+        setRows((current) => reconcileOrderSnapshot(current, normalizedRows, { preserveOnEmpty: background }));
         if (view === "workshop" || view === "floorMap" || view === "overview" || view === "stats") {
-          setShipmentOrders(normalizedRows);
+          setShipmentOrders((current) => reconcileOrderSnapshot(current, normalizedRows, { preserveOnEmpty: background }));
         }
         if (view === "workshop" || view === "floorMap" || view === "strapStock") {
           const [boardResult, templatesResult, detailArticlesResult] = await Promise.all([
@@ -718,13 +723,15 @@ export function useDataLoader({
           workshopDetailArticles = Array.isArray(detailArticlesResult) ? detailArticlesResult : [];
           setFurnitureDetailArticleRows(workshopDetailArticles);
         }
-        setViewCache(view, buildViewSnapshot({
-          view,
-          normalizedRows,
-          workshopBoard,
-          workshopTemplates,
-          workshopDetailArticles,
-        }));
+        if (!background || normalizedRows.length > 0) {
+          setViewCache(view, buildViewSnapshot({
+            view,
+            normalizedRows,
+            workshopBoard,
+            workshopTemplates,
+            workshopDetailArticles,
+          }));
+        }
       } else if (view === "furniture") {
         setFurnitureArticleRows(furniturePayload?.furnitureArticleRows || []);
         setFurnitureDetailArticleRows(furniturePayload?.furnitureDetailArticleRows || []);
@@ -830,6 +837,7 @@ export function useDataLoader({
             loadSeqRef,
             callBackend,
             preferStaged: ordersPreferStaged,
+            preserveOnEmpty: background,
             normalizeOrder,
             normalizeShipmentBoard,
             setters,

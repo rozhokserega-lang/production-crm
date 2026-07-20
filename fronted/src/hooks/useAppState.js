@@ -1077,6 +1077,35 @@ export function useAppState({ auth }) {
     };
   }, [loadDomains, setRows, setShipmentOrders]);
 
+  useEffect(() => {
+    let lastResumeReloadAt = 0;
+    const reloadAfterResume = () => {
+      if (document.visibilityState === "hidden") return;
+      const now = Date.now();
+      if (now - lastResumeReloadAt < 10000) return;
+      lastResumeReloadAt = now;
+      loadDomains({
+        background: true,
+        preferStaged: false,
+        domains: getViewDomains(viewRef.current),
+        extras: domainReloadExtrasRef.current,
+      }).catch(() => {});
+    };
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") reloadAfterResume();
+    };
+
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("focus", reloadAfterResume);
+    window.addEventListener("online", reloadAfterResume);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("focus", reloadAfterResume);
+      window.removeEventListener("online", reloadAfterResume);
+    };
+  }, [loadDomains]);
+
   const { shipmentOrderMaps, orderIndexById } = useShipmentOrderIndexes({
     shipmentOrders,
     rows,
