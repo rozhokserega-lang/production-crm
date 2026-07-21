@@ -1,4 +1,5 @@
 import { SHOP_KROMKA_POOL, SHOP_PRAS_POOL } from "./laborKitPlanner";
+import { formatLaborDuration } from "./laborDurationFormat";
 
 const MONTH_WEEKS = 4.33;
 
@@ -8,10 +9,7 @@ function positiveNumber(value, fallback) {
 }
 
 function formatHhMm(totalMin) {
-  const safe = Math.max(0, Number(totalMin || 0));
-  const hours = Math.floor(safe / 60);
-  const minutes = Math.round(safe % 60);
-  return `${hours}:${String(minutes).padStart(2, "0")}`;
+  return formatLaborDuration(totalMin);
 }
 
 function stageStatus(loadPct) {

@@ -4,6 +4,8 @@ import {
   calcKitLabor,
   calcTotalProductionPlan,
   formatMinutesForForm,
+  formatKitMachineLabel,
+  formatLaborDuration,
   kitItemsToSectionDrafts,
   scheduleStageMakespan,
   resolveKitGroupName,
@@ -113,5 +115,11 @@ describe("laborKitPlanner", () => {
     expect(drafts[0].straps[0].pilkaMin).toBe("0.4");
     expect(drafts[0].straps[0].kromkaMin).toBe("0.6");
     expect(drafts[0].straps[0].useCustomTimes).toBe(false);
+  });
+
+  it("formats machine allocation and labor minutes for planner labels", () => {
+    expect(formatKitMachineLabel({ kromkaMachines: 1, prasMachines: 2 })).toBe("Кромка ×1, прис. ×2");
+    expect(formatLaborDuration(10)).toBe("10 минут");
+    expect(formatLaborDuration(228)).toBe("3 часа 48 минут");
   });
 });

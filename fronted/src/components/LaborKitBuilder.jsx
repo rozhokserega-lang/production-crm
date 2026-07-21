@@ -3,10 +3,15 @@ import { LABOR_GROUP_ORDER } from "../app/laborGroupHelpers";
 import {
   SHOP_KROMKA_POOL,
   SHOP_PRAS_POOL,
+  LABOR_PARALLEL_MODE_LABEL,
+  LABOR_PARALLEL_MODE_DETAIL,
+  LABOR_SEQUENTIAL_MODE_LABEL,
   buildRatesByGroup,
   calcKitLabor,
   formatKitItemLabel,
   formatKitItemShort,
+  formatKitMachineLabel,
+  formatLaborDuration,
   formatMinutesForForm,
   kitItemsToSectionDrafts,
   resolveKitGroupName,
@@ -14,13 +19,6 @@ import {
   sectionDraftsToKitItems,
 } from "../app/laborKitPlanner";
 import { STRAP_OPTIONS } from "../constants/views";
-
-function formatHhMm(totalMin) {
-  const safe = Math.max(0, Number(totalMin || 0));
-  const hours = Math.floor(safe / 60);
-  const minutes = Math.round(safe % 60);
-  return `${hours}:${String(minutes).padStart(2, "0")}`;
-}
 
 function parseQty(value) {
   const n = Number(String(value ?? "").replace(",", ".").trim());
@@ -287,8 +285,8 @@ export const LaborKitBuilder = memo(function LaborKitBuilder({
         laborPerKitMinParallel: labor.parallelPerKit,
         totalMin: labor.batchSeq,
         totalMinParallel: labor.batchParallel,
-        hhmm: formatHhMm(labor.batchSeq),
-        hhmmParallel: formatHhMm(labor.batchParallel),
+        hhmm: formatLaborDuration(labor.batchSeq),
+        hhmmParallel: formatLaborDuration(labor.batchParallel),
         missingItems: labor.missingItems,
         normalizedItems: labor.items,
       };
@@ -489,7 +487,9 @@ export const LaborKitBuilder = memo(function LaborKitBuilder({
 
         {previewDraft ? (
           <div className="labor-kit-builder__preview">
-            секция: {Math.round(previewDraft.seqPerKit)} / {Math.round(previewDraft.parallelPerKit)} мин
+            1 комплект: {formatLaborDuration(previewDraft.seqPerKit)} {LABOR_SEQUENTIAL_MODE_LABEL.toLowerCase()}
+            {" · "}
+            {formatLaborDuration(previewDraft.parallelPerKit)} {LABOR_PARALLEL_MODE_LABEL.toLowerCase()} ({LABOR_PARALLEL_MODE_DETAIL.toLowerCase()})
           </div>
         ) : null}
 
@@ -746,7 +746,7 @@ export const LaborKitBuilder = memo(function LaborKitBuilder({
               <div className="labor-kit-card__head">
                 <strong className="labor-kit-card__name">{r.name}</strong>
                 <label className="labor-kit-card__plan">
-                  <span>План{kitPlanSavingId === r.id ? " …" : ""}</span>
+                  <span>Комплектов{kitPlanSavingId === r.id ? " …" : ""}</span>
                   <input
                     type="number"
                     min="0"
@@ -773,21 +773,37 @@ export const LaborKitBuilder = memo(function LaborKitBuilder({
               <ul className="labor-kit-card__compose">
                 {r.normalizedItems.map((x, idx) => (
                   <li key={`${r.id}-item-${idx}`} title={formatKitItemLabel(x)}>
-                    {formatKitItemShort(x)}
-                    <span className="labor-kit-card__machines">К{x.kromkaMachines} П{x.prasMachines}</span>
+                    <span className="labor-kit-card__compose-name">{formatKitItemShort(x)}</span>
+                    <span className="labor-kit-card__machines">{formatKitMachineLabel(x)}</span>
                   </li>
                 ))}
               </ul>
               <div className="labor-kit-card__metrics">
-                <div>
-                  <span className="labor-kit-card__metric-label">Норма/компл.</span>
-                  <span>{Math.round(r.laborPerKitMin)} seq</span>
-                  <span>{Math.round(r.laborPerKitMinParallel)} 2+2</span>
+                <div className="labor-kit-card__metrics-head">
+                  <span />
+                  <span>1 комплект</span>
+                  <span>{r.kits > 0 ? `План: ${r.kits} шт.` : "План"}</span>
                 </div>
-                <div>
-                  <span className="labor-kit-card__metric-label">Итого</span>
-                  <span><b>{r.hhmm}</b> seq</span>
-                  <span><b>{r.hhmmParallel}</b> 2+2</span>
+                <div className="labor-kit-card__metric-row">
+                  <span
+                    className="labor-kit-card__metric-name"
+                    title="Все этапы друг за другом, без параллели на станках"
+                  >
+                    {LABOR_SEQUENTIAL_MODE_LABEL}
+                  </span>
+                  <span>{formatLaborDuration(r.laborPerKitMin)}</span>
+                  <span><b>{r.hhmm}</b></span>
+                </div>
+                <div className="labor-kit-card__metric-row labor-kit-card__metric-row--parallel">
+                  <span
+                    className="labor-kit-card__metric-name"
+                    title={`${LABOR_PARALLEL_MODE_LABEL}: кромка и присадка распределяются по ${SHOP_KROMKA_POOL} и ${SHOP_PRAS_POOL} станкам`}
+                  >
+                    <span className="labor-kit-card__metric-title">{LABOR_PARALLEL_MODE_LABEL}</span>
+                    <span className="labor-kit-card__metric-detail">{LABOR_PARALLEL_MODE_DETAIL}</span>
+                  </span>
+                  <span>{formatLaborDuration(r.laborPerKitMinParallel)}</span>
+                  <span><b>{r.hhmmParallel}</b></span>
                 </div>
               </div>
               {r.missingItems.length > 0 ? (

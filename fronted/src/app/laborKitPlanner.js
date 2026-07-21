@@ -1,4 +1,5 @@
 import { resolveLaborGroup } from "./laborGroupHelpers";
+import { formatLaborDuration } from "./laborDurationFormat";
 
 export const SHOP_KROMKA_POOL = 2;
 export const SHOP_PRAS_POOL = 2;
@@ -190,11 +191,21 @@ export function calcKitLabor(
 }
 
 function formatHhMm(totalMin) {
-  const safe = Math.max(0, Number(totalMin || 0));
-  const hours = Math.floor(safe / 60);
-  const minutes = Math.round(safe % 60);
-  return `${hours}:${String(minutes).padStart(2, "0")}`;
+  return formatLaborDuration(totalMin);
 }
+
+/** @deprecated используйте formatLaborDuration из laborDurationFormat.js */
+export { formatLaborDuration, formatLaborMinutesCompact } from "./laborDurationFormat";
+
+export function formatKitMachineLabel(item = {}) {
+  const kromka = toPositiveInt(item.kromkaMachines ?? item.kromka_machines, 1, SHOP_KROMKA_POOL);
+  const pras = toPositiveInt(item.prasMachines ?? item.pras_machines, 1, SHOP_PRAS_POOL);
+  return `Кромка ×${kromka}, прис. ×${pras}`;
+}
+
+export const LABOR_SEQUENTIAL_MODE_LABEL = "Подряд";
+export const LABOR_PARALLEL_MODE_LABEL = "Параллельно";
+export const LABOR_PARALLEL_MODE_DETAIL = `${SHOP_KROMKA_POOL} кромки + ${SHOP_PRAS_POOL} прис.`;
 
 /** План по одной группе: N заказов по 1 станку → делятся между 2 станками. */
 export function calcGroupPlanLabor(
@@ -211,7 +222,7 @@ export function calcGroupPlanLabor(
 ) {
   const units = Math.max(0, Math.round(toPositiveNumber(qty)));
   if (units <= 0) {
-    return { seqTotal: 0, parallelTotal: 0, hhmmSeq: "0:00", hhmmParallel: "0:00" };
+    return { seqTotal: 0, parallelTotal: 0, hhmmSeq: "0 минут", hhmmParallel: "0 минут" };
   }
 
   const pilka = toPositiveNumber(pilkaPerQtyMin) * units;
@@ -333,7 +344,7 @@ export function calcTotalProductionPlan({
 
 export function formatKitItemLabel(item = {}) {
   const prefix = item.kind === "strap" ? "обвязка " : "";
-  return `${prefix}${item.group} x ${item.qty} [К${item.kromkaMachines}/П${item.prasMachines}]`;
+  return `${prefix}${item.group} × ${item.qty} (${formatKitMachineLabel(item)})`;
 }
 
 export function formatKitItemShort(item = {}) {

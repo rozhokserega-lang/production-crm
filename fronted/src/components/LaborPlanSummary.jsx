@@ -2,8 +2,12 @@ import { memo, useEffect, useMemo, useState } from "react";
 import {
   SHOP_KROMKA_POOL,
   SHOP_PRAS_POOL,
+  LABOR_PARALLEL_MODE_LABEL,
+  LABOR_PARALLEL_MODE_DETAIL,
+  LABOR_SEQUENTIAL_MODE_LABEL,
   buildRatesByGroup,
   calcTotalProductionPlan,
+  formatLaborDuration,
 } from "../app/laborKitPlanner";
 import {
   calcMonthlyPlanLoad,
@@ -231,11 +235,26 @@ export const LaborPlanSummary = memo(function LaborPlanSummary({
       </section>
 
       <section className="labor-plan-summary__card labor-plan-summary__card--queue">
-        <div className="labor-plan-summary__title">Очередь 2+2</div>
+        <div className="labor-plan-summary__title">
+          {LABOR_PARALLEL_MODE_LABEL}
+          <span className="labor-plan-summary__title-detail">{LABOR_PARALLEL_MODE_DETAIL}</span>
+        </div>
         <div className="labor-plan-summary__queue-lines">
-          <span>Кромка {plan.kromkaSeq}→{plan.kromkaParallel} мин</span>
-          <span>Присадка {plan.prasSeq}→{plan.prasParallel} мин</span>
-          <span><b>{plan.hhmmSeq}</b> seq · <b>{plan.hhmmParallel}</b> 2+2</span>
+          <span>
+            Кромка: {formatLaborDuration(plan.kromkaSeq)} {LABOR_SEQUENTIAL_MODE_LABEL.toLowerCase()}
+            {" → "}
+            {formatLaborDuration(plan.kromkaParallel)} {LABOR_PARALLEL_MODE_LABEL.toLowerCase()}
+          </span>
+          <span>
+            Присадка: {formatLaborDuration(plan.prasSeq)} {LABOR_SEQUENTIAL_MODE_LABEL.toLowerCase()}
+            {" → "}
+            {formatLaborDuration(plan.prasParallel)} {LABOR_PARALLEL_MODE_LABEL.toLowerCase()}
+          </span>
+          <span>
+            Итого: <b>{plan.hhmmSeq}</b> {LABOR_SEQUENTIAL_MODE_LABEL.toLowerCase()}
+            {" · "}
+            <b>{plan.hhmmParallel}</b> {LABOR_PARALLEL_MODE_LABEL.toLowerCase()}
+          </span>
         </div>
       </section>
     </div>

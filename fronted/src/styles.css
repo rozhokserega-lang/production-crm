@@ -10508,39 +10508,85 @@ button.mini.accent:hover:not(:disabled) {
 .labor-kit-card__compose li {
   display: flex;
   justify-content: space-between;
-  gap: 6px;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.labor-kit-card__compose-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 0;
 }
 
 .labor-kit-card__machines {
-  color: #94a3b8;
+  color: #64748b;
   font-size: 10px;
   flex-shrink: 0;
+  text-align: right;
+  line-height: 1.3;
+  max-width: 46%;
 }
 
 .labor-kit-card__metrics {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   margin-bottom: 0;
-  padding-top: 6px;
+  padding-top: 8px;
   border-top: 1px solid #f1f5f9;
   flex-shrink: 0;
 }
 
-.labor-kit-card__metrics > div {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+.labor-kit-card__metrics-head,
+.labor-kit-card__metric-row {
+  display: grid;
+  grid-template-columns: minmax(88px, 1.1fr) minmax(56px, 0.8fr) minmax(56px, 0.8fr);
+  gap: 8px;
+  align-items: baseline;
 }
 
-.labor-kit-card__metric-label {
+.labor-kit-card__metrics-head {
   font-size: 10px;
   color: #94a3b8;
   text-transform: uppercase;
   letter-spacing: 0.02em;
+}
+
+.labor-kit-card__metric-row {
+  font-size: 12px;
+  color: #334155;
+}
+
+.labor-kit-card__metric-row--parallel {
+  padding-top: 2px;
+  border-top: 1px dashed #eef2f7;
+}
+
+.labor-kit-card__metric-name {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  font-size: 11px;
+  color: #64748b;
+  line-height: 1.25;
+}
+
+.labor-kit-card__metric-title {
+  font-weight: 600;
+  color: #334155;
+}
+
+.labor-kit-card__metric-detail {
+  font-size: 10px;
+  color: #94a3b8;
+}
+
+.labor-kit-card__metric-row > span:nth-child(2),
+.labor-kit-card__metric-row > span:nth-child(3) {
+  text-align: right;
+  white-space: normal;
+  line-height: 1.25;
 }
 
 .labor-kit-card__warn {
@@ -10615,9 +10661,19 @@ button.mini.accent:hover:not(:disabled) {
 }
 
 .labor-plan-summary__title {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: baseline;
   font-weight: 600;
   font-size: 13px;
   margin-bottom: 8px;
+}
+
+.labor-plan-summary__title-detail {
+  font-weight: 400;
+  font-size: 11px;
+  color: #64748b;
 }
 
 .labor-plan-summary__toolbar {
