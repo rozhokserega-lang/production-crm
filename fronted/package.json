@@ -12,6 +12,7 @@
     "watch:3d": "node ./scripts/convert-bazis-to-glb.mjs --watch",
     "test": "vitest",
     "test:run": "vitest run",
+    "export:august-plan": "vitest run export-august-plan-xlsx.test.js",
     "build:safe": "vite build",
     "lint": "eslint . --ext js,jsx",
     "lint:fix": "eslint . --ext js,jsx --fix"

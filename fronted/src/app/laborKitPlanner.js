@@ -207,6 +207,16 @@ export const LABOR_SEQUENTIAL_MODE_LABEL = "Подряд";
 export const LABOR_PARALLEL_MODE_LABEL = "Параллельно";
 export const LABOR_PARALLEL_MODE_DETAIL = `${SHOP_KROMKA_POOL} кромки + ${SHOP_PRAS_POOL} прис.`;
 
+export const LABOR_SEQUENTIAL_MODE_DETAIL = "1 станок на этап, без очереди";
+export const LABOR_SEQUENTIAL_MODE_HINT =
+  "Все минуты складываются: один станок на пиле, кромке и присадке. Этапы идут друг за другом.";
+export const LABOR_PARALLEL_MODE_HINT =
+  `Кромка и присадка распределяются по очереди jobs на ${SHOP_KROMKA_POOL} и ${SHOP_PRAS_POOL} станках. Пила и сборка — подряд.`;
+export const LABOR_MONTHLY_LOAD_MODE_LABEL = "Машино-минуты";
+export const LABOR_MONTHLY_LOAD_MODE_DETAIL = "сумма работ vs фонд станков";
+export const LABOR_MONTHLY_LOAD_MODE_HINT =
+  "Сравнивается объём работ (сумма минут по этапам) с доступным фондом станков за месяц. Без очереди jobs — для кромки и присадки берётся сумма «подряд».";
+
 /** План по одной группе: N заказов по 1 станку → делятся между 2 станками. */
 export function calcGroupPlanLabor(
   {

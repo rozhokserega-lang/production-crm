@@ -1,6 +1,7 @@
 import { memo, useMemo, useState } from "react";
 import { LABOR_GROUP_ORDER } from "../app/laborGroupHelpers";
 import { estimateLaborForLines } from "../app/laborNormCalculator";
+import { LaborCalcModelHint } from "./LaborCalcModelHint";
 
 function parseQty(value) {
   const n = Number(String(value ?? "").replace(",", ".").trim());
@@ -56,6 +57,9 @@ export const LaborOrderCalculator = memo(function LaborOrderCalculator({
 
   return (
     <div className="labor-calculator">
+      <div className="labor-table-model-hint">
+        <LaborCalcModelHint mode="sequential" variant="block" />
+      </div>
       <p style={{ margin: "0 0 12px", color: "#6b7280", fontSize: 14 }}>
         Расчёт нормо-часов по этапам на основе нормативов (приоритет) или среднего факта.
       </p>

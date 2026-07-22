@@ -338,17 +338,49 @@ export const WorkshopView = memo(function WorkshopView({
           >
             <div className="workshop-card__row">
               {pilkaReorderEnabled ? (
-                <button
-                  type="button"
-                  className="workshop-card__drag"
-                  draggable
-                  title="Перетащите для приоритета"
-                  aria-label="Перетащите для приоритета"
-                  onDragStart={handlePilkaDragStart(orderId)}
-                  onDragEnd={resetPilkaDrag}
-                >
-                  ⋮⋮
-                </button>
+                <>
+                  <button
+                    type="button"
+                    className="workshop-card__drag"
+                    draggable
+                    title="Перетащите для приоритета"
+                    aria-label="Перетащите для приоритета"
+                    onDragStart={handlePilkaDragStart(orderId)}
+                    onDragEnd={resetPilkaDrag}
+                  >
+                    ⋮⋮
+                  </button>
+                  {/* Мобильные кнопки приоритета (вверх/вниз) — drag на тач не работает.
+                      Показываются только на <= 600px через CSS (.workshop-card__mobile-order). */}
+                  <div className="workshop-card__mobile-order" aria-hidden="true">
+                    <button
+                      type="button"
+                      className="mini workshop-card__move-btn"
+                      disabled={idx === 0}
+                      title="Выше приоритетом"
+                      aria-label="Поднять выше"
+                      onClick={() => {
+                        const prev = String(workshopRows[idx - 1]?.orderId || workshopRows[idx - 1]?.order_id || "");
+                        if (prev && typeof reorderPilkaRows === "function") reorderPilkaRows(workshopRows, orderId, prev);
+                      }}
+                    >
+                      ▲
+                    </button>
+                    <button
+                      type="button"
+                      className="mini workshop-card__move-btn"
+                      disabled={idx === workshopRows.length - 1}
+                      title="Ниже приоритетом"
+                      aria-label="Опустить ниже"
+                      onClick={() => {
+                        const next = String(workshopRows[idx + 1]?.orderId || workshopRows[idx + 1]?.order_id || "");
+                        if (next && typeof reorderPilkaRows === "function") reorderPilkaRows(workshopRows, orderId, next);
+                      }}
+                    >
+                      ▼
+                    </button>
+                  </div>
+                </>
               ) : null}
               <div className="workshop-card__body">
             <div className="card__content">

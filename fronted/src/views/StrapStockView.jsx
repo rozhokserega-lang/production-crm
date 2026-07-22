@@ -5,7 +5,9 @@ import {
   buildStrapProductGroupsByCode,
   collectStrapCatalogProductNames,
   computeWorkshopStrapDemandByInventoryKey,
+  computeWorkshopStrapDemandOrdersByKey,
   formatStrapProductGroups,
+  getStrapDemandOrdersForRow,
   inventoryCodeFromStrapStockType,
   normalizeStrapInventoryCode,
   sortStrapCodesByProductFilter,
@@ -17,7 +19,10 @@ import {
   strapWarehouseShortage,
 } from "../app/workshopStrapNeeds";
 import { StrapLaunchDialog } from "../components/StrapLaunchDialog";
+import { StrapDemandOrdersDialog } from "../components/StrapDemandOrdersDialog";
+import { StrapPrintPreviewDialog, useStrapPrintPreviewDialog } from "../components/StrapPrintPreviewDialog";
 import { embedStrapTargetProduct } from "../app/orderHelpers";
+import { resolveStrapLaunchPrintInputs } from "../app/strapPrintHelpers";
 import { OrderService } from "../services/orderService";
 
 /**
@@ -55,14 +60,28 @@ function buildStockMap(rows) {
 /** Если в БД ещё нет строки по типу — создаём остаток с этим цветом (как в существующих строках склада). */
 const DEFAULT_STRAP_STOCK_COLOR = "Черный";
 
-function DemandCell({ demandByKey, strapType, color }) {
+function DemandCell({ demandByKey, strapType, color, onShowOrders }) {
   const need = strapWarehouseDemandQty(demandByKey, strapType, color);
   return (
     <td
       className={`strap-stock-demand${need > 0 ? " strap-stock-demand--active" : ""}`}
-      title="Сколько штук нужно по заказам в цеху (пила, кромка, присадка, до сборки включительно)"
+      title={
+        need > 0
+          ? "Сколько штук нужно по заказам в цеху. Нажмите, чтобы увидеть заказы"
+          : "Сколько штук нужно по заказам в цеху (пила, кромка, присадка, до сборки включительно)"
+      }
     >
-      {need > 0 ? <b>{need}</b> : <span className="strap-stock-demand-zero">0</span>}
+      {need > 0 ? (
+        <button
+          type="button"
+          className="strap-stock-demand-btn"
+          onClick={() => onShowOrders?.({ strapType, color, need })}
+        >
+          <b>{need}</b>
+        </button>
+      ) : (
+        <span className="strap-stock-demand-zero">0</span>
+      )}
     </td>
   );
 }
@@ -87,6 +106,7 @@ function StrapRowActions({
   onEditSave,
   onEditCancel,
   onLaunchOpen,
+  onPrintOpen,
 }) {
   if (isEditing) {
     return (
@@ -104,9 +124,14 @@ function StrapRowActions({
   return (
     <>
       {canOperateProduction ? (
-        <button type="button" className="mini ok" onClick={onLaunchOpen}>
-          В план
-        </button>
+        <>
+          <button type="button" className="mini" onClick={onPrintOpen} title="Лист для печати">
+            Печать
+          </button>
+          <button type="button" className="mini ok" onClick={onLaunchOpen}>
+            В план
+          </button>
+        </>
       ) : null}
       <button type="button" className="mini ghost" onClick={onEditStart}>
         Изменить
@@ -138,6 +163,8 @@ export function StrapStockView({
   const [launchError, setLaunchError] = useState("");
   const [launchSaving, setLaunchSaving] = useState(false);
   const [productFilter, setProductFilter] = useState("");
+  const [demandOrdersDialog, setDemandOrdersDialog] = useState(null);
+  const { strapPrintDialog, openStrapPrint } = useStrapPrintPreviewDialog();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -174,6 +201,11 @@ export function StrapStockView({
     [workshopRows, strapDeps],
   );
 
+  const demandOrdersByKey = useMemo(
+    () => computeWorkshopStrapDemandOrdersByKey(workshopRows, strapDeps),
+    [workshopRows, strapDeps],
+  );
+
   const productsByCode = useMemo(
     () => buildStrapProductGroupsByCode(furnitureDetailArticleRows),
     [furnitureDetailArticleRows],
@@ -201,6 +233,20 @@ export function StrapStockView({
     (code) => strapCodeServesProduct(code, productsByCode, productFilter),
     [productsByCode, productFilter],
   );
+
+  const openDemandOrdersDialog = ({ strapType, color, need, label }) => {
+    setDemandOrdersDialog({
+      strapType,
+      color,
+      label,
+      totalNeeded: need,
+      orders: getStrapDemandOrdersForRow(demandOrdersByKey, strapType, color),
+    });
+  };
+
+  const closeDemandOrdersDialog = () => {
+    setDemandOrdersDialog(null);
+  };
 
   const handleEditStart = (strapType, color, currentQty) => {
     setEditKey(`${strapType}|${color}`);
@@ -252,6 +298,45 @@ export function StrapStockView({
     );
     setLaunchProduct(products.length === 1 ? products[0] : "");
     setLaunchError("");
+  };
+
+  const openPrintFromLaunchForm = () => {
+    if (!launchDialog) return;
+    const needsColor = strapRequiresLaunchColorChoice(launchDialog.strapType);
+    const resolved = resolveStrapLaunchPrintInputs({
+      launchDialog,
+      qtyInput: launchQty,
+      materialInput: launchMaterial,
+      productInput: launchProduct,
+      needsColorChoice: needsColor,
+    });
+    if (!resolved.ok) {
+      setLaunchError(resolved.error);
+      return;
+    }
+    setLaunchError("");
+    openStrapPrint({
+      strapType: resolved.strapType,
+      color: resolved.material,
+      qty: resolved.qty,
+      productName: resolved.productName,
+    });
+  };
+
+  const openPrintFromRow = ({ strapType, color, label, qtyOnHand }) => {
+    const shortage = strapWarehouseShortage(demandByKey, strapType, color, qtyOnHand);
+    const products = productsByCode.get(normalizeStrapInventoryCode(strapType)) || [];
+    if (products.length > 1) {
+      openLaunchDialog({ strapType, color, label, qtyOnHand });
+      return;
+    }
+    const qty = shortage > 0 ? shortage : 1;
+    openStrapPrint({
+      strapType,
+      color,
+      qty,
+      productName: products[0] || "",
+    });
   };
 
   const handleLaunchSubmit = async () => {
@@ -347,7 +432,7 @@ export function StrapStockView({
                 <th className="strap-stock-th-numeric">Кол-во (шт)</th>
                 <th
                   className="strap-stock-th-numeric"
-                  title="Сумма потребности по заказам в активных этапах цеха (пила, кромка, присадка, oжидание сборки)"
+                  title="Сумма потребности по заказам в активных этапах цеха. Нажмите на число — список заказов"
                 >
                   Требуется
                 </th>
@@ -394,7 +479,14 @@ export function StrapStockView({
                           <span className="strap-qty-zero">0</span>
                         )}
                       </td>
-                      <DemandCell demandByKey={demandByKey} strapType={strapType} color={color} />
+                      <DemandCell
+                        demandByKey={demandByKey}
+                        strapType={strapType}
+                        color={color}
+                        onShowOrders={(payload) =>
+                          openDemandOrdersDialog({ ...payload, label })
+                        }
+                      />
                       <ShortageCell demandByKey={demandByKey} strapType={strapType} color={color} qty={qtyForShortage} />
                       <td className="strap-stock-updated">—</td>
                       <td className="strap-stock-actions">
@@ -407,6 +499,14 @@ export function StrapStockView({
                           onEditCancel={handleEditCancel}
                           onLaunchOpen={() =>
                             openLaunchDialog({
+                              strapType,
+                              color,
+                              label,
+                              qtyOnHand: qtyForShortage,
+                            })
+                          }
+                          onPrintOpen={() =>
+                            openPrintFromRow({
                               strapType,
                               color,
                               label,
@@ -462,7 +562,14 @@ export function StrapStockView({
                           </span>
                         )}
                       </td>
-                      <DemandCell demandByKey={demandByKey} strapType={row.strap_type} color={row.color} />
+                      <DemandCell
+                        demandByKey={demandByKey}
+                        strapType={row.strap_type}
+                        color={row.color}
+                        onShowOrders={(payload) =>
+                          openDemandOrdersDialog({ ...payload, label })
+                        }
+                      />
                       <ShortageCell
                         demandByKey={demandByKey}
                         strapType={row.strap_type}
@@ -486,6 +593,14 @@ export function StrapStockView({
                               qtyOnHand: qtyForShortage,
                             })
                           }
+                          onPrintOpen={() =>
+                            openPrintFromRow({
+                              strapType: row.strap_type,
+                              color: row.color,
+                              label,
+                              qtyOnHand: qtyForShortage,
+                            })
+                          }
                         />
                       </td>
                     </tr>
@@ -496,6 +611,13 @@ export function StrapStockView({
           </table>
         </div>
       )}
+
+      <StrapDemandOrdersDialog
+        open={Boolean(demandOrdersDialog)}
+        meta={demandOrdersDialog}
+        orders={demandOrdersDialog?.orders || []}
+        onClose={closeDemandOrdersDialog}
+      />
 
       <StrapLaunchDialog
         open={Boolean(launchDialog)}
@@ -516,6 +638,15 @@ export function StrapStockView({
         saving={launchSaving}
         onClose={closeLaunchDialog}
         onSubmit={handleLaunchSubmit}
+        onPrintPreview={openPrintFromLaunchForm}
+      />
+
+      <StrapPrintPreviewDialog
+        open={strapPrintDialog.open}
+        planPreview={strapPrintDialog.planPreview}
+        onClose={strapPrintDialog.close}
+        onPrint={strapPrintDialog.print}
+        printAreaRef={strapPrintDialog.printAreaRef}
       />
     </div>
   );

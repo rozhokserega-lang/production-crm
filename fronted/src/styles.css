@@ -5695,7 +5695,8 @@ button:disabled {
   }
 
   body.workshop-partial-print .workshop-final-print-area .print-plan-page,
-  body.workshop-partial-print .workshop-plan-print-area .print-plan-page {
+  body.workshop-partial-print .workshop-plan-print-area .print-plan-page,
+  body.workshop-partial-print .strap-stock-print-area .print-plan-page {
     width: 100% !important;
     max-width: none !important;
     margin: 0 !important;
@@ -5715,14 +5716,16 @@ button:disabled {
 
   body.workshop-partial-print .workshop-final-print-area .print-plan-page:last-child,
   body.workshop-partial-print .workshop-plan-print-area .print-plan-page:last-child,
-  body.workshop-partial-print .shipment-send-print-area .print-plan-page:last-child {
+  body.workshop-partial-print .shipment-send-print-area .print-plan-page:last-child,
+  body.workshop-partial-print .strap-stock-print-area .print-plan-page:last-child {
     page-break-after: avoid !important;
     break-after: avoid !important;
   }
 
   body.workshop-partial-print .workshop-final-print-area .plan-preview,
   body.workshop-partial-print .workshop-plan-print-area .plan-preview,
-  body.workshop-partial-print .shipment-send-print-area .plan-preview {
+  body.workshop-partial-print .shipment-send-print-area .plan-preview,
+  body.workshop-partial-print .strap-stock-print-area .plan-preview {
     border: none !important;
     border-radius: 0 !important;
     padding: 0 !important;
@@ -7699,6 +7702,22 @@ button:hover {
 .strap-stock-demand--active {
   color: #1e40af;
 }
+.strap-stock-demand-btn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 2px;
+}
+.strap-stock-demand-btn:hover {
+  color: #1d4ed8;
+}
 .strap-stock-demand-zero {
   color: #94a3b8;
   font-weight: 400;
@@ -7745,6 +7764,91 @@ button:hover {
 
 .strap-launch-dialog .strap-stock-error {
   margin-top: 4px;
+}
+
+.strap-demand-dialog {
+  width: min(920px, 96vw);
+  max-height: min(88vh, 760px);
+  display: flex;
+  flex-direction: column;
+}
+
+.strap-demand-dialog__title {
+  margin: 0 0 8px;
+}
+
+.strap-demand-dialog__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  font-size: 13px;
+  color: #475569;
+  margin-bottom: 6px;
+}
+
+.strap-demand-dialog__hint {
+  margin: 0 0 12px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #64748b;
+}
+
+.strap-demand-dialog__table-wrap {
+  overflow: auto;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  margin-bottom: 12px;
+}
+
+.strap-demand-dialog__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.strap-demand-dialog__table th,
+.strap-demand-dialog__table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid #eef2f7;
+  text-align: left;
+  vertical-align: top;
+}
+
+.strap-demand-dialog__table th {
+  background: #f8fafc;
+  font-size: 12px;
+  color: #64748b;
+  position: sticky;
+  top: 0;
+}
+
+.strap-demand-dialog__table tfoot td {
+  background: #f8fafc;
+  border-bottom: none;
+}
+
+.strap-demand-dialog__col-id {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.strap-demand-dialog__col-item {
+  min-width: 180px;
+  max-width: 360px;
+}
+
+.strap-demand-dialog__col-qty {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.strap-demand-dialog__actions {
+  margin-top: auto;
+}
+
+.strap-demand-dialog__empty {
+  margin-bottom: 12px;
 }
 
 /* ========== ????????? UI (?600px), ????? max-width:900px ? ?????????? ??????? .page ? ?.?. ========== */
@@ -10771,6 +10875,134 @@ button.mini.accent:hover:not(:disabled) {
   flex-direction: column;
   gap: 4px;
   color: #475569;
+}
+
+.labor-plan-summary__title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.labor-plan-summary__title-row .labor-plan-summary__title {
+  margin-bottom: 0;
+}
+
+.labor-plan-summary__model-note {
+  margin: 0 0 8px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: #64748b;
+}
+
+.labor-planner__model-note {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.labor-planner__model-note > p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #64748b;
+}
+
+.labor-table-model-hint {
+  margin-bottom: 10px;
+}
+
+.labor-calc-model {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+}
+
+.labor-calc-model--block {
+  display: block;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.labor-calc-model--sequential .labor-calc-model__badge {
+  background: #fef3c7;
+  color: #92400e;
+  border-color: #fcd34d;
+}
+
+.labor-calc-model--parallel .labor-calc-model__badge {
+  background: #dbeafe;
+  color: #1e40af;
+  border-color: #93c5fd;
+}
+
+.labor-calc-model--monthly .labor-calc-model__badge {
+  background: #dcfce7;
+  color: #166534;
+  border-color: #86efac;
+}
+
+.labor-calc-model__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.labor-calc-model__badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.labor-calc-model__detail {
+  font-size: 11px;
+  color: #64748b;
+}
+
+.labor-calc-model__text {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #475569;
+}
+
+.workshop-load__title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.workshop-load__title-row .workshop-load__title {
+  margin-bottom: 0;
+}
+
+.order-drawer__section-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.order-drawer__section-head .order-drawer__h3 {
+  margin: 0;
 }
 
 @media (max-width: 900px) {

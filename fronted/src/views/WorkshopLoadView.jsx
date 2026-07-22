@@ -1,5 +1,6 @@
 import { memo, useMemo, useState } from "react";
 import { WORKSHOP_STAGE_LABELS } from "../app/workshopLoadCalculator";
+import { LaborCalcModelHint } from "../components/LaborCalcModelHint";
 
 const STAGE_LABELS = {
   pilka: "Пила",
@@ -107,10 +108,13 @@ export const WorkshopLoadView = memo(function WorkshopLoadView({
     <div className="workshop-load">
       <header className="workshop-load__intro">
         <div className="workshop-load__intro-text">
-          <h2 className="workshop-load__title">Загрузка цеха</h2>
+          <div className="workshop-load__title-row">
+            <h2 className="workshop-load__title">Загрузка цеха</h2>
+            <LaborCalcModelHint mode="sequential" />
+          </div>
           <p className="workshop-load__subtitle">
             Прогноз по нормам трудоёмкости: сколько рабочих дней нужно, чтобы разгрузить очередь
-            на пиле, кромке, присадке и сборке.
+            на пиле, кромке, присадке и сборке. Минуты складываются «подряд», без очереди на 2 станках.
           </p>
         </div>
         <button
@@ -234,6 +238,7 @@ export const WorkshopLoadView = memo(function WorkshopLoadView({
           <details className="workshop-load__help">
             <summary>Как читать этот экран?</summary>
             <ul>
+              <li>Модель расчёта — <b>«Подряд»</b>: сумма минут по нормам, без параллели на 2 станках кромки/присадки. Для планирования комплектов смотрите вкладку «Планировщик».</li>
               <li>Берутся только заказы, которые ещё идут по цеху (без склада и отгрузки).</li>
               <li>Для каждого заказа считаются минуты по нормам из «Трудоёмкость».</li>
               <li>Заказ на пиле уже учитывается в очереди кромки, присадки и сборки — так и должно быть для прогноза.</li>

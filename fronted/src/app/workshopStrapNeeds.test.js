@@ -4,8 +4,10 @@ import {
   calcStrapNeedsFromDetailArticles,
   collectStrapCatalogProductNames,
   computeWorkshopStrapDemandByInventoryKey,
+  computeWorkshopStrapDemandOrdersByKey,
   formatStrapProductGroups,
   getResolvedWorkshopStrapNeeds,
+  getStrapDemandOrdersForRow,
   inventoryCodeFromStrapStockType,
   orderCountsTowardStrapDemand,
   orderKeysForStrapCatalogMatch,
@@ -173,6 +175,36 @@ describe("inventoryCodeFromStrapStockType / strapWarehouseShortage", () => {
     const map = computeWorkshopStrapDemandByInventoryKey(workshopRows, deps);
     expect(map.get("1000_80|Черный")).toBe(48);
     expect(map.get("558_80|Черный")).toBe(96);
+  });
+
+  it("lists orders per strap type for demand breakdown", () => {
+    const rows = [
+      {
+        product_name: "Донини Гранде",
+        detail_name_pattern: "%обвязка%750_80%",
+        is_active: true,
+      },
+      {
+        product_name: "Донини Гранде",
+        detail_name_pattern: "%обвязка%600_80%",
+        is_active: true,
+      },
+    ];
+    const deps = { ...emptyDeps, furnitureDetailArticleRows: rows };
+    const workshopRows = [
+      { orderId: "A-101", item: "Donini Grande 750 мм. Дуб Сонома", qty: 18, pipeline_stage: "kromka" },
+      { orderId: "A-102", item: "Donini Grande 806 мм. Дуб Сонома", qty: 18, pipeline_stage: "pilka" },
+    ];
+    const ordersByKey = computeWorkshopStrapDemandOrdersByKey(workshopRows, deps);
+    const list750 = getStrapDemandOrdersForRow(ordersByKey, "750_80", "Черный");
+    expect(list750).toHaveLength(2);
+    expect(list750[0].orderId).toBe("A-101");
+    expect(list750[0].needed).toBe(36);
+    expect(list750[1].orderId).toBe("A-102");
+    expect(list750[1].stageLabel).toBe("Пила");
+    const list600 = getStrapDemandOrdersForRow(ordersByKey, "600_80", "Черный");
+    expect(list600).toHaveLength(2);
+    expect(list600.reduce((sum, row) => sum + row.needed, 0)).toBe(144);
   });
 
   it("aggregates Donini Grande demand across kromka and workshop_complete orders", () => {

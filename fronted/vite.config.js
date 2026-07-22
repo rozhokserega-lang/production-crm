@@ -35,6 +35,11 @@ export default defineConfig(({ mode }) => {
     environment: "jsdom",
     globals: true,
     clearMocks: true,
+    exclude: [
+      "**/node_modules/**",
+      "**/dist/**",
+      "scripts/**",
+    ],
     // Подмешиваем .env.production, чтобы на VPS vitest видел VITE_* (есть только в этом файле).
     // TZ фиксирует calcWorkingMsBetween/stageTime.test (календарный день).
     env: {

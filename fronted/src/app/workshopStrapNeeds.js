@@ -1,5 +1,5 @@
 import { STRAP_OPTIONS } from "../constants/views";
-import { PipelineStage, resolvePipelineStage } from "../orderPipeline";
+import { getOrderStageDisplayLabel, PipelineStage, resolvePipelineStage } from "../orderPipeline";
 import { stripPlanItemMeta, stripStrapTargetMeta } from "./orderHelpers";
 import {
   canonicalStrapProductName,
@@ -377,25 +377,60 @@ export function inventoryCodeFromStrapStockType(strapType) {
   return m ? normalizeStrapInventoryCode(m[1]) : normalizeStrapInventoryCode(strapType);
 }
 
-/**
- * Суммарная потребность по списку заказов цеха, по ключу «код|цвет» (цвет как у strapConsumeColorForOrder).
- */
-export function computeWorkshopStrapDemandByInventoryKey(workshopRows, deps) {
-  const map = new Map();
-  if (!Array.isArray(workshopRows) || !deps) return map;
+function accumulateWorkshopStrapDemand(workshopRows, deps) {
+  const totals = new Map();
+  const ordersByKey = new Map();
+  if (!Array.isArray(workshopRows) || !deps) {
+    return { totals, ordersByKey };
+  }
+
   for (const order of workshopRows) {
     if (!orderCountsTowardStrapDemand(order)) continue;
     const needs = getResolvedWorkshopStrapNeeds(order, deps);
     if (!needs.length) continue;
+
     const color = strapConsumeColorForOrder(order);
+    const orderId = String(order?.orderId || order?.order_id || "").trim();
+    const item = stripPlanItemMeta(String(order?.item || order?.Item || "")).trim();
+    const qty = Number(order?.qty || 0) || 0;
+    const stageLabel = getOrderStageDisplayLabel(order);
+
     for (const n of needs) {
       const k = normalizeStrapInventoryCode(n.code);
       if (!k) continue;
       const key = `${k}|${color}`;
-      map.set(key, (map.get(key) || 0) + (Number(n.needed) || 0));
+      const needed = Number(n.needed) || 0;
+      if (!(needed > 0)) continue;
+      totals.set(key, (totals.get(key) || 0) + needed);
+      if (!ordersByKey.has(key)) ordersByKey.set(key, []);
+      ordersByKey.get(key).push({ orderId, item, qty, needed, stageLabel });
     }
   }
-  return map;
+
+  return { totals, ordersByKey };
+}
+
+/**
+ * Суммарная потребность по списку заказов цеха, по ключу «код|цвет» (цвет как у strapConsumeColorForOrder).
+ */
+export function computeWorkshopStrapDemandByInventoryKey(workshopRows, deps) {
+  return accumulateWorkshopStrapDemand(workshopRows, deps).totals;
+}
+
+/** Заказы, формирующие потребность, по ключу «код|цвет». */
+export function computeWorkshopStrapDemandOrdersByKey(workshopRows, deps) {
+  return accumulateWorkshopStrapDemand(workshopRows, deps).ordersByKey;
+}
+
+export function getStrapDemandOrdersForRow(ordersByKey, strapType, color) {
+  const code = inventoryCodeFromStrapStockType(strapType);
+  const c = String(color || "").trim() || "Черный";
+  const rows = ordersByKey instanceof Map ? ordersByKey.get(`${code}|${c}`) || [] : [];
+  return [...rows].sort((a, b) => {
+    const idCmp = String(a.orderId || "").localeCompare(String(b.orderId || ""), "ru");
+    if (idCmp !== 0) return idCmp;
+    return String(a.item || "").localeCompare(String(b.item || ""), "ru");
+  });
 }
 
 /** Нехватка по строке склада: max(0, потребность цеха − остаток в строке). */

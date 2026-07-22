@@ -7,6 +7,7 @@ import { LaborKitBuilder } from "../components/LaborKitBuilder";
 import { normalizeKitItem } from "../app/laborKitPlanner";
 import { LaborPlanSummary } from "../components/LaborPlanSummary";
 import { WorkshopLoadView } from "./WorkshopLoadView";
+import { LaborCalcModelHint } from "../components/LaborCalcModelHint";
 
 const isImportedLaborRow = (row) =>
   Boolean(row?.importedLocal) || /^import-/i.test(String(row?.orderId || "").trim());
@@ -385,7 +386,11 @@ export const LaborView = memo(function LaborView({
     <>
       {laborSubView === "total" && !laborTotalRows.length && !loading && <div className="empty">Нет данных по трудоемкости</div>}
       {laborSubView === "total" && laborTotalRows.length > 0 && (
-        <div className="sheet-table-wrap">
+        <>
+          <div className="labor-table-model-hint">
+            <LaborCalcModelHint mode="sequential" variant="block" />
+          </div>
+          <div className="sheet-table-wrap">
           <table className="sheet-table">
             <thead>
               <tr>
@@ -453,6 +458,7 @@ export const LaborView = memo(function LaborView({
             </tbody>
           </table>
         </div>
+        </>
       )}
       {manualLaborOpen && (
         <div className="dialog-backdrop">
@@ -539,7 +545,11 @@ export const LaborView = memo(function LaborView({
         <div className="empty">Нет завершенных заказов для сводной трудоемкости</div>
       )}
       {laborSubView === "orders" && laborOrdersRows.length > 0 && (
-        <div className="sheet-table-wrap">
+        <>
+          <div className="labor-table-model-hint">
+            <LaborCalcModelHint mode="sequential" variant="block" />
+          </div>
+          <div className="sheet-table-wrap">
           <table className="sheet-table">
             <thead>
               <tr>
@@ -622,12 +632,19 @@ export const LaborView = memo(function LaborView({
             </tbody>
           </table>
         </div>
+        </>
       )}
       {laborSubView === "planner" && !laborPlannerRows.length && !loading && (
         <div className="empty">Нет данных для планировщика</div>
       )}
       {laborSubView === "planner" && laborPlannerRows.length > 0 && (
         <div className="labor-planner">
+          <div className="labor-planner__model-note">
+            <LaborCalcModelHint mode="parallel" variant="block" />
+            <p>
+              На карточках комплектов показаны обе модели: <b>Подряд</b> (сумма минут) и <b>Параллельно</b> (очередь jobs на 2 станках кромки и 2 присадки).
+            </p>
+          </div>
           <LaborPlanSummary
             laborPlannerRows={laborPlannerRows}
             laborPlannerQtyByGroup={laborPlannerQtyByGroup}

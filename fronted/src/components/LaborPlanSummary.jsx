@@ -3,7 +3,6 @@ import {
   SHOP_KROMKA_POOL,
   SHOP_PRAS_POOL,
   LABOR_PARALLEL_MODE_LABEL,
-  LABOR_PARALLEL_MODE_DETAIL,
   LABOR_SEQUENTIAL_MODE_LABEL,
   buildRatesByGroup,
   calcTotalProductionPlan,
@@ -13,6 +12,7 @@ import {
   calcMonthlyPlanLoad,
   defaultMonthWorkingDays,
 } from "../app/laborMonthlyPlanHelpers";
+import { LaborCalcModelHint } from "./LaborCalcModelHint";
 
 const CAPACITY_STORAGE_KEY = "labor_planner_capacity_v2";
 
@@ -137,7 +137,10 @@ export const LaborPlanSummary = memo(function LaborPlanSummary({
   return (
     <div className="labor-plan-summary">
       <section className="labor-plan-summary__card labor-plan-summary__card--month">
-        <div className="labor-plan-summary__title">Загрузка месяца</div>
+        <div className="labor-plan-summary__title-row">
+          <div className="labor-plan-summary__title">Загрузка месяца</div>
+          <LaborCalcModelHint mode="monthly" />
+        </div>
         <div className="labor-plan-summary__toolbar">
           <label className="labor-plan-summary__days">
             <span>Дней</span>
@@ -235,10 +238,15 @@ export const LaborPlanSummary = memo(function LaborPlanSummary({
       </section>
 
       <section className="labor-plan-summary__card labor-plan-summary__card--queue">
-        <div className="labor-plan-summary__title">
-          {LABOR_PARALLEL_MODE_LABEL}
-          <span className="labor-plan-summary__title-detail">{LABOR_PARALLEL_MODE_DETAIL}</span>
+        <div className="labor-plan-summary__title-row">
+          <div className="labor-plan-summary__title">
+            Сравнение моделей
+          </div>
+          <LaborCalcModelHint mode="parallel" />
         </div>
+        <p className="labor-plan-summary__model-note">
+          Для кромки и присадки — две оценки: сумма минут «подряд» и реальное время с очередью на станках.
+        </p>
         <div className="labor-plan-summary__queue-lines">
           <span>
             Кромка: {formatLaborDuration(plan.kromkaSeq)} {LABOR_SEQUENTIAL_MODE_LABEL.toLowerCase()}

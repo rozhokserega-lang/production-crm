@@ -13,6 +13,7 @@ export function StrapLaunchDialog({
   saving,
   onClose,
   onSubmit,
+  onPrintPreview,
 }) {
   if (!open || !meta) return null;
 
@@ -93,6 +94,11 @@ export function StrapLaunchDialog({
           <button type="button" className="mini ghost" onClick={onClose} disabled={saving}>
             Отмена
           </button>
+          {typeof onPrintPreview === "function" ? (
+            <button type="button" className="mini" onClick={onPrintPreview} disabled={saving}>
+              Лист для печати
+            </button>
+          ) : null}
           <button type="button" className="mini ok" onClick={onSubmit} disabled={saving}>
             {saving ? "Добавляю..." : "Добавить в план"}
           </button>

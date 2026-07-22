@@ -5,6 +5,7 @@ import { buildLaborOrdersRows, estimateLaborForLines } from "../app/laborNormCal
 import { buildLiveStageClock } from "../app/stageTime";
 import { buildOrderTimeline } from "../app/orderTimelineHelpers";
 import { OrderService } from "../services/orderService";
+import { LaborCalcModelHint } from "./LaborCalcModelHint";
 
 function stageDotClass(status, isDone, isInWork) {
   if (isDone(status)) return "order-drawer__dot order-drawer__dot--done";
@@ -298,9 +299,12 @@ export function OrderDrawer({
 
         {laborEstimate && laborEstimate.totals.totalMin > 0 ? (
           <div className="order-drawer__section">
-            <h3 className="order-drawer__h3">Оценка трудоёмкости</h3>
+            <div className="order-drawer__section-head">
+              <h3 className="order-drawer__h3">Оценка трудоёмкости</h3>
+              <LaborCalcModelHint mode="sequential" />
+            </div>
             <p style={{ margin: "0 0 8px", fontSize: 13, color: "#64748b" }}>
-              По нормативам или среднему факту на единицу
+              По нормативам или среднему факту на единицу. Без учёта параллели на 2 станках кромки/присадки.
             </p>
             <ul className="order-drawer__meta">
               <li><span>Пила</span> <strong>{Math.round(laborEstimate.totals.pilkaMin)} мин</strong></li>

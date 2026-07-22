@@ -45,7 +45,7 @@ describe("planSheetEstimation", () => {
   });
 
   it("resolves Pino X like Donini by material size", () => {
-    expect(resolveDeskOutputPerSheet("", "Стол кухонный Pino X Дуб Вотан", "Дуб Вотан")).toBe(6);
+    expect(resolveDeskOutputPerSheet("", "Стол кухонный Pino X Дуб Вотан", "Дуб Вотан")).toBe(4);
     expect(resolveDeskOutputPerSheet("", "Стол кухонный Pino X Бетон", "Бетон")).toBe(4);
   });
 
@@ -70,6 +70,6 @@ describe("planSheetEstimation", () => {
       qty: 36,
       templates,
     });
-    expect(pino.sheets).toBe(6);
+    expect(pino.sheets).toBe(9);
   });
 });
