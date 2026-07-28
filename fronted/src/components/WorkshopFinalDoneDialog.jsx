@@ -26,6 +26,7 @@ export function WorkshopFinalDoneDialog({
   const readyQty = Number(String(qtyInput || "").replace(",", "."));
   const hasDebt = Number.isFinite(readyQty) && readyQty > 0 && readyQty < orderQty;
   const hasSurplus = Number.isFinite(readyQty) && readyQty > orderQty;
+  const qtyDiffersFromPlan = hasDebt || hasSurplus;
   const debtQty = hasDebt ? Math.max(0, orderQty - readyQty) : 0;
   const surplusQty = hasSurplus ? Math.max(0, readyQty - orderQty) : 0;
 
@@ -127,7 +128,7 @@ export function WorkshopFinalDoneDialog({
             <button type="button" className="mini ghost" onClick={onClose} disabled={saving}>
               Отмена
             </button>
-            {hasDebt && planPreview ? (
+            {qtyDiffersFromPlan && planPreview ? (
               <button type="button" className="mini" onClick={onPrint} disabled={saving || previewLoading}>
                 Печать листа ({readyQty} шт.)
               </button>
@@ -143,7 +144,7 @@ export function WorkshopFinalDoneDialog({
           </div>
         </div>
       </div>
-      {hasDebt && planPreview
+      {qtyDiffersFromPlan && planPreview
         ? createPortal(
             <div ref={printAreaRef} className="print-area workshop-final-print-area" aria-hidden="true">
               <PlanPreviewPrint planPreview={planPreview} articleLookupByItemKey={articleLookupByItemKey} />
