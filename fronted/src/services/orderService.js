@@ -121,6 +121,13 @@ export class OrderService {
     return await callBackend("webDeleteOverviewPlanMonth", { p_id: Number(id) || 0 });
   }
 
+  static async setOverviewPlanMonthHidden({ id, hidden }) {
+    return await callBackend("webSetOverviewPlanMonthHidden", {
+      p_id: Number(id) || 0,
+      p_hidden: Boolean(hidden),
+    });
+  }
+
   static async deleteOrder(orderId) {
     return await callBackend("webDeleteOrderById", { orderId });
   }

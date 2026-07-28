@@ -108,6 +108,18 @@ describe("getResolvedWorkshopStrapNeeds", () => {
     expect(by["586_80"]).toBe(96);
   });
 
+  it("applies Ancona strap 522_100 at 2 per table", () => {
+    const rows = [
+      { product_name: "Ancona", detail_name_pattern: "%обвязка%522_100%", is_active: true },
+    ];
+    const needs = getResolvedWorkshopStrapNeeds(
+      { item: "Стол Ancona. Серия 1150. Дуб Бардолино натуральный. Кухонный", qty: 10 },
+      { ...emptyDeps, furnitureDetailArticleRows: rows },
+    );
+    const by = Object.fromEntries(needs.map((x) => [x.code, x.needed]));
+    expect(by["522_100"]).toBe(20);
+  });
+
   it("applies Donini R fixed strap set (288×4, 502/520/544×2 per unit)", () => {
     const needs = getResolvedWorkshopStrapNeeds(
       { item: "Donini R 750 мм. Бетон", qty: 12, pipeline_stage: "pras" },

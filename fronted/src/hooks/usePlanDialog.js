@@ -10,6 +10,7 @@ import {
   planCatalogRowSelectKey,
 } from "../app/shipmentDialogHelpers";
 import { catalogSectionMatchesPlanSection } from "../utils/shipmentUtils";
+import { normalizePlanWeek, sortPlanWeeks } from "../app/overviewPlansHelpers";
 import { buildShipmentCellAttempts, runShipmentCellActionWithFallback } from "../app/shipmentActionHelpers";
 import { isShipmentCellMissingError } from "../app/rowHelpers";
 import { toUserError } from "../app/errorCatalogHelpers";
@@ -24,7 +25,9 @@ import { toUserError } from "../app/errorCatalogHelpers";
  * @param {Function} params.setPlanSection
  * @param {Function} params.setPlanArticle
  * @param {Function} params.setPlanMaterial
- * @param {Function} params.setPlanWeek
+ * @param {Function} params.setPlanMonthId
+ * @param {string} params.planMonthId
+ * @param {Array} params.planMonths
  * @param {Function} params.setPlanQty
  * @param {Function} params.setPlanSaving
  * @param {Function} params.setPlanDialogOpen
@@ -44,7 +47,7 @@ import { toUserError } from "../app/errorCatalogHelpers";
  * @param {Function} params.load
  * @param {object|null} params.planEditSource
  * @param {Function} params.setPlanEditSource
- * @param {Function} params.setSelectedShipments
+ * @param {Function} params.updatePlanMonth
  */
 export function usePlanDialog({
   canOperateProduction,
@@ -53,6 +56,7 @@ export function usePlanDialog({
   setPlanSection,
   setPlanArticle,
   setPlanMaterial,
+  setPlanMonthId,
   setPlanWeek,
   setPlanQty,
   setPlanSaving,
@@ -60,11 +64,13 @@ export function usePlanDialog({
   setPlanPreviews,
   sectionOptions,
   weeks,
+  planMonths,
   sectionArticleRows,
   sectionArticles,
   planSection,
   planArticle,
   planMaterial,
+  planMonthId,
   planWeek,
   planQty,
   planSaving,
@@ -74,6 +80,7 @@ export function usePlanDialog({
   planEditSource,
   setPlanEditSource,
   setSelectedShipments,
+  updatePlanMonth,
 }) {
   const handlePlanSectionChange = useCallback(
     (nextSection) => {
@@ -103,6 +110,61 @@ export function usePlanDialog({
     [sectionArticles, setPlanArticle, setPlanMaterial],
   );
 
+  const handlePlanMonthChange = useCallback(
+    (nextMonthId) => {
+      const monthId = String(nextMonthId || "").trim();
+      setPlanMonthId(monthId);
+      const month = (planMonths || []).find((m) => String(m.id) === monthId);
+      const monthWeekList = (month?.weeks || []).map(normalizePlanWeek).filter(Boolean);
+      const currentWeek = normalizePlanWeek(planWeek);
+      const nextWeek = currentWeek && monthWeekList.includes(currentWeek)
+        ? currentWeek
+        : (monthWeekList[0] || "");
+      setPlanWeek(nextWeek);
+    },
+    [planMonths, planWeek, setPlanMonthId, setPlanWeek],
+  );
+
+  const handleAddPlanMonthWeek = useCallback(async (rawWeek) => {
+    const week = normalizePlanWeek(rawWeek);
+    if (!week) {
+      setError("Укажите номер недели (только цифры).");
+      return false;
+    }
+    setPlanWeek(week);
+    const monthId = String(planMonthId || "").trim();
+    if (!monthId || typeof updatePlanMonth !== "function") return true;
+
+    const month = (planMonths || []).find((m) => String(m.id) === monthId);
+    if (!month) return true;
+
+    const existing = (month.weeks || []).map(normalizePlanWeek).filter(Boolean);
+    if (existing.includes(week)) return true;
+
+    setPlanSaving(true);
+    setError("");
+    try {
+      const ok = await updatePlanMonth(monthId, { weeks: sortPlanWeeks([...existing, week]) });
+      if (!ok) {
+        setError("Не удалось добавить неделю в месяц.");
+        return false;
+      }
+      return true;
+    } catch (e) {
+      setError(toUserError(e));
+      return false;
+    } finally {
+      setPlanSaving(false);
+    }
+  }, [
+    planMonthId,
+    planMonths,
+    setError,
+    setPlanSaving,
+    setPlanWeek,
+    updatePlanMonth,
+  ]);
+
   const openCreatePlanDialog = useCallback(() => {
     if (!canOperateProduction) {
       denyActionByRole("Недостаточно прав для добавления плана.");
@@ -112,12 +174,14 @@ export function usePlanDialog({
     const init = buildCreatePlanDialogInit({
       sectionOptions,
       weeks,
+      planMonths,
       sectionArticleRows,
       resolvePlanMaterial,
     });
     setPlanSection(init.section);
     setPlanArticle(init.article);
     setPlanMaterial(init.material);
+    setPlanMonthId(init.monthId || "");
     setPlanWeek(init.week);
     setPlanQty(init.qty);
     setPlanDialogOpen(true);
@@ -126,10 +190,12 @@ export function usePlanDialog({
     denyActionByRole,
     sectionOptions,
     weeks,
+    planMonths,
     sectionArticleRows,
     setPlanSection,
     setPlanArticle,
     setPlanMaterial,
+    setPlanMonthId,
     setPlanWeek,
     setPlanQty,
     setPlanDialogOpen,
@@ -149,6 +215,7 @@ export function usePlanDialog({
       const init = buildEditPlanDialogInit({
         selection,
         sectionOptions,
+        planMonths,
         sectionArticleRows,
         resolvePlanMaterial,
       });
@@ -160,6 +227,7 @@ export function usePlanDialog({
       setPlanSection(init.section);
       setPlanArticle(init.article);
       setPlanMaterial(init.material);
+      setPlanMonthId(init.monthId || "");
       setPlanWeek(init.week);
       setPlanQty(init.qty);
       setPlanDialogOpen(true);
@@ -169,11 +237,13 @@ export function usePlanDialog({
       denyActionByRole,
       setError,
       sectionOptions,
+      planMonths,
       sectionArticleRows,
       setPlanEditSource,
       setPlanSection,
       setPlanArticle,
       setPlanMaterial,
+      setPlanMonthId,
       setPlanWeek,
       setPlanQty,
       setPlanDialogOpen,
@@ -480,6 +550,8 @@ export function usePlanDialog({
   return {
     handlePlanSectionChange,
     handlePlanArticleChange,
+    handlePlanMonthChange,
+    handleAddPlanMonthWeek,
     openCreatePlanDialog,
     openEditPlanDialog,
     closeCreatePlanDialog,

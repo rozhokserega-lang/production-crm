@@ -1,16 +1,13 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ShipmentSplitDialog } from "../components/ShipmentSplitDialog";
-import { formatStrapPlanTargetCaption, stripPlanItemMeta, getMaterialLabel } from "../app/orderHelpers";
+import { stripPlanItemMeta, getMaterialLabel } from "../app/orderHelpers";
 import { buildStrapDisplayDeps, resolveStrapTargetCaption } from "../app/strapDisplayHelpers";
 import { useShipment } from "../contexts/ShipmentContext";
 import { useCutting } from "../contexts/CuttingContext";
 import { useNavigation } from "../contexts/NavigationContext";
 import { useAuth } from "../contexts/AuthContext";
 import { useUiState } from "../contexts/UiStateContext";
-import {
-  resolvePlanPreviewArticleByName,
-} from "../app/planPreviewHelpers";
-import { PlanQrImage } from "../components/PlanQrImage";
+import { PlanPreviewPrint } from "../components/PlanPreviewPrint";
 import { getReadableTextColor } from "../utils/colorUtils";
 import { normalizeFurnitureKey } from "../utils/furnitureUtils";
 import { getShipmentStageKey, isStorageShipmentRow } from "../utils/shipmentUtils";
@@ -144,40 +141,6 @@ export const ShipmentView = memo(function ShipmentView() {
     return qtyOk && (part === name1 || part === name2);
   };
 
-  const stripMaterialSuffix = (name, material) => {
-    const rawName = stripPlanItemMeta(String(name || "")).trim();
-    const rawMaterial = String(material || "").trim();
-    if (!rawName) return "-";
-    if (!rawMaterial) return rawName;
-
-    const n = (v) =>
-      String(v || "")
-        .toLowerCase()
-        .replace(/[ё]/g, "е")
-        .replace(/\s+/g, " ")
-        .trim();
-
-    const m = n(rawMaterial);
-    if (!m) return rawName;
-
-    // Prefer "Название. Материал" format (common in catalog / manual entries).
-    const parts = rawName
-      .split(".")
-      .map((x) => String(x || "").trim())
-      .filter(Boolean);
-    if (parts.length >= 2) {
-      const tail = parts[parts.length - 1];
-      if (n(tail) === m) return parts.slice(0, -1).join(". ");
-    }
-
-    // Also handle "Название Материал" suffix (no dot).
-    const escaped = rawMaterial.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const rx = new RegExp(`\\s+${escaped}$`, "i");
-    if (rx.test(rawName)) return rawName.replace(rx, "").trim();
-
-    return rawName;
-  };
-
   return (
     <div className={`shipment-layout ${isPlanPreviewOpen ? "is-plan-preview-open" : ""}`}>
       {!isPlanPreviewOpen && <aside className="selection-summary-pane">
@@ -296,9 +259,9 @@ export const ShipmentView = memo(function ShipmentView() {
         {isPlanPreviewOpen && (
           <div ref={planPreviewRef} className="print-area">
             {planPreviews.map((planPreview, idx) => (
-              <div key={planPreview._key || idx} className="plan-preview print-plan-page">
+              <div key={planPreview._key || idx} className="plan-preview-stack">
                 {planPreview.isStrapPlan ? (
-                  <>
+                  <div className="plan-preview print-plan-page">
                     <div className="strap-print-title">ЗАДАНИЕ В РАБОТУ: ПЛАНКИ ОБВЯЗКИ</div>
                     <div className="strap-print-meta no-print">Дата: {planPreview.generatedAt}</div>
                     {Array.isArray(planPreview.products) && planPreview.products.length > 0 && (
@@ -326,91 +289,13 @@ export const ShipmentView = memo(function ShipmentView() {
                         ))}
                       </tbody>
                     </table>
-                  </>
+                  </div>
                 ) : (
-                  <>
-                    <div className="plan-top-meta no-print">
-                      <span>{planPreview.generatedAt || ""}</span>
-                      <span>Отгрузки CRM</span>
-                    </div>
-                    <div className="plan-head-grid">
-                      <div className="plan-yellow">
-                        <div className="name">
-                          {stripMaterialSuffix(planPreview.firstName || planPreview.detailedName || "-", planPreview.colorName)}
-                        </div>
-                        <div className="color">{planPreview.colorName || "-"}</div>
-                        {!!String(planPreview.strapTargetProduct || "").trim() && (
-                          <div className="strap-target">
-                            {formatStrapPlanTargetCaption(
-                              planPreview.strapTargetProduct,
-                              planPreview.planNumber || planPreview.week,
-                              planPreview.firstName || planPreview.detailedName,
-                            )}
-                          </div>
-                        )}
-                      </div>
-                      <div className="plan-right-meta">
-                        <div className="plan-number-box">
-                          <div>ПЛАН</div>
-                          <div className="num">{planPreview.planNumber || "-"}</div>
-                        </div>
-                        <div className="plan-qr-box">
-                          <PlanQrImage
-                            planPreview={planPreview}
-                            articleCode={resolvePlanPreviewArticleByName(planPreview, articleLookupByItemKey)}
-                          />
-                          <div className="plan-qr-caption">Артикул / план / заказ</div>
-                        </div>
-                      </div>
-                    </div>
-                    <table className="plan-table">
-                      {isPlaceholderPlanPreview(planPreview) && (
-                        <caption style={{ captionSide: "top", textAlign: "left", padding: "6px 0", color: "#b45309" }}>
-                          Показана строка-заглушка от сервера. Значит шаблон из Мебель.xlsx не применился (файл не загрузился или
-                          не найден шаблон для этого изделия).
-                          {planPreview?._furnitureDebug && (
-                            <div style={{ marginTop: 4, color: "#92400e", fontSize: 12 }}>
-                              debug: {String(planPreview._furnitureDebug.reason || "-")} / templates: {String(planPreview._furnitureDebug.templatesCount ?? "-")}
-                              {String(planPreview._furnitureDebug.furnitureLoading) === "true" ? " / loading" : ""}
-                              {String(planPreview._furnitureDebug.furnitureError || "").trim()
-                                ? ` / error: ${String(planPreview._furnitureDebug.furnitureError)}`
-                                : ""}
-                            </div>
-                          )}
-                        </caption>
-                      )}
-                      <thead>
-                        <tr>
-                          <th className="w-model"></th>
-                          <th className="w-qty"></th>
-                          <th>Деталь</th>
-                          <th>Кол-во</th>
-                          <th>Пила</th>
-                          <th>Кромка</th>
-                          <th>При 1</th>
-                          <th>При 2</th>
-                          <th>Упаковка</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {(planPreview.rows || []).map((r, i) => (
-                          <tr key={`${r.part}-${i}`}>
-                            <td>{i === 0 ? stripMaterialSuffix(planPreview.firstName || "", planPreview.colorName) : ""}</td>
-                            <td style={{ fontWeight: i === 0 ? 800 : 400 }}>
-                              {i === 0 ? (planPreview.qty || 0) : ""}
-                            </td>
-                            <td>{stripPlanItemMeta(r.part)}</td>
-                            <td>{r.qty}</td>
-                            <td></td>
-                            <td></td>
-                            <td></td>
-                            <td></td>
-                            <td></td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </>
+                  <PlanPreviewPrint
+                    planPreview={planPreview}
+                    articleLookupByItemKey={articleLookupByItemKey}
+                    showFurnitureDebug={isPlaceholderPlanPreview(planPreview)}
+                  />
                 )}
                 <div className="actions">
                   <button className="mini" onClick={() => window.print()}>Печать</button>

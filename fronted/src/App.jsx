@@ -201,6 +201,14 @@ function AppInner({ onAuthChangeRef }) {
             getStageLabel={getStageLabel}
             overviewShippedOnly={shell.overviewShippedOnly}
             formatDateTimeRu={formatDateTimeRu}
+            planMonths={shipment.planMonthsAll}
+            planMonthsLoading={shipment.planMonthsLoading}
+            planMonthsSaving={shipment.planMonthsSaving}
+            planMonthsError={shipment.planMonthsError}
+            addPlanMonth={shipment.addPlanMonth}
+            updatePlanMonth={shipment.updatePlanMonth}
+            deletePlanMonth={shipment.deletePlanMonth}
+            setPlanMonthHidden={shipment.setPlanMonthHidden}
             onOpenOrderDrawer={shell.setOrderDrawerId}
             onGoToKanban={(week) => {
               shipment.setWeekFilter(week);

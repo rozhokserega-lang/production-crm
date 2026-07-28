@@ -1,4 +1,5 @@
 import { firstSelectedWeek } from "./weekFilterUtils";
+import { findPlanMonthByWeek, normalizePlanWeek } from "./overviewPlansHelpers";
 import { normalizeCatalogItemName, normalizeCatalogDedupKey } from "./errorCatalogHelpers";
 import { normText, catalogSectionMatchesPlanSection, sectionNamesMatch } from "../utils/shipmentUtils";
 
@@ -64,11 +65,14 @@ export function remapStrapDraftByOptions(options = [], currentDraft = {}) {
 export function buildCreatePlanDialogInit({
   sectionOptions = [],
   weeks = [],
+  planMonths = [],
   sectionArticleRows = [],
   resolvePlanMaterial,
 }) {
   const firstSection = sectionOptions[0] || "Прочее";
-  const firstWeek = weeks[0] || "";
+  const firstMonth = (planMonths || [])[0] || null;
+  const monthWeeks = firstMonth?.weeks?.length ? firstMonth.weeks : weeks;
+  const firstWeek = monthWeeks[0] || weeks[0] || "";
   const firstArticle = normalizeSectionArticles(sectionArticleRows).find(
     (x) => catalogSectionMatchesPlanSection(x.sectionName, firstSection) && (x.article || x.itemName),
   );
@@ -76,6 +80,7 @@ export function buildCreatePlanDialogInit({
     section: firstSection,
     article: firstArticle ? planCatalogRowSelectKey(firstArticle) : "",
     material: resolvePlanMaterial(firstArticle),
+    monthId: firstMonth ? String(firstMonth.id) : "",
     week: firstWeek,
     qty: "",
   };
@@ -85,14 +90,16 @@ export function buildCreatePlanDialogInit({
 export function buildEditPlanDialogInit({
   selection = {},
   sectionOptions = [],
+  planMonths = [],
   sectionArticleRows = [],
   resolvePlanMaterial,
 }) {
   const section = String(selection.section || "").trim() || sectionOptions[0] || "Прочее";
   const item = String(selection.item || selection.sourceItem || "").trim();
   const material = String(selection.material || "").trim();
-  const week = String(selection.week || selection.weekCol || "").trim();
+  const week = normalizePlanWeek(selection.week || selection.weekCol || "");
   const qty = selection.qty != null && selection.qty !== "" ? String(selection.qty) : "";
+  const matchedMonth = findPlanMonthByWeek(planMonths, week);
 
   const pool = normalizeSectionArticles(sectionArticleRows).filter((x) =>
     catalogSectionMatchesPlanSection(x.sectionName, section),
@@ -120,6 +127,7 @@ export function buildEditPlanDialogInit({
     section,
     article,
     material: material || (typeof resolvePlanMaterial === "function" ? resolvePlanMaterial(matched) : ""),
+    monthId: matchedMonth ? String(matchedMonth.id) : "",
     week,
     qty,
     editSource: {

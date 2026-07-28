@@ -516,6 +516,7 @@ const RPC_MAP = {
   webGetOverviewPlanMonths: "web_get_overview_plan_months",
   webUpsertOverviewPlanMonth: "web_upsert_overview_plan_month",
   webDeleteOverviewPlanMonth: "web_delete_overview_plan_month",
+  webSetOverviewPlanMonthHidden: "web_set_overview_plan_month_hidden",
   webGetStrapStock: "web_get_strap_stock",
   webAddStrapStock: "web_add_strap_stock",
   webConsumeStrapStock: "web_consume_strap_stock",
@@ -1223,6 +1224,12 @@ function buildRpcPayload(action, payload = {}) {
   if (action === "webDeleteOverviewPlanMonth") {
     return {
       p_id: Number(payload.p_id ?? payload.id ?? 0) || 0,
+    };
+  }
+  if (action === "webSetOverviewPlanMonthHidden") {
+    return {
+      p_id: Number(payload.p_id ?? payload.id ?? 0) || 0,
+      p_hidden: Boolean(payload.p_hidden ?? payload.hidden),
     };
   }
   return payload || {};

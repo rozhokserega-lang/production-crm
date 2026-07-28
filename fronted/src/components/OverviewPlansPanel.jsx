@@ -229,11 +229,13 @@ export function OverviewPlansPanel({
   addMonth,
   updateMonth,
   deleteMonth,
+  setMonthHidden,
   onOpenOrderDrawer,
   onGoToKanban,
 }) {
   const [expandedPlan, setExpandedPlan] = useState(null);
   const [expandedMonth, setExpandedMonth] = useState(null);
+  const [showHiddenMonths, setShowHiddenMonths] = useState(false);
   // Вкладка внутри раскрытого месяца: "blockers" (что мешает) | "completed" (выполнено).
   const [expandedMonthTab, setExpandedMonthTab] = useState("blockers");
   // Текст поиска внутри раскрытого месяца — фильтрует заказы по ID/изделию в обеих вкладках.
@@ -288,6 +290,14 @@ export function OverviewPlansPanel({
     () => buildMonthsSummary(months, filtered, awaitingOrders),
     [months, filtered, awaitingOrders]
   );
+  const hiddenMonthCount = useMemo(
+    () => monthSummaries.filter((m) => m.isHidden).length,
+    [monthSummaries],
+  );
+  const visibleMonthSummaries = useMemo(
+    () => (showHiddenMonths ? monthSummaries : monthSummaries.filter((m) => !m.isHidden)),
+    [monthSummaries, showHiddenMonths],
+  );
 
   const usedWeeks = useMemo(() => {
     const set = new Set();
@@ -303,13 +313,24 @@ export function OverviewPlansPanel({
       <section className="overview-plans__section">
         <div className="overview-plans__section-head">
           <h3 className="overview-plans__section-title">Месяцы</h3>
-          <button
-            type="button"
-            className="mini accent"
-            onClick={() => setEditorMode(editorMode === "add" ? null : "add")}
-          >
-            {editorMode === "add" ? "✕ Отмена" : "+ Добавить месяц"}
-          </button>
+          <div className="overview-plans__section-actions">
+            {hiddenMonthCount > 0 && (
+              <button
+                type="button"
+                className="mini"
+                onClick={() => setShowHiddenMonths((v) => !v)}
+              >
+                {showHiddenMonths ? "Скрыть архив" : `Показать скрытые (${hiddenMonthCount})`}
+              </button>
+            )}
+            <button
+              type="button"
+              className="mini accent"
+              onClick={() => setEditorMode(editorMode === "add" ? null : "add")}
+            >
+              {editorMode === "add" ? "✕ Отмена" : "+ Добавить месяц"}
+            </button>
+          </div>
         </div>
 
         {monthsError && (
@@ -330,15 +351,20 @@ export function OverviewPlansPanel({
           <div className="empty empty--hint">Загрузка месяцев…</div>
         )}
 
-        {!monthsLoading && !monthSummaries.length && editorMode !== "add" && (
+        {!monthsLoading && !visibleMonthSummaries.length && editorMode !== "add" && (
           <div className="empty empty--hint">
-            Создайте месяц и выберите номера планов, которые в него входят
+            {hiddenMonthCount > 0 && !showHiddenMonths
+              ? "Все месяцы скрыты — нажмите «Показать скрытые», чтобы вернуть их на экран"
+              : "Создайте месяц и выберите номера планов, которые в него входят"}
           </div>
         )}
 
         <div className="overview-plans__month-grid">
-          {monthSummaries.map((m) => (
-            <article key={m.id} className="overview-plans__month-card">
+          {visibleMonthSummaries.map((m) => (
+            <article
+              key={m.id}
+              className={`overview-plans__month-card${m.isHidden ? " overview-plans__month-card--hidden" : ""}`}
+            >
               <div className="overview-plans__month-head">
                 <div>
                   <div className="overview-plans__month-name">{m.name}</div>
@@ -348,6 +374,9 @@ export function OverviewPlansPanel({
                 </div>
                 <StatusBadge closed={m.isClosed} />
               </div>
+              {m.isHidden && (
+                <div className="overview-plans__hidden-note">Скрыт из основного списка</div>
+              )}
 
               <div className="overview-plans__stats">
                 <span>{m.completedCount ?? m.shippedCount} / {m.orderCount} выпущено</span>
@@ -393,6 +422,14 @@ export function OverviewPlansPanel({
                   onClick={() => setEditorMode(editorMode === m.id ? null : m.id)}
                 >
                   Изменить
+                </button>
+                <button
+                  type="button"
+                  className="mini"
+                  disabled={monthsSaving || !setMonthHidden}
+                  onClick={() => setMonthHidden?.(m.id, !m.isHidden)}
+                >
+                  {m.isHidden ? "Показать" : "Скрыть"}
                 </button>
                 <button type="button" className="mini" disabled={monthsSaving} onClick={() => deleteMonth(m.id)}>
                   Удалить

@@ -137,6 +137,30 @@ export function useOverviewPlanMonths() {
     }
   }, []);
 
+  const setMonthHidden = useCallback(async (id, hidden) => {
+    setSaving(true);
+    setError(null);
+    try {
+      const saved = readSavedRow(
+        await OrderService.setOverviewPlanMonthHidden({
+          id,
+          hidden: Boolean(hidden),
+        }),
+      );
+      if (saved) {
+        setMonths((prev) => prev.map((m) => (String(m.id) === String(id) ? saved : m)));
+      } else {
+        await loadMonths();
+      }
+      return true;
+    } catch (e) {
+      setError(toUserError(e));
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  }, [loadMonths]);
+
   return {
     months,
     loading,
@@ -145,6 +169,7 @@ export function useOverviewPlanMonths() {
     addMonth,
     updateMonth,
     deleteMonth,
+    setMonthHidden,
     reloadMonths: loadMonths,
   };
 }

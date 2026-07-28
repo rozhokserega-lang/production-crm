@@ -185,7 +185,14 @@ export const WarehouseMissingView = memo(function WarehouseMissingView({
     setSendingId(null);
   }
 
-  async function deleteOrder(orderId) {
+  async function deleteOrder(order) {
+    const orderId = order?.id;
+    if (!orderId) return;
+    const label = [order.product, order.part].filter(Boolean).join(" — ");
+    const ok = window.confirm(
+      `Удалить заказ замены?\n\n${label || orderId}\nКол-во: ${order.qty || 1} шт.${order.color && order.color !== "—" ? `\nМатериал: ${order.color}` : ""}${order.note ? `\nКоммент: ${order.note}` : ""}\n\nID: ${orderId}`,
+    );
+    if (!ok) return;
     try {
       await callBackend("webDeleteReplacementOrder", { p_id: orderId });
       await loadOrders();
@@ -372,7 +379,7 @@ export const WarehouseMissingView = memo(function WarehouseMissingView({
                 </>
               )}
               {!isOrderDone(o) && (
-                <button type="button" className="mini warn" onClick={() => deleteOrder(o.id)}>Удалить</button>
+                <button type="button" className="mini warn" onClick={() => deleteOrder(o)}>Удалить</button>
               )}
             </div>
           </article>

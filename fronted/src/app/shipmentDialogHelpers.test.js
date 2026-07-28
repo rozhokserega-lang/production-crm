@@ -110,4 +110,16 @@ describe("buildCreatePlanDialogInit", () => {
     expect(init.article).toBe("SN-1|юта");
     expect(init.material).toBe("Юта");
   });
+
+  it("prefers first week from first configured month", () => {
+    const init = buildCreatePlanDialogInit({
+      sectionOptions: ["Прочее"],
+      weeks: ["99"],
+      planMonths: [{ id: 1, name: "Август 2026", weeks: ["80", "81", "82"] }],
+      sectionArticleRows: [],
+      resolvePlanMaterial: () => "",
+    });
+    expect(init.monthId).toBe("1");
+    expect(init.week).toBe("80");
+  });
 });

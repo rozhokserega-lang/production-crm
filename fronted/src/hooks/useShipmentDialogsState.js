@@ -22,6 +22,7 @@ export function useShipmentDialogsState(defaultStrapOptions) {
   const [planSection, setPlanSection] = useState("Прочее");
   const [planArticle, setPlanArticle] = useState("");
   const [planMaterial, setPlanMaterial] = useState("");
+  const [planMonthId, setPlanMonthId] = useState("");
   const [planWeek, setPlanWeek] = useState("");
   const [planQty, setPlanQty] = useState("");
   const [planSaving, setPlanSaving] = useState(false);
@@ -62,6 +63,8 @@ export function useShipmentDialogsState(defaultStrapOptions) {
     setPlanArticle,
     planMaterial,
     setPlanMaterial,
+    planMonthId,
+    setPlanMonthId,
     planWeek,
     setPlanWeek,
     planQty,

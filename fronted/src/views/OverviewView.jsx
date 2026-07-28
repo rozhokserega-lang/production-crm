@@ -1,7 +1,6 @@
 import { memo } from "react";
 import { extractPlanItemArticle, stripPlanItemMeta } from "../app/orderHelpers";
 import { OverviewPlansPanel } from "../components/OverviewPlansPanel";
-import { useOverviewPlanMonths } from "../hooks/useOverviewPlanMonths";
 
 export const OverviewView = memo(function OverviewView({
   overviewSubView,
@@ -15,10 +14,17 @@ export const OverviewView = memo(function OverviewView({
   getStageLabel,
   overviewShippedOnly,
   formatDateTimeRu,
+  planMonths = [],
+  planMonthsLoading = false,
+  planMonthsSaving = false,
+  planMonthsError = null,
+  addPlanMonth,
+  updatePlanMonth,
+  deletePlanMonth,
+  setPlanMonthHidden,
   onOpenOrderDrawer,
   onGoToKanban,
 }) {
-  const { months, addMonth, updateMonth, deleteMonth, loading: monthsLoading, saving: monthsSaving, error: monthsError } = useOverviewPlanMonths();
   const ARTICLE_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{2,}$/;
   const readArticle = (row) =>
     String(
@@ -166,13 +172,14 @@ export const OverviewView = memo(function OverviewView({
           shipmentBoard={shipmentBoard}
           shipmentOrderMaps={shipmentOrderMaps}
           weekFilter={weekFilter}
-          months={months}
-          monthsLoading={monthsLoading}
-          monthsSaving={monthsSaving}
-          monthsError={monthsError}
-          addMonth={addMonth}
-          updateMonth={updateMonth}
-          deleteMonth={deleteMonth}
+          months={planMonths}
+          monthsLoading={planMonthsLoading}
+          monthsSaving={planMonthsSaving}
+          monthsError={planMonthsError}
+          addMonth={addPlanMonth}
+          updateMonth={updatePlanMonth}
+          deleteMonth={deletePlanMonth}
+          setMonthHidden={setPlanMonthHidden}
           onOpenOrderDrawer={onOpenOrderDrawer}
           onGoToKanban={onGoToKanban}
         />

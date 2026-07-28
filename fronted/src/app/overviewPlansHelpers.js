@@ -250,6 +250,7 @@ export function buildMonthSummary(month, plansByWeek) {
   return {
     id: month.id,
     name: month.name,
+    isHidden: Boolean(month?.isHidden),
     weeks: weekLabels,
     planCount: weekLabels.length,
     plansFound: plans.length,
@@ -281,7 +282,30 @@ export function normalizePlanMonthRow(row) {
     id: Number(row?.id ?? row?.month_id ?? 0) || String(row?.id || ""),
     name: String(row?.name || "").trim(),
     weeks: sortPlanWeeks((row?.weeks || []).map(normalizePlanWeek).filter(Boolean)),
+    isHidden: Boolean(row?.isHidden ?? row?.is_hidden),
   };
+}
+
+/** Месяцы, видимые в селектах и основном списке (без архивных). */
+export function filterVisiblePlanMonths(months) {
+  return (months || []).filter((m) => !m?.isHidden);
+}
+
+/** Найти месяц, в который входит указанный номер плана (недели). */
+export function findPlanMonthByWeek(months, week) {
+  const target = normalizePlanWeek(week);
+  if (!target) return null;
+  return (
+    (months || []).find((month) =>
+      (month?.weeks || []).some((w) => normalizePlanWeek(w) === target),
+    ) || null
+  );
+}
+
+/** Недели выбранного месяца. */
+export function resolvePlanMonthWeeks(months, monthId) {
+  const month = (months || []).find((m) => String(m.id) === String(monthId));
+  return sortPlanWeeks((month?.weeks || []).map(normalizePlanWeek).filter(Boolean));
 }
 
 /** Найти месяц, чьи недели точно совпадают с текущим фильтром недель. */

@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState, useCallback } from "react";
-import { planCatalogRowSelectKey, matchPlanCatalogRowSelectKey } from "../app/shipmentDialogHelpers";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import { planCatalogRowSelectKey, matchPlanCatalogRowSelectKey, resolvePlanCatalogSelection } from "../app/shipmentDialogHelpers";
+import { resolvePlanMonthWeeks, normalizePlanWeek, sortPlanWeeks } from "../app/overviewPlansHelpers";
 
 function articleOptionLabel(x) {
   const item = String(x?.itemName || "").trim();
@@ -23,6 +24,9 @@ export function PlanDialog({
   sectionArticles,
   selectedItemVariants,
   planMaterial,
+  planMonthId,
+  planMonths = [],
+  planMonthsLoading = false,
   planWeek,
   weeks,
   planQty,
@@ -31,7 +35,9 @@ export function PlanDialog({
   onSectionChange,
   onArticleChange,
   onMaterialChange,
+  onPlanMonthChange,
   onPlanWeekChange,
+  onAddPlanMonthWeek,
   onPlanQtyChange,
   onSave,
   onSaveAll,
@@ -43,6 +49,7 @@ export function PlanDialog({
   const qtyRef = useRef(null);
   const addCheckRef = useRef(null);
   const [pendingItems, setPendingItems] = useState([]);
+  const [customWeekInput, setCustomWeekInput] = useState("");
 
   useEffect(() => {
     if (!isOpen) return;
@@ -52,6 +59,7 @@ export function PlanDialog({
   useEffect(() => {
     if (isOpen) {
       setPendingItems([]);
+      setCustomWeekInput("");
       setTimeout(() => qtyRef.current?.focus(), 60);
     }
   }, [isOpen]);
@@ -65,24 +73,75 @@ export function PlanDialog({
   const selectedRow = (sectionArticles || []).find((x) =>
     matchPlanCatalogRowSelectKey(x, String(planArticle || "").trim()),
   );
-  const selectedFullName = selectedRow ? articleOptionLabel(selectedRow) : "";
+  const resolvedCatalogRow = useMemo(
+    () =>
+      selectedRow ||
+      resolvePlanCatalogSelection({
+        planSection,
+        planArticle,
+        planMaterial,
+        sectionArticles,
+      }),
+    [selectedRow, planSection, planArticle, planMaterial, sectionArticles],
+  );
+  const effectiveMaterial = String(planMaterial || resolvedCatalogRow?.material || "").trim();
+  const selectedFullName = resolvedCatalogRow ? articleOptionLabel(resolvedCatalogRow) : "";
+
+  const monthOptions = Array.isArray(planMonths) ? planMonths : [];
+  const usesMonthCatalog = monthOptions.length > 0;
+  const effectivePlanMonthId = useMemo(() => {
+    if (!usesMonthCatalog) return String(planMonthId || "");
+    const current = String(planMonthId || "");
+    if (monthOptions.some((m) => String(m.id) === current)) return current;
+    return String(monthOptions[0]?.id || "");
+  }, [usesMonthCatalog, monthOptions, planMonthId]);
+  const monthWeeks = useMemo(
+    () => (usesMonthCatalog ? resolvePlanMonthWeeks(monthOptions, effectivePlanMonthId) : []),
+    [usesMonthCatalog, monthOptions, effectivePlanMonthId],
+  );
+  const displayWeeks = useMemo(() => {
+    const base = [...monthWeeks];
+    const current = normalizePlanWeek(planWeek);
+    if (current && !base.includes(current)) base.push(current);
+    return sortPlanWeeks(base);
+  }, [monthWeeks, planWeek]);
+  const selectedMonth = monthOptions.find((m) => String(m.id) === effectivePlanMonthId) || null;
+  const weekOptions = usesMonthCatalog
+    ? monthWeeks
+    : (Array.isArray(weeks) ? weeks : []).map((w) => String(w || "").trim()).filter(Boolean);
+
+  useEffect(() => {
+    if (!isOpen || !usesMonthCatalog || !monthOptions.length) return;
+    const hasMonth = monthOptions.some((m) => String(m.id) === String(planMonthId));
+    if (!hasMonth) onPlanMonthChange?.(String(monthOptions[0].id));
+  }, [isOpen, usesMonthCatalog, monthOptions, planMonthId, onPlanMonthChange]);
+
+  useEffect(() => {
+    if (!isOpen || !usesMonthCatalog || !selectedMonth) return;
+    if (String(planWeek || "").trim()) return;
+    if (monthWeeks.length > 0) onPlanWeekChange?.(String(monthWeeks[0]));
+  }, [isOpen, usesMonthCatalog, selectedMonth, monthWeeks, planWeek, onPlanWeekChange]);
 
   const qtyNum = Number(String(planQty || "").replace(",", "."));
   const hasValidQty = Number.isFinite(qtyNum) && qtyNum > 0;
-  const summaryReady = isOpen && planSection && selectedFullName && planMaterial && planWeek && hasValidQty;
+  const hasValidMonth = !usesMonthCatalog || Boolean(selectedMonth);
+  const hasValidWeek = Boolean(String(planWeek || "").trim());
+  const summaryReady = isOpen && planSection && selectedFullName && effectiveMaterial && hasValidMonth && hasValidWeek && hasValidQty;
 
   const canSave = !planSaving && (pendingItems.length > 0 || summaryReady);
   const canPreview = !planSaving && !planPreviewing && (pendingItems.length > 0 || summaryReady);
 
   const buildCurrentSnapshot = useCallback(() => ({
-    resolvedItem: String(selectedRow?.itemName || "").trim(),
-    catalogArticle: String(selectedRow?.article || "").trim(),
+    resolvedItem: String(resolvedCatalogRow?.itemName || "").trim(),
+    catalogArticle: String(resolvedCatalogRow?.article || "").trim(),
     articleLabel: selectedFullName || planArticle,
     week: planWeek,
     qty: qtyNum,
     section: planSection,
-    material: planMaterial,
-  }), [selectedRow, selectedFullName, planArticle, planWeek, qtyNum, planSection, planMaterial]);
+    material: effectiveMaterial,
+    monthId: effectivePlanMonthId,
+    monthName: selectedMonth?.name || "",
+  }), [resolvedCatalogRow, selectedFullName, planArticle, planWeek, qtyNum, planSection, effectiveMaterial, effectivePlanMonthId, selectedMonth]);
 
   const handleAddToPending = useCallback(() => {
     if (!summaryReady) return;
@@ -97,6 +156,18 @@ export function PlanDialog({
     if (e.key === "Escape") { onClose(); return; }
     if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { onSave(); return; }
   };
+
+  const submitCustomWeek = useCallback(async () => {
+    const raw = String(customWeekInput || "").trim();
+    if (!raw) return;
+    if (typeof onAddPlanMonthWeek === "function") {
+      const ok = await onAddPlanMonthWeek(raw);
+      if (ok !== false) setCustomWeekInput("");
+      return;
+    }
+    onPlanWeekChange?.(normalizePlanWeek(raw));
+    setCustomWeekInput("");
+  }, [customWeekInput, onAddPlanMonthWeek, onPlanWeekChange]);
 
   if (!isOpen) return null;
 
@@ -167,24 +238,115 @@ export function PlanDialog({
               </select>
             ) : (
               <div className="plan-dialog__material-badge">
-                {planMaterial || <span className="plan-dialog__material-empty">Определяется по изделию</span>}
+                {effectiveMaterial || <span className="plan-dialog__material-empty">Определяется по изделию</span>}
               </div>
             )}
           </div>
 
-          {/* Неделя + быстрый выбор из существующих */}
-          <div className="plan-dialog__field plan-dialog__field--col">
-            <label className="plan-dialog__label plan-dialog__label--top">Неделя</label>
-            <div className="plan-dialog__field-body">
-              <input
-                className="plan-dialog__input"
-                value={planWeek}
-                onChange={(e) => onPlanWeekChange(e.target.value)}
-                placeholder="Номер недели, например: 70"
-                disabled={planSaving}
-              />
+          {/* Месяц и неделя плана */}
+          {usesMonthCatalog ? (
+            <>
+              <div className="plan-dialog__field">
+                <label className="plan-dialog__label">Месяц</label>
+                <select
+                  className="plan-dialog__select"
+                  value={planMonthId}
+                  onChange={(e) => onPlanMonthChange?.(e.target.value)}
+                  disabled={planSaving || planMonthsLoading}
+                >
+                  {planMonthsLoading && !monthOptions.length ? (
+                    <option value="">Загрузка месяцев…</option>
+                  ) : (
+                    monthOptions.map((month) => (
+                      <option key={month.id} value={String(month.id)}>
+                        {month.name}
+                      </option>
+                    ))
+                  )}
+                </select>
+              </div>
+
+              <div className="plan-dialog__field plan-dialog__field--col">
+                <label className="plan-dialog__label plan-dialog__label--top">Неделя в месяце</label>
+                <div className="plan-dialog__field-body">
+                  {displayWeeks.length > 0 ? (
+                    <div className="plan-dialog__week-chips" role="list" aria-label="Недели месяца">
+                      {displayWeeks.map((week) => {
+                        const active = String(planWeek) === String(week);
+                        return (
+                          <button
+                            key={week}
+                            type="button"
+                            role="listitem"
+                            className={active ? "plan-dialog__week-chip plan-dialog__week-chip--active" : "plan-dialog__week-chip"}
+                            onClick={() => onPlanWeekChange?.(String(week))}
+                            disabled={planSaving}
+                          >
+                            {week}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="plan-dialog__material-empty">В этом месяце пока нет недель — добавьте номер ниже</div>
+                  )}
+                  <div className="plan-dialog__week-add">
+                    <input
+                      className="plan-dialog__input plan-dialog__input--week-add"
+                      inputMode="numeric"
+                      value={customWeekInput}
+                      onChange={(e) => setCustomWeekInput(e.target.value.replace(/[^\d]/g, ""))}
+                      placeholder="Новая неделя, напр. 86"
+                      disabled={planSaving}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          void submitCustomWeek();
+                        }
+                      }}
+                    />
+                    <button
+                      type="button"
+                      className="plan-dialog__btn plan-dialog__btn--secondary plan-dialog__week-add-btn"
+                      disabled={planSaving || !String(customWeekInput || "").trim()}
+                      onClick={() => { void submitCustomWeek(); }}
+                    >
+                      Добавить
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="plan-dialog__field plan-dialog__field--col">
+              <label className="plan-dialog__label plan-dialog__label--top">Неделя</label>
+              <div className="plan-dialog__field-body">
+                <input
+                  className="plan-dialog__input"
+                  value={planWeek}
+                  onChange={(e) => onPlanWeekChange(e.target.value)}
+                  placeholder="Номер недели, например: 70"
+                  disabled={planSaving}
+                />
+                {weekOptions.length > 0 && (
+                  <div className="plan-dialog__week-chips">
+                    <span className="plan-dialog__week-chips-label">Быстрый выбор:</span>
+                    {weekOptions.slice(0, 12).map((week) => (
+                      <button
+                        key={week}
+                        type="button"
+                        className={String(planWeek) === week ? "plan-dialog__week-chip plan-dialog__week-chip--active" : "plan-dialog__week-chip"}
+                        onClick={() => onPlanWeekChange?.(week)}
+                        disabled={planSaving}
+                      >
+                        {week}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Количество с кнопками */}
           <div className="plan-dialog__field">
@@ -229,6 +391,12 @@ export function PlanDialog({
             <span className="plan-dialog__summary-sep">·</span>
             <span>{selectedFullName}</span>
             <span className="plan-dialog__summary-sep">·</span>
+            {selectedMonth ? (
+              <>
+                <span>{selectedMonth.name}</span>
+                <span className="plan-dialog__summary-sep">·</span>
+              </>
+            ) : null}
             <span>нед. {planWeek}</span>
             <span className="plan-dialog__summary-sep">·</span>
             <b>{qtyNum} шт</b>
@@ -256,7 +424,7 @@ export function PlanDialog({
                   <span className="plan-dialog__added-item-num">{i + 1}</span>
                   <span className="plan-dialog__added-item-name">{it.articleLabel}</span>
                   <span className="plan-dialog__added-item-meta">
-                    нед.&nbsp;{it.week}
+                    {it.monthName ? `${it.monthName}, ` : ""}нед.&nbsp;{it.week}
                     <span className="plan-dialog__added-item-qty">{it.qty}&nbsp;шт</span>
                   </span>
                 </div>

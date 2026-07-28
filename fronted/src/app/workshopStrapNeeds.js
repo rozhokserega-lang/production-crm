@@ -168,11 +168,13 @@ export function detectWorkshopStrapProductLine(rawItem) {
   if (!stripped) return "";
   const alias = resolveFurnitureAliasKey([stripped]);
   if (alias === "донини гранде") return "donini_grande";
+  if (alias === "ancona") return "ancona";
   if (alias === "донини r") return "donini_r";
   if (alias === "донини") return "donini";
   if (alias === "авелла лайт") return "avella_lite";
   const lower = stripped.toLowerCase();
   if (lower.includes("donini") && lower.includes("grande")) return "donini_grande";
+  if (lower.includes("ancona") || lower.includes("анкона")) return "ancona";
   if (/\bdonini\s+r\b/i.test(lower) || lower.includes("donini r")) return "donini_r";
   if (lower.includes("donini")) return "donini";
   if (lower.includes("avella") && lower.includes("lite")) return "avella_lite";
@@ -209,7 +211,9 @@ function applyWorkshopStrapQtyOverrides(productLine, orderQty, needs) {
         ? { "1000_80": 2, "558_80": 4 }
         : productLine === "donini_grande"
           ? { "750_80": 2, "600_80": 4, "618_80": 2, "586_80": 2 }
-          : null;
+          : productLine === "ancona"
+            ? { "522_100": 2 }
+            : null;
   if (!rules) return needs || [];
 
   const byCode = new Map();

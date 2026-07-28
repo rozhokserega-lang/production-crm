@@ -58,6 +58,7 @@ export function extractDetailSizeToken(v) {
 export function resolveFurnitureAliasKey(candidates) {
   const text = candidates.join(" ").toLowerCase();
   const checks = [
+    { has: ["ancona", "анкона"], key: "ancona" },
     { has: ["donini grande"], key: "донини гранде" },
     { has: ["donini r"], key: "донини r" },
     { has: ["donini"], key: "донини" },
@@ -204,6 +205,7 @@ export function canonicalStrapProductName(name) {
   if (key === "авела лайт" || key === "авелла лайт") return "Авелла Лайт";
   if (key === "донини белый") return "Донини Белый";
   if (key === "донини гранде") return "Донини Гранде";
+  if (key === "ancona") return "Ancona";
   if (key === "донини") return "Донини";
   return label;
 }

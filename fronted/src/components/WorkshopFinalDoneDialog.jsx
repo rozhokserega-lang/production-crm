@@ -25,7 +25,9 @@ export function WorkshopFinalDoneDialog({
   const orderQty = Number(meta?.qty || 0) || 0;
   const readyQty = Number(String(qtyInput || "").replace(",", "."));
   const hasDebt = Number.isFinite(readyQty) && readyQty > 0 && readyQty < orderQty;
+  const hasSurplus = Number.isFinite(readyQty) && readyQty > orderQty;
   const debtQty = hasDebt ? Math.max(0, orderQty - readyQty) : 0;
+  const surplusQty = hasSurplus ? Math.max(0, readyQty - orderQty) : 0;
 
   useEffect(() => {
     if (!open || !meta?.orderId) return;
@@ -65,15 +67,14 @@ export function WorkshopFinalDoneDialog({
             {meta.week ? ` · план ${meta.week}` : ""}
           </p>
           <p style={{ margin: "0 0 14px", color: "#475569", fontSize: 13 }}>
-            В заказе <strong>{orderQty}</strong> шт. Если часть испортилась на цепочке, укажите фактически готовое количество.
-            Остаток попадёт в колонку «Долг».
+            В заказе <strong>{orderQty}</strong> шт. Укажите фактически готовое количество — можно меньше
+            (остаток уйдёт в «Долг») или больше плана (количество в заказе обновится).
           </p>
           <label style={{ display: "block", marginBottom: 10, fontWeight: 500 }}>
             Готово комплектов:
             <input
               type="number"
               min={1}
-              max={orderQty || undefined}
               step={1}
               style={{
                 display: "block",
@@ -103,6 +104,22 @@ export function WorkshopFinalDoneDialog({
               }}
             >
               В {nextStageLabel} уйдёт <strong>{readyQty}</strong> шт., в «Долг» — <strong>{debtQty}</strong> шт. по плану {meta.week || "—"}.
+            </div>
+          ) : null}
+          {hasSurplus ? (
+            <div
+              style={{
+                marginBottom: 12,
+                padding: "10px 12px",
+                borderRadius: 8,
+                background: "#ecfdf5",
+                border: "1px solid #a7f3d0",
+                color: "#047857",
+                fontSize: 13,
+              }}
+            >
+              Фактически готово <strong>{readyQty}</strong> шт. — на <strong>{surplusQty}</strong> больше плана.
+              Количество в заказе обновится до {readyQty} шт.
             </div>
           ) : null}
           {error ? <div className="error" style={{ marginBottom: 10 }}>{error}</div> : null}
@@ -207,10 +224,6 @@ export function useWorkshopFinalDone({
         setDialogError("Укажите количество больше 0");
         return;
       }
-      if (qtyReady > orderQty) {
-        setDialogError(`Не больше ${orderQty} шт.`);
-        return;
-      }
       setSaving(true);
       setDialogError("");
       try {
@@ -218,7 +231,7 @@ export function useWorkshopFinalDone({
         const stage = meta?.stage === "assembly" ? "assembly" : "final";
 
         if (stage === "assembly") {
-          if (qtyReady >= orderQty) {
+          if (qtyReady === orderQty) {
             await runAction("webSetAssemblyDone", orderId);
           } else {
             await callBackend("webFinalizeAssemblyOrder", {
@@ -227,7 +240,7 @@ export function useWorkshopFinalDone({
             });
             void mutationLoad();
           }
-        } else if (qtyReady >= orderQty) {
+        } else if (qtyReady === orderQty) {
           await runAction("webSetWarehouseKitReady", orderId, {}, meta?.notifyMeta || {});
         } else {
           await callBackend("webFinalizeWorkshopOrder", {

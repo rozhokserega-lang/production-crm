@@ -36,6 +36,8 @@ export function AppDialogs({
     strapProductNames,
     strapOptionsForSelectedProduct,
     weeks,
+    planMonths,
+    planMonthsLoading,
   } = shipment;
   const {
     consume,
@@ -194,6 +196,9 @@ export function AppDialogs({
         sectionArticles={sectionArticles}
         selectedItemVariants={selectedItemVariants}
         planMaterial={plan.material}
+        planMonthId={plan.monthId}
+        planMonths={planMonths}
+        planMonthsLoading={planMonthsLoading}
         planWeek={plan.week}
         weeks={weeks}
         planQty={plan.qty}
@@ -202,6 +207,8 @@ export function AppDialogs({
         onSectionChange={actions.handlePlanSectionChange}
         onArticleChange={actions.handlePlanArticleChange}
         onMaterialChange={plan.setMaterial}
+        onPlanMonthChange={actions.handlePlanMonthChange}
+        onAddPlanMonthWeek={actions.handleAddPlanMonthWeek}
         onPlanWeekChange={(value) => plan.setWeek(value.replace(/[^\d-]/g, ""))}
         onPlanQtyChange={(value) => plan.setQty(value.replace(/[^0-9.,]/g, ""))}
         onSave={plan.editSource ? actions.saveEditPlanDialog : actions.saveCreatePlanDialog}

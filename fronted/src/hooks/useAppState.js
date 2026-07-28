@@ -3,6 +3,7 @@ import { useWorkshopFinalDone } from "../components/WorkshopFinalDoneDialog";
 import { useWorkshopPlanPrintDialog } from "../components/WorkshopPlanPrintDialog";
 import { useShipmentSendToWorkDialog } from "../components/ShipmentSendToWorkDialog";
 import { useOverviewPlanMonths } from "./useOverviewPlanMonths";
+import { filterVisiblePlanMonths } from "../app/overviewPlansHelpers";
 import { buildNotifyPayload } from "../app/runActionHelpers";
 import { applyRealtimeOrdersChange } from "../app/realtimeOrderPatch";
 import * as XLSX from "xlsx";
@@ -277,7 +278,20 @@ export function useAppState({ auth }) {
     cuttingPlan,
     setCuttingPlan,
   } = useShipmentUiState(DEFAULT_SHIPMENT_PREFS);
-  const { months: planMonths, loading: planMonthsLoading } = useOverviewPlanMonths();
+  const {
+    months: planMonths,
+    loading: planMonthsLoading,
+    saving: planMonthsSaving,
+    error: planMonthsError,
+    addMonth: addPlanMonth,
+    updateMonth: updatePlanMonth,
+    deleteMonth: deletePlanMonth,
+    setMonthHidden: setPlanMonthHidden,
+  } = useOverviewPlanMonths();
+  const visiblePlanMonths = useMemo(
+    () => filterVisiblePlanMonths(planMonths),
+    [planMonths],
+  );
   const rowsRef = useRef(rows);
   useEffect(() => {
     rowsRef.current = rows;
@@ -323,6 +337,8 @@ export function useAppState({ auth }) {
     setPlanArticle,
     planMaterial,
     setPlanMaterial,
+    planMonthId,
+    setPlanMonthId,
     planWeek,
     setPlanWeek,
     planQty,
@@ -668,6 +684,8 @@ export function useAppState({ auth }) {
   const {
     handlePlanSectionChange,
     handlePlanArticleChange,
+    handlePlanMonthChange,
+    handleAddPlanMonthWeek,
     openCreatePlanDialog: _openCreatePlanDialog,
     openEditPlanDialog: _openEditPlanDialog,
     closeCreatePlanDialog,
@@ -683,6 +701,7 @@ export function useAppState({ auth }) {
     setPlanSection,
     setPlanArticle,
     setPlanMaterial,
+    setPlanMonthId,
     setPlanWeek,
     setPlanQty,
     setPlanSaving,
@@ -690,11 +709,13 @@ export function useAppState({ auth }) {
     setPlanPreviews,
     sectionOptions,
     weeks,
+    planMonths: visiblePlanMonths,
     sectionArticleRows,
     sectionArticles,
     planSection,
     planArticle,
     planMaterial,
+    planMonthId,
     planWeek,
     planQty,
     planSaving,
@@ -704,6 +725,7 @@ export function useAppState({ auth }) {
     planEditSource,
     setPlanEditSource,
     setSelectedShipments,
+    updatePlanMonth,
   });
 
   const openCreatePlanDialog = useCallback(async () => {
@@ -1720,8 +1742,15 @@ export function useAppState({ auth }) {
       setHoverTip,
       weekFilter,
       setWeekFilter,
-      planMonths,
+      planMonths: visiblePlanMonths,
+      planMonthsAll: planMonths,
       planMonthsLoading,
+      planMonthsSaving,
+      planMonthsError,
+      addPlanMonth,
+      deletePlanMonth,
+      updatePlanMonth,
+      setPlanMonthHidden,
       showAwaiting,
       setShowAwaiting,
       showOnPilka,
@@ -1943,6 +1972,8 @@ export function useAppState({ auth }) {
         setArticle: setPlanArticle,
         material: planMaterial,
         setMaterial: setPlanMaterial,
+        monthId: planMonthId,
+        setMonthId: setPlanMonthId,
         week: planWeek,
         setWeek: setPlanWeek,
         qty: planQty,
@@ -1987,6 +2018,8 @@ export function useAppState({ auth }) {
     openHardwareConsumeDialog,
     handlePlanSectionChange,
       handlePlanArticleChange,
+      handlePlanMonthChange,
+      handleAddPlanMonthWeek,
       openCreatePlanDialog,
       openEditPlanDialog,
       closeCreatePlanDialog,
