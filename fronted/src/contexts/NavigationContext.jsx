@@ -1,4 +1,9 @@
-import { createContext, useCallback, useContext, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import {
+  readInitialViewFromStorage,
+  readViewFromPathname,
+  syncBrowserPathForView,
+} from "../app/crmPathRoutes";
 
 const NavigationContext = createContext(null);
 
@@ -12,14 +17,9 @@ function resolveWorkDomain(view) {
 
 function readInitialView() {
   if (typeof window === "undefined") return "shipment";
-  try {
-    const domain = window.localStorage.getItem(WORK_DOMAIN_STORAGE_KEY);
-    if (domain === "metal") return "metalProcess";
-    if (domain === "warehouse") return "warehouseMissing";
-  } catch (_) {
-    // ignore storage errors
-  }
-  return "shipment";
+  const fromPath = readViewFromPathname(window.location.pathname);
+  if (fromPath) return fromPath;
+  return readInitialViewFromStorage();
 }
 
 function persistWorkDomain(view) {
@@ -40,8 +40,32 @@ export function NavigationProvider({ children }) {
   const [orderDrawerId, setOrderDrawerId] = useState("");
 
   const setView = useCallback((nextView) => {
-    setViewRaw(nextView);
-    persistWorkDomain(nextView);
+    setViewRaw((prev) => {
+      const resolved = typeof nextView === "function" ? nextView(prev) : nextView;
+      persistWorkDomain(resolved);
+      syncBrowserPathForView(resolved);
+      return resolved;
+    });
+  }, []);
+
+  useEffect(() => {
+    syncBrowserPathForView(view, { replace: true });
+  }, []);
+
+  useEffect(() => {
+    function onPopState() {
+      const fromPath = readViewFromPathname(window.location.pathname);
+      if (fromPath) {
+        setViewRaw(fromPath);
+        persistWorkDomain(fromPath);
+        return;
+      }
+      const fallback = "shipment";
+      setViewRaw(fallback);
+      persistWorkDomain(fallback);
+    }
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
   }, []);
 
   const navigateTo = useCallback((nextView) => {

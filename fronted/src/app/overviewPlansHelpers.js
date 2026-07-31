@@ -322,6 +322,42 @@ export function findPlanMonthByWeekFilter(months, weekFilter) {
   );
 }
 
+/** Все недели месяца входят в фильтр. */
+export function isPlanMonthFullySelected(month, weekFilter) {
+  const weeks = sortPlanWeeks((month?.weeks || []).map(normalizePlanWeek).filter(Boolean));
+  if (!weeks.length) return false;
+  const selectedSet = new Set(normalizeWeekFilter(weekFilter));
+  return weeks.every((w) => selectedSet.has(w));
+}
+
+/** Месяцы, выбранные целиком (все их недели в фильтре). */
+export function getFullySelectedPlanMonths(months, weekFilter) {
+  return (months || []).filter((m) => isPlanMonthFullySelected(m, weekFilter));
+}
+
+/** Переключить недели месяца в фильтре (мультивыбор месяцев). */
+export function togglePlanMonthWeeksInFilter(month, weekFilter) {
+  const monthWeeks = sortPlanWeeks((month?.weeks || []).map(normalizePlanWeek).filter(Boolean));
+  if (!monthWeeks.length) return weekFilter;
+  const selected = normalizeWeekFilter(weekFilter);
+  const selectedSet = new Set(selected);
+  const fullySelected = monthWeeks.every((w) => selectedSet.has(w));
+  const next = fullySelected
+    ? selected.filter((w) => !monthWeeks.includes(w))
+    : sortPlanWeeks([...selected, ...monthWeeks]);
+  return next.length ? next : "all";
+}
+
+/** Подпись фильтра месяцев для UI. */
+export function formatPlanMonthFilterLabel(months, weekFilter, { loading = false } = {}) {
+  if (loading && !(months || []).length) return "Месяцы…";
+  const active = getFullySelectedPlanMonths(months, weekFilter);
+  if (!active.length) return "Все месяцы";
+  if (active.length === 1) return active[0].name;
+  if (active.length === 2) return active.map((m) => m.name).join(", ");
+  return `${active.length} мес.`;
+}
+
 /** Однократная миграция из localStorage (legacy). */
 export function loadPlanMonthsFromLocalStorage() {
   try {

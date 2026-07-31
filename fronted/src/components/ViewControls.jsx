@@ -1,6 +1,11 @@
 ﻿import { useEffect, useMemo, useRef, useState } from "react";
 import { TABS } from "../app/appConstants";
-import { findPlanMonthByWeekFilter } from "../app/overviewPlansHelpers";
+import {
+  formatPlanMonthFilterLabel,
+  getFullySelectedPlanMonths,
+  isPlanMonthFullySelected,
+  togglePlanMonthWeeksInFilter,
+} from "../app/overviewPlansHelpers";
 import {
   isShipmentSpecialWeek,
   normalizeWeekFilter,
@@ -8,7 +13,7 @@ import {
 } from "../app/weekFilterUtils";
 import { useWorkshopQrScan } from "../hooks/useWorkshopQrScan";
 
-function WeekFilterDropdown({ value, onChange, weeks = [] }) {
+function WeekFilterDropdown({ value, onChange, weeks = [], compact = false }) {
   const allWeeksLabel = "\u0412\u0441\u0435 \u043d\u0435\u0434\u0435\u043b\u0438";
   const weekLabel = "\u041d\u0435\u0434\u0435\u043b\u044f";
   const weeksLabel = "\u041d\u0435\u0434\u0435\u043b\u0438";
@@ -36,18 +41,22 @@ function WeekFilterDropdown({ value, onChange, weeks = [] }) {
       : [...selected, key].sort((a, b) => Number(a) - Number(b));
     onChange(next.length ? next : "all");
   };
-  const label = selected.length === 0
-    ? allWeeksLabel
-    : selected.length === 1
-      ? `${weekLabel} ${selected[0]}`
-      : `${weeksLabel}: ${selected.join(", ")}`;
+  const label = compact
+    ? formatNumericWeekFilterLabel(selected)
+    : selected.length === 0
+      ? allWeeksLabel
+      : selected.length === 1
+        ? `${weekLabel} ${selected[0]}`
+        : `${weeksLabel}: ${selected.join(", ")}`;
+  const labelTitle = compact && selected.length > 2 ? `${weeksLabel}: ${selected.join(", ")}` : undefined;
 
   return (
-    <div className="week-filter" ref={rootRef}>
+    <div className={`week-filter${compact ? " week-filter--compact" : ""}`} ref={rootRef}>
       <button
         type="button"
         className={`week-filter__button ${open ? "active" : ""}`}
         onClick={() => setOpen((x) => !x)}
+        title={labelTitle}
       >
         <span>{label}</span>
         <span className="week-filter__chevron">v</span>
@@ -218,10 +227,26 @@ function ShipmentWeekFilterTopbar({ value, onChange, weeks = [] }) {
   );
 }
 
-function ShipmentMonthFilterTopbar({ months = [], loading = false, weekFilter, setWeekFilter }) {
+function PlanMonthFilterDropdown({
+  months = [],
+  loading = false,
+  weekFilter,
+  setWeekFilter,
+  variant = "shipment",
+}) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef(null);
-  const activeMonth = useMemo(() => findPlanMonthByWeekFilter(months, weekFilter), [months, weekFilter]);
+  const activeMonths = useMemo(
+    () => getFullySelectedPlanMonths(months, weekFilter),
+    [months, weekFilter],
+  );
+  const label = useMemo(
+    () => formatPlanMonthFilterLabel(months, weekFilter, { loading }),
+    [months, weekFilter, loading],
+  );
+  const labelTitle = activeMonths.length > 2
+    ? activeMonths.map((m) => m.name).join(", ")
+    : undefined;
 
   useEffect(() => {
     if (!open) return undefined;
@@ -233,27 +258,37 @@ function ShipmentMonthFilterTopbar({ months = [], loading = false, weekFilter, s
     return () => document.removeEventListener("pointerdown", onPointerDown);
   }, [open]);
 
-  const label = loading && !months.length
-    ? "Месяцы…"
-    : activeMonth?.name || "Все месяцы";
+  const isWorkshop = variant === "workshop";
 
   return (
-    <div className="wf-root shipment-month-filter" ref={rootRef}>
+    <div className={isWorkshop ? "week-filter plan-month-filter" : "wf-root shipment-month-filter"} ref={rootRef}>
       <button
         type="button"
-        className={`shipment-panel__week-btn shipment-panel__month-btn ${open ? "active" : ""}${activeMonth ? " is-selected" : ""}`}
+        className={
+          isWorkshop
+            ? `week-filter__button plan-month-filter__button ${open ? "active" : ""}${activeMonths.length ? " is-selected" : ""}`
+            : `shipment-panel__week-btn shipment-panel__month-btn ${open ? "active" : ""}${activeMonths.length ? " is-selected" : ""}`
+        }
         onClick={() => setOpen((x) => !x)}
-        title="Фильтр по месяцу плана"
+        title={labelTitle || "Фильтр по месяцам плана (можно несколько)"}
       >
-        <i className="ti ti-calendar-month" aria-hidden="true" />
+        {!isWorkshop && <i className="ti ti-calendar-month" aria-hidden="true" />}
         <span>{label}</span>
-        <i className="ti ti-chevron-down" aria-hidden="true" />
+        {isWorkshop ? (
+          <span className="week-filter__chevron">v</span>
+        ) : (
+          <i className="ti ti-chevron-down" aria-hidden="true" />
+        )}
       </button>
       {open && (
-        <div className="wf-menu wf-menu--months">
+        <div className={isWorkshop ? "week-filter__menu plan-month-filter__menu" : "wf-menu wf-menu--months"}>
           <button
             type="button"
-            className={!activeMonth ? "wf-opt active" : "wf-opt"}
+            className={
+              isWorkshop
+                ? !activeMonths.length ? "week-filter__option active" : "week-filter__option"
+                : !activeMonths.length ? "wf-opt active" : "wf-opt"
+            }
             onClick={() => {
               setWeekFilter("all");
               setOpen(false);
@@ -262,36 +297,88 @@ function ShipmentMonthFilterTopbar({ months = [], loading = false, weekFilter, s
             Все месяцы
           </button>
           {months.map((month) => {
-            const active = String(activeMonth?.id) === String(month.id);
+            const active = isPlanMonthFullySelected(month, weekFilter);
             const weeksLabel = (month.weeks || []).join(", ");
             return (
               <button
                 key={month.id}
                 type="button"
-                className={active ? "wf-opt active wf-opt--month" : "wf-opt wf-opt--month"}
-                onClick={() => {
-                  setWeekFilter(month.weeks?.length ? [...month.weeks] : "all");
-                  setOpen(false);
-                }}
+                className={
+                  isWorkshop
+                    ? active ? "week-filter__option active" : "week-filter__option"
+                    : active ? "wf-opt active wf-opt--month" : "wf-opt wf-opt--month"
+                }
+                onClick={() => setWeekFilter(togglePlanMonthWeeksInFilter(month, weekFilter))}
               >
-                {active && <i className="ti ti-check" aria-hidden="true" />}
-                {!active && <span className="wf-opt__spacer" />}
-                <span className="wf-opt__month-body">
-                  <span className="wf-opt__month-name">{month.name}</span>
-                  {weeksLabel ? (
-                    <span className="wf-opt__month-weeks">Планы {weeksLabel}</span>
-                  ) : null}
-                </span>
+                {isWorkshop ? (
+                  <>
+                    <span className="week-filter__mark">{active ? "\u2713" : ""}</span>
+                    <span className="plan-month-filter__option-body">
+                      <span>{month.name}</span>
+                      {weeksLabel ? (
+                        <span className="plan-month-filter__weeks">Планы {weeksLabel}</span>
+                      ) : null}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    {active && <i className="ti ti-check" aria-hidden="true" />}
+                    {!active && <span className="wf-opt__spacer" />}
+                    <span className="wf-opt__month-body">
+                      <span className="wf-opt__month-name">{month.name}</span>
+                      {weeksLabel ? (
+                        <span className="wf-opt__month-weeks">Планы {weeksLabel}</span>
+                      ) : null}
+                    </span>
+                  </>
+                )}
               </button>
             );
           })}
           {!loading && !months.length ? (
-            <div className="wf-opt wf-opt--hint">
-              Месяцы создаются в разделе «Обзор заказов» → «Планы»
+            <div className={isWorkshop ? "week-filter__option plan-month-filter__hint" : "wf-opt wf-opt--hint"}>
+              Месяцы создаются в «Обзор заказов» → «Планы»
             </div>
           ) : null}
         </div>
       )}
+    </div>
+  );
+}
+
+function ShipmentMonthFilterTopbar(props) {
+  return <PlanMonthFilterDropdown {...props} variant="shipment" />;
+}
+
+function shortPlanMonthChipLabel(name) {
+  const n = String(name || "").trim();
+  const parts = n.split(/\s+/);
+  if (parts.length >= 2 && /^\d{4}$/.test(parts[parts.length - 1])) {
+    return parts.slice(0, -1).join(" ");
+  }
+  return n;
+}
+
+function PlanMonthFilterChips({ months = [], loading = false, weekFilter, setWeekFilter }) {
+  if (!loading && !months.length) return null;
+
+  return (
+    <div className="plan-month-chips" role="group" aria-label="Фильтр по месяцам плана">
+      {months.map((month) => {
+        const active = isPlanMonthFullySelected(month, weekFilter);
+        const weeksLabel = (month.weeks || []).join(", ");
+        return (
+          <button
+            key={month.id}
+            type="button"
+            className={`plan-month-chip${active ? " is-active" : ""}`}
+            title={weeksLabel ? `${month.name} — планы ${weeksLabel}` : month.name}
+            onClick={() => setWeekFilter(togglePlanMonthWeeksInFilter(month, weekFilter))}
+          >
+            {shortPlanMonthChipLabel(month.name)}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -729,7 +816,24 @@ export function ViewControls({
         )}
         {view !== "warehouse" && view !== "furniture" && view !== "metal" && view !== "metalProcess" && view !== "shipment" && view !== "db" && (
           <>
-          <WeekFilterDropdown value={weekFilter} onChange={setWeekFilter} weeks={weeks} />
+          {view === "workshop" ? (
+            <div className="workshop-week-month-filters">
+              <WeekFilterDropdown
+                value={weekFilter}
+                onChange={setWeekFilter}
+                weeks={weeks}
+                compact
+              />
+              <PlanMonthFilterChips
+                months={planMonths}
+                loading={planMonthsLoading}
+                weekFilter={weekFilter}
+                setWeekFilter={setWeekFilter}
+              />
+            </div>
+          ) : (
+            <WeekFilterDropdown value={weekFilter} onChange={setWeekFilter} weeks={weeks} />
+          )}
           {showWorkshopQr && (
             <button
               type="button"

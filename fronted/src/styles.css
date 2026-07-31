@@ -6742,6 +6742,109 @@ button:hover {
   text-align: center;
 }
 
+.plan-month-filter__button.is-selected {
+  border-color: #0f766e;
+  background: #ecfdf5;
+}
+
+.plan-month-filter__menu .week-filter__option {
+  align-items: flex-start;
+  text-align: left;
+  gap: 6px;
+}
+
+.plan-month-filter__option-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.plan-month-filter__weeks {
+  font-size: 11px;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.plan-month-filter__hint {
+  cursor: default;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.filters .plan-month-filter {
+  min-width: 140px;
+}
+
+.workshop-week-month-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.week-filter--compact {
+  flex: 0 0 auto;
+  width: auto;
+  max-width: 10.5rem;
+}
+
+.week-filter--compact .week-filter__button {
+  width: auto;
+  max-width: 10.5rem;
+  padding: 0 10px;
+  font-size: 13px;
+}
+
+.week-filter--compact .week-filter__button > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.week-filter--compact .week-filter__menu {
+  width: min(220px, 90vw);
+}
+
+.plan-month-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.plan-month-chip {
+  flex: 0 0 auto;
+  min-height: 32px;
+  padding: 0 9px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  border-radius: 8px;
+  border: 1px solid #d6dfeb;
+  background: #ffffff;
+  color: #475569;
+  box-shadow: none;
+  cursor: pointer;
+  user-select: none;
+}
+
+.plan-month-chip:hover {
+  border-color: #94a3b8;
+  background: #f8fafc;
+  color: #0f5664;
+  transform: none;
+}
+
+.plan-month-chip.is-active {
+  border-color: #0f766e;
+  background: #ecfdf5;
+  color: #0f5664;
+  font-weight: 700;
+}
+
 .filters-right .empty-only-toggle {
   min-height: 36px;
   cursor: pointer;

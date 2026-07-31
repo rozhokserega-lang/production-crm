@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { PipelineStage } from "../orderPipeline";
-import { buildPlanSummary } from "./overviewPlansHelpers";
+import {
+  buildPlanSummary,
+  getFullySelectedPlanMonths,
+  togglePlanMonthWeeksInFilter,
+} from "./overviewPlansHelpers";
 
 function orderAt(stage, overrides = {}) {
   const stageLabels = {
@@ -54,5 +58,29 @@ describe("buildPlanSummary — план производства", () => {
     ]);
     expect(summary.completedCount).toBe(0);
     expect(summary.blockingOrders[0].laneLabel).toBe("Ожидаю заказ");
+  });
+});
+
+describe("plan month week filter", () => {
+  const months = [
+    { id: 1, name: "Июнь", weeks: ["76", "77", "78", "79"] },
+    { id: 2, name: "Август", weeks: ["84", "85", "86"] },
+  ];
+
+  it("toggle month adds and removes its weeks", () => {
+    let filter = "all";
+    filter = togglePlanMonthWeeksInFilter(months[0], filter);
+    expect(filter).toEqual(["76", "77", "78", "79"]);
+    filter = togglePlanMonthWeeksInFilter(months[1], filter);
+    expect(filter).toEqual(["76", "77", "78", "79", "84", "85", "86"]);
+    filter = togglePlanMonthWeeksInFilter(months[0], filter);
+    expect(filter).toEqual(["84", "85", "86"]);
+    filter = togglePlanMonthWeeksInFilter(months[1], filter);
+    expect(filter).toBe("all");
+  });
+
+  it("getFullySelectedPlanMonths returns only whole months", () => {
+    expect(getFullySelectedPlanMonths(months, ["76", "77"])).toEqual([]);
+    expect(getFullySelectedPlanMonths(months, ["76", "77", "78", "79"])).toEqual([months[0]]);
   });
 });
