@@ -2,6 +2,7 @@ import { useMemo, useState, useCallback, useEffect } from "react";
 import { OrderService } from "../services/orderService";
 import { matchesWeekFilter } from "../app/weekFilterUtils";
 import { orderCountsTowardStrapDemand, isWorkshopStrapOrderItem } from "../app/workshopStrapNeeds";
+import { isWorkshopFinalIncomingOrder } from "../app/workshopFinalIncoming";
 import { orderMatchesWorkshopQrScan } from "../app/workshopQrSearchHelpers";
 import { compareWorkshopPilkaRows } from "../app/workshopPilkaQueueOrder";
 
@@ -95,8 +96,8 @@ export function useWorkshopRows({
       const pilkaStatus = String(o.pilkaStatus || o.pilka || "");
       const kromkaStatus = String(o.kromkaStatus || o.kromka || "");
       const prasStatus = String(o.prasStatus || o.pras || "");
-      const assemblyStatus = String(o.assemblyStatus || "");
-      const overallStatus = String(o.overallStatus || o.overall || "");
+      const assemblyStatus = String(o.assemblyStatus ?? o.assembly_status ?? "");
+      const overallStatus = String(o.overallStatus ?? o.overall_status ?? o.overall ?? "");
       const pilkaDone = isDone(pilkaStatus);
       const kromkaDone = isDone(kromkaStatus);
       const prasDone = isDone(prasStatus);
@@ -117,8 +118,7 @@ export function useWorkshopRows({
         return pilkaDone && kromkaDone && prasDone && !assemblyDone && !shipped;
       }
       if (effectiveTab === "done") {
-        if (strapPlankOrder) return false;
-        return assemblyDone && !onPackaging && !shipped && lane !== "warehouse_kit";
+        return isWorkshopFinalIncomingOrder(o, { isDone, isOrderCustomerShipped });
       }
       return true;
     });

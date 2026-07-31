@@ -7510,6 +7510,35 @@ button:hover {
   border: 2px dashed #e5e7eb;
 }
 
+.warehouse-incoming-orders__lead {
+  margin: 0 0 12px;
+  color: #6b7280;
+  font-size: 14px;
+}
+
+.warehouse-incoming-orders__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.warehouse-incoming-orders__toolbar .search {
+  flex: 1 1 220px;
+  max-width: 360px;
+}
+
+.warehouse-incoming-card__badge {
+  background: #ecfdf5;
+  color: #0f766e;
+  border: 1px solid #99f6e4;
+}
+
+.warehouse-incoming-card + .warehouse-incoming-card {
+  margin-top: 10px;
+}
+
 .warehouse-sheet-size-input {
   width: 108px;
   max-width: 100%;

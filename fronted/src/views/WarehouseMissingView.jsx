@@ -2,6 +2,12 @@ import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { PRODUCTS_CATALOG } from "../constants/missingParts";
 import { HardwareView } from "./HardwareView";
 import { WarehouseKitOrdersView } from "./WarehouseKitOrdersView";
+import { WarehouseIncomingOrdersView } from "./WarehouseIncomingOrdersView";
+import { isDone } from "../app/appUtils";
+import { isOrderCustomerShipped } from "../orderPipeline";
+import { filterWorkshopFinalIncomingOrders } from "../app/workshopFinalIncoming";
+import { normalizeOrder } from "../app/rowHelpers";
+import { fetchAllOrdersWithRetry } from "../hooks/useOrders";
 
 const OTHER_PRODUCT_KEY = "__OTHER__";
 const DONE_STATUS = "✅ Готово";
@@ -45,6 +51,9 @@ export const WarehouseMissingView = memo(function WarehouseMissingView({
   const [loading, setLoading] = useState(false);
   const [sendingId, setSendingId] = useState(null);
   const [listView, setListView] = useState("new");
+  const [incomingCount, setIncomingCount] = useState(0);
+  const [incomingReloadNonce, setIncomingReloadNonce] = useState(0);
+  const [incomingLoading, setIncomingLoading] = useState(false);
   const [productColorMapRows, setProductColorMapRows] = useState([]);
   const [form, setForm] = useState({
     open: false, step: 1,
@@ -66,6 +75,25 @@ export const WarehouseMissingView = memo(function WarehouseMissingView({
   useEffect(() => {
     loadOrders();
   }, [loadOrders]);
+
+  const refreshIncomingCount = useCallback(async () => {
+    try {
+      const raw = await fetchAllOrdersWithRetry({ preferStaged: true, maxAttempts: 2 });
+      const rows = (Array.isArray(raw) ? raw : []).map(normalizeOrder);
+      const n = filterWorkshopFinalIncomingOrders(rows, {
+        isDone,
+        isOrderCustomerShipped,
+      }).length;
+      setIncomingCount(n);
+    } catch (_) {
+      setIncomingCount(0);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (mainTab !== "create") return;
+    refreshIncomingCount();
+  }, [mainTab, refreshIncomingCount]);
 
   useEffect(() => {
     let cancelled = false;
@@ -317,13 +345,46 @@ export const WarehouseMissingView = memo(function WarehouseMissingView({
           <button type="button" className={listView === "done" ? "tab active" : "tab"} onClick={() => setListView("done")}>
             Готовые ({orderBuckets.done.length})
           </button>
+          <button
+            type="button"
+            className={listView === "incoming" ? "tab active" : "tab"}
+            onClick={() => setListView("incoming")}
+          >
+            Что приедет ({incomingCount})
+          </button>
         </div>
-        <button type="button" className="mini" onClick={loadOrders} disabled={loading}>
-          {loading ? "Загрузка..." : "↻ Обновить"}
+        <button
+          type="button"
+          className="mini"
+          onClick={() => {
+            if (listView === "incoming") {
+              setIncomingReloadNonce((x) => x + 1);
+              return;
+            }
+            loadOrders();
+            refreshIncomingCount();
+          }}
+          disabled={
+            listView === "incoming"
+              ? incomingLoading
+              : loading
+          }
+        >
+          {(listView === "incoming" ? incomingLoading : loading)
+            ? "Загрузка..."
+            : "↻ Обновить"}
         </button>
       </div>
 
-      {loading && orders.length === 0 ? (
+      {listView === "incoming" ? (
+        <WarehouseIncomingOrdersView
+          embedded
+          getMaterialLabel={getMaterialLabel}
+          onOrdersLoaded={(list) => setIncomingCount(list.length)}
+          reloadNonce={incomingReloadNonce}
+          onLoadingChange={setIncomingLoading}
+        />
+      ) : loading && orders.length === 0 ? (
         <div className="warehouse-empty" style={{ fontSize: 14, color: "#6b7280" }}>Загрузка...</div>
       ) : displayOrders.length === 0 ? (
         <div className="warehouse-empty">
