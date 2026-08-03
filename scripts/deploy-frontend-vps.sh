@@ -40,20 +40,10 @@ run_web() {
 run_nginx() {
   if [[ "${EUID:-0}" -eq 0 ]]; then
     nginx -t
-    if systemctl is-active --quiet nginx; then
-      systemctl reload nginx
-    else
-      echo "==> nginx inactive — starting service"
-      systemctl start nginx
-    fi
+    systemctl reload-or-restart nginx
   else
     sudo nginx -t
-    if sudo systemctl is-active --quiet nginx; then
-      sudo systemctl reload nginx
-    else
-      echo "==> nginx inactive — starting service"
-      sudo systemctl start nginx
-    fi
+    sudo systemctl reload-or-restart nginx
   fi
 }
 
@@ -124,8 +114,15 @@ else
 fi
 
 if command -v nginx >/dev/null 2>&1; then
+  set +e
   run_nginx
-  echo "==> Nginx reloaded."
+  nginx_ec=$?
+  set -e
+  if [[ "$nginx_ec" -eq 0 ]]; then
+    echo "==> Nginx reload-or-restart ok."
+  else
+    echo "WARN: nginx exit $nginx_ec — статика уже в $WEB_ROOT; на VPS: sudo systemctl status nginx && sudo systemctl start nginx"
+  fi
 else
   echo "==> nginx not found; skip reload. Copy done."
 fi
