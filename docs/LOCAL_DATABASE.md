@@ -16,7 +16,8 @@ copy fronted\.env.local-db.example fronted\.env.local
 powershell -ExecutionPolicy Bypass -File scripts/start-local-dev.ps1
 ```
 
-`local-db-sync-prod.ps1` нужен **SUPABASE_DB_URL** в `fronted/.env.local` (pooler Postgres, не anon key).
+`local-db-sync-prod.ps1` нужен **`SUPABASE_DB_URL`** в `fronted/.env.local`.  
+Для **`pg_dump`** надёжнее **`SUPABASE_DB_DIRECT_URL`** (Dashboard → Database → *Direct connection*, хост `db.<ref>.supabase.co`). Скрипт сам пробует direct, если pooler рвёт SSL.
 
 ---
 
