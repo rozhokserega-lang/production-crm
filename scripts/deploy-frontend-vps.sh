@@ -40,10 +40,20 @@ run_web() {
 run_nginx() {
   if [[ "${EUID:-0}" -eq 0 ]]; then
     nginx -t
-    systemctl reload nginx
+    if systemctl is-active --quiet nginx; then
+      systemctl reload nginx
+    else
+      echo "==> nginx inactive — starting service"
+      systemctl start nginx
+    fi
   else
     sudo nginx -t
-    sudo systemctl reload nginx
+    if sudo systemctl is-active --quiet nginx; then
+      sudo systemctl reload nginx
+    else
+      echo "==> nginx inactive — starting service"
+      sudo systemctl start nginx
+    fi
   fi
 }
 
