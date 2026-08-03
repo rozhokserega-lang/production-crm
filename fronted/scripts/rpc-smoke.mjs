@@ -48,7 +48,7 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
 }
 
 const requiredRpcs = [
-  "web_get_orders_all",
+  "web_get_orders_post_workshop",
   "web_get_orders_pilka",
   "web_get_orders_kromka",
   "web_get_orders_pras",
@@ -115,8 +115,18 @@ async function callRpc(rpcName) {
 }
 
 async function main() {
+  const includeHeavyAll =
+    String(process.env.RPC_SMOKE_INCLUDE_ORDERS_ALL || "").trim() === "1";
+  const rpcList = includeHeavyAll
+    ? [...requiredRpcs, "web_get_orders_all"]
+    : requiredRpcs;
+  if (!includeHeavyAll) {
+    console.log(
+      "[rpc-smoke] web_get_orders_all пропущен (RPC_SMOKE_INCLUDE_ORDERS_ALL=1 чтобы включить — тяжёлый egress)"
+    );
+  }
   const report = [];
-  for (const rpcName of requiredRpcs) {
+  for (const rpcName of rpcList) {
     const result = await callRpc(rpcName);
     report.push(result);
     console.log(`[rpc-smoke] ${rpcName}: ok (${result.rows} rows)`);

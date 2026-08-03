@@ -646,6 +646,21 @@ export function useDataLoader({
         data = furniturePayload.data;
       } else if (view === "metalProcess") {
         data = [];
+      } else if (view === "hardware" || view === "warehouseMissing") {
+        const [articlesResult, stockResult, detailArticlesResult, templatesResult] = await Promise.all([
+          OrderService.getSectionArticles().catch(() => null),
+          OrderService.getMaterialsStock().catch(() => null),
+          OrderService.getFurnitureDetailArticles().catch(() => null),
+          OrderService.getFurnitureCustomTemplates().catch(() => null),
+        ]);
+        if (seq !== loadSeqRef.current) return;
+        setSectionArticleRows(Array.isArray(articlesResult) ? articlesResult : []);
+        setMaterialsStockRows(Array.isArray(stockResult) ? stockResult : []);
+        setFurnitureDetailArticleRows(Array.isArray(detailArticlesResult) ? detailArticlesResult : []);
+        if (typeof setFurnitureCustomTemplates === "function") {
+          setFurnitureCustomTemplates(Array.isArray(templatesResult) ? templatesResult : []);
+        }
+        data = [];
       } else {
         data = await loadOrdersWithCacheFallback({ view, callBackend, preferStaged: ordersPreferStaged });
       }
@@ -746,6 +761,9 @@ export function useDataLoader({
         }));
       } else if (view === "metalProcess") {
         setRows([]);
+      } else if (view === "hardware" || view === "warehouseMissing") {
+        setRows([]);
+        setViewCache(view, buildViewSnapshot({ view, normalizedRows: [] }));
       } else {
         setRows(Array.isArray(data) ? data : []);
       }

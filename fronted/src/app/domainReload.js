@@ -28,14 +28,18 @@ export const VIEW_DOMAINS = Object.freeze({
   metal: ["metal"],
   metalProcess: ["metalProcess", "metal"],
   admin: ["admin"],
-  hardware: ["warehouse", "orders", "shipment", "furniture"],
-  warehouseMissing: ["warehouse", "orders", "shipment", "furniture"],
+  hardware: ["warehouse", "shipment", "furniture"],
+  warehouseMissing: ["warehouse", "shipment", "furniture"],
   cutting: ["orders"],
   db: [],
 });
 
 const INTERNAL_DOMAINS = new Set(["orders", "shipment", "warehouse", "labor", "furniture"]);
 const EXTERNAL_DOMAINS = new Set(["metal", "metalProcess", "admin"]);
+
+export function preferStagedOrdersReloadForView(view) {
+  return String(view || "") !== "stats";
+}
 
 export function getViewDomains(view) {
   const key = String(view || "").trim();

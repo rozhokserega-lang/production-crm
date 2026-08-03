@@ -3,11 +3,7 @@ import { PRODUCTS_CATALOG } from "../constants/missingParts";
 import { HardwareView } from "./HardwareView";
 import { WarehouseKitOrdersView } from "./WarehouseKitOrdersView";
 import { WarehouseIncomingOrdersView } from "./WarehouseIncomingOrdersView";
-import { isDone } from "../app/appUtils";
-import { isOrderCustomerShipped } from "../orderPipeline";
-import { filterWorkshopFinalIncomingOrders } from "../app/workshopFinalIncoming";
-import { normalizeOrder } from "../app/rowHelpers";
-import { fetchAllOrdersWithRetry } from "../hooks/useOrders";
+import { fetchWorkshopFinalIncomingOrders } from "../app/workshopFinalIncoming";
 
 const OTHER_PRODUCT_KEY = "__OTHER__";
 const DONE_STATUS = "✅ Готово";
@@ -78,13 +74,8 @@ export const WarehouseMissingView = memo(function WarehouseMissingView({
 
   const refreshIncomingCount = useCallback(async () => {
     try {
-      const raw = await fetchAllOrdersWithRetry({ preferStaged: true, maxAttempts: 2 });
-      const rows = (Array.isArray(raw) ? raw : []).map(normalizeOrder);
-      const n = filterWorkshopFinalIncomingOrders(rows, {
-        isDone,
-        isOrderCustomerShipped,
-      }).length;
-      setIncomingCount(n);
+      const rows = await fetchWorkshopFinalIncomingOrders();
+      setIncomingCount(rows.length);
     } catch (_) {
       setIncomingCount(0);
     }

@@ -1,4 +1,7 @@
+import { isDone } from "./appUtils";
 import { getOverviewLaneId, isOrderCustomerShipped, PipelineStage, resolvePipelineStage } from "../orderPipeline";
+import { normalizeOrder } from "./rowHelpers";
+import { OrderService } from "../services/orderService";
 import { isWorkshopStrapOrderItem } from "./workshopStrapNeeds";
 
 function isAssemblyCompleteForFinal(order, isDone) {
@@ -35,4 +38,30 @@ export function sortWorkshopFinalIncomingOrders(orders) {
     if (Number.isFinite(wa) && Number.isFinite(wb) && wa !== wb) return wa - wb;
     return String(a.item || "").localeCompare(String(b.item || ""), "ru");
   });
+}
+
+const INCOMING_ORDERS_CACHE_TTL_MS = 60_000;
+let incomingOrdersCache = { savedAt: 0, rows: [] };
+
+export function invalidateWorkshopFinalIncomingCache() {
+  incomingOrdersCache = { savedAt: 0, rows: [] };
+}
+
+/** Лёгкая выгрузка для «Что приедет»: только web_get_orders_post_workshop + фильтр финала. */
+export async function fetchWorkshopFinalIncomingOrders({ force = false } = {}) {
+  const helpers = { isDone, isOrderCustomerShipped };
+  if (
+    !force &&
+    incomingOrdersCache.savedAt &&
+    Date.now() - incomingOrdersCache.savedAt < INCOMING_ORDERS_CACHE_TTL_MS
+  ) {
+    return incomingOrdersCache.rows;
+  }
+  const raw = await OrderService.getOrdersByStage("post_workshop");
+  const rows = (Array.isArray(raw) ? raw : []).map(normalizeOrder);
+  const filtered = sortWorkshopFinalIncomingOrders(
+    filterWorkshopFinalIncomingOrders(rows, helpers),
+  );
+  incomingOrdersCache = { savedAt: Date.now(), rows: filtered };
+  return filtered;
 }

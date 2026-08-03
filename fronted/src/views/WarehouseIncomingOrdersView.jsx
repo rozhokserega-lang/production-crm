@@ -1,12 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
-import { isDone } from "../app/appUtils";
-import { isOrderCustomerShipped, getOrderStageDisplayLabel } from "../orderPipeline";
-import {
-  filterWorkshopFinalIncomingOrders,
-  sortWorkshopFinalIncomingOrders,
-} from "../app/workshopFinalIncoming";
-import { normalizeOrder } from "../app/rowHelpers";
-import { fetchAllOrdersWithRetry } from "../hooks/useOrders";
+import { getOrderStageDisplayLabel } from "../orderPipeline";
+import { fetchWorkshopFinalIncomingOrders } from "../app/workshopFinalIncoming";
 
 export const WarehouseIncomingOrdersView = memo(function WarehouseIncomingOrdersView({
   getMaterialLabel,
@@ -25,12 +19,7 @@ export const WarehouseIncomingOrdersView = memo(function WarehouseIncomingOrders
     onLoadingChange?.(true);
     setLoadError("");
     try {
-      const raw = await fetchAllOrdersWithRetry({ preferStaged: true, maxAttempts: 2 });
-      const rows = (Array.isArray(raw) ? raw : []).map(normalizeOrder);
-      const helpers = { isDone, isOrderCustomerShipped };
-      const filtered = sortWorkshopFinalIncomingOrders(
-        filterWorkshopFinalIncomingOrders(rows, helpers),
-      );
+      const filtered = await fetchWorkshopFinalIncomingOrders({ force: reloadNonce > 0 });
       setOrders(filtered);
       if (typeof onOrdersLoaded === "function") onOrdersLoaded(filtered);
     } catch (e) {
@@ -41,7 +30,7 @@ export const WarehouseIncomingOrdersView = memo(function WarehouseIncomingOrders
       setLoading(false);
       onLoadingChange?.(false);
     }
-  }, [onOrdersLoaded, onLoadingChange]);
+  }, [onOrdersLoaded, onLoadingChange, reloadNonce]);
 
   useEffect(() => {
     loadOrders();

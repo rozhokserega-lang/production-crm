@@ -26,6 +26,11 @@ describe("domainReload", () => {
     expect(resolveDomainsForRealtimeEvent("materials_stock", "workshop")).toEqual(["shipment"]);
   });
 
+  it("warehouse /sklad does not pull full orders domain on realtime", () => {
+    expect(getViewDomains("warehouseMissing")).not.toContain("orders");
+    expect(resolveDomainsForRealtimeEvent("orders", "warehouseMissing")).toEqual([]);
+  });
+
   it("partitions internal and external domains", () => {
     expect(partitionDomains(["orders", "metal", "admin"])).toEqual({
       internal: ["orders"],

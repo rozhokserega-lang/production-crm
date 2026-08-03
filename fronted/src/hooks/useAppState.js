@@ -137,7 +137,7 @@ import {
   parseStrapSize,
   passesShipmentStageFilter,
 } from "../app/appUtils";
-import { getViewDomains, resolveDomainsForRealtimeEvent } from "../app/domainReload";
+import { getViewDomains, preferStagedOrdersReloadForView, resolveDomainsForRealtimeEvent } from "../app/domainReload";
 
 export function useAppState({ auth }) {
   const {
@@ -787,7 +787,7 @@ export function useAppState({ auth }) {
     const pollId = window.setInterval(() => {
       loadDomains({
         background: true,
-        preferStaged: false,
+        preferStaged: preferStagedOrdersReloadForView(view),
         domains: getViewDomains(view),
         extras: domainReloadExtrasRef.current,
       }).catch(() => {});
@@ -976,7 +976,7 @@ export function useAppState({ auth }) {
     const reloadViewDomains = () => {
       loadDomains({
         background: true,
-        preferStaged: false,
+        preferStaged: preferStagedOrdersReloadForView(viewRef.current),
         domains: getViewDomains(viewRef.current),
         extras: domainReloadExtrasRef.current,
       }).catch(() => {});
@@ -1020,7 +1020,7 @@ export function useAppState({ auth }) {
         lastReloadAt = Date.now();
         loadDomains({
           background: true,
-          preferStaged: false,
+          preferStaged: preferStagedOrdersReloadForView(viewRef.current),
           domains,
           extras: domainReloadExtrasRef.current,
         }).catch(() => {});
@@ -1028,6 +1028,7 @@ export function useAppState({ auth }) {
     };
 
     const handleOrdersChange = (payload) => {
+      if (!resolveDomainsForRealtimeEvent("orders", viewRef.current).length) return;
       patchOrdersFromRealtime(payload);
       scheduleDomainReload("orders");
     };
@@ -1108,7 +1109,7 @@ export function useAppState({ auth }) {
       lastResumeReloadAt = now;
       loadDomains({
         background: true,
-        preferStaged: false,
+        preferStaged: preferStagedOrdersReloadForView(viewRef.current),
         domains: getViewDomains(viewRef.current),
         extras: domainReloadExtrasRef.current,
       }).catch(() => {});

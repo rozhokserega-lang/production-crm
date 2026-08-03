@@ -268,7 +268,11 @@ export function useLaborFilter({
 }
 
 export function isOrdersDomainView(view) {
-  return !["shipment", "warehouse", "labor", "furniture", "metal", "metalProcess"].includes(String(view || ""));
+  const v = String(view || "");
+  if (["shipment", "warehouse", "labor", "furniture", "metal", "metalProcess", "warehouseMissing", "hardware"].includes(v)) {
+    return false;
+  }
+  return true;
 }
 
 function mergeOrdersById(chunks) {
