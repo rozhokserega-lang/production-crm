@@ -15,7 +15,7 @@ if ($DataOnly) {
 if ($LASTEXITCODE -ne 0) { exit 1 }
 
 if ($SkipRestore) {
-  Write-Host "[local-db] SkipRestore — dump saved only." -ForegroundColor Yellow
+  Write-Host "[local-db] SkipRestore: dump saved only." -ForegroundColor Yellow
   exit 0
 }
 

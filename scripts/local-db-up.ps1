@@ -139,7 +139,7 @@ if (-not $SkipInit -and -not (Test-SchemaInitialized)) {
 if ($RestoreLatest) {
   $dump = Get-LatestDumpPath
   if (-not $dump) {
-    Fail "RestoreLatest: no .dump in backups/local-db — run local-db-sync-prod.ps1 first."
+    Fail "RestoreLatest: no .dump in backups/local-db. Run local-db-sync-prod.ps1 first."
   }
   Say "RestoreLatest: $dump"
   & (Join-Path $scriptDir "local-db-restore.ps1") -DumpPath $dump
@@ -159,7 +159,7 @@ if ($WithFunctions) {
 }
 
 if (-not (Test-LocalDbHasOrderRows)) {
-  Write-Host "[local-db] WARNING: public.orders is empty — run:" -ForegroundColor Yellow
+  Write-Host "[local-db] WARNING: public.orders is empty. Run:" -ForegroundColor Yellow
   Write-Host "         scripts/local-db-sync-prod.ps1   (backup prod + restore)" -ForegroundColor Yellow
   Write-Host "      or scripts/local-db-up.ps1 -RestoreLatest" -ForegroundColor Yellow
 } else {

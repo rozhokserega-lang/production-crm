@@ -67,4 +67,4 @@ if ($DataOnly) {
 if ($LASTEXITCODE -ne 0) { exit 1 }
 
 Write-Host "[local-db] OK: $outFile" -ForegroundColor Green
-Write-Host "[local-db] backups/ is gitignored — do not commit dumps." -ForegroundColor DarkGray
+Write-Host "[local-db] backups/ is gitignored; do not commit dumps." -ForegroundColor DarkGray
