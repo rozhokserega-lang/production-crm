@@ -9,6 +9,11 @@ dist/
 .env.*
 !.env.example
 !fronted/.env.staging.example
+!fronted/.env.local-db.example
+!supabase/functions/.env.local.example
+
+# Локальные дампы Postgres (scripts/local-db-backup-prod.ps1)
+/backups/
 
 # OS / IDE
 .DS_Store
@@ -53,6 +58,7 @@ scripts/data/
 
 # Локальные скрипты запуска agent-инфраструктуры (не для пуша — пользовательские)
 scripts/Start-Crm*.bat
+!scripts/Start-CrmLocalDb.bat
 scripts/start-crm-agent.ps1
 scripts/start-local-dev.ps1
 scripts/create-crm-agent-shortcuts.ps1
