@@ -30,22 +30,48 @@ function Ensure-SslMode([string]$Url) {
   return "$Url?sslmode=require"
 }
 
-function Get-DirectDbUrlCandidates([string]$PrimaryUrl) {
-  $list = New-Object System.Collections.Generic.List[string]
-  $direct = Read-EnvDbUrl "SUPABASE_DB_DIRECT_URL"
-  if ($direct) { $list.Add((Ensure-SslMode $direct)) | Out-Null }
+function Parse-PostgresUrl([string]$Url) {
+  if ($Url -notmatch '^postgres(?:ql)?://([^@]+)@(.+)$') { return $null }
+  $userInfo = $Matches[1]
+  $tail = $Matches[2]
+  $colon = $userInfo.IndexOf(':')
+  if ($colon -lt 1) { return $null }
+  $user = [uri]::UnescapeDataString($userInfo.Substring(0, $colon))
+  $pass = [uri]::UnescapeDataString($userInfo.Substring($colon + 1))
 
+  $pathAndQuery = $tail
+  $hostPort = $pathAndQuery
+  $db = "postgres"
+  if ($pathAndQuery -match '^([^/]+)/([^?]+)') {
+    $hostPort = $Matches[1]
+    $db = $Matches[2]
+  }
+  $dbHost = $hostPort
+  $port = "5432"
+  if ($hostPort -match '^(.+):(\d+)$') {
+    $dbHost = $Matches[1]
+    $port = $Matches[2]
+  }
+  return @{ User = $user; Password = $pass; Host = $dbHost; Port = $port; Database = $db }
+}
+
+function Get-DbUrlCandidates([string]$PrimaryUrl) {
+  $list = New-Object System.Collections.Generic.List[string]
   $primary = Ensure-SslMode $PrimaryUrl
   if ($primary) { $list.Add($primary) | Out-Null }
 
+  $direct = Read-EnvDbUrl "SUPABASE_DB_DIRECT_URL"
+  if ($direct) { $list.Add((Ensure-SslMode $direct)) | Out-Null }
+
   $ref = $null
-  if ($primary -match 'postgres\.([a-z0-9]+):') {
+  if ($primary -match 'postgres\.([a-z0-9]+)[:@]') {
     $ref = $Matches[1]
   }
   if ($ref -and $primary -match '@([^/?]+)') {
     $hostName = $Matches[1]
     if ($hostName -match 'pooler\.supabase\.com') {
       $built = $primary -replace [regex]::Escape($hostName), "db.$ref.supabase.co"
+      $built = $built -replace 'postgres\.[a-z0-9]+:', 'postgres:'
       if (-not $list.Contains($built)) { $list.Add($built) | Out-Null }
     }
   }
@@ -54,20 +80,33 @@ function Get-DirectDbUrlCandidates([string]$PrimaryUrl) {
 }
 
 function Invoke-PgDump([string]$DbUrl, [string]$OutPath, [switch]$DataOnly) {
+  $parsed = Parse-PostgresUrl $DbUrl
+  if (-not $parsed) {
+    Write-Host "[local-db] Could not parse DB URL" -ForegroundColor Red
+    return 1
+  }
+
   $dumpArgs = @(
     "run", "--rm",
     "--dns", "8.8.8.8",
     "--dns", "8.8.4.4",
+    "-e", "PGPASSWORD=$($parsed.Password)",
+    "-e", "PGSSLMODE=require",
     "-v", "${OutDir}:/out",
     "postgres:17",
     "pg_dump",
+    "-h", $parsed.Host,
+    "-p", $parsed.Port,
+    "-U", $parsed.User,
+    "-d", $parsed.Database,
+    "--no-password",
     "--format=custom",
     "--no-owner",
     "--no-privileges",
     "--schema=public"
   )
   if ($DataOnly) { $dumpArgs += "--data-only" }
-  $dumpArgs += "-f", "/out/$(Split-Path -Leaf $OutPath)", $DbUrl
+  $dumpArgs += "-f", "/out/$(Split-Path -Leaf $OutPath)"
   & docker @dumpArgs
   return $LASTEXITCODE
 }
@@ -85,7 +124,7 @@ New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $outFile = Join-Path $OutDir "crm-prod-$stamp.dump"
-$candidates = Get-DirectDbUrlCandidates $primaryUrl
+$candidates = Get-DbUrlCandidates $primaryUrl
 
 Write-Host "[local-db] Backup prod -> $outFile" -ForegroundColor Cyan
 Write-Host "[local-db] pg_dump tries: $($candidates.Count) connection variant(s)" -ForegroundColor DarkGray
@@ -101,7 +140,7 @@ foreach ($url in $candidates) {
 }
 
 if (-not $ok) {
-  Write-Host "[local-db] pg_dump failed. In Supabase Dashboard -> Database -> use Direct connection URI as SUPABASE_DB_DIRECT_URL in .env.local" -ForegroundColor Red
+  Write-Host "[local-db] pg_dump failed. Free plan: scripts/local-db-fetch-backup-from-vps.ps1 -VpsHost <crm-v175 VPS>. Or try: local-db-sync-prod.ps1 -DataOnly after local-db-up.ps1" -ForegroundColor Red
   exit 1
 }
 

@@ -17,7 +17,70 @@ powershell -ExecutionPolicy Bypass -File scripts/start-local-dev.ps1
 ```
 
 `local-db-sync-prod.ps1` нужен **`SUPABASE_DB_URL`** в `fronted/.env.local`.  
-Для **`pg_dump`** надёжнее **`SUPABASE_DB_DIRECT_URL`** (Dashboard → Database → *Direct connection*, хост `db.<ref>.supabase.co`). Скрипт сам пробует direct, если pooler рвёт SSL.
+На Windows без IPv6: Dashboard → Connect → **Session pooler** → URI → в **`SUPABASE_DB_URL`** (user `postgres.<ref>`, pooler host).  
+**Direct** (`SUPABASE_DB_DIRECT_URL`) с домашнего Windows часто **не работает** (только IPv6). Платный IPv4 add-on не обязателен — см. **«Без IPv4 add-on (Free)»** ниже.
+
+---
+
+## Без IPv4 add-on (Free / Windows без IPv6)
+
+### Вариант A — дамп на VPS (рекомендуется)
+
+На **VPS**, где крутится `crm-v175.ru`, обычно есть **IPv6** → Direct `db.<ref>.supabase.co` для `pg_dump` стабильнее, чем pooler с ПК.
+
+1. SSH на сервер (ключ как для деплоя), на VPS должен быть **Docker** (`docker run hello-world`).
+2. В `fronted/.env.local` уже есть `SUPABASE_DB_URL` и `SUPABASE_DB_DIRECT_URL` (как для локального backup).
+3. С **Windows** из корня репо:
+
+```powershell
+# IP или домен VPS; можно один раз: $env:CRM_VPS_HOST = "164.215.97.254"
+powershell -ExecutionPolicy Bypass -File scripts/local-db-fetch-backup-from-vps.ps1 `
+  -VpsHost 164.215.97.254 `
+  -VpsUser root `
+  -SshKeyPath $env:USERPROFILE\.ssh\id_rsa
+```
+
+Скрипт: pg_dump на VPS → скачивает `backups/local-db/crm-prod-vps-*.dump` → **restore** в локальный Postgres.
+
+Только дамп без restore: `-SkipRestore`.  
+Схема уже из миграций, нужны только строки: `-DataOnly` (после `local-db-up.ps1` без данных).
+
+### Вариант B — только данные с ПК (иногда проходит pooler)
+
+1. `powershell -ExecutionPolicy Bypass -File scripts/local-db-up.ps1` — схема из `supabase/migrations`.
+2. `powershell -ExecutionPolicy Bypass -File scripts/local-db-sync-prod.ps1 -DataOnly` — меньший дамп через Session pooler.
+
+Если снова `SSL unexpected eof` — используйте **вариант A**.
+
+### Ежедневный дамп «на всякий случай» (17:15)
+
+Пока **Supabase доступен**, можно каждый день снимать **полный `public`** с прода через VPS (без restore в локальный Docker):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/local-db-scheduled-backup.ps1
+```
+
+- Файлы: `backups/local-db/crm-prod-vps-*.dump` (в git не попадают).
+- Лог: `backups/local-db/scheduled-backup.log`.
+- Старые дампы удаляются через **14 дней** (`-KeepDays 7` при необходимости).
+
+**Панель с кнопками:** `scripts\CrmLocalDbGui.bat` или ярлык **«CRM Local DB»** на рабочем столе (пункт 1 / 3 в окне).
+
+**Планировщик Windows** (ПК включён в 17:15; нужен SSH на VPS):
+
+1. `taskschd.msc` → Создать задачу.
+2. Триггер: ежедневно **17:15**.
+3. Действие: программа  
+   `powershell.exe`  
+   аргументы:
+   ```text
+   -NoProfile -ExecutionPolicy Bypass -File "D:\Crm\production-crm-crm\scripts\local-db-scheduled-backup.ps1"
+   ```
+4. «Выполнять с наивысшими правами» — не обязательно; важно, чтобы работал **SSH** до VPS (`root@164.215.97.254`).
+
+В `fronted/.env.local` должны оставаться `SUPABASE_DB_URL` / пароль для pooler (скрипт читает их сам).
+
+**После отключения Supabase** новые дампы с облака **не сделать** — останется последний успешный файл. Тогда локальная работа: `Start-CrmLocalDb.bat` + restore последнего дампа вручную при необходимости.
 
 ---
 
@@ -25,7 +88,8 @@ powershell -ExecutionPolicy Bypass -File scripts/start-local-dev.ps1
 
 | Действие | Команда |
 |----------|---------|
-| Только сохранить дамп с прода | `scripts/local-db-backup-prod.ps1` |
+| Только сохранить дамп с прода (ПК) | `scripts/local-db-backup-prod.ps1` |
+| Дамп через VPS (Free, без IPv4 add-on) | `scripts/local-db-fetch-backup-from-vps.ps1 -VpsHost ...` |
 | Дамп + restore в локальную БД | `scripts/local-db-sync-prod.ps1` |
 | Restore уже сохранённого дампа | `scripts/local-db-restore.ps1 -DumpPath backups/local-db/....dump` |
 | При старте подставить последний дамп | `scripts/local-db-up.ps1 -RestoreLatest` |

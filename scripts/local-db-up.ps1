@@ -122,11 +122,14 @@ Invoke-Docker @("compose", "-f", $composeFile, "up", "-d", "db")
 
 Say "Waiting for Postgres..."
 $ready = $false
-for ($i = 0; $i -lt 60; $i++) {
+$prevEap = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+for ($i = 0; $i -lt 90; $i++) {
   $null = & docker exec crm-local-postgres psql -U postgres -d postgres -tAc "select 1" 2>$null
   if ($LASTEXITCODE -eq 0) { $ready = $true; break }
   Start-Sleep -Seconds 1
 }
+$ErrorActionPreference = $prevEap
 if (-not $ready) { Fail "Postgres did not become ready." }
 
 if (-not $SkipInit -and -not (Test-SchemaInitialized)) {
