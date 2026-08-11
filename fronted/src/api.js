@@ -647,6 +647,7 @@ const RPC_MAP = {
   webSetKromkaWait: "web_set_stage_wait",
   webSetPrasWait: "web_set_stage_wait",
   webSendShipmentToWork: "web_send_shipment_to_work_by_source",
+  webRevertShipmentToAwaiting: "web_revert_shipment_to_awaiting",
   webSendPlanksToWork: "web_send_planks_to_work",
   webConsumeSheetsByOrderId: "web_consume_sheets_by_order_id",
   webConsumeSheetsLinesByOrderId: "web_consume_sheets_lines_by_order_id",
@@ -706,6 +707,14 @@ function buildRpcPayload(action, payload = {}) {
       p_row: payload.row != null ? String(payload.row) : null,
       p_col: payload.col != null ? String(payload.col) : null,
       p_skip_workshop: Boolean(payload.skipWorkshop ?? payload.p_skip_workshop ?? false),
+    };
+  }
+  if (action === "webRevertShipmentToAwaiting") {
+    const row = payload.p_row ?? payload.row;
+    const col = payload.p_col ?? payload.col;
+    return {
+      p_row: row != null ? String(row) : null,
+      p_col: col != null ? String(col) : null,
     };
   }
   if (action === "webGetConsumeOptions") {

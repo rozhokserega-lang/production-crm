@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  allocateMaterialStockCoverage,
+  annotateRowsWithMaterialCoverage,
   buildShipmentMaterialPlan,
   findShipmentMaterialPlanEntry,
   materialPlanTotals,
@@ -10,6 +12,45 @@ import { buildMaterialCard } from "./materialCardHelpers";
 function makeBalance(entries) {
   return new Map(entries.map(([key, value]) => [key, value]));
 }
+
+describe("allocateMaterialStockCoverage", () => {
+  it("covers earliest/largest rows first within available stock", () => {
+    const coverage = allocateMaterialStockCoverage(
+      [
+        { key: "a", week: "84", sheets: 13 },
+        { key: "b", week: "84", sheets: 13 },
+        { key: "c", week: "84", sheets: 13 },
+      ],
+      30,
+    );
+    expect(coverage.get("a")).toEqual({ enough: true, shortage: 0 });
+    expect(coverage.get("b")).toEqual({ enough: true, shortage: 0 });
+    expect(coverage.get("c")).toEqual({ enough: false, shortage: 9 });
+  });
+});
+
+describe("annotateRowsWithMaterialCoverage", () => {
+  it("marks some awaiting rows green when material has partial stock", () => {
+    const rows = [
+      { key: "1", stageKey: "awaiting", material: "Бетон", week: "84", sheets: 13 },
+      { key: "2", stageKey: "awaiting", material: "Бетон", week: "85", sheets: 13 },
+      { key: "3", stageKey: "awaiting", material: "Бетон", week: "86", sheets: 13 },
+      { key: "4", stageKey: "awaiting", material: "Герион", week: "84", sheets: 8 },
+    ];
+    const balance = makeBalance([
+      ["бетон", { material: "Бетон", needed: 39, available: 30 }],
+      ["герион", { material: "Герион", needed: 8, available: 40 }],
+    ]);
+    const annotated = annotateRowsWithMaterialCoverage(rows, balance, normalizeFurnitureKey);
+
+    expect(annotated.find((r) => r.key === "1").materialEnoughForRow).toBe(true);
+    expect(annotated.find((r) => r.key === "2").materialEnoughForRow).toBe(true);
+    expect(annotated.find((r) => r.key === "3").materialEnoughForRow).toBe(false);
+    expect(annotated.find((r) => r.key === "3").materialRowShortage).toBe(9);
+    expect(annotated.find((r) => r.key === "4").materialEnoughForRow).toBe(true);
+    expect(annotated.find((r) => r.key === "1").materialHasDeficit).toBe(true);
+  });
+});
 
 describe("buildShipmentMaterialPlan", () => {
   it("keeps demand visible when stock is enough", () => {

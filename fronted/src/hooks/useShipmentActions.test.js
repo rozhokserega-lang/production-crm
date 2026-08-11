@@ -7,6 +7,7 @@ vi.mock("../services/orderService", () => ({
   OrderService: {
     sendShipmentToWork: vi.fn(),
     deleteShipmentPlanCell: vi.fn(),
+    revertShipmentToAwaiting: vi.fn(),
     enqueueMetalWorkOrder: vi.fn(),
     getShipmentTable: vi.fn(),
     previewPlanFromShipment: vi.fn(),
@@ -177,6 +178,38 @@ describe("useShipmentActions – deleteSelectedShipmentPlan", () => {
     });
 
     expect(OrderService.deleteShipmentPlanCell).toHaveBeenCalledTimes(1);
+    expect(props.load).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("useShipmentActions – revertSelectedShipmentToAwaiting", () => {
+  it("aborts when user cancels confirm", async () => {
+    vi.spyOn(window, "confirm").mockReturnValueOnce(false);
+    const props = makeProps({
+      selectedShipments: [{ row: "r1", col: "c1", stageKey: "on_pilka_wait" }],
+    });
+    const { result } = renderHook(() => useShipmentActions(props));
+
+    await act(async () => {
+      await result.current.revertSelectedShipmentToAwaiting();
+    });
+
+    expect(OrderService.revertShipmentToAwaiting).not.toHaveBeenCalled();
+  });
+
+  it("calls revertShipmentToAwaiting and load when confirmed", async () => {
+    vi.spyOn(window, "confirm").mockReturnValueOnce(true);
+    OrderService.revertShipmentToAwaiting.mockResolvedValueOnce({ order_id: "SP-1", reverted: true });
+    const props = makeProps({
+      selectedShipments: [{ row: "r1", col: "c1", stageKey: "on_pilka_wait" }],
+    });
+    const { result } = renderHook(() => useShipmentActions(props));
+
+    await act(async () => {
+      await result.current.revertSelectedShipmentToAwaiting();
+    });
+
+    expect(OrderService.revertShipmentToAwaiting).toHaveBeenCalledTimes(1);
     expect(props.load).toHaveBeenCalledTimes(1);
   });
 });

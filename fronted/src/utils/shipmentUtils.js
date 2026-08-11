@@ -192,6 +192,10 @@ function resolveCellFallbackStageKey(c) {
   return "plan_idle";
 }
 
+export function isShipmentRevertibleToAwaiting(stageKey) {
+  return String(stageKey || "").trim() === "on_pilka_wait";
+}
+
 export function getShipmentStageKey(c, sourceRow, orderMaps, itemName, materialName = "") {
   if (!c) return "awaiting";
   // Ячейка готова к пуску — показываем «Ожидаю заказ», даже если по item+week

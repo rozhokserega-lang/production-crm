@@ -456,7 +456,7 @@ export async function loadWarehouseDomainData() {
       action: "set_stage",
       entity: "orders",
     }).catch(() => null),
-    OrderService.getAllOrders().catch(() => null),
+    fetchOrdersStagedFallback().catch(() => []),
     OrderService.getShipmentBoard().catch(() => null),
     OrderService.getFurnitureCustomTemplates().catch(() => null),
   ]);

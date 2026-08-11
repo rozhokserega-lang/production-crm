@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from "react";
 import { OrderService } from "../services/orderService";
-import { partitionDomains } from "../app/domainReload";
+import { partitionDomains, preferStagedOrdersReloadForView } from "../app/domainReload";
 import { reconcileOrderSnapshot } from "../app/orderSnapshotGuard";
 import { getViewCache, setViewCache } from "./viewCache";
 import {
@@ -521,7 +521,7 @@ export function useDataLoader({
   const load = useCallback(async ({ background = false, preferStaged } = {}) => {
     loadInFlightRef.current = true;
     const seq = ++loadSeqRef.current;
-    const ordersPreferStaged = preferStaged ?? !background;
+    const ordersPreferStaged = preferStaged ?? preferStagedOrdersReloadForView(view);
     if (!background) {
       setLoading(true);
       setError("");
@@ -825,7 +825,7 @@ export function useDataLoader({
 
     loadInFlightRef.current = true;
     const seq = ++loadSeqRef.current;
-    const ordersPreferStaged = preferStaged ?? !background;
+    const ordersPreferStaged = preferStaged ?? preferStagedOrdersReloadForView(view);
     const setters = createLoaderSetters({
       setRows,
       setShipmentBoard,
@@ -952,7 +952,7 @@ export function useDataLoader({
     if (applyViewSnapshot(view, cachedSnapshot, setters)) {
       setError("");
       setLoading(false);
-      void load({ background: true });
+      void load({ background: true, preferStaged: preferStagedOrdersReloadForView(view) });
       return;
     }
     clearViewState(view, setters);

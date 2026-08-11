@@ -154,6 +154,10 @@ export class OrderService {
     return await callBackend("webSendShipmentToWork", { row, col });
   }
 
+  static async revertShipmentToAwaiting(row, col) {
+    return await callBackend("webRevertShipmentToAwaiting", { row, col });
+  }
+
   static async createShipmentPlanCell(data) {
     return await callBackend("webCreateShipmentPlanCell", data);
   }

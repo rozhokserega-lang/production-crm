@@ -3,6 +3,90 @@ function toNumber(value) {
   return Number.isFinite(n) ? n : 0;
 }
 
+/** Порядок распределения остатка: раньше план (неделя), внутри — больший расход листов. */
+export function compareAwaitingMaterialRows(a, b) {
+  return (
+    String(a?.week || "").localeCompare(String(b?.week || ""), "ru", { numeric: true }) ||
+    Number(b?.sheets || 0) - Number(a?.sheets || 0) ||
+    String(a?.key || "").localeCompare(String(b?.key || ""), "ru")
+  );
+}
+
+/**
+ * Жадное покрытие позиций доступным остатком листов.
+ * @returns {Map<string, { enough: boolean, shortage: number }>}
+ */
+export function allocateMaterialStockCoverage(rows, availableSheets) {
+  const coverage = new Map();
+  const list = (Array.isArray(rows) ? rows : [])
+    .filter((row) => Number(row?.sheets || 0) > 0)
+    .slice()
+    .sort(compareAwaitingMaterialRows);
+  let remaining = Math.max(0, Number(availableSheets || 0));
+  list.forEach((row) => {
+    const key = String(row?.key || "").trim();
+    if (!key) return;
+    const sheets = Number(row.sheets || 0);
+    const enough = sheets <= remaining;
+    coverage.set(key, {
+      enough,
+      shortage: enough ? 0 : Math.max(0, sheets - remaining),
+    });
+    remaining = Math.max(0, remaining - sheets);
+  });
+  return coverage;
+}
+
+/**
+ * Для каждой «Ожидаю заказ» позиции: хватает ли материала именно на неё
+ * (при общем дефиците по цвету часть строк может быть зелёной).
+ */
+export function annotateRowsWithMaterialCoverage(rows, shipmentMaterialBalance, normalizeFurnitureKey) {
+  const normalizeKey =
+    typeof normalizeFurnitureKey === "function"
+      ? normalizeFurnitureKey
+      : (value) => String(value || "").toLowerCase().trim();
+  const list = Array.isArray(rows) ? rows : [];
+  const awaitingByMaterial = new Map();
+
+  list.forEach((row) => {
+    if (row?.stageKey !== "awaiting") return;
+    const materialKey = normalizeKey(row.material || "");
+    if (!materialKey) return;
+    if (!awaitingByMaterial.has(materialKey)) awaitingByMaterial.set(materialKey, []);
+    awaitingByMaterial.get(materialKey).push(row);
+  });
+
+  const coverageByKey = new Map();
+  awaitingByMaterial.forEach((materialRows, materialKey) => {
+    const totals = shipmentMaterialBalance?.get?.(materialKey) || { available: 0 };
+    const coverage = allocateMaterialStockCoverage(materialRows, totals.available);
+    coverage.forEach((value, key) => coverageByKey.set(key, value));
+  });
+
+  return list.map((row) => {
+    const materialKey = normalizeKey(row.material || "");
+    const totals = shipmentMaterialBalance?.get?.(materialKey) || { needed: 0, available: 0 };
+    const deficit = Math.max(0, Number(totals.needed || 0) - Number(totals.available || 0));
+    const coverage = coverageByKey.get(String(row.key || "").trim());
+    const isAwaiting = row.stageKey === "awaiting";
+    const sheets = Number(row.sheets || 0);
+    const materialEnoughForRow = isAwaiting
+      ? (coverage ? coverage.enough : sheets <= 0 || sheets <= Number(totals.available || 0))
+      : true;
+    const materialRowShortage = isAwaiting && coverage ? Number(coverage.shortage || 0) : 0;
+    return {
+      ...row,
+      materialNeededTotal: Number(totals.needed || 0),
+      materialAvailableTotal: Number(totals.available || 0),
+      materialDeficit: deficit,
+      materialHasDeficit: deficit > 0,
+      materialEnoughForRow,
+      materialRowShortage,
+    };
+  });
+}
+
 export function buildShipmentMaterialPlan(
   shipmentTableRowsWithStockStatus,
   shipmentMaterialBalance,
@@ -47,10 +131,7 @@ export function buildShipmentMaterialPlan(
       const deficit = Math.max(0, Number(x.needed || 0) - Number(x.available || 0));
       const rows = x.rows
         .filter((row) => Number(row.sheets || 0) > 0)
-        .sort((a, b) =>
-          String(a.week || "").localeCompare(String(b.week || ""), "ru", { numeric: true }) ||
-          Number(b.sheets || 0) - Number(a.sheets || 0),
-        );
+        .sort(compareAwaitingMaterialRows);
       let remainingAvailable = Number(x.available || 0);
       const weekMap = new Map();
       rows.forEach((row) => {
@@ -69,18 +150,13 @@ export function buildShipmentMaterialPlan(
           deficit: weekDeficit,
         };
       });
-      let rowRemainingAvailable = Number(x.available || 0);
-      const blockedRows = [];
-      rows.forEach((row) => {
-        const sheets = Number(row.sheets || 0);
-        if (sheets > rowRemainingAvailable) {
-          blockedRows.push({
-            ...row,
-            shortage: Math.max(0, sheets - rowRemainingAvailable),
-          });
-        }
-        rowRemainingAvailable = Math.max(0, rowRemainingAvailable - sheets);
-      });
+      const coverage = allocateMaterialStockCoverage(rows, x.available);
+      const blockedRows = rows
+        .filter((row) => coverage.get(String(row.key || ""))?.enough === false)
+        .map((row) => ({
+          ...row,
+          shortage: Number(coverage.get(String(row.key || ""))?.shortage || 0),
+        }));
       return {
         material: x.material,
         materialKey: x.materialKey,

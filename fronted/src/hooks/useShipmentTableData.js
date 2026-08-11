@@ -3,7 +3,10 @@ import { extractPlanItemArticle, shipmentOrderKey, stripPlanItemMeta } from "../
 import { ceilWholeSheets } from "../app/appUtils";
 import { resolvePlanItemSheets } from "../app/planSheetEstimation";
 import { applyLoftPairedSheetAdjustment } from "../app/loftPairedSheetEstimation";
-import { buildShipmentMaterialPlan } from "../app/shipmentMaterialPlanHelpers";
+import {
+  annotateRowsWithMaterialCoverage,
+  buildShipmentMaterialPlan,
+} from "../app/shipmentMaterialPlanHelpers";
 import { shipmentOrderItemWeekKey } from "../utils/shipmentUtils";
 
 function formatShipmentTableItemLabel(item, sectionName) {
@@ -185,20 +188,10 @@ export function useShipmentTableData({
     return byMaterial;
   }, [shipmentTableRows, normalizeFurnitureKey, warehouseSheetsByMaterialKey]);
 
-  const shipmentTableRowsWithStockStatus = useMemo(() => {
-    return shipmentTableRows.map((row) => {
-      const key = normalizeFurnitureKey(row.material || "");
-      const totals = shipmentMaterialBalance.get(key) || { needed: 0, available: 0 };
-      const deficit = Math.max(0, Number(totals.needed || 0) - Number(totals.available || 0));
-      return {
-        ...row,
-        materialNeededTotal: Number(totals.needed || 0),
-        materialAvailableTotal: Number(totals.available || 0),
-        materialDeficit: deficit,
-        materialHasDeficit: deficit > 0,
-      };
-    });
-  }, [shipmentTableRows, shipmentMaterialBalance, normalizeFurnitureKey]);
+  const shipmentTableRowsWithStockStatus = useMemo(
+    () => annotateRowsWithMaterialCoverage(shipmentTableRows, shipmentMaterialBalance, normalizeFurnitureKey),
+    [shipmentTableRows, shipmentMaterialBalance, normalizeFurnitureKey],
+  );
 
   const shipmentTableGroupNames = useMemo(() => {
     return [...new Set(shipmentTableRowsWithStockStatus.map((row) => String(row.section || "Прочее")))].sort((a, b) =>

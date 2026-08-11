@@ -207,6 +207,44 @@ export function useShipmentActions({
     }
   }, [canManageOrders, setActionLoading, setError, setPlanPreviews, setSelectedShipments, load, denyActionByRole]);
 
+  const revertSelectedShipmentToAwaiting = useCallback(async () => {
+    if (!canOperateProduction) {
+      denyActionByRole("Недостаточно прав для возврата позиций в ожидание.");
+      return;
+    }
+    const current = selectedShipmentsRef.current;
+    if (!current.length) return;
+    const revertible = current.filter((s) => String(s.stageKey || "") === "on_pilka_wait");
+    if (!revertible.length) {
+      setError("Среди выбранных ячеек нет позиций «На пиле (ожидает запуск)».");
+      return;
+    }
+    const ok = window.confirm(
+      `Вернуть ${revertible.length} поз. в «Ожидаю заказ»? Доступно только пока пила ещё не начала резать.`,
+    );
+    if (!ok) return;
+    setActionLoading("shipment:revert");
+    setError("");
+    try {
+      for (const s of revertible) {
+        const attempts = buildShipmentCellAttempts(s);
+        await runShipmentCellActionWithFallback({
+          actionFn: (params) => OrderService.revertShipmentToAwaiting(params.row, params.col),
+          attempts,
+          isMissingError: isShipmentCellMissingError,
+          requestBuilder: (p) => ({ row: p.row, col: p.col }),
+        });
+      }
+      setPlanPreviews([]);
+      setSelectedShipments([]);
+      await load();
+    } catch (e) {
+      setError(toUserError(e));
+    } finally {
+      setActionLoading("");
+    }
+  }, [canOperateProduction, setActionLoading, setError, setPlanPreviews, setSelectedShipments, load, denyActionByRole]);
+
   const splitSelectedShipmentPlan = useCallback(
     async (selection, { qtyKeep, targetWeek, qtyMove }) => {
       if (!canManageOrders) {
@@ -488,6 +526,7 @@ export function useShipmentActions({
     importPlanFileRef,
     sendSelectedShipmentToWork,
     deleteSelectedShipmentPlan,
+    revertSelectedShipmentToAwaiting,
     splitSelectedShipmentPlan,
     toggleShipmentSelection,
     previewSelectedShipmentPlan,

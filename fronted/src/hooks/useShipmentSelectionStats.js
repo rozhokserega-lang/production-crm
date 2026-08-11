@@ -67,6 +67,11 @@ export function useShipmentSelectionStats({
     [selectedShipments],
   );
 
+  const revertibleSelectedCount = useMemo(
+    () => selectedShipments.filter((x) => String(x.stageKey || "") === "on_pilka_wait").length,
+    [selectedShipments],
+  );
+
   const selectedShipmentStockCheck = useMemo(() => {
     const templates = Array.isArray(furnitureCustomTemplates) ? furnitureCustomTemplates : [];
     const byMaterial = new Map();
@@ -130,6 +135,7 @@ export function useShipmentSelectionStats({
   return {
     selectedShipmentSummary,
     sendableSelectedCount,
+    revertibleSelectedCount,
     selectedShipmentStockCheck,
     strapCalculation,
   };

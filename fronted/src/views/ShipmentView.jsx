@@ -49,9 +49,11 @@ export const ShipmentView = memo(function ShipmentView() {
     shipmentOrderMaps,
     setHoverTip,
     sendableSelectedCount,
+    revertibleSelectedCount,
     previewSelectedShipmentPlan,
     sendSelectedShipmentToWork,
     deleteSelectedShipmentPlan,
+    revertSelectedShipmentToAwaiting,
     splitSelectedShipmentPlan,
     openEditPlanDialog,
     setSelectedShipments,
@@ -385,16 +387,32 @@ export const ShipmentView = memo(function ShipmentView() {
                       </tr>,
                     ];
                     if (hidden) return rows;
-                    groupRows.forEach((row) => {
+                    // Внутри группы: сначала позиции, на которые хватает остатка, потом дефицит.
+                    const sortedGroupRows = [...groupRows].sort((a, b) => {
+                      const aAwait = a.stageKey === "awaiting" ? 0 : 1;
+                      const bAwait = b.stageKey === "awaiting" ? 0 : 1;
+                      if (aAwait !== bAwait) return aAwait - bAwait;
+                      if (a.stageKey === "awaiting" && b.stageKey === "awaiting") {
+                        const aOk = a.materialEnoughForRow ? 0 : 1;
+                        const bOk = b.materialEnoughForRow ? 0 : 1;
+                        if (aOk !== bOk) return aOk - bOk;
+                      }
+                      return 0;
+                    });
+                    sortedGroupRows.forEach((row) => {
                       const isSelected = selectedShipments.some((s) => s.row === row.sourceRow && s.col === row.sourceCol);
                       const isDeficitSelected = selectedShipmentStockCheck.deficitSourceKeys.has(
                         `${String(row.sourceRow || "").trim()}|${String(row.sourceCol || "").trim()}`
                       );
                       const isAwaitingLaunch = row.stageKey === "awaiting";
-                      const showDeficitHighlight = isAwaitingLaunch && row.materialHasDeficit;
+                      const showDeficitHighlight = isAwaitingLaunch && !row.materialEnoughForRow;
+                      const showCoveredHighlight =
+                        isAwaitingLaunch && row.materialEnoughForRow && Number(row.sheets || 0) > 0;
                       const rowBg = showDeficitHighlight
                         ? "#fbcfe8"
-                        : (isDeficitSelected && isSelected ? "#fbcfe8" : (row.bg || "#ffffff"));
+                        : showCoveredHighlight
+                          ? "#bbf7d0"
+                          : (isDeficitSelected && isSelected ? "#fbcfe8" : (row.bg || "#ffffff"));
                       rows.push(
                         <tr
                           key={row.key}
@@ -419,6 +437,7 @@ export const ShipmentView = memo(function ShipmentView() {
                               availableSheets: row.availableSheets,
                               outputPerSheet: row.outputPerSheet,
                               canSendToWork: !!row.canSendToWork,
+                              stageKey: row.stageKey,
                             };
                             toggleShipmentSelection(payload);
                           }}
@@ -432,9 +451,13 @@ export const ShipmentView = memo(function ShipmentView() {
                           <td>
                             {row.status}
                             {isAwaitingLaunch &&
-                              (row.materialHasDeficit
-                                ? ` • ❌ Не хватает: ${row.materialDeficit}`
-                                : " • ✅ Хватает")}
+                              (row.materialEnoughForRow
+                                ? " • ✅ Хватает"
+                                : ` • ❌ Не хватает: ${
+                                    Number(row.materialRowShortage || 0) > 0
+                                      ? row.materialRowShortage
+                                      : row.materialDeficit
+                                  }`)}
                           </td>
                         </tr>
                       );
@@ -563,6 +586,7 @@ export const ShipmentView = memo(function ShipmentView() {
                                   availableSheets: Number(c.availableSheets || 0),
                                   outputPerSheet: Number(c.outputPerSheet || 0),
                                   canSendToWork: !!c.canSendToWork,
+                                  stageKey,
                                 };
                                 toggleShipmentSelection(payload);
                               }}
@@ -639,6 +663,14 @@ export const ShipmentView = memo(function ShipmentView() {
                 onClick={sendSelectedShipmentToWork}
               >
                 Отправить в работу ({sendableSelectedCount})
+              </button>
+              <button
+                className="mini"
+                disabled={actionLoading === "shipment:revert" || revertibleSelectedCount === 0 || !canOperateProduction}
+                onClick={revertSelectedShipmentToAwaiting}
+                title="Вернуть в «Ожидаю заказ», если пила ещё не начала резать"
+              >
+                Вернуть в ожидание ({revertibleSelectedCount})
               </button>
               <button
                 className="mini warn"
