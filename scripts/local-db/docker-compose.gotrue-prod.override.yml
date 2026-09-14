@@ -1,0 +1,7 @@
+services:
+  auth:
+    environment:
+      GOTRUE_URI_ALLOW_LIST: "http://127.0.0.1:5173,http://localhost:5173,https://crm-v175.ru,https://www.crm-v175.ru"
+      API_EXTERNAL_URL: "https://crm-v175.ru/supabase"
+      # Продакшен: открытая регистрация запрещена (иначе любой заведёт аккаунт).
+      GOTRUE_DISABLE_SIGNUP: "true"

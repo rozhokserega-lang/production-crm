@@ -1,6 +1,7 @@
 param(
   [string]$OutDir = "",
-  [switch]$DataOnly
+  [switch]$DataOnly,
+  [switch]$IncludeAuth
 )
 
 $ErrorActionPreference = "Stop"
@@ -79,17 +80,21 @@ function Get-DbUrlCandidates([string]$PrimaryUrl) {
   return @($list | Select-Object -Unique)
 }
 
-function Invoke-PgDump([string]$DbUrl, [string]$OutPath, [switch]$DataOnly) {
+function Invoke-PgDump([string]$DbUrl, [string]$OutPath, [switch]$DataOnly, [switch]$PublicDns) {
   $parsed = Parse-PostgresUrl $DbUrl
   if (-not $parsed) {
     Write-Host "[local-db] Could not parse DB URL" -ForegroundColor Red
     return 1
   }
 
-  $dumpArgs = @(
-    "run", "--rm",
-    "--dns", "8.8.8.8",
-    "--dns", "8.8.4.4",
+  # Встроенный резолвер Docker Desktop обычно работает; принудительный 8.8.8.8
+  # недоступен в сетях, где исходящий UDP/53 наружу закрыт (VPN, корп. фильтр),
+  # и тогда pg_dump падает на "Temporary failure in name resolution".
+  # Поэтому сначала пробуем DNS по умолчанию, а публичный — только как фолбэк.
+  $dnsArgs = @()
+  if ($PublicDns) { $dnsArgs = @("--dns", "8.8.8.8", "--dns", "8.8.4.4") }
+
+  $dumpArgs = @("run", "--rm") + $dnsArgs + @(
     "-e", "PGPASSWORD=$($parsed.Password)",
     "-e", "PGSSLMODE=require",
     "-v", "${OutDir}:/out",
@@ -107,6 +112,44 @@ function Invoke-PgDump([string]$DbUrl, [string]$OutPath, [switch]$DataOnly) {
   )
   if ($DataOnly) { $dumpArgs += "--data-only" }
   $dumpArgs += "-f", "/out/$(Split-Path -Leaf $OutPath)"
+  & docker @dumpArgs
+  return $LASTEXITCODE
+}
+
+# Пользователи GoTrue лежат в схеме auth, а основной дамп берёт только public.
+# Для переезда на self-hosted они обязательны: public.crm_user_roles связан с
+# auth.users по user_id (UUID), и без совпадения UUID роли перестанут применяться.
+# Плейн-SQL data-only: схему auth на новом сервере создаёт сам GoTrue своими
+# миграциями, переносим только строки (включая bcrypt-хеши паролей).
+function Invoke-PgDumpAuth([string]$DbUrl, [string]$OutPath, [switch]$PublicDns) {
+  $parsed = Parse-PostgresUrl $DbUrl
+  if (-not $parsed) {
+    Write-Host "[local-db] Could not parse DB URL for auth dump" -ForegroundColor Red
+    return 1
+  }
+
+  $dnsArgs = @()
+  if ($PublicDns) { $dnsArgs = @("--dns", "8.8.8.8", "--dns", "8.8.4.4") }
+
+  $dumpArgs = @("run", "--rm") + $dnsArgs + @(
+    "-e", "PGPASSWORD=$($parsed.Password)",
+    "-e", "PGSSLMODE=require",
+    "-v", "${OutDir}:/out",
+    "postgres:17",
+    "pg_dump",
+    "-h", $parsed.Host,
+    "-p", $parsed.Port,
+    "-U", $parsed.User,
+    "-d", $parsed.Database,
+    "--no-password",
+    "--format=plain",
+    "--no-owner",
+    "--no-privileges",
+    "--data-only",
+    "--table=auth.users",
+    "--table=auth.identities",
+    "-f", "/out/$(Split-Path -Leaf $OutPath)"
+  )
   & docker @dumpArgs
   return $LASTEXITCODE
 }
@@ -130,11 +173,18 @@ Write-Host "[local-db] Backup prod -> $outFile" -ForegroundColor Cyan
 Write-Host "[local-db] pg_dump tries: $($candidates.Count) connection variant(s)" -ForegroundColor DarkGray
 
 $ok = $false
+$okUrl = ""
+$okPublicDns = $false
 foreach ($url in $candidates) {
   $safeHost = if ($url -match '@([^/?]+)') { $Matches[1] } else { "?" }
-  Write-Host "[local-db] Trying host: $safeHost" -ForegroundColor DarkGray
+  Write-Host "[local-db] Trying host: $safeHost (Docker DNS)" -ForegroundColor DarkGray
   if ((Invoke-PgDump -DbUrl $url -OutPath $outFile -DataOnly:$DataOnly) -eq 0) {
-    $ok = $true
+    $ok = $true; $okUrl = $url
+    break
+  }
+  Write-Host "[local-db] Retry host: $safeHost (public DNS 8.8.8.8)" -ForegroundColor DarkGray
+  if ((Invoke-PgDump -DbUrl $url -OutPath $outFile -DataOnly:$DataOnly -PublicDns) -eq 0) {
+    $ok = $true; $okUrl = $url; $okPublicDns = $true
     break
   }
 }
@@ -145,4 +195,14 @@ if (-not $ok) {
 }
 
 Write-Host "[local-db] OK: $outFile" -ForegroundColor Green
+
+if ($IncludeAuth) {
+  $authFile = Join-Path $OutDir "crm-prod-auth-$stamp.sql"
+  Write-Host "[local-db] Auth dump (auth.users, auth.identities) -> $authFile" -ForegroundColor Cyan
+  if ((Invoke-PgDumpAuth -DbUrl $okUrl -OutPath $authFile -PublicDns:$okPublicDns) -eq 0) {
+    Write-Host "[local-db] OK: $authFile" -ForegroundColor Green
+  } else {
+    Write-Host "[local-db] WARNING: auth dump failed; public dump is still valid." -ForegroundColor Yellow
+  }
+}
 Write-Host "[local-db] backups/ is gitignored; do not commit dumps." -ForegroundColor DarkGray

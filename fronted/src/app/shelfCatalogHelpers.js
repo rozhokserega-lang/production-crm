@@ -267,3 +267,22 @@ export function clearShelfCalculatorRowsStorage() {
     /* ignore */
   }
 }
+
+/** Разбор списка вида "GXss1-600BVO 80" / TSV / CSV в строки калькулятора. */
+export function parseShelfCalculatorListText(text = "") {
+  const lines = String(text || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const rows = [];
+  for (const line of lines) {
+    const cleaned = line.replace(/^\d+[\).:\s-]+/, "").trim();
+    const match = cleaned.match(/^([A-Za-z0-9._-]+)\s*[;\t,| ]+\s*(\d+(?:[.,]\d+)?)\s*$/);
+    if (!match) continue;
+    const code = String(match[1] || "").trim();
+    const qty = String(match[2] || "").replace(",", ".").trim();
+    if (!code || !(Number(qty) > 0)) continue;
+    rows.push({ code, qty });
+  }
+  return rows;
+}

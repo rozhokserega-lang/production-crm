@@ -13,6 +13,7 @@ DO $add$
 DECLARE
   t text;
   tables text[] := ARRAY[
+    'public.orders',
     'public.shipment_plan_cells',
     'public.labor_facts',
     'public.materials_stock',

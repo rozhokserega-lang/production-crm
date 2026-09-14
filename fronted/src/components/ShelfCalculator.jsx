@@ -18,6 +18,7 @@ import {
   resolveShelfColor,
   saveShelfCalculatorRows,
   clearShelfCalculatorRowsStorage,
+  parseShelfCalculatorListText,
   SHELF_COLOR_SUGGESTIONS,
   sortShelfColors,
   upsertDbCatalogItem,
@@ -232,6 +233,9 @@ export default function ShelfCalculator({ canOperateProduction = false, canManag
   const [selectedShelves, setSelectedShelves] = useState([]);
   const [planWeek, setPlanWeek] = useState("");
   const [planLoading, setPlanLoading] = useState(false);
+  const [pasteOpen, setPasteOpen] = useState(false);
+  const [pasteText, setPasteText] = useState("");
+  const [pasteError, setPasteError] = useState("");
 
   useEffect(() => {
     saveShelfCalculatorRows(rows);
@@ -434,6 +438,18 @@ export default function ShelfCalculator({ canOperateProduction = false, canManag
 
   function updateRow(id, patch) {
     setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+  }
+
+  function applyPastedShelfList() {
+    const parsed = parseShelfCalculatorListText(pasteText);
+    if (!parsed.length) {
+      setPasteError("Не удалось разобрать список. Формат: артикул и количество в одной строке.");
+      return;
+    }
+    setRows(parsed.map((row) => makeRow(row.code, row.qty)));
+    setPasteError("");
+    setPasteOpen(false);
+    setPasteText("");
   }
 
   function addRow(code = "", qty = "") {
@@ -683,11 +699,61 @@ export default function ShelfCalculator({ canOperateProduction = false, canManag
 
       <div className="actions" style={{ marginTop: 10 }}>
         <button type="button" className="mini" onClick={() => addRow()}>+ Добавить строку</button>
+        <button
+          type="button"
+          className="mini"
+          onClick={() => {
+            setPasteError("");
+            setPasteOpen((v) => !v);
+          }}
+        >
+          Вставить список
+        </button>
         <button type="button" className="mini secondary" onClick={() => {
           clearShelfCalculatorRowsStorage();
           setRows([makeRow()]);
         }}>Очистить</button>
       </div>
+
+      {pasteOpen ? (
+        <div style={{ marginTop: 10, padding: 12, border: "1px solid #cbd5e1", borderRadius: 12, background: "#f8fafc" }}>
+          <div style={{ fontSize: 13, color: "#475569", marginBottom: 8 }}>
+            Вставьте список: <code>артикул</code> и <code>количество</code> в каждой строке (пробел / таб / запятая).
+          </div>
+          <textarea
+            value={pasteText}
+            onChange={(e) => setPasteText(e.target.value)}
+            rows={10}
+            placeholder={"GXssShelf400BVO\t150\nGXss1-600BVO 80"}
+            style={{
+              width: "100%",
+              boxSizing: "border-box",
+              border: "1px solid #cbd5e1",
+              borderRadius: 10,
+              padding: 10,
+              fontFamily: "monospace",
+              fontSize: 13,
+              resize: "vertical",
+            }}
+          />
+          {pasteError ? (
+            <div style={{ color: "#b91c1c", fontSize: 13, marginTop: 6 }}>{pasteError}</div>
+          ) : null}
+          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+            <button type="button" className="mini" onClick={applyPastedShelfList}>Применить</button>
+            <button
+              type="button"
+              className="mini secondary"
+              onClick={() => {
+                setPasteOpen(false);
+                setPasteError("");
+              }}
+            >
+              Отмена
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       <div style={{ marginTop: 16 }}>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginBottom: 8 }}>
