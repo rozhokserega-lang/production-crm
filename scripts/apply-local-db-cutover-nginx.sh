@@ -50,6 +50,17 @@ server {
         add_header Cache-Control "no-cache";
     }
 
+    # Telegram relay: офис (SRV01) не достаёт api.telegram.org напрямую,
+    # edge-функции ходят через этот путь (TELEGRAM_API_BASE).
+    location /tg-relay/ {
+        proxy_pass https://api.telegram.org/;
+        proxy_ssl_server_name on;
+        proxy_set_header Host api.telegram.org;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_read_timeout 45s;
+    }
+
     location /supabase/ {
         rewrite ^/supabase/?(.*)$ /$1 break;
         # Важно: завершающий слэш в proxy_pass обязателен — без него nginx

@@ -46,8 +46,12 @@ function moscowNow(): string {
   }).format(new Date());
 }
 
+// В офисе api.telegram.org может быть заблокирован провайдером — тогда задаём
+// TELEGRAM_API_BASE (например https://crm-v175.ru/tg-relay — nginx-релей на VPS).
+const telegramApiBase = String(Deno.env.get("TELEGRAM_API_BASE") || "https://api.telegram.org").trim().replace(/\/$/, "");
+
 async function telegramBotRequest(token: string, method: string, body: Record<string, unknown>) {
-  return fetch(`https://api.telegram.org/bot${token}/${method}`, {
+  return fetch(`${telegramApiBase}/bot${token}/${method}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
