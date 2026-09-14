@@ -10,6 +10,7 @@ dist/
 !.env.example
 !fronted/.env.staging.example
 !fronted/.env.local-db.example
+!fronted/.env.offline
 !supabase/functions/.env.local.example
 
 # Локальные дампы Postgres (scripts/local-db-backup-prod.ps1)
