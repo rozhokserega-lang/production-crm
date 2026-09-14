@@ -630,6 +630,14 @@ export class OrderService {
     return await callBackend("webGetProductionPlanDebts");
   }
 
+  static async deleteProductionPlanDebt(id) {
+    return await callBackend("webDeleteProductionPlanDebt", { id });
+  }
+
+  static async deleteProductionPlanDebts(ids = []) {
+    return await callBackend("webDeleteProductionPlanDebts", { ids });
+  }
+
   static async setStageInWork(orderId, executor) {
     return await callBackend("webSetPilkaInWork", { orderId, executor });
   }

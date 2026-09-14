@@ -17,6 +17,7 @@ declare
   v_plan public.shipment_plan_cells%rowtype;
   v_order public.orders%rowtype;
   v_week_norm text;
+  v_order_id text;
 begin
   perform public.web_require_roles(array['operator', 'manager', 'admin']);
 
@@ -76,14 +77,15 @@ begin
   order by o.created_at desc
   limit 1;
 
-  if v_order.order_id is null then
+  v_order_id := trim(coalesce(v_order.order_id, ''));
+  if v_order_id = '' then
     raise exception 'Нельзя вернуть: заказ не найден или пила уже начата';
   end if;
 
-  delete from public.labor_facts where order_id = v_order.order_id;
-  delete from public.materials_leftovers where order_id = v_order.order_id;
-  delete from public.plank_batches where order_id = v_order.order_id;
-  delete from public.orders where order_id = v_order.order_id;
+  delete from public.labor_facts lf where lf.order_id = v_order_id;
+  delete from public.materials_leftovers ml where ml.order_id = v_order_id;
+  delete from public.plank_batches pb where pb.order_id = v_order_id;
+  delete from public.orders o where o.order_id = v_order_id;
 
   update public.shipment_cells
   set
@@ -103,7 +105,7 @@ begin
   where trim(coalesce(source_row_id, '')) = v_row
     and trim(coalesce(source_col_id, '')) = v_col;
 
-  return query select v_order.order_id, true;
+  return query select v_order_id, true;
 end;
 $$;
 

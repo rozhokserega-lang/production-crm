@@ -285,6 +285,29 @@ export function useWorkshopFinalDone({
 
   const debtRows = useMemo(() => productionDebts, [productionDebts]);
 
+  const deleteProductionDebts = useCallback(
+    async (ids = []) => {
+      const list = (Array.isArray(ids) ? ids : [])
+        .map((id) => String(id || "").trim())
+        .filter(Boolean);
+      if (!list.length) return 0;
+      try {
+        if (list.length === 1) {
+          await callBackend("webDeleteProductionPlanDebt", { id: list[0] });
+          await refreshProductionDebts();
+          return 1;
+        }
+        const deleted = await callBackend("webDeleteProductionPlanDebts", { ids: list });
+        await refreshProductionDebts();
+        return Number(deleted) || list.length;
+      } catch (e) {
+        setError(String(e?.message || e || "Не удалось удалить долг"));
+        throw e;
+      }
+    },
+    [callBackend, refreshProductionDebts, setError],
+  );
+
   return {
     finalDoneDialog: {
       open,
@@ -306,6 +329,7 @@ export function useWorkshopFinalDone({
     openFinalDoneDialog,
     productionDebts: debtRows,
     refreshProductionDebts,
+    deleteProductionDebts,
   };
 }
 

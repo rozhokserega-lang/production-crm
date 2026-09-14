@@ -75,8 +75,10 @@ export const WorkshopView = memo(function WorkshopView({
     strapStock,
     productionDebts,
     refreshProductionDebts,
+    deleteProductionDebts,
     openFinalDoneDialog,
     openPlanPrint,
+    openDebtPlanPrint,
     pilkaQueueSaving,
     reorderPilkaRows,
   } = workshop;
@@ -226,23 +228,57 @@ export const WorkshopView = memo(function WorkshopView({
           <div className="empty">Нет долга по планам — все комплекты закрыты.</div>
         )}
         {debtByPlan.map((group) => (
-          <article key={`${group.week}-${group.item}-${group.material}`} className="card">
-            <div className="line1">
-              <strong>{group.item}</strong>
-              <span className="badge">План {group.week}</span>
-              <span className="badge meta-inline" style={{ background: "#fff7ed", borderColor: "#fdba74", color: "#9a3412" }}>
-                Долг: {group.qty} шт.
-              </span>
-            </div>
-            <div className="line2" style={{ color: "#64748b", fontSize: 13 }}>
-              {group.material ? <span>Материал: {group.material}</span> : null}
-              {group.rows.map((r) => (
-                <span key={r.id} style={{ display: "block", marginTop: 4 }}>
-                  {Number(r.qty || 0)} шт. · заказ {r.order_id}
-                  {r.created_at ? ` · ${new Date(r.created_at).toLocaleString("ru-RU")}` : ""}
+          <article key={`${group.week}-${group.item}-${group.material}`} className="card workshop-debt-card">
+            <div className="workshop-debt-card__main">
+              <div className="line1">
+                <strong>{group.item}</strong>
+                <span className="badge">План {group.week}</span>
+                <span className="badge meta-inline" style={{ background: "#fff7ed", borderColor: "#fdba74", color: "#9a3412" }}>
+                  Долг: {group.qty} шт.
                 </span>
-              ))}
+              </div>
+              <div className="line2" style={{ color: "#64748b", fontSize: 13 }}>
+                {group.material ? <span>Материал: {group.material}</span> : null}
+                {group.rows.map((r) => (
+                  <span key={r.id} style={{ display: "block", marginTop: 4 }}>
+                    {Number(r.qty || 0)} шт. · заказ {r.order_id}
+                    {r.created_at ? ` · ${new Date(r.created_at).toLocaleString("ru-RU")}` : ""}
+                  </span>
+                ))}
+              </div>
+              {canOperateProduction ? (
+                <div className="actions" style={{ marginTop: 10 }}>
+                  <button
+                    type="button"
+                    className="mini warn"
+                    onClick={async () => {
+                      const ids = group.rows.map((r) => r.id).filter(Boolean);
+                      if (!ids.length) return;
+                      const ok = window.confirm(
+                        `Удалить долг «${group.item}» по плану ${group.week} (${group.qty} шт.)?`,
+                      );
+                      if (!ok) return;
+                      try {
+                        await deleteProductionDebts?.(ids);
+                      } catch (_) {
+                        /* error already surfaced via setError */
+                      }
+                    }}
+                  >
+                    Удалить
+                  </button>
+                </div>
+              ) : null}
             </div>
+            <button
+              type="button"
+              className="workshop-print-sheet-btn"
+              title="Лист для печати (долг плана)"
+              aria-label="Лист для печати долга"
+              onClick={() => openDebtPlanPrint?.(group)}
+            >
+              <WorkshopPlanPrintSheetIcon />
+            </button>
           </article>
         ))}
       </>

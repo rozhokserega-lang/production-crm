@@ -3401,6 +3401,17 @@ button:disabled {
   transform: translateY(1px);
 }
 
+.workshop-debt-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.workshop-debt-card__main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .workshop-plan-print-backdrop {
   z-index: 1200;
 }
@@ -5533,6 +5544,14 @@ button:disabled {
   font-weight: 700;
 }
 
+.plan-number-box .plan-number-title {
+  font-size: 12px;
+  line-height: 1.15;
+  text-align: center;
+  padding: 4px 6px 0;
+  letter-spacing: 0.02em;
+}
+
 .plan-number-box .num {
   font-size: 42px;
 }
@@ -5959,6 +5978,10 @@ button:disabled {
 
   .plan-number-box {
     border-width: 1px;
+  }
+
+  .plan-number-box .plan-number-title {
+    font-size: 10px;
   }
 
   .plan-number-box .num {

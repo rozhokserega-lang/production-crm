@@ -1200,6 +1200,7 @@ export function useAppState({ auth }) {
     openFinalDoneDialog,
     productionDebts,
     refreshProductionDebts,
+    deleteProductionDebts,
   } = useWorkshopFinalDone({
     callBackend,
     mutationLoad,
@@ -1211,7 +1212,7 @@ export function useAppState({ auth }) {
     previewDeps: workshopPreviewDeps,
   });
 
-  const { planPrintDialog, openPlanPrint } = useWorkshopPlanPrintDialog(workshopPreviewDeps);
+  const { planPrintDialog, openPlanPrint, openDebtPlanPrint } = useWorkshopPlanPrintDialog(workshopPreviewDeps);
 
   // Load strap stock globally so WorkshopView can show strap availability
   useEffect(() => {
@@ -1829,8 +1830,10 @@ export function useAppState({ auth }) {
       strapStock: strapStockGlobal,
       productionDebts,
       refreshProductionDebts,
+      deleteProductionDebts,
       openFinalDoneDialog,
       openPlanPrint,
+      openDebtPlanPrint,
       pilkaQueueOrderIds: pilkaQueue.orderIds,
       pilkaQueueSaving: pilkaQueue.saving,
       reorderPilkaRows: pilkaQueue.reorderRows,

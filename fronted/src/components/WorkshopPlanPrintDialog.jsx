@@ -95,8 +95,8 @@ export function useWorkshopPlanPrintDialog(previewDeps = {}) {
   }, []);
 
   const openPlanPrint = useCallback(
-    async (order) => {
-      const qty = Math.max(1, Number(order?.qty || 0) || 1);
+    async (order, options = {}) => {
+      const qty = Math.max(1, Number(options.qty ?? order?.qty ?? 0) || 1);
       setOpen(true);
       setLoading(true);
       setError("");
@@ -107,7 +107,13 @@ export function useWorkshopPlanPrintDialog(previewDeps = {}) {
           setError("Не удалось построить лист для печати.");
           return;
         }
-        setPlanPreview(preview);
+        const planNumberTitle = String(options.planNumberTitle || "").trim();
+        const planNumberOverride = String(options.planNumber ?? "").trim();
+        setPlanPreview({
+          ...preview,
+          ...(planNumberTitle ? { planNumberTitle } : {}),
+          ...(planNumberOverride ? { planNumber: planNumberOverride } : {}),
+        });
       } catch (e) {
         setError(String(e?.message || e || "Не удалось построить лист для печати."));
       } finally {
@@ -115,6 +121,28 @@ export function useWorkshopPlanPrintDialog(previewDeps = {}) {
       }
     },
     [previewDeps],
+  );
+
+  const openDebtPlanPrint = useCallback(
+    async (debtGroup) => {
+      const week = String(debtGroup?.week || "").trim();
+      const primary = Array.isArray(debtGroup?.rows) ? debtGroup.rows[0] : null;
+      const order = {
+        orderId: primary?.order_id || primary?.orderId || "",
+        item: primary?.item || debtGroup?.item || "",
+        material: debtGroup?.material || primary?.material || "",
+        week,
+        qty: Number(debtGroup?.qty || primary?.qty || 0) || 1,
+        productArticle: primary?.product_article || primary?.productArticle || "",
+        product_article: primary?.product_article || primary?.productArticle || "",
+      };
+      await openPlanPrint(order, {
+        qty: order.qty,
+        planNumberTitle: "ДОЛГ ПЛАНА",
+        planNumber: week || "-",
+      });
+    },
+    [openPlanPrint],
   );
 
   const print = useCallback(async () => {
@@ -138,5 +166,6 @@ export function useWorkshopPlanPrintDialog(previewDeps = {}) {
       printAreaRef,
     },
     openPlanPrint,
+    openDebtPlanPrint,
   };
 }

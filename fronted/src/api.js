@@ -542,6 +542,8 @@ const RPC_MAP = {
   webFinalizeWorkshopOrder: "web_finalize_workshop_order",
   webFinalizeAssemblyOrder: "web_finalize_assembly_order",
   webGetProductionPlanDebts: "web_get_production_plan_debts",
+  webDeleteProductionPlanDebt: "web_delete_production_plan_debt",
+  webDeleteProductionPlanDebts: "web_delete_production_plan_debts",
   webGetReplacementOrders: "web_get_replacement_orders",
   webCreateReplacementOrder: "web_create_replacement_order",
   webSendReplacementOrderToWork: "web_send_replacement_order_to_work",
@@ -1170,6 +1172,21 @@ function buildRpcPayload(action, payload = {}) {
     return {
       p_order_id: String(payload.orderId || payload.p_order_id || "").trim(),
       p_qty_ready: Number(payload.qtyReady ?? payload.p_qty_ready ?? 0),
+    };
+  }
+  if (action === "webDeleteProductionPlanDebt") {
+    return {
+      p_id: String(payload.id || payload.p_id || "").trim() || null,
+    };
+  }
+  if (action === "webDeleteProductionPlanDebts") {
+    const rawIds = Array.isArray(payload.ids)
+      ? payload.ids
+      : Array.isArray(payload.p_ids)
+        ? payload.p_ids
+        : [];
+    return {
+      p_ids: rawIds.map((id) => String(id || "").trim()).filter(Boolean),
     };
   }
   if (action === "webAcceptReplacementOrderPackaging") {

@@ -85,7 +85,7 @@ export function PlanPreviewPrint({
         </div>
         <div className="plan-right-meta">
           <div className="plan-number-box">
-            <div>ПЛАН</div>
+            <div className="plan-number-title">{planPreview.planNumberTitle || "ПЛАН"}</div>
             <div className="num">{planPreview.planNumber || "-"}</div>
           </div>
           <div className="plan-qr-box">
