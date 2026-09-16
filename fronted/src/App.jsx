@@ -362,6 +362,10 @@ function AppInner({ onAuthChangeRef }) {
               refreshPlanCatalogs: actions.refreshPlanCatalogs,
             }}
             helpers={{ furnitureProductLabel }}
+            modelViewer={{
+              openModelViewer: workshop.openModelViewer,
+              refreshModelSectionMap: workshop.refreshModelSectionMap,
+            }}
           />
         );
       case "db":

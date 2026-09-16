@@ -168,3 +168,28 @@ localhost:55432  Postgres (volume crm_local_pgdata)
 - Локальный стек **не подменяет** crm-v175.ru без отдельного деплоя на VPS.
 - **Sync с прода** нагружает облачный Postgres (лучше ночью / редко).
 - Первый `npx supabase functions serve` скачает CLI (~десятки MB).
+
+## 3D-модели секций (миграция `20260916000000_section_models.sql`)
+
+Модели (JSON из «Экспорт модели в JSON-4.js») хранятся в таблице `public.section_models`:
+одна модель на секцию (`section_catalog`), привязка к заказам — через `item_article_map`.
+
+Модель передаётся **сжатой (gzip + base64)** — JSON 1–3 МБ уходит в ~250 КБ, поэтому лимит
+тела запроса у шлюза обычно не мешает (структура: `model_json` — как есть, либо `model_gz`).
+
+Три миграции: `20260916000000_section_models.sql` (таблица + RPC),
+`20260916120000_section_models_gz.sql` (сжатая передача: `model_gz`, `panels`) и
+`20260916140000_section_models_chunks.sql` (загрузка частями по ~600 КБ — чтобы не упираться
+в лимит тела запроса даже на моделях 4+ МБ).
+
+Применить на сервере с локальной БД:
+
+```powershell
+docker compose -f docker-compose.local-db.yml exec -T db psql -v ON_ERROR_STOP=1 -U postgres -d postgres -f /work/supabase/migrations/20260916000000_section_models.sql
+docker compose -f docker-compose.local-db.yml exec -T db psql -v ON_ERROR_STOP=1 -U postgres -d postgres -f /work/supabase/migrations/20260916120000_section_models_gz.sql
+docker compose -f docker-compose.local-db.yml exec -T db psql -U postgres -d postgres -c "notify pgrst, 'reload schema'"
+```
+
+`client_max_body_size 25m` в `scripts/local-db/nginx-gateway.conf` всё равно полезен
+(запаса на будущее), но для моделей он больше не обязателен — они уходят сжатыми.
+Отдельные модели-гиганты (больше ~20 МБ) лучше не грузить: предел — разумность файла.

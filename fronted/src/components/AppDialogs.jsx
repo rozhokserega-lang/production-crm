@@ -8,6 +8,7 @@ import { StrapDoneDialog } from "./StrapDoneDialog";
 import { ShipmentSendToWorkDialog } from "./ShipmentSendToWorkDialog";
 import { WorkshopFinalDoneDialog } from "./WorkshopFinalDoneDialog";
 import { WorkshopPlanPrintDialog } from "./WorkshopPlanPrintDialog";
+import { ModelViewerDialog } from "./ModelViewerDialog";
 
 export function AppDialogs({
   shell,
@@ -78,6 +79,16 @@ export function AppDialogs({
         onPrint={dialogs.workshopPlanPrint?.print}
         articleLookupByItemKey={dialogs.workshopPlanPrint?.articleLookupByItemKey}
         printAreaRef={dialogs.workshopPlanPrint?.printAreaRef}
+      />
+
+      <ModelViewerDialog
+        open={dialogs.modelViewer?.open}
+        title={dialogs.modelViewer?.title}
+        subtitle={dialogs.modelViewer?.subtitle}
+        loading={dialogs.modelViewer?.loading}
+        error={dialogs.modelViewer?.error}
+        model={dialogs.modelViewer?.model}
+        onClose={dialogs.modelViewer?.close}
       />
 
       <WorkshopFinalDoneDialog

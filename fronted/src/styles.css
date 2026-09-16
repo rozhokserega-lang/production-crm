@@ -13156,3 +13156,102 @@ button.mini.accent:hover:not(:disabled) {
   }
 }
 
+
+/* ===== 3D-модель секции: окно просмотра (вьюер) ===== */
+.model-viewer-dialog {
+  width: min(1500px, 96vw);
+  height: 92vh;
+  display: flex;
+  flex-direction: column;
+  padding: 14px 16px;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.model-viewer-dialog__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.model-viewer-dialog__head h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.model-viewer-dialog__sub {
+  color: #64748b;
+  font-size: 12.5px;
+  margin-top: 3px;
+}
+
+.model-viewer-dialog__body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid var(--border-main, #e2e8f0);
+  border-radius: 10px;
+}
+
+/* ===== Вкладка «Мебель» → «3D-модели» ===== */
+.furniture-models-panel {
+  display: grid;
+  gap: 10px;
+  max-width: 980px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 14px;
+  box-sizing: border-box;
+}
+
+.furniture-models-panel__hint {
+  color: #64748b;
+  font-size: 12.5px;
+  margin: 0 0 6px;
+  line-height: 1.5;
+}
+
+.furniture-models-panel__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  border: 1px solid var(--border-main, #e2e8f0);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: var(--bg-surface, #fff);
+}
+
+.furniture-models-panel__main {
+  display: grid;
+  gap: 3px;
+  flex: 1;
+  min-width: 260px;
+}
+
+.furniture-models-panel__name {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.furniture-models-panel__meta {
+  font-size: 12.5px;
+  color: #475569;
+}
+
+.furniture-models-panel__articles {
+  font-size: 12px;
+  color: #334155;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.furniture-models-panel__actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}

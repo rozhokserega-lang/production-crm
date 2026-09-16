@@ -653,6 +653,14 @@ const RPC_MAP = {
   webSendPlanksToWork: "web_send_planks_to_work",
   webConsumeSheetsByOrderId: "web_consume_sheets_by_order_id",
   webConsumeSheetsLinesByOrderId: "web_consume_sheets_lines_by_order_id",
+  // 3D-модели секций мебели (вкладка «Мебель» → «3D-модели», кнопка «Модель» в производстве)
+  webListSectionModels: "web_list_section_models",
+  webUploadSectionModel: "web_upload_section_model",
+  webDeleteSectionModel: "web_delete_section_model",
+  webGetSectionModel: "web_get_section_model",
+  webListModelSectionMap: "web_list_model_section_map",
+  webUploadSectionModelChunk: "web_upload_section_model_chunk",
+  webCancelSectionModelUpload: "web_cancel_section_model_upload",
 };
 
 function stageFromAction(action) {

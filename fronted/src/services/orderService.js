@@ -1,4 +1,5 @@
 import { callBackend } from "../api";
+import { buildUploadPayload, decodeStoredModel, splitBase64Parts } from "../app/sectionModelFile";
 
 /**
  * Единый сервисный слой для всех API-вызовов.
@@ -792,6 +793,86 @@ export class OrderService {
       this.getConsumeHistory().catch(() => []),
     ]);
     return { stock, leftovers, leftoversHistory, consumeHistory };
+  }
+
+  // ==================== 3D-модели секций (вьюер в производстве) ====================
+
+  /** Список привязок «секция → файл модели» (метаданные, без самого JSON). */
+  static async listSectionModels() {
+    return await callBackend("webListSectionModels");
+  }
+
+  /**
+   * Загрузка/замена модели секции. model — уже распарсенный объект JSON.
+   * Модель уходит сжатой (gzip+base64) — иначе JSON 1–3 МБ не проходит лимит тела запроса.
+   */
+  static async uploadSectionModel({ section, fileName, model }) {
+    const packed = await buildUploadPayload(model);
+    const sec = String(section || "").trim();
+    const name = String(fileName || "").trim();
+
+    // сжатую модель шлём частями: тело запроса у шлюза ограничено (обычно 1 МБ)
+    if (packed.compressed) {
+      const parts = splitBase64Parts(packed.payload.p_model_gz);
+      let res = null;
+      try {
+        for (let i = 0; i < parts.length; i += 1) {
+          res = await callBackend("webUploadSectionModelChunk", {
+            p_section: sec,
+            p_file_name: name,
+            p_part: parts[i],
+            p_idx: i,
+            p_total: parts.length,
+            p_panels: packed.payload.p_panels,
+          });
+        }
+      } catch (e) {
+        // недособранные части на сервере не нужны
+        try {
+          await callBackend("webCancelSectionModelUpload", { p_section: sec });
+        } catch (_) {
+          /* отмена — best effort */
+        }
+        throw e;
+      }
+      return {
+        ...(res || {}),
+        rawBytes: packed.rawBytes,
+        sentBytes: packed.sentBytes,
+        parts: parts.length,
+        compressed: true,
+      };
+    }
+
+    const res = await callBackend("webUploadSectionModel", {
+      p_section: sec,
+      p_file_name: name,
+      ...packed.payload,
+    });
+    return { ...(res || {}), rawBytes: packed.rawBytes, sentBytes: packed.sentBytes, parts: 1, compressed: false };
+  }
+
+  /** Удаление модели секции. */
+  static async deleteSectionModel(section) {
+    return await callBackend("webDeleteSectionModel", {
+      p_section: String(section || "").trim(),
+    });
+  }
+
+  /** Модель одной секции: { section_name, file_name, model } (распаковка при необходимости). */
+  static async getSectionModel(section) {
+    const rows = await callBackend("webGetSectionModel", {
+      p_section: String(section || "").trim(),
+    });
+    const row = Array.isArray(rows) && rows.length ? rows[0] : null;
+    if (!row) return null;
+    return { ...row, model: await decodeStoredModel(row) };
+  }
+
+  /** Карта «артикул → секция с моделью» для кнопок на карточках производства. */
+  static async listModelSectionMap() {
+    const rows = await callBackend("webListModelSectionMap");
+    return Array.isArray(rows) ? rows : [];
   }
 
   /**

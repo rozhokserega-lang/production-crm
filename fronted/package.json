@@ -22,11 +22,13 @@
     "@tabler/icons-react": "^3.44.0",
     "@xyflow/react": "^12.11.0",
     "gltf-pipeline": "^4.3.1",
+    "lucide-react": "^0.453.0",
     "obj2gltf": "^3.2.0",
     "qrcode": "^1.5.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "recharts": "^3.8.1",
+    "three": "^0.169.0",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
@@ -35,6 +37,7 @@
     "@vitejs/plugin-react": "^4.3.1",
     "eslint": "^10.2.1",
     "eslint-plugin-react-hooks": "^7.1.1",
+    "exceljs": "^4.4.0",
     "jsdom": "^27.0.1",
     "vite": "^5.4.10",
     "vitest": "^3.2.4"

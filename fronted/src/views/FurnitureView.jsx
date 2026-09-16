@@ -1,4 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { FurnitureModelsPanel } from "../components/FurnitureModelsPanel";
 import ShelfCalculator from "../components/ShelfCalculator";
 
 const FurnitureBomGraph = lazy(() =>
@@ -16,6 +17,7 @@ export function FurnitureView({
   permissions,
   actions,
   helpers,
+  modelViewer,
 }) {
   const {
     furnitureLoading,
@@ -485,7 +487,22 @@ export function FurnitureView({
             >
               Схема (блупринт)
             </button>
+            <button
+              type="button"
+              className={furnitureSubTab === "models" ? "tab active" : "tab"}
+              onClick={() => setFurnitureSubTab("models")}
+            >
+              3D-модели
+            </button>
           </div>
+          {furnitureSubTab === "models" && (
+            <FurnitureModelsPanel
+              canEdit={canOperateProduction}
+              sectionCatalogRows={sectionCatalogRows}
+              openModelViewer={modelViewer?.openModelViewer}
+              onModelChanged={modelViewer?.refreshModelSectionMap}
+            />
+          )}
           {furnitureSubTab === "main" && furnitureSheetData.headers.length === 0 && (
             <div className="empty">В файле Мебель.xlsx нет данных. Схема и система хранения доступны во вкладках выше.</div>
           )}

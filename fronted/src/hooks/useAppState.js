@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useWorkshopFinalDone } from "../components/WorkshopFinalDoneDialog";
 import { useWorkshopPlanPrintDialog } from "../components/WorkshopPlanPrintDialog";
+import { useModelViewerDialog } from "../components/ModelViewerDialog";
 import { useShipmentSendToWorkDialog } from "../components/ShipmentSendToWorkDialog";
 import { useOverviewPlanMonths } from "./useOverviewPlanMonths";
 import { filterVisiblePlanMonths } from "../app/overviewPlansHelpers";
@@ -1214,6 +1215,14 @@ export function useAppState({ auth }) {
 
   const { planPrintDialog, openPlanPrint, openDebtPlanPrint } = useWorkshopPlanPrintDialog(workshopPreviewDeps);
 
+  // 3D-модели секций: окно просмотра + карта «артикул → секция с моделью»
+  const {
+    modelViewerDialog,
+    openModelViewer,
+    modelSectionMap,
+    refreshModelSectionMap,
+  } = useModelViewerDialog();
+
   // Load strap stock globally so WorkshopView can show strap availability
   useEffect(() => {
     callBackend("webGetStrapStock", {})
@@ -1834,6 +1843,9 @@ export function useAppState({ auth }) {
       openFinalDoneDialog,
       openPlanPrint,
       openDebtPlanPrint,
+      openModelViewer,
+      modelSectionMap,
+      refreshModelSectionMap,
       pilkaQueueOrderIds: pilkaQueue.orderIds,
       pilkaQueueSaving: pilkaQueue.saving,
       reorderPilkaRows: pilkaQueue.reorderRows,
@@ -2002,6 +2014,7 @@ export function useAppState({ auth }) {
       },
       workshopFinalDone: finalDoneDialog,
       workshopPlanPrint: planPrintDialog,
+      modelViewer: modelViewerDialog,
       sendToWork: sendToWorkDialog,
       hardwareConsume,
     },

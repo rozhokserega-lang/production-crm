@@ -18,6 +18,7 @@ import {
   readPrasExecutor,
 } from "../app/workshopFloorMapHelpers";
 import { WorkshopPlanPrintSheetIcon } from "../components/WorkshopPlanPrintDialog";
+import { buildModelSectionLookup, resolveModelSectionForOrder } from "../app/sectionModelFile";
 
 function WorkshopExecutorBadge({ name, stageLabel: stage }) {
   if (!name) return null;
@@ -60,6 +61,8 @@ export const WorkshopView = memo(function WorkshopView({
     workshopRows,
     loading,
     tab,
+    openModelViewer,
+    modelSectionMap,
     shipmentOrders,
     shipmentBoard,
     actionLoading,
@@ -82,6 +85,15 @@ export const WorkshopView = memo(function WorkshopView({
     pilkaQueueSaving,
     reorderPilkaRows,
   } = workshop;
+
+  const modelSectionLookup = useMemo(
+    () => buildModelSectionLookup(modelSectionMap),
+    [modelSectionMap],
+  );
+  // резолвер заказ → секция с моделью (кнопка «Модель»): сначала product_article,
+  // потом артикул, вытащенный из строки названия изделия
+  const sectionForOrder = (order, itemArticle) =>
+    resolveModelSectionForOrder(order, itemArticle, modelSectionLookup);
   const { canOperateProduction, canOperateWorkshopStage } = permissions;
   const canPilka = typeof canOperateWorkshopStage === "function"
     ? canOperateWorkshopStage("pilka")
@@ -430,6 +442,31 @@ export const WorkshopView = memo(function WorkshopView({
                         {displayArticle}
                       </span>
                     ) : null}
+                    {(() => {
+                      const section = sectionForOrder(o, displayArticle);
+                      return (
+                        <button
+                          type="button"
+                          className={section ? "mini" : "mini ghost"}
+                          disabled={!section}
+                          title={
+                            section
+                              ? `Просмотр 3D-модели (секция «${section}»)`
+                              : "У секции этого артикула нет 3D-модели — загрузите её во вкладке «Мебель» → «3D-модели»"
+                          }
+                          onClick={() => {
+                            if (!section) return;
+                            openModelViewer?.({
+                              section,
+                              title: rawItem || section,
+                              subtitle: `Артикул ${displayArticle} · секция «${section}»`,
+                            });
+                          }}
+                        >
+                          🧊 Модель{section ? "" : " —"}
+                        </button>
+                      );
+                    })()}
                     <span className="badge meta-inline">План: {o.week || "-"}</span>
                     {strapTargetCaption ? (
                       <span className="badge meta-inline" title={strapTargetCaption}>
