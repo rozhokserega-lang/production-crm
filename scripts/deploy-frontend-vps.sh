@@ -20,7 +20,7 @@ set -euo pipefail
 : "${WEB_ROOT:=/var/www/crm-v175/current}"
 : "${FRONTEND_REL:=fronted}"
 : "${REQUIRE_PROXY:=1}"
-: "${EXPECTED_SUPABASE_URL:=https://nsdwypcbhmfseotclkrm.supabase.co}"
+: "${EXPECTED_SUPABASE_URL:=https://crm-v175.ru/supabase}"   # прод после переезда на свой сервер
 
 need_sudo() {
   local target="$1"
@@ -90,6 +90,10 @@ if [[ -f package-lock.json ]]; then
 else
   npm install
 fi
+
+# на этом VPS всего ~1 ГБ RAM: без увеличенного heap сборка падает (three.js + вьюер)
+export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=1536}"
+echo "==> NODE_OPTIONS: $NODE_OPTIONS"
 
 npm run lint
 npm run test:run
