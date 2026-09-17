@@ -3,6 +3,7 @@ import { PRODUCTS_CATALOG } from "../constants/missingParts";
 import { HardwareView } from "./HardwareView";
 import { WarehouseKitOrdersView } from "./WarehouseKitOrdersView";
 import { WarehouseIncomingOrdersView } from "./WarehouseIncomingOrdersView";
+import { WarehouseShippedOrdersView } from "./WarehouseShippedOrdersView";
 import { fetchWorkshopFinalIncomingOrders } from "../app/workshopFinalIncoming";
 
 const OTHER_PRODUCT_KEY = "__OTHER__";
@@ -284,6 +285,13 @@ export const WarehouseMissingView = memo(function WarehouseMissingView({
         >
           Фурнитура
         </button>
+        <button
+          type="button"
+          className={mainTab === "shipped" ? "tab active" : "tab"}
+          onClick={() => setMainTab("shipped")}
+        >
+          Отгружено
+        </button>
       </div>
 
       {mainTab === "orders" ? (
@@ -297,6 +305,8 @@ export const WarehouseMissingView = memo(function WarehouseMissingView({
           isActionPending={isActionPending}
           onDataChanged={onDataChanged}
         />
+      ) : mainTab === "shipped" ? (
+        <WarehouseShippedOrdersView />
       ) : mainTab === "hardware" ? (
         <HardwareView
           canOperateWarehouse={canOperateWarehouse}
