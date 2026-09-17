@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { OrderService } from "../services/orderService";
 import { formatDateTimeRu } from "../app/rowHelpers";
+import { isWorkshopStrapOrderItem } from "../app/workshopStrapNeeds";
 import { HardwareRequirementDialog } from "../components/HardwareRequirementDialog";
 
 const KIT_BUCKET = {
@@ -101,7 +102,10 @@ export const WarehouseKitOrdersView = memo(function WarehouseKitOrdersView({
       const rows = await (callBackend
         ? callBackend("webGetWarehouseKitOrders")
         : OrderService.getWarehouseKitOrders());
-      setOrders(Array.isArray(rows) ? rows : []);
+      // Обвязка (планки) ведётся в своём разделе «Обвязка» — в очередь комплектации склада не попадает.
+      setOrders(
+        (Array.isArray(rows) ? rows : []).filter((o) => !isWorkshopStrapOrderItem(o?.item)),
+      );
     } catch (_) {
       setOrders([]);
     } finally {
