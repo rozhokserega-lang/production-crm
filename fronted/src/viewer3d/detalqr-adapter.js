@@ -268,6 +268,47 @@ export function decodeModelText(buf) {
 }
 
 /* ---------------- главная функция ---------------- */
+
+/* Эмпирическая досборка: часть экспортёров Базиса не сохраняет знак выдавливания
+ * профиля (трубы, тела «Вычитание тел») — деталь рисуется в обратную сторону и
+ * «уезжает» из модели. Правило: если деталь ни к чему не примыкает, а при
+ * противоположном знаке толщины примыкает к соседям — разворачиваем.
+ * Уже собранные детали (есть контакт хотя бы с одной) не трогаем. */
+function fixDetachedExtrusions(parts) {
+  const TOL = 2.5;
+  const box = (p, sign) => {
+    const b = worldBBox(p.v3.contour, p.v3.placement, sign * Math.abs(p.v3.thickness));
+    return [[b.x, b.y, b.z], [b.x + b.w, b.y + b.h, b.z + b.d]];
+  };
+  const touching = (A, B) => {
+    let overlapAxes = 0;
+    let minGap = Infinity;
+    for (let i = 0; i < 3; i++) {
+      const o = Math.min(A[1][i], B[1][i]) - Math.max(A[0][i], B[0][i]);
+      if (o > 0.5) overlapAxes += 1;
+      else minGap = Math.min(minGap, -o);
+    }
+    return overlapAxes === 3 || (overlapAxes >= 2 && minGap <= TOL);
+  };
+  const n = parts.length;
+  if (!n) return parts;
+  for (let pass = 0; pass < 2; pass++) {
+    let changed = false;
+    const boxes = parts.map((p) => box(p, 1));
+    for (let i = 0; i < n; i++) {
+      if (parts.some((_, j) => j !== i && touching(boxes[i], boxes[j]))) continue;
+      const flipped = box(parts[i], -1);
+      if (parts.some((_, j) => j !== i && touching(flipped, boxes[j]))) {
+        parts[i].v3.thickness = -parts[i].v3.thickness;
+        boxes[i] = flipped;
+        changed = true;
+      }
+    }
+    if (!changed) break;
+  }
+  return parts;
+}
+
 export function parseDetalQR(data) {
   const matColors = materialsMap(data);
   const matTex = {};   // материал -> встроенная текстура (materials[].dataUrl)
@@ -281,13 +322,18 @@ export function parseDetalQR(data) {
     const contour = panelContour(p.poly, p.cuts);
     const bb = contourBBox(contour);
     const wbb = worldBBox(contour, placement, p.thick || 0);
+    // знак толщины ВАЖЕН: у профилей (трубы, «Вычитание тел») экструзия может идти
+    // в −Z локально (thick<0). Срезали знак через Math.abs — деталь уезжает в
+    // противоположную сторону (пример: ножки-салазки Color Block оказывались под полом).
+    const thRaw = Number(p.thick) || 0;
+    const signedThick = thRaw < 0 ? thRaw : (thRaw || 16);
     const kind = classifyKind(p.name);
     const mat = shortMat(p.mat);
     const holes = (p.holes || []).map((h) => ({
       faceX: h.x || 0,
       faceY: h.y || 0,
       diameter: h.d || 0,
-      depth: h.thru ? (p.thick || 0) : (h.depth || 0),
+      depth: h.thru ? Math.abs(signedThick) : (h.depth || 0),
       side: h.face === 'B' ? 'B' : h.face === 'T' ? 'T' : 'A',
       name: HOLE_NAMES[h.type] || h.type || 'крепёж',
       color: h.color || HOLE_COLORS[h.type] || null,
@@ -308,7 +354,7 @@ export function parseDetalQR(data) {
         name: p.name || '',
         contour,
         placement,
-        thickness: Math.abs(p.thick || 16),
+        thickness: signedThick,
         assembly: p.group || '',
         asmNames: (p.group || '').split(' / '),
         asmGid: p.gid || '',
@@ -383,6 +429,7 @@ export function parseDetalQR(data) {
 
   // мировые цилиндры отверстий (для 3D)
   const worldHoles = [];
+  fixDetachedExtrusions(parts);
   parts.forEach((p) => worldHoles.push(...panelHolesWorld(p, p.v3.placement, p.v3.thickness)));
 
   const { furn, fasteners } = parseFittings(data);

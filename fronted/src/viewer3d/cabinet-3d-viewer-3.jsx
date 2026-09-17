@@ -691,6 +691,8 @@ function CabinetViewer({ devModel, embedded = false } = {}) {
   const [showDimensions, setShowDimensions] = useState(false);
   const [showHoles, setShowHoles] = useState(true);
   const [showFurn, setShowFurn] = useState(true);
+  // выезжающая панель «Материалы и слои» поверх 3D (режим embedded — окно CRM)
+  const [toolsOpen, setToolsOpen] = useState(false);
   const [showDoc, setShowDoc] = useState(false);
   const [showSpec, setShowSpec] = useState(false);
   const showDocRef = useRef(false);               // зеркало showDoc/showSpec для rAF-цикла
@@ -750,6 +752,68 @@ function CabinetViewer({ devModel, embedded = false } = {}) {
   const toggleMaterial = (key) => {
     setMaterialVisibility((prev) => ({ ...prev, [key]: prev[key] === false ? true : false }));
   };
+
+  // Общие инструменты модели: видимость отверстий/фурнитуры и фильтр по материалам.
+  // Живут в левой панели (обычный режим) и в выезжающей панели поверх 3D (embedded — окно CRM).
+  const modelToolsBlock = (
+    <>
+      {(isV3 || isDetalQR) && (
+        <div style={{ marginBottom: 12 }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, marginBottom: 6, cursor: 'pointer' }}>
+            <input type="checkbox" checked={showHoles} onChange={(e) => setShowHoles(e.target.checked)} />
+            Отверстия
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, cursor: 'pointer' }}>
+            <input type="checkbox" checked={showFurn} onChange={(e) => setShowFurn(e.target.checked)} />
+            Фурнитура
+          </label>
+        </div>
+      )}
+      {materialsList.length > 1 && (
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <span style={{ fontSize: 11, color: COLOR.textMuted, letterSpacing: 0.2 }}>Материалы</span>
+            <span onClick={showAllMaterials} style={{ fontSize: 10.5, color: COLOR.accent, cursor: 'pointer' }}>
+              показать все
+            </span>
+          </div>
+          {materialsList.map((m) => {
+            const visible = materialVisibility[m.key] !== false;
+            return (
+              <div key={m.key} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 0', fontSize: 12 }}>
+                <span
+                  onClick={() => toggleMaterial(m.key)}
+                  style={{ color: visible ? COLOR.accent : COLOR.textMuted, cursor: 'pointer', flexShrink: 0 }}
+                >
+                  {visible ? <CheckSquare size={14} /> : <Square size={14} />}
+                </span>
+                <span
+                  onClick={() => toggleMaterial(m.key)}
+                  style={{
+                    flex: 1, cursor: 'pointer', minWidth: 0,
+                    color: visible ? COLOR.text : COLOR.textMuted,
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  }}
+                  title={m.label}
+                >
+                  {m.label}
+                </span>
+                <span style={{ fontSize: 10.5, color: COLOR.textMuted, fontFamily: 'ui-monospace, monospace', flexShrink: 0 }}>
+                  {m.count}
+                </span>
+                <span
+                  onClick={() => showOnlyMaterial(m.key)}
+                  style={{ fontSize: 10, color: COLOR.accent, cursor: 'pointer', flexShrink: 0 }}
+                >
+                  только
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </>
+  );
 
   const visibleParts = parts.filter(isPartVisible);
 
@@ -1504,62 +1568,7 @@ function CabinetViewer({ devModel, embedded = false } = {}) {
                 Выгрузить модель
               </button>
 
-              {(isV3 || isDetalQR) && (
-                <div style={{ marginTop: 12 }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, marginBottom: 6, cursor: 'pointer' }}>
-                    <input type="checkbox" checked={showHoles} onChange={(e) => setShowHoles(e.target.checked)} />
-                    Отверстия
-                  </label>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, cursor: 'pointer' }}>
-                    <input type="checkbox" checked={showFurn} onChange={(e) => setShowFurn(e.target.checked)} />
-                    Фурнитура
-                  </label>
-                </div>
-              )}
-
-              {materialsList.length > 1 && (
-                <div style={{ marginTop: 18 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                    <span style={{ fontSize: 11, color: COLOR.textMuted, letterSpacing: 0.2 }}>Материалы</span>
-                    <span onClick={showAllMaterials} style={{ fontSize: 10.5, color: COLOR.accent, cursor: 'pointer' }}>
-                      показать все
-                    </span>
-                  </div>
-                  {materialsList.map((m) => {
-                    const visible = materialVisibility[m.key] !== false;
-                    return (
-                      <div key={m.key} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 0', fontSize: 12 }}>
-                        <span
-                          onClick={() => toggleMaterial(m.key)}
-                          style={{ color: visible ? COLOR.accent : COLOR.textMuted, cursor: 'pointer', flexShrink: 0 }}
-                        >
-                          {visible ? <CheckSquare size={14} /> : <Square size={14} />}
-                        </span>
-                        <span
-                          onClick={() => toggleMaterial(m.key)}
-                          style={{
-                            flex: 1, cursor: 'pointer', minWidth: 0,
-                            color: visible ? COLOR.text : COLOR.textMuted,
-                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                          }}
-                          title={m.label}
-                        >
-                          {m.label}
-                        </span>
-                        <span style={{ fontSize: 10.5, color: COLOR.textMuted, fontFamily: 'ui-monospace, monospace', flexShrink: 0 }}>
-                          {m.count}
-                        </span>
-                        <span
-                          onClick={() => showOnlyMaterial(m.key)}
-                          style={{ fontSize: 10, color: COLOR.accent, cursor: 'pointer', flexShrink: 0 }}
-                        >
-                          только
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+              {modelToolsBlock}
             </div>
           ) : (
             <div style={{ marginBottom: 16 }}>
@@ -1729,6 +1738,42 @@ function CabinetViewer({ devModel, embedded = false } = {}) {
                   {label}
                 </button>
               ))}
+              {embedded && (isV3 || isDetalQR || materialsList.length > 1) && (
+                <button
+                  onClick={() => setToolsOpen((v) => !v)}
+                  style={{
+                    fontSize: 11, padding: '4px 8px', cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', gap: 4,
+                    background: toolsOpen ? COLOR.accent : 'rgba(230,240,223,0.92)',
+                    color: toolsOpen ? '#fff' : COLOR.text,
+                    border: `1px solid ${toolsOpen ? COLOR.accent : COLOR.hairline}`,
+                  }}
+                  title="Материалы и слои модели: скрыть/показать материалы, отверстия, фурнитуру"
+                >
+                  <Layers3 size={12} />
+                  Материалы
+                </button>
+              )}
+            </div>
+          )}
+          {embedded && toolsOpen && isLoaded && (
+            <div
+              style={{
+                position: 'absolute', top: 40, left: 8, width: 236,
+                maxHeight: '55vh', overflowY: 'auto', zIndex: 12,
+                background: 'rgba(255,255,255,0.97)',
+                border: `1px solid ${COLOR.hairline}`,
+                boxShadow: '0 6px 24px rgba(0,0,0,0.14)',
+                padding: '10px 12px',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                <span style={{ fontSize: 11, color: COLOR.textMuted, letterSpacing: 0.2 }}>Материалы и слои</span>
+                <span onClick={() => setToolsOpen(false)} style={{ cursor: 'pointer', color: COLOR.textMuted, display: 'flex' }}>
+                  <X size={13} />
+                </span>
+              </div>
+              {modelToolsBlock}
             </div>
           )}
 
