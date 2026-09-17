@@ -691,8 +691,9 @@ function CabinetViewer({ devModel, embedded = false } = {}) {
   const [showDimensions, setShowDimensions] = useState(false);
   const [showHoles, setShowHoles] = useState(true);
   const [showFurn, setShowFurn] = useState(true);
-  // выезжающая панель «Материалы и слои» поверх 3D (режим embedded — окно CRM)
-  const [toolsOpen, setToolsOpen] = useState(false);
+  // выезжающая панель «Материалы и слои» поверх 3D (режим embedded — окно CRM).
+  // Раскрыта по умолчанию: пользователь ждёт список материалов «слева» сразу.
+  const [toolsOpen, setToolsOpen] = useState(true);
   const [showDoc, setShowDoc] = useState(false);
   const [showSpec, setShowSpec] = useState(false);
   const showDocRef = useRef(false);               // зеркало showDoc/showSpec для rAF-цикла
