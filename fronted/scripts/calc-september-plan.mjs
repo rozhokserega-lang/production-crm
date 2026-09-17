@@ -20,6 +20,9 @@ import {
   fetchAugustPlanCalcData,
 } from "./augustPlanMaterialCalc.js";
 
+// Локальная утилита, а НЕ тест: читает личный xlsx с рабочего стола и перезаписывает
+// выходной файл. Запускать руками: node scripts/calc-september-plan.mjs [вход] [выход]
+// Из vitest/`npm test` вызывать нельзя — иначе прогон тестов затирает рабочие файлы.
 const INPUT_PATH =
   process.env.SEPTEMBER_PLAN_INPUT ||
   process.argv[2] ||
@@ -28,9 +31,6 @@ const OUTPUT_PATH =
   process.env.SEPTEMBER_PLAN_OUTPUT ||
   process.argv[3] ||
   "c:/Users/ПК/OneDrive/Desktop/план сентябрь2 — материалы.xlsx";
-
-// путь нужен тесту: без входного файла проверка пропускается (на VPS/CI его нет)
-export const SEPTEMBER_PLAN_INPUT_PATH = INPUT_PATH;
 
 /** Обычный Donini 750/806 (не Grande / не R): обвязка белая. */
 function isWhiteStrapDonini(article, planName) {
