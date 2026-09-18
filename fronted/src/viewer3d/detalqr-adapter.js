@@ -267,51 +267,177 @@ export function decodeModelText(buf) {
   }
 }
 
+/* Конвенция модели: у деталей ОДНОГО СЕЧЕНИЯ ЛСК должна быть одинаковой.
+ *
+ * Зачем. Базис отдаёт размещение кватернионом, а кватернион не умеет отражение:
+ * у зеркальных тел контур приходит отражённым, а рамка — «вывернутой» на 180°
+ * вокруг az (ax и ay меняют знак). Двойное отражение уводит деталь на двойное
+ * смещение сечения: у стола Solito правая нижняя царга вставала X[1274..1314]
+ * вместо X[1235..1275] и на 3.3 мм выше. Правильные три царги из четырёх имеют
+ * одну и ту же рамку — по этому большинству и определяем вывернутую.
+ *
+ * Переворачиваем, только если это ЛЕЧИТ: у детали нет зеркального близнеца на
+ * своём месте, зато он появляется после переворота. Так честно отражённые пары
+ * (у которых рамки разные по-настоящему) не трогаются. */
+function frameConventionFix(parts) {
+  const prof = (parts || []).filter((p) => p.kind === 'profile'
+    && p.v3 && p.v3.placement && p.v3.contour && p.v3.contour.length
+    && p.w > 0 && p.h > 0 && p.d > 0);
+  if (prof.length < 3) return 0;
+
+  // середина модели по X: по всем деталям (ширину задаёт столешница)
+  let mnX = Infinity, mxX = -Infinity;
+  (parts || []).forEach((p) => {
+    if (!(p.w > 0)) return;
+    if (p.x < mnX) mnX = p.x;
+    if (p.x + p.w > mxX) mxX = p.x + p.w;
+  });
+  if (!isFinite(mnX) || mxX - mnX < 1) return 0;
+  const mid = (mnX + mxX) / 2;
+
+  const r2 = (n) => Math.round(n * 100) / 100;
+  // подпись сечения: точки контура по модулю X — отражённые близнецы совпадают
+  const sectionKey = (p) => {
+    const pts = [];
+    p.v3.contour.forEach((e) => {
+      if (e.t === 'line') { pts.push([r2(Math.abs(e.x1)), r2(e.y1)]); pts.push([r2(Math.abs(e.x2)), r2(e.y2)]); }
+    });
+    if (!pts.length) return null;
+    return pts.map((q) => q[0] + ':' + q[1]).sort().join(' ') + '|' + r2(Math.abs(p.v3.thickness));
+  };
+  const frameKey = (p) => {
+    const pl = p.v3.placement;
+    return [pl.ax.x, pl.ax.y, pl.ax.z, pl.ay.x, pl.ay.y, pl.ay.z].map((v) => Math.round(v * 1000) / 1000).join(',');
+  };
+  const flip = (pl) => ({
+    origin: pl.origin,
+    ax: { x: -pl.ax.x, y: -pl.ax.y, z: -pl.ax.z },
+    ay: { x: -pl.ay.x, y: -pl.ay.y, z: -pl.ay.z },
+    az: pl.az,
+  });
+  const boxOf = (p, placement) => worldBBox(p.v3.contour, placement, p.v3.thickness);
+  const TOL = 3;
+  // есть ли у коробки зеркальный близнец среди деталей того же сечения
+  const hasTwin = (b, key, self) => prof.some((q) => q !== self && sectionKey(q) === key
+    && Math.abs((2 * mid - b.x - b.w) - q.x) < TOL && Math.abs((2 * mid - b.x) - (q.x + q.w)) < TOL
+    && Math.abs(b.y - q.y) < TOL && Math.abs(b.z - q.z) < TOL
+    && Math.abs(b.h - q.h) < TOL && Math.abs(b.d - q.d) < TOL);
+
+  // группы одного сечения
+  const groups = new Map();
+  prof.forEach((p) => {
+    const k = sectionKey(p);
+    if (!k) return;
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(p);
+  });
+
+  let fixed = 0;
+  groups.forEach((group, key) => {
+    if (group.length < 3) return;
+    const votes = new Map();
+    group.forEach((p) => votes.set(frameKey(p), (votes.get(frameKey(p)) || 0) + 1));
+    const ranked = [...votes.entries()].sort((a, b) => b[1] - a[1]);
+    if (ranked.length < 2 || ranked[0][1] * 2 <= group.length) return;   // строгого большинства нет
+    const topFrame = ranked[0][0];
+    group.forEach((p) => {
+      if (frameKey(p) === topFrame) return;
+      const asIs = { x: p.x, y: p.y, z: p.z, w: p.w, h: p.h, d: p.d };
+      const flipped = boxOf(p, flip(p.v3.placement));
+      if (hasTwin(asIs, key, p)) return;                  // на своём месте всё сходится
+      if (!hasTwin(flipped, key, p)) return;              // переворот ничего не лечит
+      p.v3.placement = flip(p.v3.placement);
+      p.x = flipped.x; p.y = flipped.y; p.z = flipped.z;
+      p.w = flipped.w; p.h = flipped.h; p.d = flipped.d;
+      fixed += 1;
+    });
+  });
+  return fixed;
+}
+
+/* Совместимость со старыми выгрузками нашего скрипта (до правила знака).
+ * У них тела из узлов «Вычитание тел2..N» записаны с ПОЛОЖИТЕЛЬНОЙ толщиной,
+ * хотя Базис выдавливает их в обратную сторону — деталь (ножка-салазки) уезжает
+ * из модели. У эталонных выгрузок detalQR знак уже отрицательный, поэтому
+ * правило идемпотентно: трогаем только положительные.
+ *
+ * Переворачиваем НЕ ВСЕ подряд: в «Вычитание тел2..N» попадаются детали, у
+ * которых плюс правильный (в Столе Color Block это бруски 26 мм). Признак
+ * настоящей ошибки — деталь торчит из габарита модели: считаем габарит по всем
+ * ОСТАЛЬНЫМ деталям и переворачиваем, только если так деталь перестаёт вылезать. */
+function legacyExtrusionSignFix(parts) {
+  const re = /Вычитание тел(\d+)\s*$/;
+  const suspects = [];
+  (parts || []).forEach((p) => {
+    const asm = String((p.v3 && p.v3.assembly) || '');
+    const m = asm.match(re);
+    if (!m || Number(m[1]) < 2) return;
+    if (!(p.v3 && p.v3.thickness > 0 && p.v3.contour && p.v3.contour.length && p.v3.placement)) return;
+    if (!(p.w > 0 && p.h > 0 && p.d > 0)) return;
+    suspects.push(p);
+  });
+  if (!suspects.length) return 0;
+
+  const mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
+  (parts || []).forEach((p) => {
+    if (suspects.indexOf(p) >= 0) return;
+    if (!(p.w > 0 && p.h > 0 && p.d > 0)) return;
+    const a = [p.x, p.y, p.z], size = [p.w, p.h, p.d];
+    for (let i = 0; i < 3; i++) {
+      if (a[i] < mn[i]) mn[i] = a[i];
+      if (a[i] + size[i] > mx[i]) mx[i] = a[i] + size[i];
+    }
+  });
+  if (!isFinite(mn[0])) return 0;
+
+  // насколько коробка выходит за габарит модели, мм
+  const outOf = (b) => {
+    const a = [b.x, b.y, b.z], size = [b.w, b.h, b.d];
+    let worst = 0;
+    for (let i = 0; i < 3; i++) {
+      const d = Math.max(mn[i] - a[i], (a[i] + size[i]) - mx[i], 0);
+      if (d > worst) worst = d;
+    }
+    return worst;
+  };
+
+  let fixed = 0;
+  suspects.forEach((p) => {
+    const th = Math.abs(p.v3.thickness);
+    const asIs = { x: p.x, y: p.y, z: p.z, w: p.w, h: p.h, d: p.d };
+    const flipped = worldBBox(p.v3.contour, p.v3.placement, -th);
+    const outAsIs = outOf(asIs), outFlipped = outOf(flipped);
+    if (outAsIs > 5 && outFlipped * 2 <= outAsIs) {
+      p.v3.thickness = -th;
+      // габарит детали пересчитываем: он был посчитан по старому знаку
+      p.x = flipped.x; p.y = flipped.y; p.z = flipped.z;
+      p.w = flipped.w; p.h = flipped.h; p.d = flipped.d;
+      fixed += 1;
+    }
+  });
+  return fixed;
+}
+
 /* ---------------- главная функция ---------------- */
 
-/* Эмпирическая досборка: часть экспортёров Базиса не сохраняет знак выдавливания
- * профиля (трубы, тела «Вычитание тел») — деталь рисуется в обратную сторону и
- * «уезжает» из модели. Правило: если деталь ни к чему не примыкает, а при
- * противоположном знаке толщины примыкает к соседям — разворачиваем.
- * Уже собранные детали (есть контакт хотя бы с одной) не трогаем. */
-function fixDetachedExtrusions(parts) {
-  const TOL = 2.5;
-  const box = (p, sign) => {
-    const b = worldBBox(p.v3.contour, p.v3.placement, sign * Math.abs(p.v3.thickness));
-    return [[b.x, b.y, b.z], [b.x + b.w, b.y + b.h, b.z + b.d]];
-  };
-  const touching = (A, B) => {
-    let overlapAxes = 0;
-    let minGap = Infinity;
-    for (let i = 0; i < 3; i++) {
-      const o = Math.min(A[1][i], B[1][i]) - Math.max(A[0][i], B[0][i]);
-      if (o > 0.5) overlapAxes += 1;
-      else minGap = Math.min(minGap, -o);
-    }
-    return overlapAxes === 3 || (overlapAxes >= 2 && minGap <= TOL);
-  };
-  const n = parts.length;
-  if (!n) return parts;
-  for (let pass = 0; pass < 2; pass++) {
-    let changed = false;
-    const boxes = parts.map((p) => box(p, 1));
-    for (let i = 0; i < n; i++) {
-      if (parts.some((_, j) => j !== i && touching(boxes[i], boxes[j]))) continue;
-      const flipped = box(parts[i], -1);
-      if (parts.some((_, j) => j !== i && touching(flipped, boxes[j]))) {
-        parts[i].v3.thickness = -parts[i].v3.thickness;
-        boxes[i] = flipped;
-        changed = true;
-      }
-    }
-    if (!changed) break;
-  }
-  return parts;
-}
 
 export function parseDetalQR(data) {
   const matColors = materialsMap(data);
   const matTex = {};   // материал -> встроенная текстура (materials[].dataUrl)
+  // Текстуры их выгрузок: панель несёт хэш (`tex`), tex_meta — физический размер
+  // текстуры в мм (tw/th). Картинки лежат по публичному адресу
+  // https://detalqr.uz/tex/<хэш>.webp (так грузит их вьюер). Наши собственные
+  // экспорты встраивают текстуру как dataUrl в materials[] — этот путь приоритетный.
+  const texMeta = (data.tex_meta && typeof data.tex_meta === 'object') ? data.tex_meta : {};
+  const texByHash = (hash) => {
+    if (!hash) return null;
+    const m = texMeta[hash] || {};
+    return {
+      url: 'https://detalqr.uz/tex/' + encodeURIComponent(hash) + '.webp',
+      step: Number(m.tw) || 600,
+      external: true,
+    };
+  };
   (data.materials || []).forEach((m) => {
     if (m && m.mat && m.dataUrl) matTex[m.mat] = { url: m.dataUrl, step: m.stepX || m.stepY || 600 };
   });
@@ -361,7 +487,7 @@ export function parseDetalQR(data) {
         grain: p.grain,
       },
       matColor: matColors[mat] || nameColorHint(mat || p.name || p.des),
-      matData: matTex[mat] || null,
+      matData: matTex[mat] || texByHash(p.tex),
       x: wbb.x, y: wbb.y, z: wbb.z, w: wbb.w, h: wbb.h, d: wbb.d,
       faceW: bb.w, faceH: bb.h,
       butts: (p.butts || []).map((b) => ({
@@ -383,6 +509,10 @@ export function parseDetalQR(data) {
     const hasPoly = Array.isArray(pr.poly) && pr.poly.length >= 3;
     const contour = hasPoly ? panelContour(pr.poly, pr.cuts || []) : (pr.contour || []);
     if (!contour.length) return;
+    // «Отверстие»/«Отверстия» — служебные CSG-тела Базиса (инструмент сверления),
+    // а не детали: в выгрузке detalQR их нет, наш новый экспортёр их тоже
+    // пропускает, а в старых файлах они рисовались лишними планками
+    if (/^\u041e\u0442\u0432\u0435\u0440\u0441\u0442/i.test(String(pr.name || ''))) return;
     const placement = pr.placement
       ? {
         origin: { x: pr.placement.origin.x, y: pr.placement.origin.y, z: pr.placement.origin.z },
@@ -414,7 +544,9 @@ export function parseDetalQR(data) {
         asmGid: pr.gid || '',
       },
       matColor: matColors[mat] || nameColorHint(mat || pr.name),
-      matData: matTex[mat] || null,
+      matData: matTex[mat] || texByHash(pr.tex),
+      anim: (typeof pr.anim === 'number' && pr.anim >= 0) ? pr.anim : -1,
+      uid: Number(pr.uid) || 0,
       x: wbb.x, y: wbb.y, z: wbb.z, w: wbb.w, h: wbb.h, d: wbb.d,
       faceW: bb.w, faceH: bb.h,
       butts: [],
@@ -427,12 +559,18 @@ export function parseDetalQR(data) {
   });
 
 
+  // совместимость со старыми файлами (знак выдавливания у «Вычитание тел»)
+  legacyExtrusionSignFix(parts);
+  // и вывернутые рамки у зеркальных тел (конвенция одного сечения)
+  frameConventionFix(parts);
+
   // мировые цилиндры отверстий (для 3D)
   const worldHoles = [];
-  fixDetachedExtrusions(parts);
   parts.forEach((p) => worldHoles.push(...panelHolesWorld(p, p.v3.placement, p.v3.thickness)));
 
   const { furn, fasteners } = parseFittings(data);
+  // текстуры фурнитуры: у меша есть материал поверхности — отдаём вьюеру его текстуру
+  furn.forEach((f) => { if (f.mat && matTex[f.mat]) f.matData = matTex[f.mat]; });
 
   return {
     source: 'detalqr-model',
@@ -444,6 +582,8 @@ export function parseDetalQR(data) {
     fasteners,
     fittingsByGid: fittingsByGidOf(data),
     dims: (data.dims || []).map((d) => ({ value: d.value, a: d.a, b: d.b, ea: d.ea, eb: d.eb, col: d.col })),
+    // анимации (TFurnAnimation): {ax, bx} — ось в мировых координатах, ang — угол
+    anims: Array.isArray(data.anims) ? data.anims : [],
     fittingsCount: (data.fittings || []).length,
     furniture: data.furniture || [],
   };

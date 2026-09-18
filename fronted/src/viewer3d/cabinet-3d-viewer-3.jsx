@@ -1,3 +1,6 @@
+/* eslint-disable react-hooks/immutability -- компонент на three.js: сцена,
+ * ref'ы (needsRenderRef, meshMapRef, animsOpenRef…) меняются императивно в
+ * цикле рендера и эффектах — это осознанный паттерн, а не нарушение. */
 import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import * as THREE from 'three';
 import { Layers3, RotateCw, Square, CheckSquare, Upload, X, Maximize2, Minimize2, PenTool, Ruler, FileText, Eye, EyeOff, Search, ChevronRight, ChevronDown } from 'lucide-react';
@@ -664,6 +667,10 @@ function CabinetViewer({ devModel, embedded = false } = {}) {
   const sceneRef = useRef(null);
   const meshMapRef = useRef({});
   const decorRef = useRef(null);          // цилиндры дырок + меши фурнитуры + пазы
+  // детали по id и анимации модели — ссылками: цикл рендера живёт в замыкании
+  // сетапа и не должен зависеть от устаревшего loadedJSON
+  const partsByIdRef = useRef({});
+  const animsRef = useRef([]);
   const dimGroupRef = useRef(null);
   const orbitRef = useRef({
     theta: 0.785, phi: 1.0, radius: 2400,
@@ -694,11 +701,22 @@ function CabinetViewer({ devModel, embedded = false } = {}) {
   // выезжающая панель «Материалы и слои» поверх 3D (режим embedded — окно CRM).
   // Раскрыта по умолчанию: пользователь ждёт список материалов «слева» сразу.
   const [toolsOpen, setToolsOpen] = useState(true);
+  // анимации (двери/ящики): индекс -> открыто. Клик по детали с анимацией
+  // переключает её; кнопка в панели «Материалы» — все сразу.
+  const [animsOpen, setAnimsOpen] = useState({});
+  const animsOpenRef = useRef({});
+  useEffect(() => { animsOpenRef.current = animsOpen; needsRenderRef.current = true; }, [animsOpen]);
+  const animsList = (loadedJSON && Array.isArray(loadedJSON.anims)) ? loadedJSON.anims : [];
+  const animsAnyOpen = Object.keys(animsOpen).some((k) => animsOpen[k]);
   const [showDoc, setShowDoc] = useState(false);
   const [showSpec, setShowSpec] = useState(false);
   const showDocRef = useRef(false);               // зеркало showDoc/showSpec для rAF-цикла
   const needsRenderRef = useRef(true);            // рендер по требованию: кадр нужен только при изменениях
   useEffect(() => { showDocRef.current = showDoc || showSpec; needsRenderRef.current = true; }, [showDoc, showSpec]);
+  useEffect(() => {
+    animsRef.current = (loadedJSON && Array.isArray(loadedJSON.anims)) ? loadedJSON.anims : [];
+    needsRenderRef.current = true;
+  }, [loadedJSON]);
   const [hiddenIds, setHiddenIds] = useState({});     // скрытые детали (глаз)
   const [hideFacades, setHideFacades] = useState(false);
   const [searchQ, setSearchQ] = useState('');
@@ -721,6 +739,12 @@ function CabinetViewer({ devModel, embedded = false } = {}) {
         : [],
     [loadedOBJ, loadedJSON, isV3]
   );
+
+  useEffect(() => {
+    const m = {};
+    (parts || []).forEach((p) => { m[p.id] = p; });
+    partsByIdRef.current = m;
+  }, [parts]);
 
   const NO_MATERIAL_KEY = '__none__';
   const materialKey = (p) => p.material || NO_MATERIAL_KEY;
@@ -770,6 +794,31 @@ function CabinetViewer({ devModel, embedded = false } = {}) {
           </label>
         </div>
       )}
+      {animsList.length > 0 && (
+        <div style={{ marginBottom: 12 }}>
+          <button
+            onClick={() => {
+              const next = {};
+              const anyOpen = animsList.some((_, i) => animsOpen[i]);
+              animsList.forEach((_, i) => { next[i] = !anyOpen; });
+              setAnimsOpen(next);
+            }}
+            style={{
+              width: '100%', padding: '6px 8px', fontSize: 12, cursor: 'pointer',
+              background: animsAnyOpen ? COLOR.accent : 'transparent',
+              color: animsAnyOpen ? '#fff' : COLOR.accent,
+              border: `1px solid ${COLOR.accent}`,
+            }}
+            title="Открыть или закрыть все двери и ящики модели (или кликайте по ним в 3D)"
+          >
+            {animsAnyOpen ? 'Закрыть двери и ящики' : 'Открыть двери и ящики'}
+          </button>
+          <div style={{ fontSize: 10.5, color: COLOR.textMuted, marginTop: 4 }}>
+            или клик по двери/ящику в 3D
+          </div>
+        </div>
+      )}
+
       {materialsList.length > 1 && (
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
@@ -989,7 +1038,13 @@ function CabinetViewer({ devModel, embedded = false } = {}) {
 
         if (hits.length > 0) {
           const found = entries.find(([, m]) => m.mesh === hits[0].object);
-          if (found) setSelectedId((prev) => (prev === found[0] ? null : found[0]));
+          if (found) {
+            // дверь/ящик с анимацией: клик открывает/закрывает, а не выделяет
+            const hitPart = partsByIdRef.current ? partsByIdRef.current[found[0]] : null;
+            const ai = hitPart && typeof hitPart.anim === 'number' ? hitPart.anim : -1;
+            if (ai >= 0) setAnimsOpen((prev) => ({ ...prev, [ai]: !prev[ai] }));
+            else setSelectedId((prev) => (prev === found[0] ? null : found[0]));
+          }
         }
       }
       dragRef.current.moved = 0;
@@ -1038,14 +1093,62 @@ function CabinetViewer({ devModel, embedded = false } = {}) {
       camera.lookAt(o.target);
       lastCam.theta = o.theta; lastCam.phi = o.phi; lastCam.radius = o.radius;
 
+      const openMap = animsOpenRef.current || {};
+      const anims = animsRef.current;
       Object.keys(map).forEach((id) => {
         const m = map[id];
         m.mesh.position.lerp(m.targetPos, 0.15);
+
+        // --- анимация детали (дверь/ящик): поворот вокруг оси + смещение ---
+        const part = partsByIdRef.current ? partsByIdRef.current[id] : null;
+        const ai = part && typeof part.anim === 'number' ? part.anim : -1;
+        const a = (anims && ai >= 0) ? anims[ai] : null;
+        if (!a) {
+          if (m.animP) { m.animP = 0; m.mesh.quaternion.set(0, 0, 0, 1); }
+          return;
+        }
+        const target = openMap[ai] ? 1 : 0;
+        if (m.animP === undefined) m.animP = 0;
+        if (Math.abs(m.animP - target) > 0.0005) {
+          m.animP += (target - m.animP) * 0.18;
+          if (Math.abs(m.animP - target) <= 0.0005) m.animP = target;
+        }
+        const p = m.animP;
+        if (p <= 0.0005) {
+          m.mesh.quaternion.set(0, 0, 0, 1);
+          return;
+        }
+        const A = animAxisA.copy(new THREE.Vector3(a.ax[0], a.ax[1], a.ax[2]));
+        const B = animAxisB.copy(new THREE.Vector3(a.bx[0], a.bx[1], a.bx[2]));
+        const dir = animAxisD.copy(B).sub(A);
+        if (dir.lengthSq() < 1e-6) { m.mesh.quaternion.set(0, 0, 0, 1); return; }
+        dir.normalize();
+        const angRad = (Number(a.ang) || 0) * Math.PI / 180 * p;   // DoorAngle в градусах
+        const shift = (Number(a.shift) || 0) * p;
+        const rest = m.targetPos;                                   // куда деталь стремится
+        animTmp.copy(rest).sub(A);
+        animQuat.setFromAxisAngle(dir, angRad);
+        animTmp.applyQuaternion(animQuat);
+        m.mesh.position.copy(A).add(animTmp).addScaledVector(dir, shift);
+        m.mesh.quaternion.copy(animQuat);
       });
+      // пока анимация не доехала — кадры нужны дальше
+      for (const id in map) {
+        const m = map[id];
+        if (m.animP !== undefined) {
+          const part = partsByIdRef.current ? partsByIdRef.current[id] : null;
+          const ai = part && typeof part.anim === 'number' ? part.anim : -1;
+          const t = (ai >= 0 && openMap[ai]) ? 1 : 0;
+          if (Math.abs((m.animP || 0) - t) > 0.0006) { partsMoving = true; break; }
+        }
+      }
 
       renderer.render(scene, camera);
       needsRenderRef.current = false;
     };
+    const animAxisA = new THREE.Vector3(), animAxisB = new THREE.Vector3();
+    const animAxisD = new THREE.Vector3(), animTmp = new THREE.Vector3();
+    const animQuat = new THREE.Quaternion();
     const lastCam = { theta: NaN, phi: NaN, radius: NaN }; // для детекта ручного поворота
     animate();
 
@@ -1157,7 +1260,10 @@ function CabinetViewer({ devModel, embedded = false } = {}) {
       const edgesMat = new THREE.LineBasicMaterial({ color: 0x141416 });
       const edges = new THREE.LineSegments(edgesGeo, edgesMat);
       edges.position.copy(mesh.position);
-      scene.add(edges);
+      // кромки — ДЕТИ меша: следуют за ним при разлёте и анимации дверей.
+      // Геометрия у обеих миров, поэтому смещение ребёнка = 0.
+      mesh.add(edges);
+      edges.position.set(0, 0, 0);
 
       // Разлёт: для panel3/mesh смещение по мировому положению bbox-центра
       const bcx = p.x + p.w / 2, bcy = p.y + p.h / 2;
@@ -1266,10 +1372,36 @@ function CabinetViewer({ devModel, embedded = false } = {}) {
         const idx = new Uint32Array(f.tris.length * 3);
         f.tris.forEach((t, i) => { idx[i * 3] = t[0]; idx[i * 3 + 1] = t[1]; idx[i * 3 + 2] = t[2]; });
         geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-        geo.setIndex(new THREE.BufferAttribute(idx, 1));
+        // текстура поверхности фурнитуры: UV приходят по треугольникам, поэтому
+        // геометрию разворачиваем в неиндексированную (вершины не делятся между гранями)
+        const hasUV = f.uv && f.matData && f.uv.length === f.tris.length * 3;
+        if (hasUV) {
+          const p2 = new Float32Array(f.tris.length * 9);
+          const t2 = new Float32Array(f.tris.length * 6);
+          f.tris.forEach((t, i) => {
+            for (let k = 0; k < 3; k++) {
+              const v = f.verts[t[k]];
+              p2[i * 9 + k * 3] = v[0]; p2[i * 9 + k * 3 + 1] = v[1]; p2[i * 9 + k * 3 + 2] = v[2];
+              t2[i * 6 + k * 2] = f.uv[i * 3 + k][0]; t2[i * 6 + k * 2 + 1] = f.uv[i * 3 + k][1];
+            }
+          });
+          geo.setAttribute('position', new THREE.BufferAttribute(p2, 3));
+          geo.setAttribute('uv', new THREE.BufferAttribute(t2, 2));
+        } else {
+          geo.setIndex(new THREE.BufferAttribute(idx, 1));
+        }
         geo.computeVertexNormals();
         const baseCol = f.color ? new THREE.Color(f.color) : new THREE.Color(0x8a8f98);
         const m = new THREE.MeshStandardMaterial({ color: baseCol, roughness: 0.35, metalness: 0.7, flatShading: true });
+        if (hasUV) {
+          new THREE.TextureLoader().load(f.matData.url, (tex) => {
+            tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+            m.map = tex;
+            m.color = new THREE.Color(0xffffff);
+            m.needsUpdate = true;
+            needsRenderRef.current = true;
+          });
+        }
         const mesh = new THREE.Mesh(geo, m);
         mesh.userData.furn = true;
         decor.add(mesh);
