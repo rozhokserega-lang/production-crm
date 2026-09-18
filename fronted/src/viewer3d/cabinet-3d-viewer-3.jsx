@@ -444,6 +444,36 @@ function hashColor(key) {
   return HOLE_PALETTE[h % HOLE_PALETTE.length];
 }
 
+/* Ракурс из файла (`view` — камера Базиса на момент выгрузки) -> параметры
+ * орбиты вьюера. У TCamera3D (справочник API) есть ViewPosition и ViewDirection,
+ * углов хватает, чтобы поставить камеру под тем же углом. Дистанцию оставляем
+ * свою (вписанную в кадр): у Базиса она привязана к его окну и масштабу. */
+function orbitFromView(view, center, fitRadius) {
+  if (!view || typeof view !== 'object') return null;
+  const vec3 = (v) => (Array.isArray(v) && v.length === 3 && v.every((n) => typeof n === 'number' && isFinite(n)) ? v : null);
+  const c = [center ? center[0] : 0, center ? center[1] : 0, center ? center[2] : 0];
+  let dx = null, dy = null, dz = null;
+
+  const dir = vec3(view.ViewDirection);
+  if (dir && Math.hypot(dir[0], dir[1], dir[2]) > 1e-6) {
+    // камера смотрит ВДОЛЬ ViewDirection → из цели в камеру = минус это направление
+    dx = -dir[0]; dy = -dir[1]; dz = -dir[2];
+  } else {
+    const p = vec3(view.ViewPosition) || vec3(view.Position) || vec3(view.Eye) || vec3(view.Point);
+    if (!p) return null;
+    const t = vec3(view.Target) || vec3(view.Center) || vec3(view.LookAt) || c;
+    dx = p[0] - t[0]; dy = p[1] - t[1]; dz = p[2] - t[2];
+    c[0] = t[0]; c[1] = t[1]; c[2] = t[2];
+  }
+  if (!(Math.hypot(dx, dy, dz) > 1e-6)) return null;
+  return {
+    theta: Math.atan2(dx, dz),
+    phi: Math.atan2(Math.hypot(dx, dz), dy),
+    radius: fitRadius > 0 ? fitRadius : 2400,
+    target: [c[0], c[1], c[2]],
+  };
+}
+
 // отрезок ребра контура по индексу элемента (для кромок)
 function segByElem(contour, elem) {
   if (!contour || elem === undefined || elem === null || elem < 0 || elem >= contour.length) return null;
@@ -701,6 +731,10 @@ function CabinetViewer({ devModel, embedded = false } = {}) {
   // выезжающая панель «Материалы и слои» поверх 3D (режим embedded — окно CRM).
   // Раскрыта по умолчанию: пользователь ждёт список материалов «слева» сразу.
   const [toolsOpen, setToolsOpen] = useState(true);
+  // ракурс, с которого модель смотрели в БазИСе (поле `view` в выгрузке):
+  // ставим его начальной камерой, кнопка «Как в БазИСе» возвращает после вращения
+  const designViewRef = useRef(null);
+  const [hasDesignView, setHasDesignView] = useState(false);
   // анимации (двери/ящики): индекс -> открыто. Клик по детали с анимацией
   // переключает её; кнопка в панели «Материалы» — все сразу.
   const [animsOpen, setAnimsOpen] = useState({});
@@ -1499,6 +1533,19 @@ function CabinetViewer({ devModel, embedded = false } = {}) {
       orbitRef.current.radiusGoal = orbitRef.current.radius;
     }
 
+    // ракурс конструктора из файла — ставим камеру так, как модель стояла в БазИСе
+    const dv = orbitFromView(loadedJSON && loadedJSON.view, [cx, cy, cz], orbitRef.current.radius);
+    designViewRef.current = dv;
+    setHasDesignView(!!dv);
+    if (dv) {
+      const o = orbitRef.current;
+      o.theta = o.thetaGoal = dv.theta;
+      o.phi = o.phiGoal = dv.phi;
+      o.radius = o.radiusGoal = dv.radius;
+      o.target.set(dv.target[0], dv.target[1], dv.target[2]);
+      o.targetGoal.set(dv.target[0], dv.target[1], dv.target[2]);
+    }
+
     if (dimGroupRef.current) {
       dimGroupRef.current.traverse((obj) => {
         if (obj.geometry) obj.geometry.dispose();
@@ -1581,6 +1628,18 @@ function CabinetViewer({ devModel, embedded = false } = {}) {
     const maxDim = Math.max(part.w, part.h, part.d, 50);
     orbitRef.current.targetGoal.set(cx, cy, cz);
     orbitRef.current.radiusGoal = maxDim * 2.4;
+  }, []);
+
+  // вернуть ракурс, с которого модель смотрели в БазИСе (поле `view` в выгрузке)
+  const applyDesignView = useCallback(() => {
+    const dv = designViewRef.current;
+    if (!dv) return;
+    const o = orbitRef.current;
+    o.thetaGoal = dv.theta;
+    o.phiGoal = dv.phi;
+    o.radiusGoal = dv.radius;
+    o.targetGoal.set(dv.target[0], dv.target[1], dv.target[2]);
+    needsRenderRef.current = true;
   }, []);
 
   // виды камеры (как «Tepa/Old/Yon» у detalQR): плавный переход через theta/phi
@@ -1871,6 +1930,19 @@ function CabinetViewer({ devModel, embedded = false } = {}) {
                   {label}
                 </button>
               ))}
+              {hasDesignView && (
+                <button
+                  onClick={applyDesignView}
+                  style={{
+                    fontSize: 11, padding: '4px 8px', cursor: 'pointer',
+                    background: 'rgba(230,240,223,0.92)', color: COLOR.accent,
+                    border: `1px solid ${COLOR.accent}`,
+                  }}
+                  title="Ракурс, с которого модель смотрели в БазИСе при выгрузке"
+                >
+                  Как в БазИСе
+                </button>
+              )}
               {embedded && (isV3 || isDetalQR || materialsList.length > 1) && (
                 <button
                   onClick={() => setToolsOpen((v) => !v)}

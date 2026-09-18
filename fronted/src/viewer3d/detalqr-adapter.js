@@ -444,7 +444,16 @@ export function parseDetalQR(data) {
 
   // панели + профили (TExtrusionBody) — рисуются одинаково: контур + толщина
   const parts = (data.panels || []).map((p, idx) => {
-    const placement = placementFromPosQuat(p.pos, p.quat);
+    // ОСИ ЛСК предпочтительнее кватерниона: у зеркальных деталей (половинки
+    // столешницы и т.п.) базис левосторонний, а кватернион отражение не выражает.
+    const placement = p.placement
+      ? {
+        origin: { x: p.placement.origin.x, y: p.placement.origin.y, z: p.placement.origin.z },
+        ax: { x: p.placement.ax.x, y: p.placement.ax.y, z: p.placement.ax.z },
+        ay: { x: p.placement.ay.x, y: p.placement.ay.y, z: p.placement.ay.z },
+        az: { x: p.placement.az.x, y: p.placement.az.y, z: p.placement.az.z },
+      }
+      : placementFromPosQuat(p.pos, p.quat);
     const contour = panelContour(p.poly, p.cuts);
     const bb = contourBBox(contour);
     const wbb = worldBBox(contour, placement, p.thick || 0);
@@ -576,6 +585,9 @@ export function parseDetalQR(data) {
     source: 'detalqr-model',
     displayParts: true,
     info: data.info || null,
+    // ракурс камеры Базиса на момент выгрузки: вьюер открывает модель под ним
+    // (кнопка «Как в Базисе» возвращает его после вращения)
+    view: (data.view && typeof data.view === 'object') ? data.view : null,
     parts,
     holes: worldHoles,
     furn,
