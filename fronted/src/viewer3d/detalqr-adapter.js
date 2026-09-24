@@ -129,6 +129,47 @@ function edgeNormal(bb, x, y) {
   return [0, 1];
 }
 
+// v5: отверстия «двумя мировыми точками» -> локальные координаты + грань.
+// g1 — начало сверления, g2 — его конец. Вход определяем ПО ГЕОМЕТРИИ: у
+// пластевого отверстия вход — конец, лежащий у пласти (lz≈0 → B, lz≈толщины → A);
+// у торцевого — конец у кромки контура. От того, какой конец в файле первый,
+// результат не зависит — поэтому у зеркальных деталей грани не путаются и смена
+// размещения панели отверстия не уводит (точки мировые, не локальные).
+function holesV5ToLocal(holes, placement, thickness, bb) {
+  const out = [];
+  const o = placement.origin, ax = placement.ax, ay = placement.ay, az = placement.az;
+  const th = Math.abs(thickness) || 16;
+  const loc = (p) => {
+    const dx = p[0] - o.x, dy = p[1] - o.y, dz = p[2] - o.z;
+    return [dx * ax.x + dy * ax.y + dz * ax.z,
+            dx * ay.x + dy * ay.y + dz * ay.z,
+            dx * az.x + dy * az.y + dz * az.z];
+  };
+  const edgeDist = (l) => Math.min(Math.abs(l[0] - bb.minX), Math.abs(l[0] - bb.maxX),
+                                   Math.abs(l[1] - bb.minY), Math.abs(l[1] - bb.maxY));
+  for (const h of (holes || [])) {
+    if (!h || !Array.isArray(h.g1) || !Array.isArray(h.g2)) continue;
+    const l1 = loc(h.g1), l2 = loc(h.g2);
+    const segLen = Math.hypot(l2[0] - l1[0], l2[1] - l1[1], l2[2] - l1[2]) || 1;
+    const alongZ = Math.abs(l2[2] - l1[2]) / segLen;
+    const rec = { type: h.type, color: h.color, d: h.d, depth: h.depth, thru: h.thru };
+    if (alongZ > 0.98) {
+      const d1 = Math.min(Math.abs(l1[2]), Math.abs(l1[2] - th));
+      const d2 = Math.min(Math.abs(l2[2]), Math.abs(l2[2] - th));
+      const e = d1 <= d2 ? l1 : l2;
+      rec.x = e[0]; rec.y = e[1];
+      rec.face = Math.abs(e[2] - th) < Math.abs(e[2]) ? 'A' : 'B';
+    } else {
+      const e = edgeDist(l1) <= edgeDist(l2) ? l1 : l2;
+      rec.x = e[0]; rec.y = e[1];
+      rec.face = 'T';
+      rec.z = Math.max(0, Math.min(th, e[2]));
+    }
+    out.push(rec);
+  }
+  return out;
+}
+
 // мировые цилиндры всех отверстий панели (A — пласть +Z, B — −Z, T — торец)
 function panelHolesWorld(p, placement, thickness) {
   const out = [];
@@ -194,12 +235,17 @@ function parseFittings(data) {
         verts: verts.map((v) => [v.x, v.y, v.z]),
         tris: src.tris,
         color: col,
+        // узел и анимация: по gid фурнитура группируется по модулям (схема сборки),
+        // anim нужен, чтобы крепёж двери уезжал вместе с дверью
+        gid: f.gid || '',
+        anim: (typeof f.anim === 'number') ? f.anim : -1,
       });
     } else if (f.sections && f.sections.length) {
       fasteners.push({
         name: f.kind || 'крепёж',
         color: col,
         sections: f.sections.map((s) => ({ p: s.p, d: s.d, r: s.r, len: s.len })),
+        gid: f.gid || '',
       });
     }
   });
@@ -464,7 +510,13 @@ export function parseDetalQR(data) {
     const signedThick = thRaw < 0 ? thRaw : (thRaw || 16);
     const kind = classifyKind(p.name);
     const mat = shortMat(p.mat);
-    const holes = (p.holes || []).map((h) => ({
+    // v5: отверстия мировыми точками (g1/g2) — грань и локальные координаты
+    // выводим сами по placement панели (идея «Конструктора Королёва»: у них
+    // грань считает сервер, у нас — вьюер). Старые файлы (face/x/y) идут как есть.
+    const holesSrc = (p.holes || []).some((h) => h && Array.isArray(h.g1))
+      ? holesV5ToLocal(p.holes, placement, Math.abs(signedThick), bb)
+      : (p.holes || []);
+    const holes = holesSrc.map((h) => ({
       faceX: h.x || 0,
       faceY: h.y || 0,
       diameter: h.d || 0,
@@ -484,6 +536,10 @@ export function parseDetalQR(data) {
       name: p.des ? (p.des + ' — ' + p.name) : (p.name || 'Деталь'),
       kind,
       material: mat || null,
+      // схема сборки: анимация (дверь/ящик) и метка узла — деталь и её крепёж
+      // должны разъезжаться и подсвечиваться вместе
+      anim: (typeof p.anim === 'number') ? p.anim : -1,
+      uid: p.uid || '',
       v3: {
         des: p.des || '',
         name: p.name || '',

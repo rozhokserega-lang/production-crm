@@ -3,9 +3,10 @@
  * цикле рендера и эффектах — это осознанный паттерн, а не нарушение. */
 import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import * as THREE from 'three';
-import { Layers3, RotateCw, Square, CheckSquare, Upload, X, Maximize2, Minimize2, PenTool, Ruler, FileText, Eye, EyeOff, Search, ChevronRight, ChevronDown } from 'lucide-react';
+import { Layers3, RotateCw, Square, CheckSquare, Upload, X, Maximize2, Minimize2, PenTool, Ruler, FileText, Printer, Eye, EyeOff, Search, ChevronRight, ChevronDown } from 'lucide-react';
 import AssemblyDoc from './schema-sborki-3.jsx';
 import SpecSheet from './spec-sheet.jsx';
+import { SchemeBar, SchemeSpec, SchemePrintSheet } from './schema-3d-ui.jsx';
 import { parseDetalQR, isDetalQRData, decodeModelText } from './detalqr-adapter.js';
 
 const COLOR = {
@@ -306,6 +307,37 @@ function makeTextSprite(text, color) {
   const sprite = new THREE.Sprite(material);
   sprite.userData.aspect = canvas.width / canvas.height;
   sprite.renderOrder = 999;
+  return sprite;
+}
+
+/* Кружок позиции для схемы сборки: номер на светлом круге. sizeAttenuation
+ * выключен — кружок держит размер на экране и не «плывёт» при зуме; поэтому же
+ * он попадает и в снимок для печати. */
+function makeBadgeSprite(num, selected) {
+  const size = 96;
+  const canvas = document.createElement('canvas');
+  canvas.width = size; canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  ctx.beginPath();
+  ctx.arc(size / 2, size / 2, size / 2 - 5, 0, Math.PI * 2);
+  ctx.fillStyle = selected ? '#b5701f' : 'rgba(252,250,244,0.97)';
+  ctx.fill();
+  ctx.lineWidth = 5;
+  ctx.strokeStyle = selected ? '#8a5416' : '#3b3b36';
+  ctx.stroke();
+  ctx.fillStyle = selected ? '#fff' : '#23231f';
+  ctx.font = 'bold 46px ui-monospace, monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(String(num), size / 2, size / 2 + 2);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.needsUpdate = true;
+  const material = new THREE.SpriteMaterial({ map: texture, depthTest: false, depthWrite: false, sizeAttenuation: false });
+  const sprite = new THREE.Sprite(material);
+  sprite.scale.set(0.052, 0.052, 1);      // доля высоты кадра — ~37 px при 720p
+  sprite.renderOrder = 1000;
+  sprite.userData.badge = true;
+  sprite.userData.num = num;
   return sprite;
 }
 
@@ -714,6 +746,16 @@ function CabinetViewer({ devModel, embedded = false } = {}) {
   const fileInputRef = useRef(null);
 
   const [exploded, setExploded] = useState(false);
+  // ---- схема сборки (3D): разлёт ползунком, кружки позиций, выноски, печать ----
+  const [scheme, setScheme] = useState(false);
+  const [schemeAsm, setSchemeAsm] = useState('');      // выбранный модуль ('' — все)
+  const [explodeK, setExplodeK] = useState(1);         // 0..1.5 — насколько разнесены детали
+  const [showPos, setShowPos] = useState(true);        // кружки позиций
+  const [showLead, setShowLead] = useState(false);     // выноски (по умолчанию выкл — иначе паутина)
+  const badgeGroupRef = useRef(null);                  // спрайты-кружки схемы
+  const captureRef = useRef(null);                     // снимок кадра для печати
+  const partCentersRef = useRef({});                   // id -> центр детали (мировые)
+  const [printSheet, setPrintSheet] = useState(null);  // лист печати схемы
   const [selectedId, setSelectedId] = useState(null);
   const [checked, setChecked] = useState({});
   const [loadedJSON, setLoadedJSON] = useState(null);
@@ -755,6 +797,11 @@ function CabinetViewer({ devModel, embedded = false } = {}) {
   const [hideFacades, setHideFacades] = useState(false);
   const [searchQ, setSearchQ] = useState('');
   const [hoverId, setHoverId] = useState(null);       // наведение — подсветка в 3D
+  // зеркала выделения для обработчиков сцены (эффект сцены не видит свежие state)
+  const selectedIdRef = useRef(null);
+  const hoverIdRef = useRef(null);
+  useEffect(() => { selectedIdRef.current = selectedId; }, [selectedId]);
+  useEffect(() => { hoverIdRef.current = hoverId; }, [hoverId]);
   const [collapsedAsm, setCollapsedAsm] = useState({});
 
   const isLoaded = !!loadedJSON || !!loadedOBJ;
@@ -998,6 +1045,12 @@ function CabinetViewer({ devModel, embedded = false } = {}) {
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(COLOR.bg);
     sceneRef.current = scene;
+    // снимок текущего кадра для листа печати (рендер перед чтением — тогда
+    // preserveDrawingBuffer не нужен, а кадр гарантированно свежий)
+    captureRef.current = () => {
+      try { renderer.render(scene, camera); return renderer.domElement.toDataURL('image/png'); }
+      catch (e) { return null; }
+    };
 
     const camera = new THREE.PerspectiveCamera(38, w / h, 10, 20000);
 
@@ -1093,6 +1146,17 @@ function CabinetViewer({ devModel, embedded = false } = {}) {
 
     renderer.domElement.addEventListener('pointerdown', onDown);
     window.addEventListener('pointermove', onMove);
+    // двойной клик — «обзор детали»: камера подлетает к выделенной/подсвеченной
+    const onDbl = () => {
+      const id = selectedIdRef.current || hoverIdRef.current;
+      if (!id) return;
+      const p = partsByIdRef.current ? partsByIdRef.current[id] : null;
+      if (!p) return;
+      orbitRef.current.targetGoal.set(p.x + p.w / 2, p.y + p.h / 2, p.z + p.d / 2);
+      orbitRef.current.radiusGoal = Math.max(p.w, p.h, p.d, 50) * 2.2;
+      needsRenderRef.current = true;
+    };
+    renderer.domElement.addEventListener('dblclick', onDbl);
     window.addEventListener('pointerup', onUp);
     renderer.domElement.addEventListener('wheel', onWheel, { passive: false });
 
@@ -1111,7 +1175,7 @@ function CabinetViewer({ devModel, embedded = false } = {}) {
       let partsMoving = false;
       const map = meshMapRef.current;
       for (const id in map) {
-        if (map[id].mesh.position.distanceToSquared(map[id].targetPos) > 0.0025) { partsMoving = true; break; }
+        if (map[id].group.position.distanceToSquared(map[id].moveTarget) > 0.0025) { partsMoving = true; break; }
       }
       if (!needsRenderRef.current && !camMoving && !partsMoving) return;
 
@@ -1131,7 +1195,7 @@ function CabinetViewer({ devModel, embedded = false } = {}) {
       const anims = animsRef.current;
       Object.keys(map).forEach((id) => {
         const m = map[id];
-        m.mesh.position.lerp(m.targetPos, 0.15);
+        m.group.position.lerp(m.moveTarget, 0.15);
 
         // --- анимация детали (дверь/ящик): поворот вокруг оси + смещение ---
         const part = partsByIdRef.current ? partsByIdRef.current[id] : null;
@@ -1150,6 +1214,7 @@ function CabinetViewer({ devModel, embedded = false } = {}) {
         const p = m.animP;
         if (p <= 0.0005) {
           m.mesh.quaternion.set(0, 0, 0, 1);
+          m.mesh.position.copy(m.restPos);
           return;
         }
         const A = animAxisA.copy(new THREE.Vector3(a.ax[0], a.ax[1], a.ax[2]));
@@ -1159,7 +1224,7 @@ function CabinetViewer({ devModel, embedded = false } = {}) {
         dir.normalize();
         const angRad = (Number(a.ang) || 0) * Math.PI / 180 * p;   // DoorAngle в градусах
         const shift = (Number(a.shift) || 0) * p;
-        const rest = m.targetPos;                                   // куда деталь стремится
+        const rest = m.restPos;                                     // позиция покоя детали
         animTmp.copy(rest).sub(A);
         animQuat.setFromAxisAngle(dir, angRad);
         animTmp.applyQuaternion(animQuat);
@@ -1177,9 +1242,30 @@ function CabinetViewer({ devModel, embedded = false } = {}) {
         }
       }
 
+      // кружки позиций и выноски — за деталями (в схеме сборки)
+      const badges = badgeGroupRef.current;
+      if (badges) {
+        badges.children.forEach((o) => {
+          const id = o.userData.partId;
+          const c = partCentersRef.current[id];
+          const mm = map[id];
+          if (!c || !mm) return;
+          const off = mm.badgeOffset || badgeZero;
+          if (o.userData.lead) {
+            const at = o.geometry.attributes.position;
+            at.setXYZ(0, c.x + mm.group.position.x + off.x, c.y + mm.group.position.y + off.y, c.z + mm.group.position.z + off.z);
+            at.setXYZ(1, c.x + mm.group.position.x, c.y + mm.group.position.y, c.z + mm.group.position.z);
+            at.needsUpdate = true;
+          } else {
+            o.position.set(c.x + mm.group.position.x + off.x, c.y + mm.group.position.y + off.y, c.z + mm.group.position.z + off.z);
+          }
+        });
+      }
+
       renderer.render(scene, camera);
       needsRenderRef.current = false;
     };
+    const badgeZero = new THREE.Vector3();
     const animAxisA = new THREE.Vector3(), animAxisB = new THREE.Vector3();
     const animAxisD = new THREE.Vector3(), animTmp = new THREE.Vector3();
     const animQuat = new THREE.Quaternion();
@@ -1233,6 +1319,12 @@ function CabinetViewer({ devModel, embedded = false } = {}) {
     const decor = new THREE.Group();
     decorRef.current = decor;
     scene.add(decor);
+    // группы деталей (id -> THREE.Group): в них меш и ВЕСЬ декор этой детали,
+    // чтобы разлёт/анимация двигали деталь вместе с присадкой и крепежом
+    const partGroups = {};
+    // центры деталей — нужны, чтобы привязать фурнитуру к «своей» детали
+    const partCenters = {};
+    partCentersRef.current = partCenters;
 
     let minX = Infinity, minY = Infinity, minZ = Infinity;
     let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
@@ -1287,13 +1379,19 @@ function CabinetViewer({ devModel, embedded = false } = {}) {
         });
       }
       const mesh = new THREE.Mesh(geo, mat);
+      // ГРУППА ДЕТАЛИ: меш + её декор (отверстия, кромка-лента, пазы, облицовка).
+      // Декор лежит в мировых координатах, поэтому группу держим в нуле и везём
+      // по разлёту только её: меш со своими координатами не трогаем, а присадка
+      // и крепёж едут вместе с деталью, а не висят в воздухе.
+      const group = new THREE.Group();
+      group.add(mesh);
+      scene.add(group);
+      partGroups[p.id] = group;
       mesh.position.set(restX, restY, restZ);
-      scene.add(mesh);
 
       const edgesGeo = new THREE.EdgesGeometry(geo, 25);
       const edgesMat = new THREE.LineBasicMaterial({ color: 0x141416 });
       const edges = new THREE.LineSegments(edgesGeo, edgesMat);
-      edges.position.copy(mesh.position);
       // кромки — ДЕТИ меша: следуют за ним при разлёте и анимации дверей.
       // Геометрия у обеих миров, поэтому смещение ребёнка = 0.
       mesh.add(edges);
@@ -1315,9 +1413,16 @@ function CabinetViewer({ devModel, embedded = false } = {}) {
       const restPos = new THREE.Vector3(restX, restY, restZ);
       const explodedPos = restPos.clone().add(delta);
 
+      // радиальный разлёт (для схемы сборки): от центра модуля наружу.
+      // Считаем здесь, но применяем только в режиме схемы
+      partCenters[p.id] = new THREE.Vector3(p.x + p.w / 2, p.y + p.h / 2, p.z + p.d / 2);
+
       meshMapRef.current[p.id] = {
-        mesh, edges, restPos, explodedPos,
-        targetPos: restPos.clone(),
+        group, mesh, edges, restPos, explodedPos,
+        // moveTarget — куда едет ГРУППА (0 при собранной модели)
+        moveTarget: new THREE.Vector3(0, 0, 0),
+        delta: delta.clone(),
+        deltaRadial: delta.clone(),
         normalColor: color,
       };
 
@@ -1338,7 +1443,7 @@ function CabinetViewer({ devModel, embedded = false } = {}) {
             }));
             mesh2.userData.plastic = true;
             mesh2.userData.partId = p.id;
-            decor.add(mesh2);
+            group.add(mesh2);
           } catch (e) { /* контур не построился — пропускаем слой */ }
         });
       }
@@ -1353,7 +1458,7 @@ function CabinetViewer({ devModel, embedded = false } = {}) {
           }));
           mesh3.userData.sweep = true;
           mesh3.userData.partId = p.id;
-          decor.add(mesh3);
+          group.add(mesh3);
         });
       }
 
@@ -1367,7 +1472,7 @@ function CabinetViewer({ devModel, embedded = false } = {}) {
           }));
           mesh4.userData.sweep = true;
           mesh4.userData.partId = p.id;
-          decor.add(mesh4);
+          group.add(mesh4);
         });
       }
     });
@@ -1392,9 +1497,28 @@ function CabinetViewer({ devModel, embedded = false } = {}) {
         mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
         mesh.userData.hole = true;
         if (h.pid) mesh.userData.partId = h.pid;   // привязка к детали (detalQR)
-        decor.add(mesh);
+        if (partGroups[h.pid || p.id]) partGroups[h.pid || p.id].add(mesh); else decor.add(mesh);
       });
     }
+
+    // куда положить фурнитуру/крепёж: в группу ближайшей детали СВОЕГО узла,
+    // чтобы при разлёте и открытии двери она уезжала вместе с деталью.
+    // Сначала пробуем «дверь + узел», потом только узел, потом вообще ближайшую.
+    const nearestGroup = (point, gid, animIdx) => {
+      const pick = (useAnim, useGid) => {
+        let best = null, bestD = Infinity;
+        for (const id in partCenters) {
+          const pp = partsByIdRef.current ? partsByIdRef.current[id] : null;
+          if (!pp) continue;
+          if (useGid && gid && pp.v3 && pp.v3.asmGid && pp.v3.asmGid !== gid) continue;
+          if (useAnim && animIdx >= 0 && pp.anim !== animIdx) continue;
+          const d = partCenters[id].distanceToSquared(point);
+          if (d < bestD) { bestD = d; best = partGroups[id]; }
+        }
+        return best;
+      };
+      return pick(true, true) || pick(false, true) || pick(false, false) || decor;
+    };
 
     // ---- меши фурнитуры (v3 furn и detalQR fittings) ----
     if ((isV3 || isDetalQR) && loadedJSON.furn) {
@@ -1438,7 +1562,15 @@ function CabinetViewer({ devModel, embedded = false } = {}) {
         }
         const mesh = new THREE.Mesh(geo, m);
         mesh.userData.furn = true;
-        decor.add(mesh);
+        mesh.userData.furnName = f.name || 'фурнитура';
+        // центр меша — по вершинам, чтобы привязать к ближайшей детали
+        const fc = new THREE.Vector3();
+        if (f.verts.length) {
+          let sx = 0, sy = 0, sz = 0;
+          for (let vi = 0; vi < f.verts.length; vi++) { sx += f.verts[vi][0]; sy += f.verts[vi][1]; sz += f.verts[vi][2]; }
+          fc.set(sx / f.verts.length, sy / f.verts.length, sz / f.verts.length);
+        }
+        nearestGroup(fc, f.gid, (typeof f.anim === 'number') ? f.anim : -1).add(mesh);
       });
     }
 
@@ -1460,7 +1592,8 @@ function CabinetViewer({ devModel, embedded = false } = {}) {
           mesh.position.copy(new THREE.Vector3(s.p[0], s.p[1], s.p[2]).add(dir.clone().multiplyScalar(len / 2)));
           mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
           mesh.userData.hole = true;
-          decor.add(mesh);
+          mesh.userData.furnName = f.name || 'крепёж';
+          nearestGroup(new THREE.Vector3(s.p[0], s.p[1], s.p[2]), f.gid, -1).add(mesh);
         });
       });
     }
@@ -1489,7 +1622,7 @@ function CabinetViewer({ devModel, embedded = false } = {}) {
           color: b.col ? new THREE.Color(b.col) : 0xc8b48c, roughness: 0.65, metalness: 0.03,
         }));
         mesh.userData.partId = p.id;
-        decor.add(mesh);
+        partGroups[p.id] ? partGroups[p.id].add(mesh) : decor.add(mesh);
       });
     });
 
@@ -1521,7 +1654,7 @@ function CabinetViewer({ devModel, embedded = false } = {}) {
           }));
           mesh.userData.pocket = true;
           mesh.userData.partId = p.id;
-          decor.add(mesh);
+          partGroups[p.id] ? partGroups[p.id].add(mesh) : decor.add(mesh);
         });
       });
     }
@@ -1573,7 +1706,8 @@ function CabinetViewer({ devModel, embedded = false } = {}) {
     const partsById = {};
     parts.forEach((p) => { partsById[p.id] = p; });
     Object.entries(meshMapRef.current).forEach(([id, m]) => {
-      m.targetPos.copy(exploded ? m.explodedPos : m.restPos);
+      // цель группы = смещение разлёта (0 при собранной модели)
+      m.moveTarget.copy(scheme ? m.deltaRadial : m.delta).multiplyScalar(scheme ? explodeK : (exploded ? 1 : 0));
       const isSelected = id === selectedId;
       const isHover = id === hoverId && !isSelected;
       m.mesh.material.emissive = new THREE.Color(isSelected ? COLOR.accent : isHover ? 0xd68a34 : 0x000000);
@@ -1595,9 +1729,20 @@ function CabinetViewer({ devModel, embedded = false } = {}) {
       if (transparentMode) m.mesh.material.side = THREE.DoubleSide;
 
       const part = partsById[id];
-      const visible = part ? isPartVisible(part) : true;
+      // в схеме сборки показываем только детали выбранного модуля
+      const inScheme = !scheme || !schemeAsm || !part || ((part.v3 && part.v3.assembly) || 'Модель') === schemeAsm;
+      const visible = (part ? isPartVisible(part) : true) && inScheme;
       m.mesh.visible = visible && !blueprintMode;
       m.edges.visible = visible;
+      // ДЕКОР ДЕТАЛИ лежит в её группе (после правки «группа на деталь»):
+      // отверстия/кромка/пазы/облицовка — по правилам детали, фурнитура — по тумблеру
+      m.group.children.forEach((c) => {
+        if (c === m.mesh) return;
+        const isFurn = !!c.userData.furn || (c.userData.hole && !c.userData.holeIsDrill);
+        if (c.userData.hole) c.visible = showHoles && visible;
+        else if (isFurn) c.visible = showFurn && visible;
+        else c.visible = visible;
+      });
     });
 
     if (decorRef.current) {
@@ -1618,7 +1763,143 @@ function CabinetViewer({ devModel, embedded = false } = {}) {
 
     if (dimGroupRef.current) dimGroupRef.current.visible = showDimensions;
     needsRenderRef.current = true;   // видимость/подсветка изменились — нужен кадр
-  }, [exploded, selectedId, parts.length, materialVisibility, blueprintMode, transparentMode, showDimensions, isolatedId, showHoles, showFurn, hiddenIds, hideFacades, hoverId]);
+  }, [exploded, scheme, explodeK, schemeAsm, selectedId, parts.length, materialVisibility, blueprintMode, transparentMode, showDimensions, isolatedId, showHoles, showFurn, hiddenIds, hideFacades, hoverId]);
+
+  /* ---------- схема сборки: модули и нумерация позиций ---------- */
+  // модули = верхние узлы изделия (p.v3.assembly: «Model / Крышка мама»)
+  const schemeModules = useMemo(() => {
+    const m = new Map();
+    parts.forEach((p) => {
+      const asm = (p.v3 && p.v3.assembly) || 'Модель';
+      m.set(asm, (m.get(asm) || 0) + 1);
+    });
+    return [...m.entries()];
+  }, [parts]);
+
+  // нумерация: ОДНА позиция на деталь (как у них — свой кружок, своя строка,
+  // свой разлёт), порядок устойчивый: обозначение, имя, id
+  const schemeRows = useMemo(() => {
+    const list = parts
+      .filter((p) => !schemeAsm || ((p.v3 && p.v3.assembly) || 'Модель') === schemeAsm)
+      .slice()
+      .sort((a, b) => String((a.v3 && a.v3.des) || '').localeCompare(String((b.v3 && b.v3.des) || ''), 'ru')
+        || String(a.name || '').localeCompare(String(b.name || ''), 'ru')
+        || String(a.id).localeCompare(String(b.id)));
+    return list.map((p, i) => ({ num: i + 1, id: p.id, part: p }));
+  }, [parts, schemeAsm]);
+  const numById = useMemo(() => {
+    const m = {};
+    schemeRows.forEach((r) => { m[r.id] = r.num; });
+    return m;
+  }, [schemeRows]);
+
+  // строки для списка и печати: номер, обозначение, название, размер
+  const schemeUiRows = useMemo(() => schemeRows.map((r) => {
+    const p = r.part;
+    const des = (p.v3 && p.v3.des) || '';
+    let title = String(p.name || '');
+    const dash = title.indexOf('—');
+    if (dash >= 0) title = title.slice(dash + 1).trim();
+    const th = Math.abs((p.v3 && p.v3.thickness) || 0);
+    return {
+      num: r.num, id: r.id, des,
+      title: title || des || 'Деталь',
+      size: `${Math.round(p.faceW)}×${Math.round(p.faceH)}×${Math.round(th)}`,
+      mat: String(p.material || '').replace(/^.*?\d+\s*мм\s*/i, '').slice(0, 42),
+    };
+  }), [schemeRows]);
+
+  // крепёж и фурнитура выбранного модуля: по gid деталей, иначе по названиям отверстий
+  const schemeFittings = useMemo(() => {
+    const acc = {};
+    const byGid = (loadedJSON && loadedJSON.fittingsByGid) || null;
+    if (byGid) {
+      const seen = {};
+      schemeRows.forEach((r) => {
+        const g = (r.part.v3 && r.part.v3.asmGid) || '';
+        if (!g || seen[g]) return;
+        seen[g] = 1;
+        (byGid[g] || []).forEach((it) => { acc[it.kind] = (acc[it.kind] || 0) + it.count; });
+      });
+    }
+    if (!Object.keys(acc).length) {
+      schemeRows.forEach((r) => (r.part.holes || []).forEach((h) => {
+        const n = h.name || 'крепёж';
+        acc[n] = (acc[n] || 0) + 1;
+      }));
+    }
+    return Object.entries(acc).sort((a, b) => b[1] - a[1]);
+  }, [schemeRows, loadedJSON]);
+
+  // печать: снимок кадра + легенда позиций + крепёж
+  const printScheme = useCallback(() => {
+    const url = captureRef.current ? captureRef.current() : null;
+    const mod = schemeAsm ? String(schemeAsm).split(' / ').pop() : 'все модули';
+    setPrintSheet({
+      url,
+      title: loadedFileName || 'Модель',
+      subtitle: 'модуль: ' + mod,
+      rows: schemeUiRows,
+      fittings: schemeFittings,
+      dateStr: new Date().toLocaleDateString('ru-RU'),
+    });
+  }, [schemeAsm, schemeUiRows, schemeFittings, loadedFileName]);
+
+  /* кружки позиций и радиальный разлёт: строим/обновляем, когда открыли схему,
+   * сменили модуль или тумблеры. Сами позиции кружков каждый кадр подтягивает
+   * цикл отрисовки — они едут вместе с деталями. */
+  useEffect(() => {
+    const map = meshMapRef.current;
+    const ids = Object.keys(map);
+    const inMod = (id) => {
+      const p = partsByIdRef.current ? partsByIdRef.current[id] : null;
+      return !!p && (!schemeAsm || ((p.v3 && p.v3.assembly) || 'Модель') === schemeAsm);
+    };
+    // 1) радиальные смещения от центра модуля (в схеме разъезжаемся «врозь»)
+    const box = new THREE.Box3();
+    ids.forEach((id) => { if (inMod(id) && partCentersRef.current[id]) box.expandByPoint(partCentersRef.current[id]); });
+    const center = box.isEmpty() ? new THREE.Vector3() : box.getCenter(new THREE.Vector3());
+    const diag = box.isEmpty() ? 600 : box.getSize(new THREE.Vector3()).length();
+    ids.forEach((id) => {
+      const m = map[id], c = partCentersRef.current[id];
+      if (!c) return;
+      const dir = c.clone().sub(center);
+      if (dir.lengthSq() < 1) dir.set(0, 1, 0);
+      m.deltaRadial.copy(dir.normalize()).multiplyScalar(diag * 0.35);
+      // куда вынести кружок позиции: наружу от центра модуля, чуть выше
+      m.badgeOffset = dir.clone().multiplyScalar(diag * 0.12).add(new THREE.Vector3(0, diag * 0.05, 0));
+    });
+    // 2) кружки позиций (спрайты) и выноски — только для деталей модуля
+    const scn = sceneRef.current;
+    const old = badgeGroupRef.current;
+    if (old && scn) {
+      old.traverse((o) => {
+        if (o.geometry) o.geometry.dispose();
+        if (o.material) { if (o.material.map) o.material.map.dispose(); o.material.dispose(); }
+      });
+      scn.remove(old);
+      badgeGroupRef.current = null;
+    }
+    if (!scheme || !showPos || !scn) { needsRenderRef.current = true; return; }
+    const g = new THREE.Group();
+    ids.forEach((id) => {
+      if (!inMod(id) || !numById[id] || !partCentersRef.current[id]) return;
+      const sp = makeBadgeSprite(numById[id], false);
+      sp.userData.partId = id;
+      g.add(sp);
+      const lead = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]),
+        new THREE.LineBasicMaterial({ color: 0x4a4a44, transparent: true, opacity: 0.7 })
+      );
+      lead.userData.partId = id;
+      lead.userData.lead = true;
+      lead.visible = !!showLead;
+      g.add(lead);
+    });
+    scn.add(g);
+    badgeGroupRef.current = g;
+    needsRenderRef.current = true;
+  }, [scheme, schemeAsm, showPos, showLead, parts, numById]);
 
   const zoomToSelected = useCallback((part) => {
     if (!part) return;
@@ -1885,16 +2166,32 @@ function CabinetViewer({ devModel, embedded = false } = {}) {
 
           {(isV3 || isDetalQR) && (
             <button
-              onClick={() => setShowDoc(true)}
+              onClick={() => { setScheme(true); setExplodeK(1); fitToModel(); }}
               style={{
                 display: 'flex', alignItems: 'center', gap: 8, width: '100%',
                 padding: '8px 10px', fontSize: 13, cursor: 'pointer', marginTop: 8,
-                background: 'transparent', color: COLOR.accent,
+                background: COLOR.accent, color: '#fff',
                 border: `1px solid ${COLOR.accent}`,
               }}
             >
               <FileText size={14} />
-              Схема сборки (печать/PDF)
+              Схема сборки 3D
+            </button>
+          )}
+
+          {(isV3 || isDetalQR) && (
+            <button
+              onClick={() => setShowDoc(true)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+                padding: '8px 10px', fontSize: 12, cursor: 'pointer', marginTop: 6,
+                background: 'transparent', color: COLOR.textMuted,
+                border: `1px solid ${COLOR.hairline}`,
+              }}
+              title="Плоский чертёж узлов с таблицами — для печати"
+            >
+              <Printer size={13} />
+              Чертёж сборки (2D, печать)
             </button>
           )}
         </div>
@@ -1914,6 +2211,39 @@ function CabinetViewer({ devModel, embedded = false } = {}) {
           onDragLeave={handleDragLeave}
         >
           <div ref={mountRef} style={{ width: '100%', height: fullView ? '100%' : (embedded ? '62vh' : 480), flex: 1, minHeight: 0, cursor: 'grab' }} />
+          {/* схема сборки: полоса управления и список позиций поверх 3D */}
+          {scheme && isLoaded && (
+            <>
+              <SchemeBar
+                modules={schemeModules}
+                asm={schemeAsm}
+                setAsm={setSchemeAsm}
+                explodeK={explodeK}
+                setExplodeK={setExplodeK}
+                showPos={showPos}
+                setShowPos={setShowPos}
+                showFast={showFurn}
+                setShowFast={setShowFurn}
+                showLead={showLead}
+                setShowLead={setShowLead}
+                rowsCount={schemeUiRows.length}
+                onPrint={printScheme}
+                onExit={() => { setScheme(false); setExplodeK(0); setExploded(false); }}
+              />
+              <SchemeSpec
+                rows={schemeUiRows}
+                selectedId={selectedId}
+                hoverId={hoverId}
+                setHoverId={setHoverId}
+                onPick={(id) => { setSelectedId(id); const p = partsById[id]; if (p) zoomToSelected(p); }}
+                fittings={schemeFittings}
+              />
+            </>
+          )}
+
+          {/* лист печати инструкции сборки: порталом в body — в CRM окно модели
+              при печати скрыто (display:none у .dialog-backdrop), а этот лист нет */}
+          {printSheet && <SchemePrintSheet data={printSheet} onClose={() => setPrintSheet(null)} />}
           {isLoaded && (
             <div style={{ position: 'absolute', top: 8, left: 8, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
               {[['iso', 'Изометрия'], ['top', 'Сверху'], ['front', 'Спереди'], ['side', 'Сбоку'], ['fit', 'В центр']].map(([k, label]) => (
@@ -2002,17 +2332,17 @@ function CabinetViewer({ devModel, embedded = false } = {}) {
               )}
               {isLoaded && (isV3 || isDetalQR) && (
                 <button
-                  onClick={() => setShowDoc(true)}
+                  onClick={() => { setScheme(true); setExplodeK(1); fitToModel(); }}
                   style={{
                     fontSize: 11, padding: '4px 8px', cursor: 'pointer',
-                    background: 'rgba(230,240,223,0.92)', color: COLOR.accent,
+                    background: COLOR.accent, color: '#fff',
                     border: `1px solid ${COLOR.accent}`,
                     display: 'flex', alignItems: 'center', gap: 5,
                   }}
-                  title="Схема сборки сборочных единиц (можно распечатать/сохранить в PDF)"
+                  title="Схема сборки в 3D: разлёт деталей, позиции, выноски, печать"
                 >
                   <FileText size={12} />
-                  Схема сборки
+                  Схема сборки 3D
                 </button>
               )}
               <button
