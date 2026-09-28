@@ -7,7 +7,7 @@ import { OrderService } from "../services/orderService";
  * Окно 3D-просмотра модели секции (паттерн WorkshopFinalDoneDialog:
  * createPortal + .dialog-backdrop/.dialog-card, состояние в хуке).
  */
-export function ModelViewerDialog({ open, title, subtitle, loading, error, model, onClose }) {
+export function ModelViewerDialog({ open, title, subtitle, loading, error, model, onClose, onOpenScheme }) {
   useEffect(() => {
     if (!open) return undefined;
     const onKey = (e) => {
@@ -27,9 +27,23 @@ export function ModelViewerDialog({ open, title, subtitle, loading, error, model
             <h3>3D-модель{title ? ` — ${title}` : ""}</h3>
             {subtitle ? <div className="model-viewer-dialog__sub">{subtitle}</div> : null}
           </div>
-          <button type="button" className="mini ghost" onClick={onClose}>
-            Закрыть (Esc)
-          </button>
+          {/* инлайн-стиль, а не класс: styles.css сейчас содержит чужой WIP,
+              который нельзя утаскивать в коммит этой фичи */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+            {onOpenScheme && (
+              <button
+                type="button"
+                className="mini ghost"
+                onClick={onOpenScheme}
+                title="Схема сборки в отдельной вкладке: модуль, разлёт, позиции, кромка, печать"
+              >
+                Схема сборки ↗
+              </button>
+            )}
+            <button type="button" className="mini ghost" onClick={onClose}>
+              Закрыть (Esc)
+            </button>
+          </div>
         </div>
         <div className="model-viewer-dialog__body">
           {loading ? (
@@ -37,7 +51,7 @@ export function ModelViewerDialog({ open, title, subtitle, loading, error, model
           ) : error ? (
             <div className="error">{error}</div>
           ) : (
-            <OrderModelViewer model={model} />
+            <OrderModelViewer model={model} onOpenExternalScheme={onOpenScheme} />
           )}
         </div>
       </div>
@@ -54,6 +68,7 @@ export function useModelViewerDialog() {
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [subtitle, setSubtitle] = useState("");
+  const [section, setSection] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [model, setModel] = useState(null);
@@ -72,20 +87,21 @@ export function useModelViewerDialog() {
     void refreshModelSectionMap();
   }, [refreshModelSectionMap]);
 
-  const openModelViewer = useCallback(async ({ section, title: t, subtitle: sub }) => {
-    const sectionName = String(section || "").trim();
-    if (!sectionName) return;
+  const openModelViewer = useCallback(async ({ section: sectionName, title: t, subtitle: sub }) => {
+    const name = String(sectionName || "").trim();
+    if (!name) return;
     setOpen(true);
     setLoading(true);
     setError("");
     setModel(null);
-    setTitle(String(t || sectionName || ""));
+    setSection(name);
+    setTitle(String(t || name || ""));
     setSubtitle(String(sub || ""));
     try {
-      const row = await OrderService.getSectionModel(sectionName);
+      const row = await OrderService.getSectionModel(name);
       if (!row || !row.model) {
         setError(
-          `У секции «${sectionName}» ещё нет модели. Загрузите её во вкладке «Мебель» → «3D-модели».`,
+          `У секции «${name}» ещё нет модели. Загрузите её во вкладке «Мебель» → «3D-модели».`,
         );
         return;
       }
@@ -104,17 +120,31 @@ export function useModelViewerDialog() {
     setLoading(false);
     setTitle("");
     setSubtitle("");
+    setSection("");
   }, []);
+
+  /** Схема сборки в отдельной вкладке (scheme.html) — по секции открытой модели. */
+  const openSchemeTab = useCallback(() => {
+    const name = String(section || "").trim();
+    if (!name) return;
+    const url = `/scheme.html?section=${encodeURIComponent(name)}&name=${encodeURIComponent(title || name)}`;
+    const popup = window.open(url, "_blank");
+    if (!popup) {
+      window.alert("Браузер заблокировал открытие вкладки. Разрешите всплывающие окна для этого сайта.");
+    }
+  }, [section, title]);
 
   return {
     modelViewerDialog: {
       open,
       title,
       subtitle,
+      section,
       loading,
       error,
       model,
       close: closeModelViewer,
+      openSchemeTab,
     },
     openModelViewer,
     modelSectionMap,

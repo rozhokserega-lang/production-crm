@@ -89,6 +89,7 @@ export function AppDialogs({
         error={dialogs.modelViewer?.error}
         model={dialogs.modelViewer?.model}
         onClose={dialogs.modelViewer?.close}
+        onOpenScheme={dialogs.modelViewer?.openSchemeTab}
       />
 
       <WorkshopFinalDoneDialog

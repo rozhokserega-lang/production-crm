@@ -5,7 +5,7 @@ import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react'
 import * as THREE from 'three';
 import { Layers3, RotateCw, Square, CheckSquare, Upload, X, Maximize2, Minimize2, PenTool, Ruler, FileText, Printer, Eye, EyeOff, Search, ChevronRight, ChevronDown } from 'lucide-react';
 import AssemblyDoc from './schema-sborki-3.jsx';
-import SpecSheet from './spec-sheet.jsx';
+import SpecSheet, { edgesOfPart } from './spec-sheet.jsx';
 import { SchemeBar, SchemeSpec, SchemePrintSheet } from './schema-3d-ui.jsx';
 import { parseDetalQR, isDetalQRData, decodeModelText } from './detalqr-adapter.js';
 
@@ -723,8 +723,36 @@ function PanelDiagram({ part, maxW = 172, maxH = 260, fontScale = 1, showLabels 
   );
 }
 
+/* мировой бокс детали по её размещению (placement) и габаритам пласти —
+ * для габарита модуля в карточке схемы (Ш×В×Г) */
+function partWorldBBox(p) {
+  const pl = p && p.v3 && p.v3.placement;
+  if (!pl || !pl.origin || !pl.ax || !pl.ay || !pl.az) return null;
+  const w = p.faceW || 0;
+  const h = p.faceH || 0;
+  const t = Math.abs((p.v3 && p.v3.thickness) || 0);
+  const bb = { minX: Infinity, minY: Infinity, minZ: Infinity, maxX: -Infinity, maxY: -Infinity, maxZ: -Infinity };
+  for (let ix = 0; ix <= 1; ix++) for (let iy = 0; iy <= 1; iy++) for (let iz = 0; iz <= 1; iz++) {
+    const x = ix ? w : 0, y = iy ? h : 0, z = iz ? t : 0;
+    const wx = pl.origin.x + x * pl.ax.x + y * pl.ay.x + z * pl.az.x;
+    const wy = pl.origin.y + x * pl.ax.y + y * pl.ay.y + z * pl.az.y;
+    const wz = pl.origin.z + x * pl.ax.z + y * pl.ay.z + z * pl.az.z;
+    if (wx < bb.minX) bb.minX = wx; if (wx > bb.maxX) bb.maxX = wx;
+    if (wy < bb.minY) bb.minY = wy; if (wy > bb.maxY) bb.maxY = wy;
+    if (wz < bb.minZ) bb.minZ = wz; if (wz > bb.maxZ) bb.maxZ = wz;
+  }
+  return bb.minX === Infinity ? null : bb;
+}
+
 /* ================= главный компонент ================= */
-function CabinetViewer({ devModel, embedded = false } = {}) {
+/* schemeAuto — сразу открыть режим схемы (страница «Схема сборки»);
+ * standalone — вьюер живёт отдельной вкладкой (scheme.html): без левой колонки
+ * деталей, выход из схемы закрывает вкладку;
+ * onOpenExternalScheme — если задан, кнопка схемы открывает внешнюю вкладку,
+ * а не встроенный режим (так работает окно модели в CRM). */
+function CabinetViewer({
+  devModel, embedded = false, schemeAuto = false, standalone = false, modelName, onOpenExternalScheme,
+} = {}) {
   const mountRef = useRef(null);
   const sceneRef = useRef(null);
   const meshMapRef = useRef({});
@@ -747,11 +775,12 @@ function CabinetViewer({ devModel, embedded = false } = {}) {
 
   const [exploded, setExploded] = useState(false);
   // ---- схема сборки (3D): разлёт ползунком, кружки позиций, выноски, печать ----
-  const [scheme, setScheme] = useState(false);
+  const [scheme, setScheme] = useState(schemeAuto);
   const [schemeAsm, setSchemeAsm] = useState('');      // выбранный модуль ('' — все)
   const [explodeK, setExplodeK] = useState(1);         // 0..1.5 — насколько разнесены детали
   const [showPos, setShowPos] = useState(true);        // кружки позиций
   const [showLead, setShowLead] = useState(false);     // выноски (по умолчанию выкл — иначе паутина)
+  const [schemeSearch, setSchemeSearch] = useState(''); // фильтр списка позиций
   const badgeGroupRef = useRef(null);                  // спрайты-кружки схемы
   const captureRef = useRef(null);                     // снимок кадра для печати
   const partCentersRef = useRef({});                   // id -> центр детали (мировые)
@@ -1032,7 +1061,7 @@ function CabinetViewer({ devModel, embedded = false } = {}) {
   useEffect(() => {
     if (devModel && devModel.parts) {
       setLoadedJSON(devModel);
-      setLoadedFileName((devModel.info && devModel.info.name) || 'Модель');
+      setLoadedFileName(modelName || (devModel.info && devModel.info.name) || 'Модель');
     }
   }, []);
 
@@ -1793,7 +1822,7 @@ function CabinetViewer({ devModel, embedded = false } = {}) {
     return m;
   }, [schemeRows]);
 
-  // строки для списка и печати: номер, обозначение, название, размер
+  // строки для списка и печати: номер, обозначение, название, размер, кромка
   const schemeUiRows = useMemo(() => schemeRows.map((r) => {
     const p = r.part;
     const des = (p.v3 && p.v3.des) || '';
@@ -1804,8 +1833,11 @@ function CabinetViewer({ devModel, embedded = false } = {}) {
     return {
       num: r.num, id: r.id, des,
       title: title || des || 'Деталь',
+      w: Math.round(p.faceW), h: Math.round(p.faceH),
       size: `${Math.round(p.faceW)}×${Math.round(p.faceH)}×${Math.round(th)}`,
       mat: String(p.material || '').replace(/^.*?\d+\s*мм\s*/i, '').slice(0, 42),
+      // кромка в стиле «Деталировки»: линии над/под размером (spec-sheet)
+      edges: (p.butts && p.butts.length) ? edgesOfPart(p) : [],
     };
   }), [schemeRows]);
 
@@ -1831,6 +1863,28 @@ function CabinetViewer({ devModel, embedded = false } = {}) {
     return Object.entries(acc).sort((a, b) => b[1] - a[1]);
   }, [schemeRows, loadedJSON]);
 
+  // карточка модуля для схемы: имя, габарит Ш×В×Г, деталей, крепежа
+  const schemeModuleInfo = useMemo(() => {
+    let bb = null;
+    schemeRows.forEach((r) => {
+      const b = partWorldBBox(r.part);
+      if (!b) return;
+      if (!bb) bb = { ...b };
+      else {
+        bb.minX = Math.min(bb.minX, b.minX); bb.maxX = Math.max(bb.maxX, b.maxX);
+        bb.minY = Math.min(bb.minY, b.minY); bb.maxY = Math.max(bb.maxY, b.maxY);
+        bb.minZ = Math.min(bb.minZ, b.minZ); bb.maxZ = Math.max(bb.maxZ, b.maxZ);
+      }
+    });
+    const fittingsCount = schemeFittings.reduce((s, [, n]) => s + n, 0);
+    return {
+      name: schemeAsm ? String(schemeAsm).split(' / ').pop() : 'Все модули',
+      dims: bb ? [Math.round(bb.maxX - bb.minX), Math.round(bb.maxY - bb.minY), Math.round(bb.maxZ - bb.minZ)] : null,
+      parts: schemeRows.length,
+      fittings: fittingsCount,
+    };
+  }, [schemeRows, schemeFittings, schemeAsm]);
+
   // печать: снимок кадра + легенда позиций + крепёж
   const printScheme = useCallback(() => {
     const url = captureRef.current ? captureRef.current() : null;
@@ -1841,9 +1895,10 @@ function CabinetViewer({ devModel, embedded = false } = {}) {
       subtitle: 'модуль: ' + mod,
       rows: schemeUiRows,
       fittings: schemeFittings,
+      moduleInfo: schemeModuleInfo,
       dateStr: new Date().toLocaleDateString('ru-RU'),
     });
-  }, [schemeAsm, schemeUiRows, schemeFittings, loadedFileName]);
+  }, [schemeAsm, schemeUiRows, schemeFittings, schemeModuleInfo, loadedFileName]);
 
   /* кружки позиций и радиальный разлёт: строим/обновляем, когда открыли схему,
    * сменили модуль или тумблеры. Сами позиции кружков каждый кадр подтягивает
@@ -1949,6 +2004,13 @@ function CabinetViewer({ devModel, embedded = false } = {}) {
     needsRenderRef.current = true;
   }, [parts]);
 
+  // вход в схему сборки: в CRM открываем отдельную вкладку (scheme.html),
+  // на стенде — встроенный режим
+  const enterScheme = useCallback(() => {
+    if (onOpenExternalScheme) { onOpenExternalScheme(); return; }
+    setScheme(true); setExplodeK(1); fitToModel();
+  }, [onOpenExternalScheme, fitToModel]);
+
   /* ---------- полноэкранный режим: Esc/ресайз/браузерный полный экран ---------- */
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') setFullView(false); };
@@ -2005,7 +2067,9 @@ function CabinetViewer({ devModel, embedded = false } = {}) {
         )}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: embedded ? '1fr 220px' : '200px 1fr 220px' }}>
+      {/* standalone (scheme.html): правой колонки деталей нет — список позиций
+          даёт сама схема, страница целиком про сборку */}
+      <div style={{ display: 'grid', gridTemplateColumns: standalone ? '1fr' : (embedded ? '1fr 220px' : '200px 1fr 220px') }}>
         {!embedded && (
         <div style={{ padding: 16, borderRight: `1px solid ${COLOR.hairline}` }}>
           <input
@@ -2166,13 +2230,14 @@ function CabinetViewer({ devModel, embedded = false } = {}) {
 
           {(isV3 || isDetalQR) && (
             <button
-              onClick={() => { setScheme(true); setExplodeK(1); fitToModel(); }}
+              onClick={enterScheme}
               style={{
                 display: 'flex', alignItems: 'center', gap: 8, width: '100%',
                 padding: '8px 10px', fontSize: 13, cursor: 'pointer', marginTop: 8,
                 background: COLOR.accent, color: '#fff',
                 border: `1px solid ${COLOR.accent}`,
               }}
+              title="Схема сборки: разлёт деталей, позиции, выноски, печать"
             >
               <FileText size={14} />
               Схема сборки 3D
@@ -2201,7 +2266,7 @@ function CabinetViewer({ devModel, embedded = false } = {}) {
           style={{
             position: fullView ? 'fixed' : 'relative',
             inset: fullView ? 0 : 'auto',
-            height: fullView ? '100vh' : 'auto',
+            height: (fullView || standalone) ? '100vh' : 'auto',
             zIndex: fullView ? (embedded ? 1300 : 5) : 'auto',
             background: COLOR.bg,
             display: 'flex', flexDirection: 'column',
@@ -2210,7 +2275,7 @@ function CabinetViewer({ devModel, embedded = false } = {}) {
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
         >
-          <div ref={mountRef} style={{ width: '100%', height: fullView ? '100%' : (embedded ? '62vh' : 480), flex: 1, minHeight: 0, cursor: 'grab' }} />
+          <div ref={mountRef} style={{ width: '100%', height: (fullView || standalone) ? '100%' : (embedded ? '62vh' : 480), flex: 1, minHeight: 0, cursor: 'grab' }} />
           {/* схема сборки: полоса управления и список позиций поверх 3D */}
           {scheme && isLoaded && (
             <>
@@ -2228,7 +2293,14 @@ function CabinetViewer({ devModel, embedded = false } = {}) {
                 setShowLead={setShowLead}
                 rowsCount={schemeUiRows.length}
                 onPrint={printScheme}
-                onExit={() => { setScheme(false); setExplodeK(0); setExploded(false); }}
+                onExit={() => {
+                  if (standalone) { try { window.close(); } catch (e) { /* открыта напрямую — закрыть нельзя */ } return; }
+                  setScheme(false); setExplodeK(0); setExploded(false);
+                }}
+                standalone={standalone}
+                modelName={standalone ? (modelName || loadedFileName) : ''}
+                search={schemeSearch}
+                setSearch={setSchemeSearch}
               />
               <SchemeSpec
                 rows={schemeUiRows}
@@ -2237,6 +2309,9 @@ function CabinetViewer({ devModel, embedded = false } = {}) {
                 setHoverId={setHoverId}
                 onPick={(id) => { setSelectedId(id); const p = partsById[id]; if (p) zoomToSelected(p); }}
                 fittings={schemeFittings}
+                moduleInfo={schemeModuleInfo}
+                search={schemeSearch}
+                top={standalone ? 96 : 64}
               />
             </>
           )}
@@ -2291,7 +2366,9 @@ function CabinetViewer({ devModel, embedded = false } = {}) {
               )}
             </div>
           )}
-          {embedded && toolsOpen && isLoaded && (
+          {/* панель «Материалы и слои» скрываем в режиме схемы — не место ей
+              под полосой управления схемы */}
+          {embedded && toolsOpen && isLoaded && !scheme && (
             <div
               style={{
                 position: 'absolute', top: 40, left: 8, width: 236,
@@ -2330,9 +2407,9 @@ function CabinetViewer({ devModel, embedded = false } = {}) {
                   Деталировка
                 </button>
               )}
-              {isLoaded && (isV3 || isDetalQR) && (
+              {isLoaded && (isV3 || isDetalQR) && !scheme && (
                 <button
-                  onClick={() => { setScheme(true); setExplodeK(1); fitToModel(); }}
+                  onClick={enterScheme}
                   style={{
                     fontSize: 11, padding: '4px 8px', cursor: 'pointer',
                     background: COLOR.accent, color: '#fff',
@@ -2490,6 +2567,7 @@ function CabinetViewer({ devModel, embedded = false } = {}) {
           })()}
         </div>
 
+        {!standalone && (
         <div style={{ borderLeft: `1px solid ${COLOR.hairline}`, maxHeight: 520, overflowY: 'auto' }}>
           {isLoaded && (
             <div style={{ padding: '10px 12px 6px', borderBottom: `1px solid ${COLOR.hairline}` }}>
@@ -2729,6 +2807,7 @@ function CabinetViewer({ devModel, embedded = false } = {}) {
             );
           })()}
         </div>
+        )}
       </div>
 
       {expandedId && (() => {

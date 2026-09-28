@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { X, Printer } from 'lucide-react';
 
 /**
@@ -105,8 +105,9 @@ function bboxOf(contour) {
 }
 
 // сторона кромки: 'top'/'bottom' для горизонтальных рёбер (влияют на Ширину),
-// 'right'/'left' для вертикальных (влияют на Длину), null — не определить
-function edgeSideOf(part, b) {
+// 'right'/'left' для вертикальных (влияют на Длину), null — не определить.
+// Экспортируется: схеме сборки нужна та же привязка кромки к сторонам.
+export function edgeSideOf(part, b) {
   const contour = (part.v3 && part.v3.contour) || [];
   const seg = b.seg || segFromElem(contour, b.elem);
   if (!seg) return null;
@@ -123,6 +124,23 @@ function edgeSideOf(part, b) {
 function isFigured(part) {
   const contour = (part.v3 && part.v3.contour) || [];
   return contour.some((e) => e.t === 'arc' || e.t === 'circle' || e.t === 'hole');
+}
+
+/* ---------- кромки детали в готовом для отрисовки виде ----------
+ * { side: 'top'|'bottom'|'left'|'right'|null, color, known, byName, thick, mat }
+ * Переиспользуется схемой сборки (колонка «Кромка»), поэтому экспортируется. */
+export function edgesOfPart(part) {
+  return (part.butts || []).map((b) => {
+    const paint = edgePaint(b.col, b.mat);
+    return {
+      side: edgeSideOf(part, b),
+      color: paint.color,
+      known: paint.known,
+      byName: !!paint.byName,
+      thick: Number(String(b.thick ?? '').replace(',', '.')) || 0,
+      mat: b.mat || '',
+    };
+  });
 }
 
 /* ---------- строка спецификации: группировка одинаковых деталей ---------- */
@@ -163,24 +181,17 @@ function buildRows(parts) {
     }
     const row = rows.get(key);
     row.count += 1;
+    edgesOfPart(p).forEach((e) => {
+      row.edges.push(e);
+      if (!e.side) row.odd = true;
+    });
     (p.butts || []).forEach((b) => {
-      const side = edgeSideOf(p, b);
-      const paint = edgePaint(b.col, b.mat);
-      row.edges.push({
-        side,
-        color: paint.color,
-        known: paint.known,
-        byName: !!paint.byName,
-        thick: Number(String(b.thick ?? '').replace(',', '.')) || 0,
-        mat: b.mat || '',
-      });
-      if (!side) row.odd = true;
       const seg = b.seg || segFromElem((p.v3 && p.v3.contour) || [], b.elem);
       if (seg) {
         row.edgeSegs.push({
           x1: seg[0][0], y1: seg[0][1], x2: seg[1][0], y2: seg[1][1],
           kind: edgeClass(b.thick, b.mat),
-          color: paint.color,
+          color: edgePaint(b.col, b.mat).color,
         });
       }
     });
@@ -240,8 +251,9 @@ function EdgeColorCell({ edges, fontScale = 1, cellStyle }) {
 
 /* ---------- размер с линиями кромок ----------
  * axis 'w' — размер по X: дальняя сторона «верх», ближняя «низ»
- * axis 'h' — размер по Y: дальняя сторона «право», ближняя «лево» */
-function DimCell({ value, edges, axis, fontScale = 1 }) {
+ * axis 'h' — размер по Y: дальняя сторона «право», ближняя «лево»
+ * DimMark — голый SVG (переиспользуется схемой сборки), DimCell — ячейка таблицы */
+export function DimMark({ value, edges, axis, fontScale = 1, width = 64 }) {
   const farSide = axis === 'w' ? 'top' : 'right';
   const nearSide = axis === 'w' ? 'bottom' : 'left';
   // толщина кромки задаёт вид линии: 0,4 мм — пунктир, 1 мм и толще — жирная
@@ -264,28 +276,37 @@ function DimCell({ value, edges, axis, fontScale = 1 }) {
   };
   const far = paint(farSide);
   const near = paint(nearSide);
+  const x2 = width - 2;
+  return (
+    <svg width={width} height={30} style={{ display: 'block' }}>
+      {far && (
+        <g>
+          <title>{far.title}</title>
+          <line x1={2} y1={4} x2={x2} y2={4} stroke={far.color}
+                strokeWidth={far.width} strokeDasharray={far.dash} strokeLinecap="round" />
+        </g>
+      )}
+      <text x={x2} y={19} fontSize={11.5 * fontScale} textAnchor="end" fill={COLOR.text}
+            fontFamily="ui-monospace, monospace">
+        {Math.round(value)}
+      </text>
+      {near && (
+        <g>
+          <title>{near.title}</title>
+          <line x1={2} y1={26} x2={x2} y2={26} stroke={near.color}
+                strokeWidth={near.width} strokeDasharray={near.dash} strokeLinecap="round" />
+        </g>
+      )}
+    </svg>
+  );
+}
+
+function DimCell({ value, edges, axis, fontScale = 1 }) {
   return (
     <td style={{ padding: '5px 6px', textAlign: 'right', fontFamily: 'ui-monospace, monospace', whiteSpace: 'nowrap', borderBottom: `1px solid ${COLOR.rowLine}` }}>
-      <svg width={64} height={30} style={{ display: 'block', marginLeft: 'auto' }}>
-        {far && (
-          <g>
-            <title>{far.title}</title>
-            <line x1={2} y1={4} x2={62} y2={4} stroke={far.color}
-                  strokeWidth={far.width} strokeDasharray={far.dash} strokeLinecap="round" />
-          </g>
-        )}
-        <text x={62} y={19} fontSize={11.5 * fontScale} textAnchor="end" fill={COLOR.text}
-              fontFamily="ui-monospace, monospace">
-          {Math.round(value)}
-        </text>
-        {near && (
-          <g>
-            <title>{near.title}</title>
-            <line x1={2} y1={26} x2={62} y2={26} stroke={near.color}
-                  strokeWidth={near.width} strokeDasharray={near.dash} strokeLinecap="round" />
-          </g>
-        )}
-      </svg>
+      <div style={{ marginLeft: 'auto', width: 64 }}>
+        <DimMark value={value} edges={edges} axis={axis} fontScale={fontScale} />
+      </div>
     </td>
   );
 }

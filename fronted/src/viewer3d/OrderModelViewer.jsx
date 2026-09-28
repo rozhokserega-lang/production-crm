@@ -8,7 +8,7 @@ import { parseDetalQR, isDetalQRData } from "./detalqr-adapter.js";
  * определяется формат: detalQR (info+panels из «Экспорт модели в JSON-4.js»)
  * приводится к внутреннему представлению вьюера, остальное проходит как есть.
  */
-export default function OrderModelViewer({ model }) {
+export default function OrderModelViewer({ model, onOpenExternalScheme }) {
   const parsed = useMemo(() => {
     if (!model) return null;
     try {
@@ -30,5 +30,5 @@ export default function OrderModelViewer({ model }) {
       </div>
     );
   }
-  return <CabinetViewer devModel={parsed} embedded />;
+  return <CabinetViewer devModel={parsed} embedded onOpenExternalScheme={onOpenExternalScheme} />;
 }

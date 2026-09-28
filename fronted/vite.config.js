@@ -1,4 +1,5 @@
 import { defineConfig, loadEnv } from "vite";
+import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
 
 // Vitest по умолчанию выставляет NODE_ENV=test, но только если оно ещё не задано.
@@ -53,6 +54,12 @@ export default defineConfig(({ mode }) => {
     assetsDir: "assets",
     sourcemap: false,
     rollupOptions: {
+      // index.html — CRM; scheme.html — вкладка «Схема сборки» модели
+      // (открывается из окна модели, отдельный вход без интерфейса CRM).
+      input: {
+        index: fileURLToPath(new URL("./index.html", import.meta.url)),
+        scheme: fileURLToPath(new URL("./scheme.html", import.meta.url)),
+      },
       output: {
         manualChunks(id) {
           if (id.includes("node_modules/react") || id.includes("node_modules/react-dom")) {

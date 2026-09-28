@@ -1,6 +1,6 @@
-import React, { useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { Printer, X, Layers3 } from 'lucide-react';
+import { Printer, X, Search } from 'lucide-react';
+import { DimMark } from './spec-sheet.jsx';
 
 /* UI схемы сборки: полоса управления, список позиций и лист печати.
  * Сама 3D-сцена живёт во вьюере — здесь только «бумажная» часть, чтобы
@@ -21,6 +21,7 @@ export function SchemeBar({
   modules, asm, setAsm, explodeK, setExplodeK,
   showPos, setShowPos, showFast, setShowFast, showLead, setShowLead,
   rowsCount, onPrint, onExit,
+  standalone = false, modelName = '', search = '', setSearch,
 }) {
   const btn = (on) => ({
     fontSize: 11.5, padding: '5px 10px', cursor: 'pointer',
@@ -28,6 +29,7 @@ export function SchemeBar({
     color: on ? '#fff' : C.text,
     border: `1px solid ${on ? C.accent : C.hairline}`,
   });
+  const asmShort = asm ? String(asm).split(' / ').pop() : 'все модули';
   return (
     <div
       style={{
@@ -37,9 +39,29 @@ export function SchemeBar({
         borderRadius: 4,
       }}
     >
-      <button onClick={onExit} style={{ ...btn(false), display: 'flex', alignItems: 'center', gap: 5 }} title="Вернуться к обычному просмотру">
-        <X size={12} /> Выйти из схемы
+      <button onClick={onExit} style={{ ...btn(false), display: 'flex', alignItems: 'center', gap: 5 }}
+        title={standalone ? 'Закрыть вкладку схемы' : 'Вернуться к обычному просмотру'}>
+        <X size={12} /> {standalone ? 'Закрыть вкладку' : 'Выйти из схемы'}
       </button>
+      <span style={{ fontSize: 12.5, fontWeight: 700, color: C.text, whiteSpace: 'nowrap' }}>
+        Схема сборки — {asmShort}
+      </span>
+      {modelName && (
+        <span style={{ fontSize: 11, color: C.muted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 260 }} title={modelName}>
+          Модель: {modelName}
+        </span>
+      )}
+      {setSearch && (
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, border: `1px solid ${C.hairline}`, padding: '3px 6px', background: '#fff' }}>
+          <Search size={12} color={C.muted} />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Поиск…"
+            style={{ border: 'none', outline: 'none', width: 96, fontSize: 11.5, background: 'transparent', color: C.text, fontFamily: 'inherit' }}
+          />
+        </span>
+      )}
       <span style={{ fontSize: 11.5, color: C.muted }}>Модуль</span>
       <select
         value={asm}
@@ -77,19 +99,46 @@ function shortAsm(name) {
 }
 
 /* ---------- список позиций модуля ---------- */
-export function SchemeSpec({ rows, selectedId, hoverId, setHoverId, onPick, fittings }) {
+export function SchemeSpec({ rows, selectedId, hoverId, setHoverId, onPick, fittings, moduleInfo, search = '', top = 64 }) {
+  const q = String(search || '').trim().toLowerCase();
+  const shown = q
+    ? rows.filter((r) => [r.num, r.des, r.title, r.mat].some((v) => String(v || '').toLowerCase().indexOf(q) >= 0))
+    : rows;
+  const modRows = moduleInfo
+    ? [
+        ['Наименование', moduleInfo.name || '—'],
+        ['Габарит Ш×В×Г, мм', moduleInfo.dims ? moduleInfo.dims.join('×') : '—'],
+        ['Деталей корпуса', String(moduleInfo.parts || 0)],
+        ['Крепёж и фурнитура', String(moduleInfo.fittings || 0)],
+      ]
+    : null;
   return (
     <div
       style={{
-        position: 'absolute', top: 64, right: 8, width: 268, maxHeight: 'calc(100% - 96px)',
+        position: 'absolute', top, right: 8, width: 268, maxHeight: 'calc(100% - ' + (top + 32) + 'px)',
         overflowY: 'auto', zIndex: 25, background: C.panel,
         border: `1px solid ${C.hairline}`, borderRadius: 4, padding: '8px 0',
       }}
     >
+      {modRows && (
+        <div style={{ padding: '2px 10px 8px', borderBottom: `1px solid ${C.hairline}`, marginBottom: 6 }}>
+          <div style={{ fontSize: 11, letterSpacing: 0.4, color: C.muted, marginBottom: 4 }}>МОДУЛЬ</div>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <tbody>
+              {modRows.map(([k, v]) => (
+                <tr key={k}>
+                  <td style={{ fontSize: 10.5, color: C.muted, padding: '1px 0', verticalAlign: 'top' }}>{k}</td>
+                  <td style={{ fontSize: 10.5, color: C.text, padding: '1px 0', textAlign: 'right', fontFamily: 'ui-monospace, monospace', maxWidth: 120, wordBreak: 'break-word' }}>{v}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
       <div style={{ padding: '2px 10px 6px', fontSize: 11, letterSpacing: 0.4, color: C.muted }}>
-        ПОЗИЦИИ МОДУЛЯ
+        ПОЗИЦИИ МОДУЛЯ{q ? ` · найдено ${shown.length} из ${rows.length}` : ''}
       </div>
-      {rows.map((r) => {
+      {shown.map((r) => {
         const active = r.id === selectedId || r.id === hoverId;
         return (
           <div
@@ -104,17 +153,25 @@ export function SchemeSpec({ rows, selectedId, hoverId, setHoverId, onPick, fitt
             }}
           >
             <span style={{ fontSize: 11, fontWeight: 700, color: C.accent, minWidth: 18, textAlign: 'right' }}>{r.num}</span>
-            <div style={{ minWidth: 0 }}>
+            <div style={{ minWidth: 0, flex: 1 }}>
               <div style={{ fontSize: 12, color: C.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {r.des || ''} {r.title}
               </div>
               <div style={{ fontSize: 10.5, color: C.muted }}>{r.size} · {r.mat}</div>
+              {r.edges && r.edges.length > 0 && (
+                <div style={{ display: 'flex', gap: 2, marginTop: 2 }} title="Кромка: линия над размером — дальняя сторона, под — ближняя; пунктир — 0,4 мм">
+                  <DimMark value={r.w} edges={r.edges} axis="w" width={56} fontScale={0.9} />
+                  <DimMark value={r.h} edges={r.edges} axis="h" width={56} fontScale={0.9} />
+                </div>
+              )}
             </div>
           </div>
         );
       })}
-      {rows.length === 0 && (
-        <div style={{ padding: '6px 10px', fontSize: 11.5, color: C.muted }}>В модуле нет деталей.</div>
+      {shown.length === 0 && (
+        <div style={{ padding: '6px 10px', fontSize: 11.5, color: C.muted }}>
+          {q ? 'Ничего не найдено.' : 'В модуле нет деталей.'}
+        </div>
       )}
       {fittings && fittings.length > 0 && (
         <>
@@ -135,7 +192,7 @@ export function SchemeSpec({ rows, selectedId, hoverId, setHoverId, onPick, fitt
 
 /* ---------- лист печати: снимок вида + легенда + список крепежа ---------- */
 export function SchemePrintSheet({ data, onClose }) {
-  const { url, title, subtitle, rows, fittings, dateStr } = data || {};
+  const { url, title, subtitle, rows, fittings, dateStr, moduleInfo } = data || {};
   return createPortal(
     <div className="scheme-print-root" style={{ position: 'fixed', inset: 0, zIndex: 1600, background: '#fff', overflow: 'auto' }}>
       <style>{`
@@ -164,6 +221,14 @@ export function SchemePrintSheet({ data, onClose }) {
           <div>
             <div style={{ fontSize: 17, fontWeight: 700, letterSpacing: 0.3 }}>ИНСТРУКЦИЯ СБОРКИ</div>
             <div style={{ fontSize: 12.5, color: C.muted, marginTop: 2 }}>{title}{subtitle ? (' · ' + subtitle) : ''}</div>
+            {moduleInfo && (
+              <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
+                Модуль: {moduleInfo.name || '—'}
+                {moduleInfo.dims ? ` · габарит ${moduleInfo.dims.join('×')} мм` : ''}
+                {` · деталей ${moduleInfo.parts || 0}`}
+                {moduleInfo.fittings ? ` · крепежа ${moduleInfo.fittings}` : ''}
+              </div>
+            )}
           </div>
           <div style={{ fontSize: 11, color: C.muted }}>{dateStr}</div>
         </div>
@@ -183,6 +248,7 @@ export function SchemePrintSheet({ data, onClose }) {
                   <th style={{ border: `1px solid ${C.hairline}`, padding: '2px 4px', textAlign: 'left' }}>Обозн.</th>
                   <th style={{ border: `1px solid ${C.hairline}`, padding: '2px 4px', textAlign: 'left' }}>Наименование</th>
                   <th style={{ border: `1px solid ${C.hairline}`, padding: '2px 4px', textAlign: 'left', width: 92 }}>Размер</th>
+                  <th style={{ border: `1px solid ${C.hairline}`, padding: '2px 4px', width: 64 }}>Кромка</th>
                 </tr>
               </thead>
               <tbody>
@@ -192,6 +258,16 @@ export function SchemePrintSheet({ data, onClose }) {
                     <td style={{ border: `1px solid ${C.hairline}`, padding: '2px 4px' }}>{r.des}</td>
                     <td style={{ border: `1px solid ${C.hairline}`, padding: '2px 4px' }}>{r.title}</td>
                     <td style={{ border: `1px solid ${C.hairline}`, padding: '2px 4px' }}>{r.size}</td>
+                    <td style={{ border: `1px solid ${C.hairline}`, padding: '2px 4px' }}>
+                      {r.edges && r.edges.length
+                        ? (
+                          <div style={{ display: 'flex', gap: 2 }}>
+                            <DimMark value={r.w} edges={r.edges} axis="w" width={56} fontScale={0.85} />
+                            <DimMark value={r.h} edges={r.edges} axis="h" width={56} fontScale={0.85} />
+                          </div>
+                        )
+                        : <span style={{ color: C.muted }}>—</span>}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -222,6 +298,7 @@ export function SchemePrintSheet({ data, onClose }) {
         </div>
         <div style={{ marginTop: 8, fontSize: 10, color: C.muted }}>
           Номера на рисунке соответствуют номерам в таблице позиций. Разлёт деталей показан на момент печати.
+          Кромка в колонке: линия над размером — дальняя сторона (верх/право), под — ближняя (низ/лево); пунктир — 0,4 мм, сплошная — толще.
         </div>
       </div>
     </div>,
