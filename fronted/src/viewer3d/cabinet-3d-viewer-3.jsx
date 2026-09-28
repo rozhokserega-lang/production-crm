@@ -1097,6 +1097,7 @@ function CabinetViewer({
      *     чертёж вдвое мельче;
      *   assembled — вид «в сборе»: разлёт 0, полупрозрачные панели, без
      *     разметки, чтобы сквозь панели читался крепёж. */
+    let paperFit = null;   // камера, вписанная в половину листа (общая для половин)
     const shoot = (aspectRatio, assembled) => {
       const mount = mountRef.current;
       if (!mount) return null;
@@ -1113,6 +1114,36 @@ function CabinetViewer({
 
       const map = meshMapRef.current;
       const savedPos = [], savedMat = [];
+      /* Кадр стал у́же экранного (половина листа) — иначе модуль обрежется по
+       * краям. Считаем вписывание по боксу видимых деталей в их текущем
+       * состоянии (с разлётом) и запоминаем: вид «в сборе» снимается с той же
+       * камеры, чтобы половинки листа были в одном масштабе. */
+      const savedCamPos = camera.position.clone();
+      if (aspectRatio) {
+        const o = orbitRef.current;
+        const dir = camera.position.clone().sub(o.target);
+        if (!assembled || !paperFit) {
+          const box = new THREE.Box3();
+          for (const id in map) {
+            const m = map[id];
+            if (!m.mesh || !m.mesh.visible || !m.group.visible) continue;
+            try { m.group.updateMatrixWorld(true); box.expandByObject(m.mesh); } catch (e) { /* пропускаем */ }
+          }
+          if (!box.isEmpty()) {
+            const size = box.getSize(new THREE.Vector3());
+            const center = box.getCenter(new THREE.Vector3());
+            const halfH = Math.tan((camera.fov * Math.PI / 180) / 2);
+            const halfW = halfH * aspectRatio;
+            const dist = Math.max((size.y / 2) / halfH, (Math.max(size.x, size.z) / 2) / halfW) * 1.12;
+            paperFit = { center, dist: Math.max(dist, (size.y / 2) / halfH) };
+          }
+        }
+        if (paperFit && dir.length() > 1) {
+          camera.position.copy(paperFit.center).addScaledVector(dir.normalize(), paperFit.dist);
+          camera.lookAt(paperFit.center);
+        }
+      }
+
       if (assembled) {
         for (const id in map) {
           const m = map[id];
@@ -1161,6 +1192,7 @@ function CabinetViewer({
 
       mount.style.width = prevW;
       mount.style.flex = prevFlex;
+      camera.position.copy(savedCamPos);
       const w2 = mount.clientWidth || w, h2 = mount.clientHeight || h;
       camera.aspect = w2 / h2;
       camera.updateProjectionMatrix();
