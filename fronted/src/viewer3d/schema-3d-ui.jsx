@@ -1,5 +1,5 @@
 import { createPortal } from 'react-dom';
-import { Printer, X, Search, Pin } from 'lucide-react';
+import { Printer, X, Search, Pin, FileText } from 'lucide-react';
 import { DimMark } from './spec-sheet.jsx';
 
 /* UI схемы сборки: полоса управления, список позиций и лист печати.
@@ -22,7 +22,7 @@ export function SchemeBar({
   showPos, setShowPos, showFast, setShowFast, showLead, setShowLead,
   rowsCount, onPrint, onExit,
   standalone = false, modelName = '', search = '', setSearch,
-  shotsCount = 0, msg = '', onFix, onPrintPack, onClearShots,
+  shotsCount = 0, msg = '', onFix, onPrintPack, onClearShots, onSpec,
 }) {
   const btn = (on) => ({
     fontSize: 11.5, padding: '5px 10px', cursor: 'pointer',
@@ -110,6 +110,12 @@ export function SchemeBar({
         <button onClick={onClearShots} style={{ ...btn(false), display: 'flex', alignItems: 'center', gap: 3 }}
           title="Забыть зафиксированные схемы">
           <X size={12} />
+        </button>
+      )}
+      {onSpec && (
+        <button onClick={onSpec} style={{ ...btn(false), display: 'flex', alignItems: 'center', gap: 5 }}
+          title="Деталировка: список деталей с размерами и кромкой (печатается отдельным листом)">
+          <FileText size={12} /> Деталировка
         </button>
       )}
       <button onClick={onPrint} style={{ ...btn(true), display: 'flex', alignItems: 'center', gap: 5 }} title="Печать инструкции сборки">

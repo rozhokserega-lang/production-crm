@@ -2479,6 +2479,7 @@ function CabinetViewer({
                 onFix={fixSchemeShot}
                 onPrintPack={printSchemePack}
                 onClearShots={clearSchemeShots}
+                onSpec={() => setShowSpec(true)}
               />
               <SchemeSpec
                 rows={schemeUiRows}
