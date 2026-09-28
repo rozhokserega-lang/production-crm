@@ -1,7 +1,7 @@
 /* eslint-disable react-hooks/immutability -- компонент на three.js: сцена,
  * ref'ы (needsRenderRef, meshMapRef, animsOpenRef…) меняются императивно в
  * цикле рендера и эффектах — это осознанный паттерн, а не нарушение. */
-import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
+import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import * as THREE from 'three';
 import { Layers3, RotateCw, Square, CheckSquare, Upload, X, Maximize2, Minimize2, PenTool, Ruler, FileText, Printer, Eye, EyeOff, Search, ChevronRight, ChevronDown } from 'lucide-react';
 import AssemblyDoc from './schema-sborki-3.jsx';
@@ -991,6 +991,16 @@ function CabinetViewer({
   );
 
   const visibleParts = parts.filter(isPartVisible);
+
+  /* Документы (деталировка, 2D-чертёж) печатаются по снятым галочкам
+   * «Материалы и слои»: скрытый материал в листы не попадает вовсе.
+   * Временные инструменты просмотра — изоляция детали, глазки в дереве,
+   * «Скрыть фасады» — на листы НЕ влияют: это про то, как смотреть, а не
+   * про то, что печатать. */
+  const partsForDocs = useMemo(
+    () => parts.filter((p) => materialVisibility[materialKey(p)] !== false),
+    [parts, materialVisibility],
+  );
 
   const unloadModel = () => {
     setLoadedJSON(null);
@@ -3046,14 +3056,15 @@ function CabinetViewer({
       })()}
       {showSpec && isLoaded && (
         <SpecSheet
-          parts={parts}
+          parts={partsForDocs}
           modelName={loadedFileName || 'Модель'}
+          hiddenCount={parts.length - partsForDocs.length}
           onClose={() => setShowSpec(false)}
         />
       )}
       {showDoc && (isV3 || isDetalQR) && (
         <AssemblyDoc
-          parts={parts}
+          parts={partsForDocs}
           modelName={loadedFileName || 'Модель'}
           onClose={() => setShowDoc(false)}
         />

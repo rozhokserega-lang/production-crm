@@ -383,7 +383,7 @@ export function PartPreview({ row, boxW = 260, boxH = 210 }) {
 }
 
 /* ---------- документ ---------- */
-export default function SpecSheet({ parts, modelName, onClose }) {
+export default function SpecSheet({ parts, modelName, onClose, hiddenCount = 0 }) {
   const [fontScale, setFontScale] = useState(1);
   const [hover, setHover] = useState(null);   // { row, x, y } — привью детали
   const groups = useMemo(() => buildRows(parts), [parts]);
@@ -427,6 +427,11 @@ export default function SpecSheet({ parts, modelName, onClose }) {
         <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 4 }}>Спецификация деталей</div>
         <div style={{ fontSize: 12, color: COLOR.textMuted, marginBottom: 14 }}>
           {modelName} · {new Date().toLocaleDateString('ru-RU')} · всего деталей: {totalParts}
+          {hiddenCount > 0 && (
+            <span style={{ color: COLOR.accent }} title="Детали скрытых в панели «Материалы и слои» материалов в лист не попадают">
+              {' '}· скрыто по материалам: {hiddenCount}
+            </span>
+          )}
         </div>
 
         {groups.map((g, gi) => (
