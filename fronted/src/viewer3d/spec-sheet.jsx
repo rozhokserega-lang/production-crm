@@ -328,15 +328,28 @@ function arcPoly(e, steps = 10) {
   return out;
 }
 
-export function PartPreview({ row, boxW = 260, boxH = 210 }) {
+/* ---------- рисунок детали: контур + подсвеченные кромки ----------
+ * Один и тот же рисунок в двух местах: в привью на наведении (крупно) и в
+ * колонке «Кромка» печатного листа (мелко) — чтобы на бумаге было видно,
+ * как кромить деталь. */
+function PartSketch({ row, boxW, boxH, pad = 14, accent = 5, bg = '#fbfaf7', border = true }) {
   const elems = row.contour || [];
   const bb = bboxOf(elems);
   const w = Math.max(1, bb.maxX - bb.minX);
   const h = Math.max(1, bb.maxY - bb.minY);
-  const pad = 14;
-  const scale = Math.min((boxW - pad * 2) / w, (boxH - pad * 2) / h);
-  const X = (x) => pad + (x - bb.minX) * scale;
-  const Y = (y) => boxH - pad - (y - bb.minY) * scale;   // Y вверх, как в контуре
+  const innerW = boxW - pad * 2;
+  const innerH = boxH - pad * 2;
+  const kUni = Math.min(innerW / w, innerH / h);
+  /* Длинную деталь (1068×115) равномерный масштаб превратил бы в «щепу», где
+   * кромку не разглядеть. Тянем только УЗКУЮ ось и только до предела: так
+   * ориентация детали (вдоль/поперёк) сохраняется, а кромка видна. */
+  const minSidePx = Math.min(innerW, innerH) * 0.34;
+  const kx = w * kUni < minSidePx ? minSidePx / w : kUni;
+  const ky = h * kUni < minSidePx ? minSidePx / h : kUni;
+  const offX = pad + (innerW - w * kx) / 2;
+  const offY = pad + (innerH - h * ky) / 2;
+  const X = (x) => offX + (x - bb.minX) * kx;
+  const Y = (y) => boxH - offY - (y - bb.minY) * ky;   // Y вверх, как в контуре
 
   let d = '';
   elems.forEach((e) => {
@@ -347,7 +360,8 @@ export function PartPreview({ row, boxW = 260, boxH = 210 }) {
       d += `M ${X(pts[0][0])} ${Y(pts[0][1])} `;
       pts.slice(1).forEach((q) => { d += `L ${X(q[0])} ${Y(q[1])} `; });
     } else if (e.t === 'circle') {
-      d += `M ${X(e.cx + e.r)} ${Y(e.cy)} A ${e.r * scale} ${e.r * scale} 0 1 0 ${X(e.cx - e.r)} ${Y(e.cy)} A ${e.r * scale} ${e.r * scale} 0 1 0 ${X(e.cx + e.r)} ${Y(e.cy)} `;
+      const rx = e.r * kx, ry = e.r * ky;
+      d += `M ${X(e.cx + e.r)} ${Y(e.cy)} A ${rx} ${ry} 0 1 0 ${X(e.cx - e.r)} ${Y(e.cy)} A ${rx} ${ry} 0 1 0 ${X(e.cx + e.r)} ${Y(e.cy)} `;
     } else if (e.t === 'hole' && e.pts) {
       d += `M ${X(e.pts[0][0])} ${Y(e.pts[0][1])} `;
       e.pts.slice(1).forEach((q) => { d += `L ${X(q[0])} ${Y(q[1])} `; });
@@ -356,24 +370,51 @@ export function PartPreview({ row, boxW = 260, boxH = 210 }) {
   });
 
   return (
+    <svg
+      width={boxW}
+      height={boxH}
+      style={{ display: 'block', background: bg, border: border ? `1px solid ${COLOR.rowLine}` : 'none' }}
+    >
+      <path d={d} fill="#efe9dd" stroke="#9a9486" strokeWidth={boxW < 90 ? 0.8 : 1} fillRule="evenodd" />
+      {(row.edgeSegs || []).map((sg, i) => (
+        <line
+          key={i}
+          x1={X(sg.x1)} y1={Y(sg.y1)} x2={X(sg.x2)} y2={Y(sg.y2)}
+          stroke={sg.kind === 'thin' ? EDGE_COLOR_THIN : EDGE_COLOR_THICK}
+          strokeWidth={accent}
+          strokeLinecap="round"
+          opacity={0.95}
+        />
+      ))}
+    </svg>
+  );
+}
+
+/* колонка «Кромка» печатного листа: мелкий чертёж детали с подсвеченной кромкой */
+function SketchCell({ row, size = 56, fontScale = 1 }) {
+  const hasEdges = (row.edgeSegs || []).length > 0;
+  const hasContour = (row.contour || []).length > 0;
+  return (
+    <td style={{ padding: '3px 6px', borderBottom: `1px solid ${COLOR.rowLine}`, textAlign: 'center' }}>
+      {hasContour ? (
+        <div style={{ display: 'flex', justifyContent: 'center' }} title={hasEdges ? 'Кромка подсвечена: красным — 0,8 мм и толще, розовым — 0,4 мм' : 'Кромки на детали нет'}>
+          <PartSketch row={row} boxW={size} boxH={Math.round(size * 0.72)} pad={5} accent={size < 90 ? 2.6 : 5} />
+        </div>
+      ) : (
+        <span style={{ fontSize: 10.5 * fontScale, color: COLOR.textMuted }}>—</span>
+      )}
+    </td>
+  );
+}
+
+export function PartPreview({ row, boxW = 260, boxH = 210 }) {
+  return (
     <div style={{ background: '#fff', border: `1px solid ${COLOR.hairline}`, boxShadow: '0 8px 24px rgba(0,0,0,0.18)', padding: 10, width: boxW + 20 }}>
       <div style={{ fontSize: 11.5, fontWeight: 600, marginBottom: 2 }}>{row.des ? row.des + ' — ' : ''}{row.name}</div>
       <div style={{ fontSize: 10.5, color: COLOR.textMuted, fontFamily: 'ui-monospace, monospace', marginBottom: 6 }}>
         {Math.round(row.w)} × {Math.round(row.h)} × {Math.round(row.thick)} мм · {row.count} шт
       </div>
-      <svg width={boxW} height={boxH} style={{ display: 'block', background: '#fbfaf7', border: `1px solid ${COLOR.rowLine}` }}>
-        <path d={d} fill="#efe9dd" stroke="#9a9486" strokeWidth={1} fillRule="evenodd" />
-        {(row.edgeSegs || []).map((sg, i) => (
-          <line
-            key={i}
-            x1={X(sg.x1)} y1={Y(sg.y1)} x2={X(sg.x2)} y2={Y(sg.y2)}
-            stroke={sg.kind === 'thin' ? EDGE_COLOR_THIN : EDGE_COLOR_THICK}
-            strokeWidth={sg.kind === 'thin' ? 5 : 6}
-            strokeLinecap="round"
-            opacity={0.95}
-          />
-        ))}
-      </svg>
+      <PartSketch row={row} boxW={boxW} boxH={boxH} />
       <div style={{ display: 'flex', gap: 10, fontSize: 10, color: COLOR.textMuted, marginTop: 6 }}>
         <span><span style={{ display: 'inline-block', width: 14, height: 4, background: EDGE_COLOR_THICK, verticalAlign: 'middle', marginRight: 4 }} />0,8–1 мм и толще</span>
         <span><span style={{ display: 'inline-block', width: 14, height: 4, background: EDGE_COLOR_THIN, verticalAlign: 'middle', marginRight: 4 }} />0,4 мм</span>
@@ -381,6 +422,8 @@ export function PartPreview({ row, boxW = 260, boxH = 210 }) {
     </div>
   );
 }
+
+/* старая разметка рисуется тем же PartSketch — оставлено для совместимости */
 
 /* ---------- документ ---------- */
 export default function SpecSheet({ parts, modelName, onClose, hiddenCount = 0 }) {
@@ -446,6 +489,7 @@ export default function SpecSheet({ parts, modelName, onClose, hiddenCount = 0 }
                   <th style={{ ...head, width: 52 }}>Обозн.</th>
                   <th style={head}>Наименование</th>
                   <th style={head}>Материал</th>
+                  <th style={{ ...head, width: 62, textAlign: 'center' }}>Кромка</th>
                   <th style={{ ...head, width: 96 }}>Цвет кромки</th>
                   <th style={{ ...head, textAlign: 'right' }}>Ширина</th>
                   <th style={{ ...head, textAlign: 'right' }}>Длина</th>
@@ -471,6 +515,7 @@ export default function SpecSheet({ parts, modelName, onClose, hiddenCount = 0 }
                     <td style={{ ...cell, fontFamily: 'ui-monospace, monospace', color: COLOR.accent }}>{r.des || '—'}</td>
                     <td style={cell}>{r.name}</td>
                     <td style={{ ...cell, color: COLOR.textMuted }}>{r.material || '—'}</td>
+                    <SketchCell row={r} size={56} fontScale={fontScale} />
                     <EdgeColorCell edges={r.edges} fontScale={fontScale} cellStyle={cell} />
                     <DimCell value={r.w} edges={r.edges} axis="w" fontScale={fontScale} />
                     <DimCell value={r.h} edges={r.edges} axis="h" fontScale={fontScale} />
@@ -516,8 +561,11 @@ export default function SpecSheet({ parts, modelName, onClose, hiddenCount = 0 }
           <b style={{ color: EDGE_COLOR_THICK }}>красным</b> отмечены кромки 0,8 мм и толще,{' '}
           <b style={{ color: EDGE_COLOR_THIN }}>розовым</b> — 0,4 мм.{' '}
           <b style={{ color: COLOR.text }}>Значки:</b> ⚙ присадка (число отверстий) · ▭ паз/выборка · ⌒ фигурный контур · + утолщение/облицовка
-          <div style={{ marginTop: 4, color: COLOR.textMuted }}>
-            Привью не печатается — только подсказка на экране.
+          <div style={{ marginTop: 4 }}>
+            В колонке <b style={{ color: COLOR.text }}>«Кромка»</b> — контур детали с подсвеченной кромкой
+            (<b style={{ color: EDGE_COLOR_THICK }}>красная</b> — 0,8 мм и толще,{' '}
+            <b style={{ color: EDGE_COLOR_THIN }}>розовая</b> — 0,4 мм) — печатается, чтобы на сборке было видно,
+            как кромить.
           </div>
         </div>
       </div>
