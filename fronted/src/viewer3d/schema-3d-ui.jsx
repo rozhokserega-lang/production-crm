@@ -1,5 +1,5 @@
 import { createPortal } from 'react-dom';
-import { Printer, X, Search } from 'lucide-react';
+import { Printer, X, Search, Pin } from 'lucide-react';
 import { DimMark } from './spec-sheet.jsx';
 
 /* UI схемы сборки: полоса управления, список позиций и лист печати.
@@ -22,6 +22,7 @@ export function SchemeBar({
   showPos, setShowPos, showFast, setShowFast, showLead, setShowLead,
   rowsCount, onPrint, onExit,
   standalone = false, modelName = '', search = '', setSearch,
+  shotsCount = 0, msg = '', onFix, onPrintPack, onClearShots,
 }) {
   const btn = (on) => ({
     fontSize: 11.5, padding: '5px 10px', cursor: 'pointer',
@@ -85,7 +86,32 @@ export function SchemeBar({
       <button onClick={() => setShowFast((v) => !v)} style={btn(showFast)} title="Показывать крепёж">Крепёж</button>
       <button onClick={() => setShowLead((v) => !v)} style={btn(showLead)} title="Линии от номера к детали">Выноски</button>
       <span style={{ flex: 1 }} />
+      {msg && (
+        <span style={{ fontSize: 11, color: C.accent, whiteSpace: 'nowrap' }}>{msg}</span>
+      )}
       <span style={{ fontSize: 11, color: C.muted }}>позиций: {rowsCount}</span>
+      {onFix && (
+        <button onClick={onFix} style={{ ...btn(false), display: 'flex', alignItems: 'center', gap: 5 }}
+          title="Запомнить текущий вид этой схемы для общей печати">
+          <Pin size={12} /> Фиксация для печати
+        </button>
+      )}
+      {onPrintPack && (
+        <button
+          onClick={onPrintPack}
+          disabled={!shotsCount}
+          style={{ ...btn(!!shotsCount), opacity: shotsCount ? 1 : 0.5, cursor: shotsCount ? 'pointer' : 'default' }}
+          title="Напечатать все зафиксированные схемы одной пачкой"
+        >
+          Печать всех схем{shotsCount ? ` (${shotsCount})` : ''}
+        </button>
+      )}
+      {onClearShots && shotsCount > 0 && (
+        <button onClick={onClearShots} style={{ ...btn(false), display: 'flex', alignItems: 'center', gap: 3 }}
+          title="Забыть зафиксированные схемы">
+          <X size={12} />
+        </button>
+      )}
       <button onClick={onPrint} style={{ ...btn(true), display: 'flex', alignItems: 'center', gap: 5 }} title="Печать инструкции сборки">
         <Printer size={12} /> Печать
       </button>
@@ -190,40 +216,119 @@ export function SchemeSpec({ rows, selectedId, hoverId, setHoverId, onPick, fitt
   );
 }
 
-/* ---------- лист печати: снимок вида + легенда + список крепежа ---------- */
-export function SchemePrintSheet({ data, onClose }) {
-  const { url, title, subtitle, rows, fittings, dateStr, moduleInfo } = data || {};
-  return createPortal(
-    <div className="scheme-print-root" style={{ position: 'fixed', inset: 0, zIndex: 1600, background: '#fff', overflow: 'auto' }}>
-      <style>{`
-        @media print {
-          body * { visibility: hidden !important; }
-          .scheme-print-root, .scheme-print-root * { visibility: visible !important; }
-          .scheme-print-root { position: static !important; overflow: visible !important; }
-          .scheme-print-toolbar { display: none !important; }
-          .scheme-print-page { page-break-after: always; }
-        }
-      `}</style>
-      <div className="scheme-print-toolbar" style={{ display: 'flex', gap: 8, padding: '10px 16px', borderBottom: `1px solid ${C.hairline}`, background: C.bg, position: 'sticky', top: 0 }}>
-        <button onClick={() => window.print()} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', fontSize: 13, cursor: 'pointer', background: C.accent, color: '#fff', border: 'none' }}>
-          <Printer size={14} /> Печать / PDF
-        </button>
-        <button onClick={onClose} style={{ padding: '7px 14px', fontSize: 13, cursor: 'pointer', background: 'transparent', color: C.text, border: `1px solid ${C.hairline}` }}>
-          Закрыть
-        </button>
-        <span style={{ fontSize: 12, color: C.muted, alignSelf: 'center' }}>
-          Печатается только этот лист (в CRM окно модели при печати скрыто).
-        </span>
-      </div>
+/* ---------- лист печати: чертёж (в сборе + настроенный вид) и спецификация ----------
+ * Как в kk3d: A4 альбомный, поля 8 мм. Первый лист — чертёж, поделённый
+ * пополам: слева тот же модуль «в сборе» (разлёт 0, полупрозрачный, без
+ * разметки — сквозь панели читается крепёж), справа настроенный вид с
+ * разметкой. Второй лист — спецификация в колонках. Пачка печатает по два
+ * листа на каждую зафиксированную схему. */
+const PRINT_CSS = `
+  @page { size: A4 landscape; margin: 8mm; }
+  .spec-cols { columns: 2; column-gap: 8mm; }
+  .spec-cols > div { break-inside: avoid-column; margin-bottom: 4mm; }
+  @media print {
+    /* остальная страница убирается совсем, а не через visibility: скрытая, но
+       занимающая место разметка тянула за собой пустые листы */
+    body > *:not(.scheme-print-root) { display: none !important; }
+    .scheme-print-root { position: static !important; overflow: visible !important; background: #fff !important; }
+    .scheme-print-toolbar { display: none !important; }
+    .print-sheet { margin: 0 !important; padding: 0 !important; box-shadow: none !important; max-width: none !important; }
+    /* разрыв ДО следующего листа, а не после предыдущего: иначе последний
+       лист пачки выбрасывает пустую страницу в конце */
+    .print-sheet + .print-sheet { break-before: page; }
+    .spec-page { break-before: page; }
+    .draw-half img { max-height: 174mm; }
+  }
+`;
 
-      <div className="scheme-print-page" style={{ padding: '10mm 8mm' }}>
+const SHEET_STYLE = {
+  background: '#fff', margin: '0 auto 12px', padding: '10mm 8mm',
+  maxWidth: 1180, boxShadow: '0 2px 14px rgba(0,0,0,0.12)',
+};
+
+function FitCaption({ children }) {
+  return (
+    <div style={{ fontSize: 9.5, letterSpacing: 0.4, color: C.muted, padding: '3px 6px', textTransform: 'uppercase' }}>
+      {children}
+    </div>
+  );
+}
+
+function PositionsTable({ rows }) {
+  return (
+    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 10.5 }}>
+      <thead>
+        <tr style={{ background: C.bg }}>
+          <th style={{ border: `1px solid ${C.hairline}`, padding: '2px 4px', width: 22 }}>№</th>
+          <th style={{ border: `1px solid ${C.hairline}`, padding: '2px 4px', textAlign: 'left' }}>Обозн.</th>
+          <th style={{ border: `1px solid ${C.hairline}`, padding: '2px 4px', textAlign: 'left' }}>Наименование</th>
+          <th style={{ border: `1px solid ${C.hairline}`, padding: '2px 4px', textAlign: 'left', width: 92 }}>Размер</th>
+          <th style={{ border: `1px solid ${C.hairline}`, padding: '2px 4px', width: 64 }}>Кромка</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r) => (
+          <tr key={r.id}>
+            <td style={{ border: `1px solid ${C.hairline}`, padding: '2px 4px', textAlign: 'center', fontWeight: 600 }}>{r.num}</td>
+            <td style={{ border: `1px solid ${C.hairline}`, padding: '2px 4px' }}>{r.des}</td>
+            <td style={{ border: `1px solid ${C.hairline}`, padding: '2px 4px' }}>{r.title}</td>
+            <td style={{ border: `1px solid ${C.hairline}`, padding: '2px 4px' }}>{r.size}</td>
+            <td style={{ border: `1px solid ${C.hairline}`, padding: '2px 4px' }}>
+              {r.edges && r.edges.length
+                ? (
+                  <div style={{ display: 'flex', gap: 2 }}>
+                    <DimMark value={r.w} edges={r.edges} axis="w" width={56} fontScale={0.85} />
+                    <DimMark value={r.h} edges={r.edges} axis="h" width={56} fontScale={0.85} />
+                  </div>
+                )
+                : <span style={{ color: C.muted }}>—</span>}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function FittingsTable({ fittings }) {
+  if (!fittings || !fittings.length) return null;
+  return (
+    <>
+      <div style={{ fontSize: 12, fontWeight: 700, margin: '0 0 4px' }}>КРЕПЁЖ И ФУРНИТУРА</div>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 10.5 }}>
+        <thead>
+          <tr style={{ background: C.bg }}>
+            <th style={{ border: `1px solid ${C.hairline}`, padding: '2px 4px', textAlign: 'left' }}>Наименование</th>
+            <th style={{ border: `1px solid ${C.hairline}`, padding: '2px 4px', width: 40 }}>Кол.</th>
+          </tr>
+        </thead>
+        <tbody>
+          {fittings.map(([name, n]) => (
+            <tr key={name}>
+              <td style={{ border: `1px solid ${C.hairline}`, padding: '2px 4px' }}>{name}</td>
+              <td style={{ border: `1px solid ${C.hairline}`, padding: '2px 4px', textAlign: 'center' }}>{n}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </>
+  );
+}
+
+/** Один лист схемы: чертёж двумя половинами + спецификация вторым листом. */
+function SheetBlock({ shot }) {
+  const { title, subtitle, moduleInfo, module, rows, fittings, views, dateStr, explodePct } = shot || {};
+  const hasAsm = !!(views && views.assembled);
+  return (
+    <div className="print-sheet" style={SHEET_STYLE}>
+      <div className="draw-page">
         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', borderBottom: `2px solid ${C.text}`, paddingBottom: 6 }}>
           <div>
             <div style={{ fontSize: 17, fontWeight: 700, letterSpacing: 0.3 }}>ИНСТРУКЦИЯ СБОРКИ</div>
             <div style={{ fontSize: 12.5, color: C.muted, marginTop: 2 }}>{title}{subtitle ? (' · ' + subtitle) : ''}</div>
             {moduleInfo && (
               <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
-                Модуль: {moduleInfo.name || '—'}
+                Модуль: {module || moduleInfo.name || '—'}
                 {moduleInfo.dims ? ` · габарит ${moduleInfo.dims.join('×')} мм` : ''}
                 {` · деталей ${moduleInfo.parts || 0}`}
                 {moduleInfo.fittings ? ` · крепежа ${moduleInfo.fittings}` : ''}
@@ -233,74 +338,66 @@ export function SchemePrintSheet({ data, onClose }) {
           <div style={{ fontSize: 11, color: C.muted }}>{dateStr}</div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1.35fr 1fr', gap: 12, marginTop: 10 }}>
-          <div style={{ border: `1px solid ${C.hairline}`, background: '#fff' }}>
-            {url
-              ? <img src={url} alt="Схема сборки" style={{ width: '100%', display: 'block' }} />
+        <div style={{ display: 'flex', border: `1px solid ${C.hairline}`, marginTop: 8 }}>
+          {hasAsm && (
+            <div className="draw-half" style={{ width: '50%', borderRight: `1px solid ${C.hairline}` }}>
+              <FitCaption>В сборе</FitCaption>
+              <img src={views.assembled} alt="Модуль в сборе" style={{ width: '100%', display: 'block' }} />
+            </div>
+          )}
+          <div className="draw-half" style={{ width: hasAsm ? '50%' : '100%' }}>
+            <FitCaption>Разлёт {explodePct != null ? explodePct : 100}% · номера позиций</FitCaption>
+            {views && views.configured
+              ? <img src={views.configured} alt="Схема сборки" style={{ width: '100%', display: 'block' }} />
               : <div style={{ padding: 20, fontSize: 12, color: C.muted }}>Снимок вида не получен — обновите и нажмите печать ещё раз.</div>}
           </div>
+        </div>
+      </div>
+
+      <div className="spec-page" style={{ paddingTop: 8 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>
+          МОДУЛЬ {(module || '').toUpperCase()}
+          {moduleInfo && moduleInfo.dims ? ` · ${moduleInfo.dims.join('×')} мм` : ''}
+        </div>
+        <div className="spec-cols">
           <div>
             <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4 }}>ПОЗИЦИИ</div>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 10.5 }}>
-              <thead>
-                <tr style={{ background: C.bg }}>
-                  <th style={{ border: `1px solid ${C.hairline}`, padding: '2px 4px', width: 22 }}>№</th>
-                  <th style={{ border: `1px solid ${C.hairline}`, padding: '2px 4px', textAlign: 'left' }}>Обозн.</th>
-                  <th style={{ border: `1px solid ${C.hairline}`, padding: '2px 4px', textAlign: 'left' }}>Наименование</th>
-                  <th style={{ border: `1px solid ${C.hairline}`, padding: '2px 4px', textAlign: 'left', width: 92 }}>Размер</th>
-                  <th style={{ border: `1px solid ${C.hairline}`, padding: '2px 4px', width: 64 }}>Кромка</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((r) => (
-                  <tr key={r.id}>
-                    <td style={{ border: `1px solid ${C.hairline}`, padding: '2px 4px', textAlign: 'center', fontWeight: 600 }}>{r.num}</td>
-                    <td style={{ border: `1px solid ${C.hairline}`, padding: '2px 4px' }}>{r.des}</td>
-                    <td style={{ border: `1px solid ${C.hairline}`, padding: '2px 4px' }}>{r.title}</td>
-                    <td style={{ border: `1px solid ${C.hairline}`, padding: '2px 4px' }}>{r.size}</td>
-                    <td style={{ border: `1px solid ${C.hairline}`, padding: '2px 4px' }}>
-                      {r.edges && r.edges.length
-                        ? (
-                          <div style={{ display: 'flex', gap: 2 }}>
-                            <DimMark value={r.w} edges={r.edges} axis="w" width={56} fontScale={0.85} />
-                            <DimMark value={r.h} edges={r.edges} axis="h" width={56} fontScale={0.85} />
-                          </div>
-                        )
-                        : <span style={{ color: C.muted }}>—</span>}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-
-            {fittings && fittings.length > 0 && (
-              <>
-                <div style={{ fontSize: 12, fontWeight: 700, margin: '10px 0 4px' }}>КРЕПЁЖ И ФУРНИТУРА</div>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 10.5 }}>
-                  <thead>
-                    <tr style={{ background: C.bg }}>
-                      <th style={{ border: `1px solid ${C.hairline}`, padding: '2px 4px', textAlign: 'left' }}>Наименование</th>
-                      <th style={{ border: `1px solid ${C.hairline}`, padding: '2px 4px', width: 40 }}>Кол.</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {fittings.map(([name, n]) => (
-                      <tr key={name}>
-                        <td style={{ border: `1px solid ${C.hairline}`, padding: '2px 4px' }}>{name}</td>
-                        <td style={{ border: `1px solid ${C.hairline}`, padding: '2px 4px', textAlign: 'center' }}>{n}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </>
-            )}
+            <PositionsTable rows={rows || []} />
+          </div>
+          <div>
+            <FittingsTable fittings={fittings} />
           </div>
         </div>
         <div style={{ marginTop: 8, fontSize: 10, color: C.muted }}>
-          Номера на рисунке соответствуют номерам в таблице позиций. Разлёт деталей показан на момент печати.
-          Кромка в колонке: линия над размером — дальняя сторона (верх/право), под — ближняя (низ/лево); пунктир — 0,4 мм, сплошная — толще.
+          Номера на рисунке соответствуют номерам в таблице позиций. Слева — модуль в сборе (крепёж виден сквозь панели),
+          справа — текущий разлёт с разметкой. Кромка в колонке: линия над размером — дальняя сторона (верх/право),
+          под — ближняя (низ/лево); пунктир — 0,4 мм, сплошная — толще.
         </div>
       </div>
+    </div>
+  );
+}
+
+export function SchemePrintSheet({ data, onClose }) {
+  const shots = data && data.pack ? data.pack : (data ? [data] : []);
+  const cnt = shots.length;
+  return createPortal(
+    <div className="scheme-print-root" style={{ position: 'fixed', inset: 0, zIndex: 1600, background: C.bg, overflow: 'auto' }}>
+      <style>{PRINT_CSS}</style>
+      <div className="scheme-print-toolbar" style={{ display: 'flex', gap: 8, padding: '10px 16px', borderBottom: `1px solid ${C.hairline}`, background: C.bg, position: 'sticky', top: 0, zIndex: 2 }}>
+        <button onClick={() => window.print()} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', fontSize: 13, cursor: 'pointer', background: C.accent, color: '#fff', border: 'none' }}>
+          <Printer size={14} /> Печать / PDF
+        </button>
+        <button onClick={onClose} style={{ padding: '7px 14px', fontSize: 13, cursor: 'pointer', background: 'transparent', color: C.text, border: `1px solid ${C.hairline}` }}>
+          Закрыть
+        </button>
+        <span style={{ fontSize: 12, color: C.muted, alignSelf: 'center' }}>
+          {cnt > 1
+            ? `Пачка: ${cnt} схем(ы) — по два листа на каждую (чертёж + спецификация).`
+            : 'Лист 1 — чертёж, лист 2 — спецификация.'}
+        </span>
+      </div>
+      {shots.map((s, i) => <SheetBlock key={s.key || i} shot={s} />)}
     </div>,
     document.body
   );

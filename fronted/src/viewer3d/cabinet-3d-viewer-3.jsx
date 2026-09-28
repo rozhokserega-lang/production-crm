@@ -723,6 +723,14 @@ function PanelDiagram({ part, maxW = 172, maxH = 260, fontScale = 1, showLabels 
   );
 }
 
+/* Печатный лист: A4 альбомный, поля 8 мм → 281×194 мм рабочего поля, под
+ * чертёж отведено 174 мм. Лист делится пополам: слева «в сборе», справа
+ * настроенный вид. Пропорция половины (140,5×174) — в ней и снимаем кадры,
+ * иначе чертёж на бумаге выходит вдвое мельче экранного. */
+const SHEET_HALF_AR = 140.5 / 174;
+// разумный предел одной пачки: 40 схем = 80 листов
+const MAX_SHOTS = 40;
+
 /* мировой бокс детали по её размещению (placement) и габаритам пласти —
  * для габарита модуля в карточке схемы (Ш×В×Г) */
 function partWorldBBox(p) {
@@ -783,8 +791,15 @@ function CabinetViewer({
   const [schemeSearch, setSchemeSearch] = useState(''); // фильтр списка позиций
   const badgeGroupRef = useRef(null);                  // спрайты-кружки схемы
   const captureRef = useRef(null);                     // снимок кадра для печати
+  const capturePaperRef = useRef(null);                // настроенный вид в пропорции половины листа
+  const captureAssemblyRef = useRef(null);             // тот же модуль «в сборе» (разлёт 0, полупрозрачный)
   const partCentersRef = useRef({});                   // id -> центр детали (мировые)
-  const [printSheet, setPrintSheet] = useState(null);  // лист печати схемы
+  const [printSheet, setPrintSheet] = useState(null);  // лист печати схемы (одна схема или пачка)
+  // фиксации схем: вид + данные модуля, в памяти страницы (как у kk3d —
+  // закрыл вкладку, фиксации пропали; хранить чужие подборки на сервере незачем)
+  const [schemeShots, setSchemeShots] = useState([]);
+  const [schemeMsg, setSchemeMsg] = useState('');
+  const schemeMsgTimer = useRef(null);
   const [selectedId, setSelectedId] = useState(null);
   const [checked, setChecked] = useState({});
   const [loadedJSON, setLoadedJSON] = useState(null);
@@ -1074,12 +1089,89 @@ function CabinetViewer({
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(COLOR.bg);
     sceneRef.current = scene;
-    // снимок текущего кадра для листа печати (рендер перед чтением — тогда
-    // preserveDrawingBuffer не нужен, а кадр гарантированно свежий)
-    captureRef.current = () => {
-      try { renderer.render(scene, camera); return renderer.domElement.toDataURL('image/png'); }
-      catch (e) { return null; }
+    /* Снимок для листа печати. Всё внутри одного синхронного шага: браузер
+     * промежуточный кадр нарисовать не успевает, поэтому на экране ничего не
+     * мигает (так же делают в kk3d).
+     *   aspectRatio — пропорция половины печатного листа: снимок делаем ровно
+     *     в ней, иначе широкий экранный кадр, вписанный в половину листа, даёт
+     *     чертёж вдвое мельче;
+     *   assembled — вид «в сборе»: разлёт 0, полупрозрачные панели, без
+     *     разметки, чтобы сквозь панели читался крепёж. */
+    const shoot = (aspectRatio, assembled) => {
+      const mount = mountRef.current;
+      if (!mount) return null;
+      const prevW = mount.style.width, prevFlex = mount.style.flex;
+      if (aspectRatio) {
+        const ch = mount.clientHeight || h;
+        mount.style.flex = 'none';
+        mount.style.width = Math.max(320, Math.round(ch * aspectRatio)) + 'px';
+      }
+      const ww = mount.clientWidth || w, hh = mount.clientHeight || h;
+      camera.aspect = ww / hh;
+      camera.updateProjectionMatrix();
+      renderer.setSize(ww, hh);
+
+      const map = meshMapRef.current;
+      const savedPos = [], savedMat = [];
+      if (assembled) {
+        for (const id in map) {
+          const m = map[id];
+          savedPos.push([m, m.group.position.clone(), m.animP, m.mesh.position.clone(), m.mesh.quaternion.clone()]);
+          m.group.position.set(0, 0, 0);
+          if (m.restPos) { m.mesh.position.copy(m.restPos); m.mesh.quaternion.set(0, 0, 0, 1); }
+          const mat = m.mesh.material;
+          if (mat) {
+            savedMat.push([mat, mat.opacity, mat.depthWrite, mat.side]);
+            mat.opacity = 0.28;
+            mat.depthWrite = false;
+            mat.side = THREE.DoubleSide;
+            mat.needsUpdate = true;
+          }
+        }
+      }
+      // на бумаге — белый лист без пола-сетки
+      const bg = scene.background;
+      scene.background = new THREE.Color('#ffffff');
+      if (grid) grid.visible = false;
+      const badges = badgeGroupRef.current;
+      const badgesVis = badges ? badges.visible : null;
+      const dimVis = dimGroupRef.current ? dimGroupRef.current.visible : null;
+      if (assembled) {
+        if (badges) badges.visible = false;
+        if (dimGroupRef.current) dimGroupRef.current.visible = false;
+      }
+
+      let url = null;
+      try { renderer.render(scene, camera); url = renderer.domElement.toDataURL('image/png'); }
+      catch (e) { url = null; }
+
+      scene.background = bg;
+      if (grid) grid.visible = true;
+      if (badges && badgesVis !== null) badges.visible = badgesVis;
+      if (dimGroupRef.current && dimVis !== null) dimGroupRef.current.visible = dimVis;
+      savedMat.forEach(([mat, op, dw, side]) => {
+        mat.opacity = op; mat.depthWrite = dw; mat.side = side; mat.needsUpdate = true;
+      });
+      savedPos.forEach(([m, pos, animP, meshPos, quat]) => {
+        m.group.position.copy(pos);
+        if (animP !== undefined) m.animP = animP;
+        m.mesh.position.copy(meshPos);
+        m.mesh.quaternion.copy(quat);
+      });
+
+      mount.style.width = prevW;
+      mount.style.flex = prevFlex;
+      const w2 = mount.clientWidth || w, h2 = mount.clientHeight || h;
+      camera.aspect = w2 / h2;
+      camera.updateProjectionMatrix();
+      renderer.setSize(w2, h2);
+      try { renderer.render(scene, camera); } catch (e) {}
+      needsRenderRef.current = true;
+      return url;
     };
+    captureRef.current = () => shoot(null, false);                    // текущий кадр как есть
+    capturePaperRef.current = (ar) => shoot(ar, false);               // настроенный вид в печатной пропорции
+    captureAssemblyRef.current = (ar) => shoot(ar, true);             // вид «в сборе»
 
     const camera = new THREE.PerspectiveCamera(38, w / h, 10, 20000);
 
@@ -1885,20 +1977,69 @@ function CabinetViewer({
     };
   }, [schemeRows, schemeFittings, schemeAsm]);
 
-  // печать: снимок кадра + легенда позиций + крепёж
+  // печать: снимок текущего вида + вид «в сборе» + легенда позиций + крепёж
   const printScheme = useCallback(() => {
-    const url = captureRef.current ? captureRef.current() : null;
+    const configured = capturePaperRef.current ? capturePaperRef.current(SHEET_HALF_AR) : null;
+    const assembled = captureAssemblyRef.current ? captureAssemblyRef.current(SHEET_HALF_AR) : null;
     const mod = schemeAsm ? String(schemeAsm).split(' / ').pop() : 'все модули';
     setPrintSheet({
-      url,
       title: loadedFileName || 'Модель',
       subtitle: 'модуль: ' + mod,
+      moduleInfo: schemeModuleInfo,
       rows: schemeUiRows,
       fittings: schemeFittings,
-      moduleInfo: schemeModuleInfo,
+      views: { assembled, configured },
+      explodePct: Math.round(explodeK * 100),
       dateStr: new Date().toLocaleDateString('ru-RU'),
     });
-  }, [schemeAsm, schemeUiRows, schemeFittings, schemeModuleInfo, loadedFileName]);
+  }, [schemeAsm, schemeUiRows, schemeFittings, schemeModuleInfo, loadedFileName, explodeK]);
+
+  const flashSchemeMsg = useCallback((text) => {
+    setSchemeMsg(text);
+    if (schemeMsgTimer.current) clearTimeout(schemeMsgTimer.current);
+    schemeMsgTimer.current = setTimeout(() => setSchemeMsg(''), 5000);
+  }, []);
+
+  /* Фиксация текущего вида модуля: снимки и данные кладём в память страницы.
+   * Повторная фиксация того же модуля ЗАМЕНЯЕТ прежнюю — обычно это правка
+   * ракурса, а не желание напечатать модуль дважды. */
+  const fixSchemeShot = useCallback(() => {
+    const configured = capturePaperRef.current ? capturePaperRef.current(SHEET_HALF_AR) : null;
+    if (!configured) { flashSchemeMsg('Схема ещё не построена — фиксировать нечего.'); return; }
+    const assembled = captureAssemblyRef.current ? captureAssemblyRef.current(SHEET_HALF_AR) : null;
+    const key = schemeAsm || '__all__';
+    const name = schemeAsm ? String(schemeAsm).split(' / ').pop() : 'Все модули';
+    const shot = {
+      key,
+      module: name,
+      title: loadedFileName || 'Модель',
+      moduleInfo: schemeModuleInfo,
+      rows: schemeUiRows,
+      fittings: schemeFittings,
+      views: { assembled, configured },
+      explodePct: Math.round(explodeK * 100),
+      dateStr: new Date().toLocaleDateString('ru-RU'),
+    };
+    const idx = schemeShots.findIndex((s) => s.key === key);
+    if (idx < 0 && schemeShots.length >= MAX_SHOTS) {
+      flashSchemeMsg('Уже зафиксировано ' + MAX_SHOTS + ' схем — это предел одной пачки.');
+      return;
+    }
+    const next = idx >= 0 ? schemeShots.map((s, i) => (i === idx ? shot : s)) : schemeShots.concat(shot);
+    setSchemeShots(next);
+    flashSchemeMsg((idx >= 0 ? 'Вид модуля «' + name + '» обновлён' : 'Модуль «' + name + '» зафиксирован')
+      + '. Схем к печати: ' + next.length);
+  }, [schemeAsm, schemeUiRows, schemeFittings, schemeModuleInfo, loadedFileName, schemeShots, explodeK, flashSchemeMsg]);
+
+  const printSchemePack = useCallback(() => {
+    if (!schemeShots.length) return;
+    setPrintSheet({ pack: schemeShots, dateStr: new Date().toLocaleDateString('ru-RU') });
+  }, [schemeShots]);
+
+  const clearSchemeShots = useCallback(() => {
+    setSchemeShots([]);
+    flashSchemeMsg('Зафиксированные схемы забыты.');
+  }, [flashSchemeMsg]);
 
   /* кружки позиций и радиальный разлёт: строим/обновляем, когда открыли схему,
    * сменили модуль или тумблеры. Сами позиции кружков каждый кадр подтягивает
@@ -2301,6 +2442,11 @@ function CabinetViewer({
                 modelName={standalone ? (modelName || loadedFileName) : ''}
                 search={schemeSearch}
                 setSearch={setSchemeSearch}
+                shotsCount={schemeShots.length}
+                msg={schemeMsg}
+                onFix={fixSchemeShot}
+                onPrintPack={printSchemePack}
+                onClearShots={clearSchemeShots}
               />
               <SchemeSpec
                 rows={schemeUiRows}
