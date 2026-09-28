@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Printer } from 'lucide-react';
 
 /**
@@ -392,15 +393,18 @@ export default function SpecSheet({ parts, modelName, onClose }) {
   const cell = { padding: '5px 6px', borderBottom: `1px solid ${COLOR.rowLine}`, fontSize: 11.5 * fontScale, verticalAlign: 'middle' };
   const head = { ...cell, borderBottom: `1.5px solid ${COLOR.text}`, fontWeight: 600, whiteSpace: 'nowrap' };
 
-  return (
-    <div className="spec-sheet-root" style={{ position: 'fixed', inset: 0, zIndex: 100, background: '#fff', overflowY: 'auto', fontFamily: 'ui-sans-serif, system-ui, sans-serif' }}>
+  return createPortal(
+    <div className="spec-sheet-root" style={{ position: 'fixed', inset: 0, zIndex: 1600, background: '#fff', overflowY: 'auto', fontFamily: 'ui-sans-serif, system-ui, sans-serif' }}>
       <style>{`
         @media print {
-          body * { visibility: hidden !important; }
-          .spec-sheet-root, .spec-sheet-root * { visibility: visible !important; }
-          .spec-sheet-root { position: static !important; overflow: visible !important; }
+          /* лист печатается порталом в body: в CRM окно модели при печати
+             скрыто (display:none у .dialog-backdrop), и внутри него лист не
+             напечатался бы вовсе. Остальную страницу убираем display:none —
+             скрытая, но занимающая место разметка добавляла пустые листы. */
+          body > *:not(.spec-sheet-root) { display: none !important; }
+          .spec-sheet-root { position: static !important; overflow: visible !important; background: #fff !important; }
           .spec-sheet-bar { display: none !important; }
-          .spec-sheet-page { page-break-after: always; }
+          .spec-sheet-page + .spec-sheet-page { break-before: page; }
         }
       `}</style>
 
@@ -512,6 +516,7 @@ export default function SpecSheet({ parts, modelName, onClose }) {
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

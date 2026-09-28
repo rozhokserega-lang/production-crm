@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Printer } from 'lucide-react';
 
 /**
@@ -286,15 +287,18 @@ export default function AssemblyDoc({ parts, modelName, onClose }) {
   }, [parts]);
   const groupParts = (g) => g.partIds.map((id) => partsById[id]).filter(Boolean);
 
-  return (
-    <div className="assembly-doc-root" style={{ position: 'fixed', inset: 0, zIndex: 1400, background: '#fff', overflowY: 'auto' }}>
+  return createPortal(
+    <div className="assembly-doc-root" style={{ position: 'fixed', inset: 0, zIndex: 1600, background: '#fff', overflowY: 'auto' }}>
       <style>{`
         @media print {
-          body * { visibility: hidden !important; }
-          .assembly-doc-root, .assembly-doc-root * { visibility: visible !important; }
-          .assembly-doc-root { position: static !important; overflow: visible !important; }
+          /* лист печатается порталом в body: в CRM окно модели при печати
+             скрыто (display:none у .dialog-backdrop) — внутри него лист не
+             напечатался бы вовсе. Остальную страницу убираем display:none,
+             иначе скрытая разметка добавляет пустые листы. */
+          body > *:not(.assembly-doc-root) { display: none !important; }
+          .assembly-doc-root { position: static !important; overflow: visible !important; background: #fff !important; }
           .assembly-doc-toolbar { display: none !important; }
-          .assembly-doc-page { page-break-after: always; }
+          .assembly-doc-page + .assembly-doc-page { break-before: page; }
         }
       `}</style>
 
@@ -417,6 +421,7 @@ export default function AssemblyDoc({ parts, modelName, onClose }) {
       <div style={{ padding: '16px 48px 32px', fontSize: 10.5, color: COLOR.textMuted, borderTop: `1px solid ${COLOR.hairline}` }}>
         Сгенерировано локально из JSON v3 (Базис) · наведение на строку подсвечивает деталь на чертеже
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
