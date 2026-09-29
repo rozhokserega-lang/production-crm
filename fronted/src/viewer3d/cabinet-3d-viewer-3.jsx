@@ -495,7 +495,9 @@ function orbitFromView(view, center, fitRadius) {
     if (!p) return null;
     const t = vec3(view.Target) || vec3(view.Center) || vec3(view.LookAt) || c;
     dx = p[0] - t[0]; dy = p[1] - t[1]; dz = p[2] - t[2];
-    c[0] = t[0]; c[1] = t[1]; c[2] = t[2];
+    /* цель камеры НЕ берём из файла: в БАЗИСе она своя, и модель уезжала из
+     * центра окна. Направление взгляда (углы) из файла сохраняем, а цель —
+     * центр габарита модели, тогда деталь всегда по центру. */
   }
   if (!(Math.hypot(dx, dy, dz) > 1e-6)) return null;
   return {
@@ -770,6 +772,66 @@ function CabinetViewer({
   const partsByIdRef = useRef({});
   const animsRef = useRef([]);
   const dimGroupRef = useRef(null);
+  const gridRef = useRef(null);           // сетка-«поле» под моделью
+  const gridFitRef = useRef('');          // текущий размер сетки (extent x div)
+  const modelBoxRef = useRef(null);       // габарит модели для сетки и рамок
+  const cameraRef = useRef(null);         // камера — нужна для подбора радиуса по пропорциям окна
+  const userZoomRef = useRef(false);      // пользователь сам крутил колесо — кадр не перебиваем
+
+  /* Радиус камеры под габарит модели И пропорции окна.
+   *
+   * Раньше он считался как (ширина + высота) * 1.3 — без учёта пропорций, из-за
+   * чего на широком окне модель уходила вверх, а снизу оставалась пустая
+   * половина. Здесь считаем, какое расстояние нужно, чтобы габарит поместился и
+   * по вертикали (с учётом fov), и по горизонтали (fov * aspect), и добавляем
+   * половину глубины — она тоже съедает место. */
+  const fitRadiusFromBox = (b) => {
+    const cam = cameraRef.current;
+    if (!b || !cam) return null;
+    const halfV = Math.tan((cam.fov * Math.PI / 180) / 2);
+    const halfH = halfV * (cam.aspect || 1);
+    const spanY = Math.max(b.maxY - b.minY, 300);
+    const spanX = Math.max(b.maxX - b.minX, b.maxZ - b.minZ, 300);
+    const spanZ = Math.max(b.maxZ - b.minZ, 300);
+    const needY = (spanY / 2) / halfV;
+    const needX = (spanX / 2) / halfH;
+    return Math.max(600, (Math.max(needX, needY) + spanZ / 2) * 1.15);
+  };
+  /* Сетка-«поле». В БАЗИСе модель обычно стоит далеко от начала координат
+   * (например, x ≈ 5000 мм), а сетка раньше была жёстко в нуле — камера смотрит
+   * на модель, и поле уезжало в сторону, детали оказывались на его краю. Теперь
+   * сетка встаёт под центр модели и подбирается по её габариту, шаг клетки
+   * остаётся 100 мм (как у исходной 3000/30). Габарита нет — как было. */
+  const gridStep = 100;
+  const fitGridToModel = () => {
+    const g = gridRef.current;
+    if (!g || !g.parent) return;
+    const b = modelBoxRef.current;
+    let extent = 3000, div = 30;
+    if (b) {
+      const size = Math.max(b.maxX - b.minX, b.maxZ - b.minZ, 600);
+      extent = Math.ceil((size * 1.6) / gridStep) * gridStep;
+      div = Math.max(6, Math.round(extent / gridStep));
+    }
+    const key = extent + 'x' + div;
+    let cur = g;
+    if (gridFitRef.current !== key) {
+      gridFitRef.current = key;
+      const parent = g.parent;
+      parent.remove(g);
+      if (g.geometry) g.geometry.dispose();
+      if (g.material) {
+        if (Array.isArray(g.material)) g.material.forEach((m) => m.dispose());
+        else g.material.dispose();
+      }
+      cur = new THREE.GridHelper(extent, div, 0x8fa583, 0xa8bc9d);
+      parent.add(cur);
+      gridRef.current = cur;
+    }
+    cur.position.set(b ? b.cx : 0, b ? b.minY - 1 : -1, b ? b.cz : 0);
+    needsRenderRef.current = true;
+  };
+
   const orbitRef = useRef({
     theta: 0.785, phi: 1.0, radius: 2400,
     thetaGoal: 0.785, phiGoal: 1.0,
@@ -1094,7 +1156,9 @@ function CabinetViewer({
   useEffect(() => {
     const mount = mountRef.current;
     const w = mount.clientWidth;
-    const h = 480;
+    // высота контейнера (в обычном режиме он на всё окно); 480 — только запасное
+    // значение на случай, если стили ещё не применились
+    const h = mount.clientHeight || 480;
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(COLOR.bg);
@@ -1170,10 +1234,15 @@ function CabinetViewer({
           }
         }
       }
-      // на бумаге — белый лист без пола-сетки
+      // на бумаге — белый лист без пола-сетки.
+      // Берём сетку из ссылки gridRef, а не из замыкания: сетка пересоздаётся,
+      // когда модель далеко от нуля (fitGridToModel), и старая переменная
+      // указывала бы на уже удалённый объект — тогда в снимок попадала сетка.
       const bg = scene.background;
       scene.background = new THREE.Color('#ffffff');
-      if (grid) grid.visible = false;
+      const gr = gridRef.current;
+      const gridVis = gr ? gr.visible : null;
+      if (gr) gr.visible = false;
       const badges = badgeGroupRef.current;
       const badgesVis = badges ? badges.visible : null;
       const dimVis = dimGroupRef.current ? dimGroupRef.current.visible : null;
@@ -1187,7 +1256,8 @@ function CabinetViewer({
       catch (e) { url = null; }
 
       scene.background = bg;
-      if (grid) grid.visible = true;
+      if (gr && gridVis !== null) gr.visible = gridVis;
+      else if (gr) gr.visible = true;
       if (badges && badgesVis !== null) badges.visible = badgesVis;
       if (dimGroupRef.current && dimVis !== null) dimGroupRef.current.visible = dimVis;
       savedMat.forEach(([mat, op, dw, side]) => {
@@ -1216,6 +1286,7 @@ function CabinetViewer({
     captureAssemblyRef.current = (ar) => shoot(ar, true);             // вид «в сборе»
 
     const camera = new THREE.PerspectiveCamera(38, w / h, 10, 20000);
+    cameraRef.current = camera;
 
     // детектор софтверного OpenGL: без аппаратного GPU MSAA/Retina не потянут
     let softwareGL = false;
@@ -1248,6 +1319,11 @@ function CabinetViewer({
     const grid = new THREE.GridHelper(3000, 30, 0x8fa583, 0xa8bc9d);
     grid.position.y = -1;
     scene.add(grid);
+    // сетка запоминается ссылкой: модель может быть далеко от нуля, тогда
+    // fitGridToModel() переставит поле под неё и подберёт размер
+    gridRef.current = grid;
+    gridFitRef.current = '3000x30';
+    fitGridToModel();
 
     const raycaster = new THREE.Raycaster();
     const pointerNDC = new THREE.Vector2();
@@ -1301,6 +1377,7 @@ function CabinetViewer({
     };
     const onWheel = (e) => {
       e.preventDefault();
+      userZoomRef.current = true;          // масштаб задан вручную — кадр больше не перебиваем
       const o = orbitRef.current;
       o.radius = Math.max(200, Math.min(8000, o.radius * (1 + e.deltaY * 0.001)));
       o.radiusGoal = o.radius;
@@ -1441,6 +1518,16 @@ function CabinetViewer({
       camera.aspect = ww / hh;
       camera.updateProjectionMatrix();
       renderer.setSize(ww, hh);
+      /* окно изменилось — кадр подгоняем заново (иначе модель «плывёт» вверх на
+       * широком окне). Если пользователь сам крутил колесо, его масштаб не
+       * трогаем. */
+      if (!userZoomRef.current) {
+        const fitted = fitRadiusFromBox(modelBoxRef.current);
+        if (fitted) {
+          orbitRef.current.radius = fitted;
+          orbitRef.current.radiusGoal = fitted;
+        }
+      }
       needsRenderRef.current = true;
     };
     window.addEventListener('resize', onResize);
@@ -1825,9 +1912,17 @@ function CabinetViewer({
     if (parts.length > 0) {
       orbitRef.current.target.set(cx, cy, cz);
       orbitRef.current.targetGoal.set(cx, cy, cz);
-      orbitRef.current.radius = Math.max(600, (maxX - minX + maxY - minY) * 1.3);
+      const fitted = fitRadiusFromBox({ minX, maxX, minY, maxY, minZ, maxZ });
+      orbitRef.current.radius = fitted || Math.max(600, (maxX - minX + maxY - minY) * 1.3);
       orbitRef.current.radiusGoal = orbitRef.current.radius;
     }
+
+    // сетка-«поле» — под моделью, а не в начале координат (модель из БАЗИСа
+    // часто стоит в стороне от нуля); без модели возвращаем её в исходное место
+    modelBoxRef.current = parts.length
+      ? { minX, maxX, minY, minZ, maxZ, cx, cz }
+      : null;
+    fitGridToModel();
 
     // ракурс конструктора из файла — ставим камеру так, как модель стояла в БазИСе
     const dv = orbitFromView(loadedJSON && loadedJSON.view, [cx, cy, cz], orbitRef.current.radius);
@@ -2252,9 +2347,9 @@ function CabinetViewer({
 
       {/* standalone (scheme.html): правой колонки деталей нет — список позиций
           даёт сама схема, страница целиком про сборку */}
-      <div style={{ display: 'grid', gridTemplateColumns: standalone ? '1fr' : (embedded ? '1fr 220px' : '200px 1fr 220px') }}>
+      <div style={{ display: 'grid', gridTemplateColumns: standalone ? '1fr' : (embedded ? '1fr 220px' : '200px 1fr 220px'), height: embedded ? 'auto' : '100vh', minHeight: 0, overflow: 'hidden' }}>
         {!embedded && (
-        <div style={{ padding: 16, borderRight: `1px solid ${COLOR.hairline}` }}>
+        <div style={{ padding: 16, borderRight: `1px solid ${COLOR.hairline}`, overflowY: 'auto', minHeight: 0 }}>
           <input
             ref={fileInputRef}
             type="file"
@@ -2449,7 +2544,11 @@ function CabinetViewer({
           style={{
             position: fullView ? 'fixed' : 'relative',
             inset: fullView ? 0 : 'auto',
-            height: (fullView || standalone) ? '100vh' : 'auto',
+            /* в обычном режиме тоже на всю высоту окна: раньше здесь было
+             * 'auto', а у самого полотна жёстко 480 px — из-за этого модель
+             * рисовалась в верхней половине, а низ страницы оставался пустым */
+            height: embedded ? 'auto' : '100vh',
+            minHeight: 0,
             zIndex: fullView ? (embedded ? 1300 : 5) : 'auto',
             background: COLOR.bg,
             display: 'flex', flexDirection: 'column',
@@ -2458,7 +2557,7 @@ function CabinetViewer({
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
         >
-          <div ref={mountRef} style={{ width: '100%', height: (fullView || standalone) ? '100%' : (embedded ? '62vh' : 480), flex: 1, minHeight: 0, cursor: 'grab' }} />
+          <div ref={mountRef} style={{ width: '100%', height: embedded ? '62vh' : '100%', flex: 1, minHeight: 0, cursor: 'grab' }} />
           {/* схема сборки: полоса управления и список позиций поверх 3D */}
           {scheme && isLoaded && (
             <>
@@ -2757,7 +2856,7 @@ function CabinetViewer({
         </div>
 
         {!standalone && (
-        <div style={{ borderLeft: `1px solid ${COLOR.hairline}`, maxHeight: 520, overflowY: 'auto' }}>
+        <div style={{ borderLeft: `1px solid ${COLOR.hairline}`, maxHeight: '100%', minHeight: 0, overflowY: 'auto' }}>
           {isLoaded && (
             <div style={{ padding: '10px 12px 6px', borderBottom: `1px solid ${COLOR.hairline}` }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, border: `1px solid ${COLOR.hairline}`, padding: '4px 8px' }}>
