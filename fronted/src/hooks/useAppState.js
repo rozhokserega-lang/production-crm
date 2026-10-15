@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useWorkshopFinalDone } from "../components/WorkshopFinalDoneDialog";
 import { useWorkshopPlanPrintDialog } from "../components/WorkshopPlanPrintDialog";
+import { useOrderSplitDialog } from "./useOrderSplitDialog";
 import { useModelViewerDialog } from "../components/ModelViewerDialog";
 import { useShipmentSendToWorkDialog } from "../components/ShipmentSendToWorkDialog";
 import { useOverviewPlanMonths } from "./useOverviewPlanMonths";
@@ -1215,6 +1216,13 @@ export function useAppState({ auth }) {
 
   const { planPrintDialog, openPlanPrint, openDebtPlanPrint } = useWorkshopPlanPrintDialog(workshopPreviewDeps);
 
+  const { orderSplitDialog, openOrderSplitDialog } = useOrderSplitDialog({
+    mutationLoad,
+    setError,
+    canManageOrders,
+    denyActionByRole,
+  });
+
   // 3D-модели секций: окно просмотра + карта «артикул → секция с моделью»
   const {
     modelViewerDialog,
@@ -1841,6 +1849,7 @@ export function useAppState({ auth }) {
       refreshProductionDebts,
       deleteProductionDebts,
       openFinalDoneDialog,
+      openOrderSplitDialog,
       openPlanPrint,
       openDebtPlanPrint,
       openModelViewer,
@@ -2014,6 +2023,7 @@ export function useAppState({ auth }) {
       },
       workshopFinalDone: finalDoneDialog,
       workshopPlanPrint: planPrintDialog,
+      orderSplit: orderSplitDialog,
       modelViewer: modelViewerDialog,
       sendToWork: sendToWorkDialog,
       hardwareConsume,

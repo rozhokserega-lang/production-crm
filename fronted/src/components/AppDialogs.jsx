@@ -6,9 +6,11 @@ import { PlanDialog } from "./PlanDialog";
 import { PackagingInboxDialog } from "./PackagingInboxDialog";
 import { StrapDoneDialog } from "./StrapDoneDialog";
 import { ShipmentSendToWorkDialog } from "./ShipmentSendToWorkDialog";
+import { ShipmentSplitDialog } from "./ShipmentSplitDialog";
 import { WorkshopFinalDoneDialog } from "./WorkshopFinalDoneDialog";
 import { WorkshopPlanPrintDialog } from "./WorkshopPlanPrintDialog";
 import { ModelViewerDialog } from "./ModelViewerDialog";
+import { useMemo } from "react";
 
 export function AppDialogs({
   shell,
@@ -45,7 +47,27 @@ export function AppDialogs({
     strap,
     plan,
     strapDone,
+    orderSplit,
   } = dialogs;
+
+  // Недели для разделения заказа: недели заказов + все недели доски отгрузок,
+  // чтобы можно было выбрать план, где заказов ещё нет.
+  const orderSplitWeeks = useMemo(() => {
+    const set = new Set(
+      (Array.isArray(weeks) ? weeks : [])
+        .map((w) => String(w || "").trim())
+        .filter(Boolean),
+    );
+    (shipment.shipmentBoard?.sections || []).forEach((s) =>
+      (s.items || []).forEach((it) =>
+        (it.cells || []).forEach((c) => {
+          const w = String(c.week || "").trim();
+          if (w) set.add(w);
+        }),
+      ),
+    );
+    return [...set].sort((a, b) => Number(a) - Number(b));
+  }, [weeks, shipment.shipmentBoard]);
 
   return (
     <>
@@ -229,6 +251,17 @@ export function AppDialogs({
         onPreview={actions.previewCreatePlanDialog}
         onClose={actions.closeCreatePlanDialog}
         refreshPlanCatalogs={actions.refreshPlanCatalogs}
+      />
+
+      <ShipmentSplitDialog
+        open={orderSplit?.open}
+        selection={orderSplit?.meta}
+        weeks={orderSplitWeeks}
+        loading={orderSplit?.saving}
+        error={orderSplit?.error || ""}
+        onClose={orderSplit?.close}
+        onConfirm={orderSplit?.confirm}
+        mode="order"
       />
     </>
   );

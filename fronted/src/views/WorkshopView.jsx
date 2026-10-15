@@ -80,6 +80,7 @@ export const WorkshopView = memo(function WorkshopView({
     refreshProductionDebts,
     deleteProductionDebts,
     openFinalDoneDialog,
+    openOrderSplitDialog,
     openPlanPrint,
     openDebtPlanPrint,
     pilkaQueueSaving,
@@ -94,7 +95,7 @@ export const WorkshopView = memo(function WorkshopView({
   // потом артикул, вытащенный из строки названия изделия
   const sectionForOrder = (order, itemArticle) =>
     resolveModelSectionForOrder(order, itemArticle, modelSectionLookup);
-  const { canOperateProduction, canOperateWorkshopStage } = permissions;
+  const { canOperateProduction, canOperateWorkshopStage, canManageOrders } = permissions;
   const canPilka = typeof canOperateWorkshopStage === "function"
     ? canOperateWorkshopStage("pilka")
     : canOperateProduction;
@@ -735,6 +736,33 @@ export const WorkshopView = memo(function WorkshopView({
                     ✓ {tab === "done" ? "Готово" : "Готово к отправке: Готово"}
                   </button>
                 )}
+                {typeof openOrderSplitDialog === "function" ? (
+                  <button
+                    type="button"
+                    className="mini"
+                    disabled={
+                      !canManageOrders ||
+                      orderQty <= 1 ||
+                      isOrderCustomerShipped(o)
+                    }
+                    title={
+                      isOrderCustomerShipped(o)
+                        ? "Отгруженный заказ разделить нельзя"
+                        : "Часть количества уйдёт в план другой недели как «Ожидает»"
+                    }
+                    onClick={() =>
+                      openOrderSplitDialog(orderId, {
+                        qty: orderQty,
+                        week: o.week,
+                        item: o.item,
+                        itemLabel: rawItem,
+                        material: getMaterialLabel(o.item, o.material || o.colorName || ""),
+                      })
+                    }
+                  >
+                    ✂ Разделить
+                  </button>
+                ) : null}
               </div>
             )}
               </div>

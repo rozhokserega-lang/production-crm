@@ -13,9 +13,12 @@ export function ShipmentSplitDialog({
   error = "",
   onClose,
   onConfirm,
+  mode = "plan",
 }) {
   const totalQty = Number(selection?.qty || 0);
   const sourceWeek = String(selection?.week || "").trim();
+  const orderId = String(selection?.orderId || "").trim();
+  const isOrder = mode === "order";
 
   const [qtyKeep, setQtyKeep] = useState("");
   const [targetWeek, setTargetWeek] = useState("");
@@ -48,16 +51,27 @@ export function ShipmentSplitDialog({
   return (
     <div className="dialog-backdrop" onClick={loading ? undefined : onClose}>
       <div className="dialog-card" style={{ maxWidth: 480 }} onClick={(e) => e.stopPropagation()}>
-        <h3 style={{ margin: "0 0 8px" }}>Разделить позицию плана</h3>
+        <h3 style={{ margin: "0 0 8px" }}>{isOrder ? "Разделить заказ" : "Разделить позицию плана"}</h3>
         <div style={{ fontSize: 13, color: "#64748b", marginBottom: 12 }}>
           <b>{selection.item}</b>
           <br />
-          Сейчас: план <b>{sourceWeek}</b>, кол-во <b>{totalQty}</b> шт.
+          {isOrder && orderId ? (
+            <>Заказ <b>{orderId}</b> · план <b>{sourceWeek}</b>, кол-во <b>{totalQty}</b> шт.</>
+          ) : (
+            <>Сейчас: план <b>{sourceWeek}</b>, кол-во <b>{totalQty}</b> шт.</>
+          )}
         </div>
+
+        {isOrder ? (
+          <div style={{ fontSize: 13, color: "#9a3412", background: "#fff7ed", border: "1px solid #fdba74", borderRadius: 8, padding: "8px 10px", marginBottom: 10 }}>
+            Отделённая часть уйдёт в план выбранной недели как «Ожидает» и запустится отдельным заказом.
+            Если листы по заказу уже списаны, при повторном запуске они спишутся заново.
+          </div>
+        ) : null}
 
         <div style={{ display: "grid", gap: 10 }}>
           <label style={{ display: "grid", gap: 4, fontSize: 13 }}>
-            Оставить в плане {sourceWeek || "—"} (шт.)
+            {isOrder ? "Оставить в заказе (шт.)" : `Оставить в плане ${sourceWeek || "—"} (шт.)`}
             <input
               value={qtyKeep}
               inputMode="numeric"
@@ -79,7 +93,7 @@ export function ShipmentSplitDialog({
           </label>
 
           <div style={{ fontSize: 13, padding: "8px 10px", background: "#f8fafc", borderRadius: 8 }}>
-            Итого: <b>{sourceWeek || "—"}</b> → {keepNum || "…"} шт. | <b>{targetWeek || "—"}</b> → {qtyMove} шт.
+            Итого: {isOrder ? <>заказ <b>{orderId || "—"}</b> → {keepNum || "…"} шт.</> : <><b>{sourceWeek || "—"}</b> → {keepNum || "…"} шт.</>} | <b>{targetWeek || "—"}</b> → {qtyMove} шт.
           </div>
         </div>
 

@@ -171,6 +171,10 @@ export class OrderService {
     return await callBackend("webSplitShipmentPlanCell", source);
   }
 
+  static async splitWorkshopOrder(orderId, payload = {}) {
+    return await callBackend("webSplitWorkshopOrder", { orderId, ...payload });
+  }
+
   static async updateShipmentPlanCell(source) {
     return await callBackend("webUpdateShipmentPlanCell", source);
   }

@@ -627,6 +627,7 @@ const RPC_MAP = {
   webCreateShipmentPlanCell: "web_create_shipment_plan_cell",
   webDeleteShipmentPlanCell: "web_delete_shipment_plan_cell_by_source",
   webSplitShipmentPlanCell: "web_split_shipment_plan_cell",
+  webSplitWorkshopOrder: "web_split_workshop_order",
   webUpdateShipmentPlanCell: "web_update_shipment_plan_cell_by_source",
   webDeleteOrderById: "web_delete_order_by_id",
   webSetOrderAdminComment: "web_set_order_admin_comment",
@@ -781,6 +782,14 @@ function buildRpcPayload(action, payload = {}) {
     return {
       p_row: row != null ? String(row) : null,
       p_col: col != null ? String(col) : null,
+      p_qty_keep: Number(payload.qtyKeep ?? payload.p_qty_keep ?? 0),
+      p_target_week: String(payload.targetWeek ?? payload.p_target_week ?? "").trim(),
+      p_qty_move: Number(payload.qtyMove ?? payload.p_qty_move ?? 0),
+    };
+  }
+  if (action === "webSplitWorkshopOrder") {
+    return {
+      p_order_id: String(payload.orderId ?? payload.p_order_id ?? "").trim(),
       p_qty_keep: Number(payload.qtyKeep ?? payload.p_qty_keep ?? 0),
       p_target_week: String(payload.targetWeek ?? payload.p_target_week ?? "").trim(),
       p_qty_move: Number(payload.qtyMove ?? payload.p_qty_move ?? 0),
