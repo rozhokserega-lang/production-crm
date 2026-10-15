@@ -437,6 +437,7 @@ export const ShipmentView = memo(function ShipmentView() {
                               availableSheets: row.availableSheets,
                               outputPerSheet: row.outputPerSheet,
                               canSendToWork: !!row.canSendToWork,
+                              inWork: !!row.inWork,
                               stageKey: row.stageKey,
                             };
                             toggleShipmentSelection(payload);
@@ -586,6 +587,7 @@ export const ShipmentView = memo(function ShipmentView() {
                                   availableSheets: Number(c.availableSheets || 0),
                                   outputPerSheet: Number(c.outputPerSheet || 0),
                                   canSendToWork: !!c.canSendToWork,
+                                  inWork: !!c.inWork,
                                   stageKey,
                                 };
                                 toggleShipmentSelection(payload);
@@ -692,10 +694,16 @@ export const ShipmentView = memo(function ShipmentView() {
                   Редактировать
                 </button>
               )}
-              {selectedShipments.length === 1 && !!selectedShipments[0]?.canSendToWork && (
+              {selectedShipments.length === 1 &&
+                (!!selectedShipments[0]?.canSendToWork || !!selectedShipments[0]?.inWork) && (
                 <button
                   className="mini accent"
                   disabled={actionLoading === "shipment:split" || !canManageOrders}
+                  title={
+                    selectedShipments[0]?.inWork
+                      ? "Позиция уже в работе: часть уйдёт в план другой недели как «Ожидает»"
+                      : undefined
+                  }
                   onClick={() => setSplitDialogOpen(true)}
                 >
                   Разделить
@@ -722,6 +730,13 @@ export const ShipmentView = memo(function ShipmentView() {
         selection={selectedShipments.length === 1 ? selectedShipments[0] : null}
         weeks={weeks}
         loading={actionLoading === "shipment:split"}
+        // Позиция в работе: формулировки плана оставляем привычные, но оператору
+        // важно знать, что листы могли быть уже списаны.
+        warnSheets={
+          selectedShipments.length === 1 &&
+          !!selectedShipments[0]?.inWork &&
+          !selectedShipments[0]?.canSendToWork
+        }
         onClose={() => {
           if (actionLoading === "shipment:split") return;
           setSplitDialogOpen(false);

@@ -7,6 +7,7 @@ vi.mock("../services/orderService", () => ({
   OrderService: {
     sendShipmentToWork: vi.fn(),
     deleteShipmentPlanCell: vi.fn(),
+    splitShipmentPlanCell: vi.fn(),
     revertShipmentToAwaiting: vi.fn(),
     enqueueMetalWorkOrder: vi.fn(),
     getShipmentTable: vi.fn(),
@@ -16,9 +17,11 @@ vi.mock("../services/orderService", () => ({
 
 vi.mock("../app/shipmentActionHelpers", () => ({
   buildShipmentCellAttempts: vi.fn((s) => [s]),
-  runShipmentCellActionWithFallback: vi.fn(({ actionFn, attempts }) =>
-    actionFn(attempts[0])
-  ),
+  // Как в реальном помощнике: первый аргумент actionFn — результат requestBuilder.
+  runShipmentCellActionWithFallback: vi.fn(({ actionFn, attempts, requestBuilder }) => {
+    const first = attempts[0];
+    return actionFn(requestBuilder ? requestBuilder(first) : first);
+  }),
 }));
 
 vi.mock("../app/shipmentExportHelpers", () => ({
@@ -272,5 +275,89 @@ describe("useShipmentActions – exportSelectedShipmentToExcel", () => {
     result.current.exportSelectedShipmentToExcel();
 
     expect(props.setError).toHaveBeenCalledWith("Укажите номер плана.");
+  });
+});
+
+describe("useShipmentActions – splitSelectedShipmentPlan", () => {
+  const splitPayload = { qtyKeep: 100, targetWeek: "93", qtyMove: 50 };
+
+  it("denies action when not canManageOrders", async () => {
+    const props = makeProps({ canManageOrders: false });
+    const { result } = renderHook(() => useShipmentActions(props));
+
+    await act(async () => {
+      await result.current.splitSelectedShipmentPlan(
+        { row: "r1", col: "c1", canSendToWork: true },
+        splitPayload
+      );
+    });
+
+    expect(props.denyActionByRole).toHaveBeenCalledWith(
+      "Недостаточно прав для разделения позиции плана."
+    );
+    expect(OrderService.splitShipmentPlanCell).not.toHaveBeenCalled();
+  });
+
+  it("refuses a cell that is neither sendable nor in work", async () => {
+    const props = makeProps();
+    const { result } = renderHook(() => useShipmentActions(props));
+
+    let ok;
+    await act(async () => {
+      ok = await result.current.splitSelectedShipmentPlan(
+        { row: "r1", col: "c1", canSendToWork: false, inWork: false },
+        splitPayload
+      );
+    });
+
+    expect(ok).toBe(false);
+    expect(props.setError).toHaveBeenCalledWith(
+      "Позиция недоступна для разделения (отгружена или закрыта)."
+    );
+    expect(OrderService.splitShipmentPlanCell).not.toHaveBeenCalled();
+  });
+
+  it("splits a cell that is already in work", async () => {
+    OrderService.splitShipmentPlanCell.mockResolvedValueOnce({ ok: true });
+    const props = makeProps();
+    const { result } = renderHook(() => useShipmentActions(props));
+
+    let ok;
+    await act(async () => {
+      ok = await result.current.splitSelectedShipmentPlan(
+        { row: "r1", col: "c1", canSendToWork: false, inWork: true },
+        splitPayload
+      );
+    });
+
+    expect(ok).toBe(true);
+    expect(OrderService.splitShipmentPlanCell).toHaveBeenCalledWith({
+      row: "r1",
+      col: "c1",
+      qtyKeep: 100,
+      targetWeek: "93",
+      qtyMove: 50,
+    });
+    expect(props.load).toHaveBeenCalledTimes(1);
+    expect(props.setPlanPreviews).toHaveBeenCalledWith([]);
+    expect(props.setSelectedShipments).toHaveBeenCalledWith([]);
+  });
+
+  it("still splits a cell awaiting production", async () => {
+    OrderService.splitShipmentPlanCell.mockResolvedValueOnce({ ok: true });
+    const props = makeProps();
+    const { result } = renderHook(() => useShipmentActions(props));
+
+    let ok;
+    await act(async () => {
+      ok = await result.current.splitSelectedShipmentPlan(
+        { row: "r1", col: "c1", canSendToWork: true },
+        splitPayload
+      );
+    });
+
+    expect(ok).toBe(true);
+    expect(OrderService.splitShipmentPlanCell).toHaveBeenCalledTimes(1);
+    expect(props.load).toHaveBeenCalledTimes(1);
   });
 });

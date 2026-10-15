@@ -251,8 +251,8 @@ export function useShipmentActions({
         denyActionByRole("Недостаточно прав для разделения позиции плана.");
         return false;
       }
-      if (!selection || !selection.canSendToWork) {
-        setError("Позиция недоступна для разделения.");
+      if (!selection || !(selection.canSendToWork || selection.inWork)) {
+        setError("Позиция недоступна для разделения (отгружена или закрыта).");
         return false;
       }
       setActionLoading("shipment:split");

@@ -14,6 +14,7 @@ export function ShipmentSplitDialog({
   onClose,
   onConfirm,
   mode = "plan",
+  warnSheets = false,
 }) {
   const totalQty = Number(selection?.qty || 0);
   const sourceWeek = String(selection?.week || "").trim();
@@ -62,10 +63,19 @@ export function ShipmentSplitDialog({
           )}
         </div>
 
-        {isOrder ? (
+        {isOrder || warnSheets ? (
           <div style={{ fontSize: 13, color: "#9a3412", background: "#fff7ed", border: "1px solid #fdba74", borderRadius: 8, padding: "8px 10px", marginBottom: 10 }}>
-            Отделённая часть уйдёт в план выбранной недели как «Ожидает» и запустится отдельным заказом.
-            Если листы по заказу уже списаны, при повторном запуске они спишутся заново.
+            {isOrder ? (
+              <>
+                Отделённая часть уйдёт в план выбранной недели как «Ожидает» и запустится отдельным заказом.
+                Если листы по заказу уже списаны, при повторном запуске они спишутся заново.
+              </>
+            ) : (
+              <>
+                Позиция уже в работе — делится связанный заказ. Отделённая часть уйдёт в план выбранной недели как «Ожидает».
+                Если листы уже списаны, при повторном запуске в работу они спишутся заново.
+              </>
+            )}
           </div>
         ) : null}
 
