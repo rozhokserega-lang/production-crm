@@ -13,6 +13,23 @@ const SUPABASE_URL = String(import.meta.env.VITE_SUPABASE_URL ?? "").trim();
 const SUPABASE_ANON_KEY = String(import.meta.env.VITE_SUPABASE_ANON_KEY ?? "").trim();
 const SUPABASE_PROXY_URL = String(import.meta.env.VITE_SUPABASE_PROXY_URL ?? "").trim();
 
+/**
+ * Локальный и офисный контур работают по http: офлайн-портал и локальный стек
+ * поднимаются на 127.0.0.1 или в локальной сети, TLS там нет. Для внешних
+ * адресов требование https:// остаётся.
+ */
+function isLocalOrPrivateHost(url) {
+  try {
+    const { hostname } = new URL(url);
+    if (!hostname) return false;
+    if (hostname === "localhost" || hostname === "::1") return true;
+    if (hostname.startsWith("127.")) return true;
+    return /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(hostname);
+  } catch {
+    return false;
+  }
+}
+
 describe("Environment smoke tests", () => {
   it("VITE_SUPABASE_URL is set and looks like a URL", () => {
     expect(SUPABASE_URL, "VITE_SUPABASE_URL is empty").not.toBe("");
@@ -33,9 +50,10 @@ describe("Environment smoke tests", () => {
   it("VITE_SUPABASE_PROXY_URL: dev path or omitted when using direct HTTPS URL", () => {
     if (!SUPABASE_PROXY_URL) {
       // Продакшен (VPS): в .env.production часто только VITE_SUPABASE_URL=https://...
+      // Локальный стек и офлайн-портал — исключение, там http по определению.
       expect(
-        SUPABASE_URL.startsWith("https://"),
-        "без VITE_SUPABASE_PROXY_URL адрес Supabase должен быть полным https://"
+        SUPABASE_URL.startsWith("https://") || isLocalOrPrivateHost(SUPABASE_URL),
+        "без VITE_SUPABASE_PROXY_URL адрес Supabase должен быть полным https:// (кроме локального контура)"
       ).toBe(true);
       return;
     }

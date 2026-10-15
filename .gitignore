@@ -68,5 +68,9 @@ scripts/create-crm-agent-shortcuts.ps1
 agents/
 docs/LOCAL_AGENT_ARCHITECTURE.md
 
+# Рабочий каталог агента: планы и tmp с выгрузками, там же лежат файлы
+# с доступами (panel_pwd.txt, cf_api_token, askpass.sh) — в репозиторий нельзя
+.zcode/
+
 # Supabase NUL-артефакт (Windows redirect bug)
 supabase/migrations/NUL
