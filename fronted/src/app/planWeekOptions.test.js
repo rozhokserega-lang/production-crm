@@ -33,16 +33,21 @@ describe("buildSplitTargetWeeks", () => {
     expect(result.filter((w) => w === "67")).toHaveLength(1);
   });
 
-  it("сортирует числовые недели по возрастанию, нечисловые — после них", () => {
+  it("сортирует числовые недели по возрастанию", () => {
     const result = buildSplitTargetWeeks({ weeks: boardWeeks, months: visibleMonths });
 
     expect(result[0]).toBe("66");
     expect(result.indexOf("93")).toBeGreaterThan(result.indexOf("92"));
     expect(result.indexOf("96")).toBeGreaterThan(result.indexOf("95"));
-    // X и обвязка остаются в списке (их тоже можно выбрать целью).
-    expect(result).toContain("X");
-    expect(result).toContain("обвязка");
-    expect(result.indexOf("X")).toBeGreaterThan(result.indexOf("96"));
+  });
+
+  it("не предлагает X и обвязку как цель переноса", () => {
+    // web_norm_week_key срезает нецифры, и ячейка уехала бы в неделю «0».
+    const result = buildSplitTargetWeeks({ weeks: boardWeeks, months: visibleMonths });
+
+    expect(result).not.toContain("X");
+    expect(result).not.toContain("обвязка");
+    expect(result.every((w) => w.replace(/\D/g, "") !== "")).toBe(true);
   });
 
   it("работает без каталога месяцев и на пустых входах", () => {

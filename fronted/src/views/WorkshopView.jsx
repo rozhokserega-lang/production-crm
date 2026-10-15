@@ -736,7 +736,7 @@ export const WorkshopView = memo(function WorkshopView({
                     ✓ {tab === "done" ? "Готово" : "Готово к отправке: Готово"}
                   </button>
                 )}
-                {typeof openOrderSplitDialog === "function" ? (
+                {typeof openOrderSplitDialog === "function" && !strapPlankOrder ? (
                   <button
                     type="button"
                     className="mini"

@@ -10,7 +10,7 @@ import { useUiState } from "../contexts/UiStateContext";
 import { PlanPreviewPrint } from "../components/PlanPreviewPrint";
 import { getReadableTextColor } from "../utils/colorUtils";
 import { normalizeFurnitureKey } from "../utils/furnitureUtils";
-import { getShipmentStageKey, isStorageShipmentRow } from "../utils/shipmentUtils";
+import { getShipmentStageKey, isObvyazkaSectionName, isStorageShipmentRow } from "../utils/shipmentUtils";
 import { stageBg, stageLabel } from "../app/statusHelpers";
 import { parseItemSize } from "../app/appUtils";
 
@@ -68,6 +68,17 @@ export const ShipmentView = memo(function ShipmentView() {
   );
 
   const [splitDialogOpen, setSplitDialogOpen] = useState(false);
+
+  // Позиции обвязки делить нельзя — это стропы в отдельной колонке.
+  // Серверные функции разделения такие позиции отклоняют; здесь просто не
+  // показываем кнопку.
+  const isObvyazkaSelection = useCallback(
+    (s) =>
+      !!s &&
+      (isObvyazkaSectionName(s.section) ||
+        String(s.week || "").toLowerCase().includes("обвяз")),
+    [],
+  );
 
   const tableRows = shipmentTableRowsForView ?? shipmentTableRowsWithStockStatus;
   const tableSections = shipmentRenderSectionsForView ?? shipmentRenderSections;
@@ -696,7 +707,8 @@ export const ShipmentView = memo(function ShipmentView() {
                 </button>
               )}
               {selectedShipments.length === 1 &&
-                (!!selectedShipments[0]?.canSendToWork || !!selectedShipments[0]?.inWork) && (
+                (!!selectedShipments[0]?.canSendToWork || !!selectedShipments[0]?.inWork) &&
+                !isObvyazkaSelection(selectedShipments[0]) && (
                 <button
                   className="mini accent"
                   disabled={actionLoading === "shipment:split" || !canManageOrders}

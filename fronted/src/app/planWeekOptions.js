@@ -19,6 +19,15 @@ export function sortSplitWeeks(weeks) {
 }
 
 /**
+ * Годится ли неделя как ЦЕЛЬ переноса. «X» и «обвязка» — особые колонки, в них
+ * нет цифр, и web_norm_week_key нормализует их в '0': ячейка уехала бы в
+ * фиктивную неделю 0. Серверные функции разделения такие недели отклоняют.
+ */
+function isTransferableWeek(week) {
+  return String(week).replace(/\D/g, "") !== "";
+}
+
+/**
  * Недели для диалога разделения (доска «Отгрузка») и разделения заказа в цеху.
  *
  * Одних недель с существующими позициями мало: они собираются только из ячеек
@@ -30,12 +39,12 @@ export function buildSplitTargetWeeks({ weeks, months } = {}) {
   const set = new Set(
     (Array.isArray(weeks) ? weeks : [])
       .map((w) => String(w || "").trim())
-      .filter(Boolean),
+      .filter((w) => w && isTransferableWeek(w)),
   );
   (Array.isArray(months) ? months : []).forEach((m) => {
     (m?.weeks || []).forEach((w) => {
       const value = String(w || "").trim();
-      if (value) set.add(value);
+      if (value && isTransferableWeek(value)) set.add(value);
     });
   });
   return sortSplitWeeks([...set]);
