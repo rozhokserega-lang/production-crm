@@ -14,7 +14,7 @@ export function ShipmentSplitDialog({
   onClose,
   onConfirm,
   mode = "plan",
-  warnSheets = false,
+  keepStage = false,
 }) {
   const totalQty = Number(selection?.qty || 0);
   const sourceWeek = String(selection?.week || "").trim();
@@ -69,19 +69,11 @@ export function ShipmentSplitDialog({
           )}
         </div>
 
-        {isOrder || warnSheets ? (
-          <div style={{ fontSize: 13, color: "#9a3412", background: "#fff7ed", border: "1px solid #fdba74", borderRadius: 8, padding: "8px 10px", marginBottom: 10 }}>
-            {isOrder ? (
-              <>
-                Отделённая часть уйдёт в план выбранной недели как «Ожидает» и запустится отдельным заказом.
-                Если листы по заказу уже списаны, при повторном запуске они спишутся заново.
-              </>
-            ) : (
-              <>
-                Позиция уже в работе — делится связанный заказ. Отделённая часть уйдёт в план выбранной недели как «Ожидает».
-                Если листы уже списаны, при повторном запуске в работу они спишутся заново.
-              </>
-            )}
+        {isOrder || keepStage ? (
+          <div style={{ fontSize: 13, color: "#1e40af", background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 8, padding: "8px 10px", marginBottom: 10 }}>
+            Отделённая часть останется <b>в работе на той же стадии</b>: в выбранной неделе
+            создаётся отдельный заказ сразу за счёт этой позиции. Повторно запускать в работу
+            и списывать листы не нужно.
           </div>
         ) : null}
 

@@ -731,9 +731,8 @@ export const ShipmentView = memo(function ShipmentView() {
         selection={selectedShipments.length === 1 ? selectedShipments[0] : null}
         weeks={splitTargetWeeks?.length ? splitTargetWeeks : weeks}
         loading={actionLoading === "shipment:split"}
-        // Позиция в работе: формулировки плана оставляем привычные, но оператору
-        // важно знать, что листы могли быть уже списаны.
-        warnSheets={
+        // Позиция в работе: отделённая часть тоже останется в работе на этой стадии.
+        keepStage={
           selectedShipments.length === 1 &&
           !!selectedShipments[0]?.inWork &&
           !selectedShipments[0]?.canSendToWork
