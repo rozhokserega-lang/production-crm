@@ -6,6 +6,7 @@ import { useModelViewerDialog } from "../components/ModelViewerDialog";
 import { useShipmentSendToWorkDialog } from "../components/ShipmentSendToWorkDialog";
 import { useOverviewPlanMonths } from "./useOverviewPlanMonths";
 import { filterVisiblePlanMonths } from "../app/overviewPlansHelpers";
+import { buildSplitTargetWeeks } from "../app/planWeekOptions";
 import { buildNotifyPayload } from "../app/runActionHelpers";
 import { applyRealtimeOrdersChange } from "../app/realtimeOrderPatch";
 import * as XLSX from "xlsx";
@@ -636,6 +637,15 @@ export function useAppState({ auth }) {
     planMaterial,
     normalizeFurnitureKey,
   });
+
+  // Недели для диалога разделения. Одних `weeks` мало: они собираются только из
+  // недель, где уже есть позиции, поэтому перенести остаток в неделю, по которой
+  // плана ещё нет (например 93/94), было нельзя. Добавляем недели видимых
+  // плановых месяцев — тот же каталог, что использует диалог создания плана.
+  const splitTargetWeeks = useMemo(
+    () => buildSplitTargetWeeks({ weeks, months: visiblePlanMonths }),
+    [weeks, visiblePlanMonths],
+  );
 
   const {
     furnitureSheetData,
@@ -1799,6 +1809,7 @@ export function useAppState({ auth }) {
       setStrapItems,
       importPlanFileRef,
       weeks,
+      splitTargetWeeks,
       sectionOptions,
       sectionArticles,
       selectedItemVariants: _selectedItemVariants,

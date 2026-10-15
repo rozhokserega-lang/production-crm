@@ -35,8 +35,14 @@ export function ShipmentSplitDialog({
     if (!open || totalQty <= 0) return;
     const keep = Math.floor(totalQty / 2);
     setQtyKeep(String(keep > 0 ? keep : 1));
-    setTargetWeek(weekOptions[0] || "");
-  }, [open, totalQty, weekOptions]);
+    // По умолчанию — ближайшая неделя ПОСЛЕ текущей, а не первый пункт списка:
+    // иначе остаток легко увести в давно прошедшую неделю.
+    const sourceNum = Number(String(sourceWeek).replace(/\D/g, ""));
+    const nextWeek = Number.isFinite(sourceNum) && sourceNum
+      ? weekOptions.find((w) => Number(String(w).replace(/\D/g, "")) > sourceNum)
+      : "";
+    setTargetWeek(nextWeek || weekOptions[0] || "");
+  }, [open, totalQty, weekOptions, sourceWeek]);
 
   const qtyMove = Math.max(0, totalQty - num(qtyKeep));
   const keepNum = num(qtyKeep);

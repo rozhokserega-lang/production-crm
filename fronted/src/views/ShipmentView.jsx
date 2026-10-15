@@ -58,6 +58,7 @@ export const ShipmentView = memo(function ShipmentView() {
     openEditPlanDialog,
     setSelectedShipments,
     weeks,
+    splitTargetWeeks,
     furnitureDetailArticleRows,
   } = useShipment();
 
@@ -728,7 +729,7 @@ export const ShipmentView = memo(function ShipmentView() {
       <ShipmentSplitDialog
         open={splitDialogOpen}
         selection={selectedShipments.length === 1 ? selectedShipments[0] : null}
-        weeks={weeks}
+        weeks={splitTargetWeeks?.length ? splitTargetWeeks : weeks}
         loading={actionLoading === "shipment:split"}
         // Позиция в работе: формулировки плана оставляем привычные, но оператору
         // важно знать, что листы могли быть уже списаны.

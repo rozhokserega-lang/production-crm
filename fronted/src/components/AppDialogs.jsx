@@ -11,6 +11,7 @@ import { WorkshopFinalDoneDialog } from "./WorkshopFinalDoneDialog";
 import { WorkshopPlanPrintDialog } from "./WorkshopPlanPrintDialog";
 import { ModelViewerDialog } from "./ModelViewerDialog";
 import { useMemo } from "react";
+import { sortSplitWeeks } from "../app/planWeekOptions";
 
 export function AppDialogs({
   shell,
@@ -50,11 +51,15 @@ export function AppDialogs({
     orderSplit,
   } = dialogs;
 
-  // Недели для разделения заказа: недели заказов + все недели доски отгрузок,
-  // чтобы можно было выбрать план, где заказов ещё нет.
+  // Недели для разделения заказа: недели с существующими позициями, недели
+  // видимых плановых месяцев (splitTargetWeeks — чтобы можно было перенести
+  // остаток в неделю, по которой плана ещё нет) и все недели доски отгрузок.
   const orderSplitWeeks = useMemo(() => {
+    const base = Array.isArray(shipment.splitTargetWeeks) && shipment.splitTargetWeeks.length
+      ? shipment.splitTargetWeeks
+      : weeks;
     const set = new Set(
-      (Array.isArray(weeks) ? weeks : [])
+      (Array.isArray(base) ? base : [])
         .map((w) => String(w || "").trim())
         .filter(Boolean),
     );
@@ -66,8 +71,8 @@ export function AppDialogs({
         }),
       ),
     );
-    return [...set].sort((a, b) => Number(a) - Number(b));
-  }, [weeks, shipment.shipmentBoard]);
+    return sortSplitWeeks([...set]);
+  }, [weeks, shipment.splitTargetWeeks, shipment.shipmentBoard]);
 
   return (
     <>
