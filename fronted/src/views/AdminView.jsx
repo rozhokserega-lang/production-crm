@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { CONSUME_LOG_SHEET_NAME } from "../app/appConstants";
+import { consumeSheetNameForDate } from "../app/consumeSheetName";
 import { getSupabaseRpcRoutePlan } from "../api";
 
 function formatRpcRouteLabel(url) {
@@ -222,7 +223,7 @@ export function AdminView({
       </div>
       <div className="admin-panel__create admin-panel__consume-log">
         <label className="admin-panel__consume-log-field">
-          <span className="admin-panel__schedule-label">Имя вкладки в книге склада (для всех пользователей)</span>
+          <span className="admin-panel__schedule-label">Запасное имя вкладки (если вкладки текущего месяца нет)</span>
           <input
             type="text"
             value={consumeLogDraft}
@@ -231,7 +232,7 @@ export function AdminView({
             placeholder={CONSUME_LOG_SHEET_NAME}
             spellCheck={false}
             autoComplete="off"
-            title="Точное имя вкладки в той же Google-книге, что и склад. Сюда пишутся списания при «Готово» на пиле."
+            title="Точное имя вкладки в той же Google-книге, что и склад. Основное имя CRM считает сама: «Расход <месяц> <год>» — сюда пишутся списания при «Готово» на пиле."
           />
         </label>
         <button
@@ -244,7 +245,8 @@ export function AdminView({
         </button>
       </div>
       <div className="empty" style={{ marginBottom: 10 }}>
-        Активно для списаний: <b>{consumeLogSheetName}</b>.
+        Списания идут во вкладку текущего месяца: <b>{consumeSheetNameForDate()}</b>. Если её в книге нет, CRM
+        попробует запасное имя <b>{consumeLogSheetName}</b> и покажет предупреждение о старом месяце.
         {consumeLogSheetUpdatedAt ? ` Обновлено в базе: ${formatDateTimeRu(consumeLogSheetUpdatedAt)}.` : ""}
       </div>
       <div className="admin-panel__head">

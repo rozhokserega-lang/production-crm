@@ -12,7 +12,7 @@ export function useConsumeDialog({
   canOperateProduction,
   canConsumePilkaSheets = false,
   canOperateWarehouse = false,
-  setError: _setError,
+  setError,
   consumeDialogData,
   setConsumeDialogOpen,
   setConsumeEditMode,
@@ -66,6 +66,25 @@ export function useConsumeDialog({
     [furnitureCustomTemplates, normalizeFurnitureKey],
   );
 
+  /**
+   * Списание в CRM уже прошло — про запись в Google-таблицу сообщаем отдельно:
+   * неудача или запись в чужой месяц не должны оставаться незамеченными
+   * (16.10.26 такая запись терялась молча почти сутки).
+   */
+  const reportSheetSyncResult = useCallback(
+    (results = []) => {
+      const list = (results || []).filter(Boolean);
+      const failed = list.find((r) => r.ok === false);
+      if (failed) {
+        setError(`Списание прошло, но в Google-таблицу не записалось: ${failed.error}`);
+        return;
+      }
+      const warned = list.find((r) => r.warning);
+      if (warned) setError(warned.warning);
+    },
+    [setError],
+  );
+
   const submitConsume = useCallback(
     async (materialRaw, qtyRaw) => {
       const canConsume =
@@ -92,16 +111,21 @@ export function useConsumeDialog({
       setConsumeSaving(true);
       setConsumeError("");
       try {
+        const sheetResults = [];
         if (multiLines.length > 1) {
           await OrderService.consumeSheetsLinesByOrderId(orderId, multiLines);
+          closeConsumeDialog();
+          await load();
           for (const line of multiLines) {
-            logConsumeToGoogleSheet({
-              orderId,
-              item: String(consumeDialogData.item || ""),
-              material: line.material,
-              week: String(consumeDialogData.week || ""),
-              qty: line.qty,
-            });
+            sheetResults.push(
+              await logConsumeToGoogleSheet({
+                orderId,
+                item: String(consumeDialogData.item || ""),
+                material: line.material,
+                week: String(consumeDialogData.week || ""),
+                qty: line.qty,
+              }),
+            );
           }
         } else {
           const material = String(materialRaw || presetLines[0]?.material || "").trim();
@@ -109,16 +133,19 @@ export function useConsumeDialog({
           if (!material) return setConsumeError("Укажите материал");
           if (!isFinite(qty) || qty <= 0) return setConsumeError("Некорректное количество");
           await OrderService.consumeSheetsByOrderId(orderId, material, qty);
-          logConsumeToGoogleSheet({
-            orderId,
-            item: String(consumeDialogData.item || ""),
-            material,
-            week: String(consumeDialogData.week || ""),
-            qty,
-          });
+          closeConsumeDialog();
+          await load();
+          sheetResults.push(
+            await logConsumeToGoogleSheet({
+              orderId,
+              item: String(consumeDialogData.item || ""),
+              material,
+              week: String(consumeDialogData.week || ""),
+              qty,
+            }),
+          );
         }
-        closeConsumeDialog();
-        await load();
+        reportSheetSyncResult(sheetResults);
         syncLeftoversToGoogleSheet({ silent: true });
       } catch (e) {
         submittedOrderIdsRef.current.delete(orderId);
@@ -142,6 +169,7 @@ export function useConsumeDialog({
       setConsumeSaving,
       logConsumeToGoogleSheet,
       syncLeftoversToGoogleSheet,
+      reportSheetSyncResult,
       closeConsumeDialog,
       load,
     ],
