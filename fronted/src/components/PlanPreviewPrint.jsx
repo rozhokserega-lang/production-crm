@@ -1,10 +1,21 @@
 import { resolvePlanPreviewArticleByName } from "../app/planPreviewHelpers";
+import { findPlanMonthByWeek } from "../app/overviewPlansHelpers";
 import {
   formatStrapPlanTargetCaption,
   getPlanPreviewArticleCode,
   stripPlanItemMeta,
 } from "../app/orderHelpers";
 import { PlanQrImage } from "./PlanQrImage";
+
+// Название месяца под номером плана. Размер задаём инлайном (а не в styles.css),
+// чтобы он одинаково читался и на экране, и в печати: в print-медиазапросе
+// номер плана уменьшается до 30px, подпись 13px остаётся пропорциональной.
+const PLAN_MONTH_STYLE = {
+  fontSize: 13,
+  lineHeight: 1.2,
+  padding: "2px 6px 6px",
+  textAlign: "center",
+};
 
 function tableModelLabel(fullLabel) {
   const raw = String(fullLabel || "").trim();
@@ -56,6 +67,7 @@ export function PlanPreviewPrint({
   planPreview,
   articleLookupByItemKey = null,
   showFurnitureDebug = false,
+  planMonths = null,
 }) {
   if (!planPreview) return null;
 
@@ -70,6 +82,10 @@ export function PlanPreviewPrint({
     planPreview.firstName || planPreview.detailedName || "-",
     planPreview.colorName,
   );
+  // Название месяца, к которому относится план («ПЛАН 92» → «Октябрь»).
+  const planMonthName = String(
+    findPlanMonthByWeek(planMonths, planPreview.planNumber || planPreview.week)?.name || "",
+  ).trim();
 
   return (
     <div className="plan-preview print-plan-page">
@@ -87,6 +103,11 @@ export function PlanPreviewPrint({
           <div className="plan-number-box">
             <div className="plan-number-title">{planPreview.planNumberTitle || "ПЛАН"}</div>
             <div className="num">{planPreview.planNumber || "-"}</div>
+            {planMonthName ? (
+              <div className="plan-number-month" style={PLAN_MONTH_STYLE}>
+                {planMonthName}
+              </div>
+            ) : null}
           </div>
           <div className="plan-qr-box">
             <PlanQrImage planPreview={planPreview} articleCode={articleCode} />

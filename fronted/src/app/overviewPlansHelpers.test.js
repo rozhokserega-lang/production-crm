@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import { PipelineStage } from "../orderPipeline";
 import {
   buildPlanSummary,
+  findPlanMonthByWeek,
   getFullySelectedPlanMonths,
+  resolvePrintPlanMonths,
   togglePlanMonthWeeksInFilter,
 } from "./overviewPlansHelpers";
 
@@ -82,5 +84,24 @@ describe("plan month week filter", () => {
   it("getFullySelectedPlanMonths returns only whole months", () => {
     expect(getFullySelectedPlanMonths(months, ["76", "77"])).toEqual([]);
     expect(getFullySelectedPlanMonths(months, ["76", "77", "78", "79"])).toEqual([months[0]]);
+  });
+});
+
+describe("месяц на печатном листе", () => {
+  const visible = [{ id: 1, name: "Октябрь", weeks: ["92", "93", "94", "95"] }];
+  const all = [...visible, { id: 2, name: "Сентябрь", weeks: ["88", "89"], isHidden: true }];
+
+  it("resolvePrintPlanMonths предпочитает полный список (со скрытыми месяцами)", () => {
+    expect(resolvePrintPlanMonths(all, visible)).toBe(all);
+    expect(resolvePrintPlanMonths([], visible)).toBe(visible);
+    expect(resolvePrintPlanMonths(undefined, undefined)).toEqual([]);
+  });
+
+  it("findPlanMonthByWeek находит месяц по номеру плана", () => {
+    expect(findPlanMonthByWeek(all, "93")?.name).toBe("Октябрь");
+    expect(findPlanMonthByWeek(all, 88)?.name).toBe("Сентябрь");
+    // неделя с нецифровым ключом (X / обвязка) — месяца нет
+    expect(findPlanMonthByWeek(all, "обвязка")).toBeNull();
+    expect(findPlanMonthByWeek(all, "")).toBeNull();
   });
 });

@@ -12,6 +12,7 @@ import { WorkshopPlanPrintDialog } from "./WorkshopPlanPrintDialog";
 import { ModelViewerDialog } from "./ModelViewerDialog";
 import { useMemo } from "react";
 import { sortSplitWeeks } from "../app/planWeekOptions";
+import { resolvePrintPlanMonths } from "../app/overviewPlansHelpers";
 
 export function AppDialogs({
   shell,
@@ -41,6 +42,7 @@ export function AppDialogs({
     strapOptionsForSelectedProduct,
     weeks,
     planMonths,
+    planMonthsAll,
     planMonthsLoading,
   } = shipment;
   const {
@@ -74,6 +76,13 @@ export function AppDialogs({
     return sortSplitWeeks([...set]);
   }, [weeks, shipment.splitTargetWeeks, shipment.shipmentBoard]);
 
+  // Месяцы для подписи печатного листа («ПЛАН 92 · Октябрь»). Берём полный
+  // список, включая скрытые месяцы: архивный план тоже должен подписываться.
+  const printPlanMonths = useMemo(
+    () => resolvePrintPlanMonths(planMonthsAll, planMonths),
+    [planMonths, planMonthsAll],
+  );
+
   return (
     <>
       <PackagingInboxDialog
@@ -105,6 +114,7 @@ export function AppDialogs({
         onClose={dialogs.workshopPlanPrint?.close}
         onPrint={dialogs.workshopPlanPrint?.print}
         articleLookupByItemKey={dialogs.workshopPlanPrint?.articleLookupByItemKey}
+        planMonths={printPlanMonths}
         printAreaRef={dialogs.workshopPlanPrint?.printAreaRef}
       />
 
@@ -133,6 +143,7 @@ export function AppDialogs({
         onConfirm={dialogs.workshopFinalDone?.confirm}
         onPrint={dialogs.workshopFinalDone?.print}
         articleLookupByItemKey={dialogs.workshopFinalDone?.articleLookupByItemKey}
+        planMonths={printPlanMonths}
         previewDeps={dialogs.workshopFinalDone?.previewDeps}
         printAreaRef={dialogs.workshopFinalDone?.printAreaRef}
       />
@@ -147,6 +158,7 @@ export function AppDialogs({
         onClose={dialogs.sendToWork?.close}
         onShowPrint={dialogs.sendToWork?.showPrintSheets}
         articleLookupByItemKey={dialogs.sendToWork?.articleLookupByItemKey}
+        planMonths={printPlanMonths}
         printAreaRef={dialogs.sendToWork?.printAreaRef}
       />
 

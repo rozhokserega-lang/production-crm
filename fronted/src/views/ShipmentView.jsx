@@ -8,6 +8,7 @@ import { useNavigation } from "../contexts/NavigationContext";
 import { useAuth } from "../contexts/AuthContext";
 import { useUiState } from "../contexts/UiStateContext";
 import { PlanPreviewPrint } from "../components/PlanPreviewPrint";
+import { resolvePrintPlanMonths } from "../app/overviewPlansHelpers";
 import { getReadableTextColor } from "../utils/colorUtils";
 import { normalizeFurnitureKey } from "../utils/furnitureUtils";
 import { getShipmentStageKey, isObvyazkaSectionName, isStorageShipmentRow } from "../utils/shipmentUtils";
@@ -59,8 +60,17 @@ export const ShipmentView = memo(function ShipmentView() {
     setSelectedShipments,
     weeks,
     splitTargetWeeks,
+    planMonths,
+    planMonthsAll,
     furnitureDetailArticleRows,
   } = useShipment();
+
+  // Месяцы для подписи печатного листа — включая скрытые месяцы (архивный план
+  // тоже должен подписываться своим месяцем).
+  const printPlanMonths = useMemo(
+    () => resolvePrintPlanMonths(planMonthsAll, planMonths),
+    [planMonths, planMonthsAll],
+  );
 
   const strapDisplayDeps = useMemo(
     () => buildStrapDisplayDeps(furnitureDetailArticleRows),
@@ -308,6 +318,7 @@ export const ShipmentView = memo(function ShipmentView() {
                   <PlanPreviewPrint
                     planPreview={planPreview}
                     articleLookupByItemKey={articleLookupByItemKey}
+                    planMonths={printPlanMonths}
                     showFurnitureDebug={isPlaceholderPlanPreview(planPreview)}
                   />
                 )}

@@ -308,6 +308,17 @@ export function resolvePlanMonthWeeks(months, monthId) {
   return sortPlanWeeks((month?.weeks || []).map(normalizePlanWeek).filter(Boolean));
 }
 
+/**
+ * Месяцы для подписи печатного листа: полный список (включая скрытые месяцы),
+ * если он есть, иначе — видимые. Архивный план тоже должен подписываться
+ * своим месяцем, поэтому скрытые месяцы из поиска не выкидываем.
+ */
+export function resolvePrintPlanMonths(monthsAll, monthsVisible) {
+  const all = Array.isArray(monthsAll) ? monthsAll : [];
+  if (all.length) return all;
+  return Array.isArray(monthsVisible) ? monthsVisible : [];
+}
+
 /** Найти месяц, чьи недели точно совпадают с текущим фильтром недель. */
 export function findPlanMonthByWeekFilter(months, weekFilter) {
   const selected = normalizeWeekFilter(weekFilter);

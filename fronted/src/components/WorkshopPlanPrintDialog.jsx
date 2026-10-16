@@ -36,6 +36,7 @@ export function WorkshopPlanPrintDialog({
   onClose,
   onPrint,
   articleLookupByItemKey,
+  planMonths = null,
   printAreaRef,
 }) {
   if (!open) return null;
@@ -55,7 +56,11 @@ export function WorkshopPlanPrintDialog({
           {error ? <div className="error workshop-plan-print-status">{error}</div> : null}
           {planPreview ? (
             <div className="workshop-plan-print-preview">
-              <PlanPreviewPrint planPreview={planPreview} articleLookupByItemKey={articleLookupByItemKey} />
+              <PlanPreviewPrint
+                planPreview={planPreview}
+                articleLookupByItemKey={articleLookupByItemKey}
+                planMonths={planMonths}
+              />
               <div className="actions workshop-plan-print-actions no-print">
                 <button type="button" className="mini" onClick={onPrint}>
                   Печать
@@ -71,7 +76,11 @@ export function WorkshopPlanPrintDialog({
       {planPreview
         ? createPortal(
             <div ref={printAreaRef} className="print-area workshop-plan-print-area" aria-hidden="true">
-              <PlanPreviewPrint planPreview={planPreview} articleLookupByItemKey={articleLookupByItemKey} />
+              <PlanPreviewPrint
+                planPreview={planPreview}
+                articleLookupByItemKey={articleLookupByItemKey}
+                planMonths={planMonths}
+              />
             </div>,
             document.body,
           )

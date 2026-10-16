@@ -24,6 +24,7 @@ export function ShipmentSendToWorkDialog({
   onClose,
   onShowPrint,
   articleLookupByItemKey,
+  planMonths = null,
   printAreaRef,
 }) {
   if (!open) return null;
@@ -77,6 +78,7 @@ export function ShipmentSendToWorkDialog({
                   key={planPreview._key || planPreview.orderId || idx}
                   planPreview={planPreview}
                   articleLookupByItemKey={articleLookupByItemKey}
+                  planMonths={planMonths}
                 />
               ))}
             </div>,

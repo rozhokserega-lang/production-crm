@@ -19,6 +19,7 @@ export function WorkshopFinalDoneDialog({
   onConfirm,
   onPrint,
   articleLookupByItemKey,
+  planMonths = null,
   previewDeps,
   printAreaRef,
 }) {
@@ -147,7 +148,11 @@ export function WorkshopFinalDoneDialog({
       {qtyDiffersFromPlan && planPreview
         ? createPortal(
             <div ref={printAreaRef} className="print-area workshop-final-print-area" aria-hidden="true">
-              <PlanPreviewPrint planPreview={planPreview} articleLookupByItemKey={articleLookupByItemKey} />
+              <PlanPreviewPrint
+                planPreview={planPreview}
+                articleLookupByItemKey={articleLookupByItemKey}
+                planMonths={planMonths}
+              />
             </div>,
             document.body,
           )
