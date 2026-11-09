@@ -27,6 +27,23 @@ const ACTION_OPTIMISTIC_MAP = {
   },
   webSetPrasDone: { field: "prasStatus", snakeField: "pras_status", value: "Готово", pipelineStage: "assembly" },
   webSetPrasPause: { field: "prasStatus", snakeField: "pras_status", value: "Пауза", pipelineStage: "pras" },
+  // «Вернуть в начало»: весь цех обратно в «Ожидает», общий статус — как у нового заказа.
+  webResetOrderToStart: {
+    field: "overallStatus",
+    snakeField: "overall_status",
+    value: "🟡 Новый заказ",
+    pipelineStage: "pilka",
+    extraFields: {
+      pilkaStatus: "⏳ Ожидает пилу",
+      pilka_status: "⏳ Ожидает пилу",
+      kromkaStatus: "⏳ Ожидает",
+      kromka_status: "⏳ Ожидает",
+      prasStatus: "⏳ Ожидает",
+      pras_status: "⏳ Ожидает",
+      assemblyStatus: "⏳ Ожидает",
+      assembly_status: "⏳ Ожидает",
+    },
+  },
   webSetAssemblyDone: {
     field: "assemblyStatus",
     snakeField: "assembly_status",
@@ -74,6 +91,7 @@ export function applyOptimisticOrderRow(row, action, payload = {}) {
     [config.field]: nextValue,
     [config.snakeField]: nextValue,
     ...(config.pipelineStage ? { pipelineStage: config.pipelineStage, pipeline_stage: config.pipelineStage } : {}),
+    ...(config.extraFields || {}),
   };
 }
 

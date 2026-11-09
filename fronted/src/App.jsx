@@ -464,6 +464,8 @@ function AppInner({ onAuthChangeRef }) {
             permissions={{
               canOperateProduction: auth.canOperateProduction,
               canOperateWorkshopStage: auth.canOperateWorkshopStage,
+              canManageOrders: auth.canManageOrders,
+              canAdminSettings: auth.canAdminSettings,
             }}
             helpers={{
               statusClass,

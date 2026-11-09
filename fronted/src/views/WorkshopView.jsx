@@ -95,7 +95,7 @@ export const WorkshopView = memo(function WorkshopView({
   // потом артикул, вытащенный из строки названия изделия
   const sectionForOrder = (order, itemArticle) =>
     resolveModelSectionForOrder(order, itemArticle, modelSectionLookup);
-  const { canOperateProduction, canOperateWorkshopStage, canManageOrders } = permissions;
+  const { canOperateProduction, canOperateWorkshopStage, canManageOrders, canAdminSettings } = permissions;
   const canPilka = typeof canOperateWorkshopStage === "function"
     ? canOperateWorkshopStage("pilka")
     : canOperateProduction;
@@ -761,6 +761,33 @@ export const WorkshopView = memo(function WorkshopView({
                     }
                   >
                     ✂ Разделить
+                  </button>
+                ) : null}
+                {canAdminSettings && !strapPlankOrder ? (
+                  <button
+                    type="button"
+                    className="mini warn"
+                    disabled={
+                      isPending(`webResetOrderToStart:${orderId}`) ||
+                      packagingDone ||
+                      (!pilkaDone && !pilkaInWork && !kromkaDone && !kromkaInWork && !prasDone && !prasInWork && !assemblyDone)
+                    }
+                    title={
+                      packagingDone
+                        ? "Отгруженный заказ вернуть в начало нельзя"
+                        : "Пила/Кромка/Присадка/Сборка снова «Ожидает», общий статус — «Новый заказ». Учтённое время этапов обнулится"
+                    }
+                    onClick={() => {
+                      const ok = window.confirm(
+                        `Вернуть заказ ${orderId || ""} в самое начало производства?\n\n` +
+                          "Пила/Кромка/Присадка/Сборка станут «Ожидает», общий статус — «Новый заказ». " +
+                          "Зафиксированное время этапов будет сброшено.",
+                      );
+                      if (!ok) return;
+                      runAction("webResetOrderToStart", orderId, {});
+                    }}
+                  >
+                    ↩ Вернуть в начало
                   </button>
                 ) : null}
               </div>

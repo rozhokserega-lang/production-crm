@@ -649,6 +649,8 @@ const RPC_MAP = {
   webSetPilkaWait: "web_set_stage_wait",
   webSetKromkaWait: "web_set_stage_wait",
   webSetPrasWait: "web_set_stage_wait",
+  // Админ: вернуть цеховой заказ в самое начало производства (кнопка на карточке цеха)
+  webResetOrderToStart: "web_reset_order_to_start",
   webSendShipmentToWork: "web_send_shipment_to_work_by_source",
   webRevertShipmentToAwaiting: "web_revert_shipment_to_awaiting",
   webSendPlanksToWork: "web_send_planks_to_work",
@@ -676,6 +678,10 @@ function stageFromAction(action) {
 
 function buildRpcPayload(action, payload = {}) {
   if (action === "webSetWarehouseKitInWork" || action === "webSetWarehouseKitDone") {
+    return { p_order_id: payload.orderId };
+  }
+  // Кнопка «Вернуть в начало» на карточке цеха — только id заказа.
+  if (action === "webResetOrderToStart") {
     return { p_order_id: payload.orderId };
   }
   if (action === "webSetWarehouseKitReady") {
